@@ -397,6 +397,12 @@ export interface SupportTypeDescriptor {
      */
     jointDragUsesLivePreview: boolean;
     /**
+     * Whether a curve drag that produces no preview re-reads the entity from
+     * the store before committing. True for a type whose segments another
+     * interaction (the elastic chain on a knot drag) updates mid-drag.
+     */
+    curveDragReconcilesFromStore?: boolean;
+    /**
      * Prefix for this type's bezier handle context ids.
      *
      * Those ids are React keys. Trunk's predate the others and carry no prefix;
@@ -586,6 +592,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         transformPropagatesToShaft: true,
         ownsEditHistoryEntry: false,
         jointDragUsesLivePreview: true,
+        curveDragReconcilesFromStore: true,
         batchesContactCones: true,
         batchesShaft: true,
         bezierContextIdPrefix: 'branch-',

@@ -11,7 +11,7 @@ import { SUPPORT_UPDATE_TRUNK } from '../../history/actionTypes';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearSupportDragPreview, emitSupportDragPreview } from '../../SupportPrimitives/Joint/jointDragRuntime';
 import { clearTwigDragPreview, computeTwigDragAttachmentUpdates, emitTwigDragPreview } from '../../SupportTypes/Twig/twigDragPreview';
-import { getSupportTypeDescriptor, parsePrefixedSegmentId, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
+import { getSupportTypeBySelectionCategory, getSupportTypeDescriptor, parsePrefixedSegmentId, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
 
 /**
  * Whether the type carries its curve on the entity rather than on segments. A
@@ -89,7 +89,8 @@ export function BezierGizmoManager() {
             return gizmoContextIndex.segmentContextsById.get(selectedId) ?? [];
         }
 
-        if (selectedCategory === 'brace') {
+        const selectedDescriptor = getSupportTypeBySelectionCategory(selectedCategory);
+        if (selectedDescriptor && carriesCurveOnEntity(selectedDescriptor.id)) {
             return gizmoContextIndex.braceContextsById.get(selectedId) ?? [];
         }
 
@@ -122,7 +123,8 @@ export function BezierGizmoManager() {
 
         // A type recording its own before/after entry. The action's payload type
         // is per-action, so this stays typed rather than dispatched.
-        if (initialTrunkRef.current && ctx.entity && ctx.typeId === 'trunk') {
+        if (initialTrunkRef.current && ctx.entity && ctx.typeId
+            && getSupportTypeDescriptor(ctx.typeId).ownsEditHistoryEntry) {
             const latestTrunk = (livePreviewRef.current?.support as Trunk | undefined)
                 ?? getSupportEntity('trunk', ctx.entity.id);
             if (latestTrunk) {
@@ -156,10 +158,11 @@ export function BezierGizmoManager() {
 
             if (preview) {
                 updateSupportEntity(typeId, preview);
-            } else if (typeId === 'branch' && draggedId) {
-                // Branches reconcile from the store when no preview was produced.
-                const latestBranch = getSupportEntity('branch', draggedId);
-                if (latestBranch) updateSupportEntity('branch', latestBranch);
+            } else if (draggedId && descriptor.curveDragReconcilesFromStore) {
+                // The segments another interaction updated mid-drag (the
+                // elastic chain on a knot drag) are re-read from the store.
+                const latest = getSupportEntity(typeId, draggedId);
+                if (latest) updateSupportEntity(typeId, latest);
             }
 
             if (draggedId) clearSupportDragPreview(typeId, draggedId);
@@ -216,7 +219,7 @@ export function BezierGizmoManager() {
                 curve.controlPoint2 = { x: newPos.x, y: newPos.y, z: newPos.z };
             }
 
-            updateSupportEntity('brace', newBrace);
+            updateSupportEntity(typeId!, newBrace);
             return;
         }
 
