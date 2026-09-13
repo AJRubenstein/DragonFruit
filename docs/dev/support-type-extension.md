@@ -8,6 +8,10 @@ partly manual. Steps below are marked accordingly.
 The existing types are `Trunk`, `Branch`, `Leaf`, `Twig`, `Stick`, `Brace`,
 `Anchor`, `Kickstand`.
 
+**Three documents, no overlap:** this one is how to add a type;
+`support-type-literal-plan.md` is what is left to convert;
+`support-registry-findings.md` is what is still broken.
+
 > ⚠️ **Do not convert hand-wired paths to the registry while adding your type** —
 > it puts a new feature and a behaviour-preserving refactor in one diff. Note
 > what you hit, add the type, convert afterwards. See [Backlog](backlog.md).
@@ -59,6 +63,7 @@ every descriptor declares all of them:
 | Flag | Ask |
 | ---- | --- |
 | `canBeGridHost` | Can a fan link attach to this type's shaft? (the host pool, merge search, attachment cap and forest report all read it) |
+| `hostsKickstand` | May a kickstand's host knot ride this type's segments? Read through `KICKSTAND_HOST_TYPES`; `KICKSTAND_HOST_BY_TYPE` mirrors it with literals kept so the host union narrows |
 | `hasSegments` | Do instances have real shafts? |
 | `contactFields` | Which contact primitive fields, in order? |
 | `segmentsCarryBothJoints` | Does each segment carry both its joints, or do endpoints come from a root / parent knot / neighbour? |

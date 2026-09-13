@@ -7,9 +7,14 @@ becomes a one-line registry edit with every stale reference a compile error.
 This is the plan for the remaining work. It is grounded in a fresh measurement of
 every type-name literal in `src/`, classified by what the literal *does*.
 
-Companion: `docs/dev/support-type-extension.md` (how to add a type),
-`docs/dev/support-registry-findings.md` (defects found along the way).
-Machine-readable inventory: `lysdiag/type-literals.json` (never committed).
+**Three documents, no overlap:**
+
+- **this file** — what is left to convert, and in what order
+- `docs/dev/support-type-extension.md` — how to add a ninth type
+- `docs/dev/support-registry-findings.md` — what is still broken (open only;
+  resolved rows are archived outside the repo)
+
+Tools live in `lysdiag/tools/` and are never committed.
 
 ---
 
@@ -17,9 +22,8 @@ Machine-readable inventory: `lysdiag/type-literals.json` (never committed).
 
 ### 1.0 Already done (so this plan stands alone)
 
-The refactor so far, on `test/supportrefactorexperiment`, 28 commits from
-`844051ed`. Each is a *concept moved into the registry*, which is the pattern the
-stages below repeat:
+Each item below is a *concept moved into the registry* — the pattern the stages
+repeat:
 
 - **Host concept derived.** `canBeGridHost` + `GRID_HOST_TYPES`; a host travels as
   `(hostTypeId, hostId)` so every lookup indexes its own collection.
@@ -51,11 +55,32 @@ counted separately and **conceded** — a type is allowed to name itself.
 
 Three instruments, and none of them alone is the picture:
 
-| instrument | what it answers | now |
-| ---------- | --------------- | --- |
-| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | see below |
-| `inventory.py` + `report.py` | every token containing a type name | **6,955** occurrences, 778 distinct tokens |
-| `npm run scan:support-types` | the headline reference metric | **5,909** across 152 files |
+**Re-measured after stage 1** (§4). Previous readings, kept for the delta, are
+in the *was* column.
+
+| instrument | what it answers | now | was |
+| ---------- | --------------- | --- | --- |
+| `rename-test.py <type>` | what a real `tsc` rename breaks, per type | 251 total | 280 |
+| `inventory.py` + `report.py` | every token containing a type name | **6,892** occurrences, 780 tokens | 6,955 / 778 |
+| `npm run scan:support-types` | the headline reference metric | **5,877** across 152 files | 5,909 |
+| `type-literal-metric.py` | every string literal equal to a type id | 151 value outside `SupportTypes`, 16 dispatch, 5 declaration | 163 / 16 / 5 |
+| `npm run check:support-literals` | the same, with the ratchet | 137 value, 12 dispatch, 3 declaration | 149 / 10 / 3 |
+
+Three readings moved up or held still while the defect count fell, and each is
+expected rather than a regression:
+
+- **Occurrences down, distinct tokens up 2.** Stage 1 deletes one type-named
+  identifier (`KickstandHostKind`) and adds three (`KICKSTAND_HOST_TYPES`,
+  `KickstandHostTypeId`, one local interface) in the consumer that previously
+  spelled the pair out. All three resolve through the registry, so a rename
+  reaches them; the token count is the wrong lens for that.
+- **The rename test rose for `trunk` (55 → 56) and `kickstand` (12 → 14).** Those
+  are sites that were *silently* wrong and now fail to compile — the union
+  members they name no longer exist, so the assignment and the `===` comparison
+  are errors. See §3B. A rise here is the stage working.
+- **`check:support-literals` reports 12 dispatch where it reported 10**, because
+  its `.family ===` exemption was wrong (§2, §3B) and is removed. The two lines it
+  hid are real dispatch.
 
 **The rename test is the goal mechanised, but it is not the whole picture.** It
 only sees what the compiler can prove. A literal that survives a rename *without*
@@ -66,16 +91,17 @@ what the inventory is for. Report both, always.
 
 Run for all eight, not just the convenient one:
 
-| type | honest remaining |
-| ---- | ---: |
-| branch | **112** |
-| leaf | 67 |
-| trunk | 55 |
-| brace | 17 |
-| kickstand | 12 |
-| stick | 10 |
-| twig | 5 |
-| anchor | 2 |
+| type | honest remaining | was |
+| ---- | ---: | ---: |
+| branch | **95** | 112 |
+| trunk | 56 | 55 |
+| leaf | 52 | 67 |
+| brace | 17 | 17 |
+| kickstand | 14 | 12 |
+| stick | 10 | 10 |
+| twig | 5 | 5 |
+| anchor | 2 | 2 |
+| **total** | **251** | 280 |
 
 **Read this table before quoting a headline.** The refactor has largely been
 measured on `stick`, which is the easiest type and now sits at 10. `branch` is
@@ -87,6 +113,21 @@ vocabulary (`branchFamily`, `place_branch`, fan kinds). `trunk` is high because
 it is the default tool. Neither is a surprise — but neither shows up if `stick`
 is the only number reported.
 
+#### What a real rename does, and what it misses
+
+Renaming `branch` → `branchy` at the naming point and compiling: **145 errors
+across 31 files**, concentrated in `autoPlace.ts` (28), the registry itself (23,
+legitimately), `useKnotInteraction.ts` (15) and `KnotGizmo.tsx` (9).
+
+**Fixed in stage 1.** Three things used to compile clean and were therefore
+**silently wrong**: `SupportPlacementFamily`, `KickstandHostKind`,
+`RemoveJointByIdResult` — all hand-written unions whose members are type ids
+(§3B). That was the class to fear: not the 145 errors, which announce
+themselves, but the three that did not. Each now fails to compile on a rename —
+the `branch` → `branchy` run leaves `supportPlacementHotkeyResolver` and
+`supportPlacementRouting` with `TS2322`/`TS2367` on `'branch'`, and `state.ts`
+with `'branch'` not assignable to the narrowed joint-removal union.
+
 ### 1.2 A measurement failure worth reading first
 
 `lysdiag/tools/dispatch-metric.py` counts only `=== 'type'` / `!== 'type'`.
@@ -95,14 +136,14 @@ That is **not the shape the regressions actually take.** In `1bd7bfa2` the grid
 engine's two decision kinds (place_leaf, place_branch) were turned into
 type-name literals spelled at five sites — `placementOf('branch', …)`,
 `leafTypeId: 'leaf'` — all in *argument position*. The dispatch metric did not
-move: still exactly 50. Five literals were added, then removed in `9cd87c63`, and
-the number never changed.
+move at all. Five literals were added, then removed, and the number never
+changed.
 
 **Consequence:** a dispatch-only count cannot see the most likely regression. It
 reads as coverage while measuring one narrow syntax form.
 
 `lysdiag/tools/type-literal-metric.py` counts and classifies **every** string
-literal equal to a type id. Both tools are described in §7.
+literal equal to a type id. Both tools are described in §6.
 
 **The same failure has a second form, and it is the one that bit this plan.** A
 count can be correct and still be reasoned away afterwards. The inventory *did*
@@ -158,329 +199,226 @@ and must be derived — not conceded.
 > `Extract<SupportTypeId, …>`, so a rename produces 4 errors there and 0 on the
 > family. Same file, same concept, opposite safety. The derivation template is
 > already in the registry: `ModelSurfaceGestureTypeId` is a mapped type filtered
-> by a descriptor flag. See §3.F.
+> by a descriptor flag. See §3B.
 
 ---
 
 ## 3. The root causes
 
-The literals are symptoms. Each has an API or a structure underneath it, and
-fixing that structure removes a whole class at once. Ordered by volume.
+**Measured at `7660b273`** by `lysdiag/tools/` plus a real `branch` → `branchy`
+rename (145 compile errors across 31 files). Counts below are live sites —
+outside the registry, `types.ts`, a type's own folder, and tests.
 
-### A. Store accessors take a type name to mean "the collection of that type" — **~45 sites**
+| cause | live sites | what it is |
+| ----- | ---: | --- |
+| **A. Store accessors taking a type name** | 32 | `resolveSegmentEndpoints('trunk', entity, …)` — the name identifies an entity the caller already holds |
+| **B. Unions that are type-id subsets** | 3 hazards | hand-written unions whose members are type ids; no compile error on rename |
+| **C. Behaviour dispatch** | 17 | `x === 'trunk'`, `case 'leaf'` |
+| **D. Value literals (everything else)** | 148 | the name passed as data: `draftAddEntity(d, 'branch', b)`, `kind: 'leaf'` |
+| **E. Declarations** | 1 | `TYPE_PANELS` — annotated, so a rename IS a compile error. Not a defect |
+| **F. Per-type identifiers** | ~1,410 distinct | `branchId`, `leafHotkeyActive`, `isLeafPlacementActive`. **No instrument catches these** |
 
-> **Partly retargeted after executing the first half — read this before starting.**
->
-> Executed: `updateSupportEntity(entity)` (derived from the entity's own `typeId`)
-> and `getSupportEntity(id)` (derived via a registry-resolver slot) both work, and
-> the explicit forms are now GENERIC, so `getSupportEntity('branch', id)` returns
-> a `Branch` instead of `unknown`. That removed **14 unsafe `as X | null` casts**
-> across 5 files — a real win, and the reason to keep going.
->
-> But it corrected an assumption: **for `getSupportEntity`, the type id is
-> LOAD-BEARING for static typing.** The one-argument form can only return the
-> union `SupportEntityAny`, so a caller that needs `branch.segments` would have to
-> narrow by hand — reintroducing a dispatch literal. Dropping the type argument
-> there trades a value-position literal for a dispatch literal and loses safety:
-> strictly worse. Converting those 14 sites that way broke 10 type errors, which
-> is how the assumption was caught.
->
-> So the honest target for this class splits:
->   - **`update*` / `replace*` / `apply*`** — the entity carries `typeId`, the
->     argument adds nothing, and removing it is a strict win. **Converted.**
->   - **`get*` by id** — the argument provides the static type. Keep it. The win
->     there is the typed return, not literal removal.
->   - **`addSupportEntity`** — genuinely needs the type (the entity is new).
->   - **`resolveSegmentEndpoints` / `splitSupportShaft`** — the caller already has
->     the entity; these want the entity-takes-its-own-type treatment.
+Renderer family dispatch (a cause in earlier revisions) is **done** —
+`SupportRenderer.tsx` holds zero dispatch literals.
 
-Exact API list and count (outside `SupportTypes/`):
+---
 
-| API | sites | example |
-| --- | --- | --- |
-| `getSupportEntity(typeId, id)` | 14 | `getSupportEntity('branch', branchId)` |
-| `updateSupportEntity(typeId, entity)` | 9 | `updateSupportEntity('trunk', newTrunk)` |
-| `addSupportEntity(typeId, entity)` | 8 | `addSupportEntity('anchor', anchor)` |
-| `removeSupportEntity(typeId, id)` | 8 | `removeSupportEntity('leaf', leafId)` |
-| `replaceSupportEntity(typeId, entity)` | 3 | |
-| `applySupportEntityUpdate(typeId, entity)` | 3 | |
-| `resolveSegmentEndpoints(typeId, …)` | 10 | |
-| `splitSupportShaft(typeId, …)` | 2 | |
+### A. Store accessors take a type name to mean "the entity's type" — **32 sites**
 
-**These are the single biggest class, and the fix already exists.**
+The caller has the entity. Passing its type name alongside is a second source of
+truth that a rename cannot reach.
 
-Every entity the store hands out carries `typeId` (`SupportEntity.typeId`), and
-`getSupportTypeOf(id)` already reads it. So the parameter is redundant information
-the caller is forced to re-state — and re-stating it is where the literal comes
-from.
-
-**Mechanism:**
-
-1. Overload each accessor to accept the entity alone and read `entity.typeId`:
-   `updateSupportEntity(entity)`, `replaceSupportEntity(entity)`,
-   `applySupportEntityUpdate(entity)`, `splitSupportShaft(entity, …)`.
-   Keep the explicit-type form internally; it stays the primitive.
-2. For lookups by id (`getSupportEntity(id)`, `resolveSegmentEndpoints(id, …)`),
-   resolve the type through `getSupportTypeOf(id)`, which already exists and
-   already has the load-time fallback for unstamped entities.
-3. `addSupportEntity` genuinely needs the type — the entity may not exist yet.
-   It stays typed, but its *callers* should hold the type in a variable rather
-   than repeat a literal; most already do.
-
-**Risk:** low, but not zero. `getSupportTypeOf` falls back to scanning collections
-for unstamped entities. Overloading `getSupportEntity` to accept `(id)` changes
-its first-argument meaning — a call passing a type id would silently become a
-lookup of an entity with that id. Mitigate by making the arity explicit in the
-signature (`getSupportEntity(id)` as a distinct overload is ambiguous with
-`getSupportEntity(typeId, id)` only when called with one arg — TypeScript accepts
-both, so a one-arg call is unambiguous by arity). **Verify with the rename test
-plus a mutation that makes `getSupportTypeOf` return null.**
-
-**Size:** ~45 sites across 12 files, mostly mechanical.
-
-### B. Renderer family dispatch — **~18 sites**
-
-`SupportRenderer.tsx` calls one function per type in a fixed list:
-
-```
-renderDetailFor('trunk')  renderDetailFor('branch')  renderDetailFor('leaf') …
-renderSceneBatchedShafts('trunk', sceneBatchedShaftsOf('trunk'))
-groupRootsForSceneBatch('trunk', …)
-selectedOf('trunk')
-```
-
-**Mechanism:** one loop over `SUPPORT_TYPES`, gated by declared flags that already
-exist or are near-derivable — `hasSegments` (does it have shafts to batch),
-`shaftTaper`, `batchesShaft`, `batchesContactCones`, `hasOrigin`, `lower`/`upper`.
-A type that declares no shaft renders in the detail path automatically.
-
-**Risk:** medium — this is the render hot path, and a wrong flag silently drops a
-type's geometry from the scene. **Verify with the existing scene/export goldens
-plus a per-type presence assertion** (every type with `hasSegments` must appear in
-the batched output). The goldens cover geometry, not render call order.
-
-**Size:** ~18 sites in 1–2 files, but needs a flag audit first.
-
-### C. Behaviour dispatch inside interaction logic — **50 sites**
-
-This is the remainder, spread thin. Each needs the pattern already established:
-**a declared flag, a registered implementation in the owning folder, and a
-load-time error if a flag is declared without one.**
-
-| file | sites | what it dispatches on | likely mechanism |
-| --- | --- | --- | --- |
-| `Knot/useKnotInteraction.ts` | 7 | the knot's **host container type** | **done** — `hostsCurveSpan` (span vs segment), `knotDragDefersElasticPreview`, `knotDragUpdatesLeafConeDiameter` |
-| `autoBracing/autoBrace.ts` | 6 | `supportKind === 'trunk'` while a generic `isAutoBraceable` flag already exists | **this one is a real inconsistency** — see §6 |
-| `Curves/BezierGizmo/BezierGizmoManager.tsx` | 5 | which type's curve is being edited | **done** — `carriesCurveOnEntity`, `ownsEditHistoryEntry`, `curveDragReconcilesFromStore` |
-| `Settings/*` (sidebar, anatomy canvas, TrunkPreview) | 10 | which panel/kind is active | **closed, compiler-checked** — `activePanel` is typed `SidebarPanel` (`SupportTypeId | ToolPanel`), so a rename is a compile error, not a silent stale check; the checks branch on which panel is showing (UI layout). See §8.1 for the `sidebarTab` vocabulary, which is the real remaining seam. |
-| `interaction/jointDragPreview{,Math}.ts` | 5 | `preview.kind === 'trunk' \| 'kickstand'` | the preview payload should carry a registry-resolved id, or a declared "dragPreviewShape" |
-| `autoSupport/autoPlace.ts` | 4 | placement outcomes | mostly in the signature/test-message path |
-| `app/page.tsx`, `useSupportInteractionManager.ts`, `presets.ts`, `settings.ts`, `autoBracingHotkey.ts` | 7 | assorted | per-site |
-
-**Mechanism per site, in the established order:**
-1. Name the concept (`canBeGridHost`, `replacedByHigherContact`, `hasOrigin`).
-2. `register<Concept>` in the owning type's folder.
-3. Lookup in the default path.
-4. Load-time error in `state.ts` when a type declares the flag and registers
-   nothing (`typesMissingHostPromotion`, `typesMissingContactOverride` are the
-   pattern).
-5. A test in `__tests__/typeRegistrations.test.ts` asserting the missing-list is
-   empty.
-
-**Rule that makes it safe (do not break it):** *a flag must select a registered
-implementation, not gate an inline branch.* `SUPPORT_KINDS` failed because its
-flags' bodies were `if`s in the sidebar, so nothing tied them to the registry and
-they drifted. Every override gets all five parts above.
-
-**Risk:** high per site — these are behaviour changes with no compile-time
-safety net on the string compare. **Verify each by mutation**: flip the flag, or
-delete the registration, and confirm a named test fails.
-
-**Size:** 50 sites, but they are 5+ distinct concepts, not 50 independent edits.
-Expect ~6–8 concepts.
-
-### D. Payload fields carrying a type id — **~32 sites**
-
-`kind: 'trunk'`, `typeId: 'brace'`, `supportKind: 'trunk'`, `family: 'leaf'` on
-data structures. These are values, not dispatch — but each is a rename hazard and
-several are the *source* of the dispatch in C.
-
-**Mechanism:** where the payload was produced by a registry lookup, carry the
-looked-up id rather than re-spelling it. Where a discriminant exists only to be
-compared, replace it with the declared flag that already answers the question.
-
-**Do not** convert these to `SupportTypeId`-typed unions without checking the
-comparison sites — a payload field typed as a union still needs a literal to
-construct.
-
-### E. Declarations — **3 sites**
-
-`gridPlacement.ts`'s two localized constants, and `sidebarPanels.ts`'s
-`TYPE_PANELS`. Mostly done.
-
-> **`TYPE_PANELS` is NOT a target — verified, not assumed.** The plan's earlier
-> hypothesis was that it derives from `sidebarTab` + `hasEditableSettings`.
-> Measuring the actual flag values disproves it:
->
-> | type | hasEditableSettings | sidebarTab | in `TYPE_PANELS` |
-> | --- | --- | --- | --- |
-> | trunk | true | trunk | yes |
-> | branch | true | trunk | yes |
-> | leaf | true | trunk | yes |
-> | twig | **false** | trunk | **yes** |
-> | stick | **false** | stick | **yes** |
-> | brace | false | trunk | no |
-> | anchor | false | trunk | no |
-> | kickstand | **true** | trunk | **no** |
->
-> It is not `hasEditableSettings` (twig and stick are in with `false`; kickstand
-> is out with `true`), and not `sidebarTab`. The documented reason holds: which
-> panels the sidebar OFFERS is a UI decision.
->
-> It is also not a rename hazard: the list is annotated `readonly SupportTypeId[]`,
-> so renaming a type in the registry is a COMPILE ERROR here, not a silent stale
-> entry. That is the good case — the compiler catches it — and it is why this list
-> is a declaration rather than a defect.
->
-> Left as is, with the reasoning recorded so it is not "fixed" later.
-
-### F. Hand-written unions whose members are type ids — **~7 sites**
-
-The opposite of E: a union that *looks* like its own vocabulary, but whose
-members are type ids spelled by hand. No compile error on rename, so this is the
-silent case.
-
-The instance that motivated this section:
+`resolveSegmentEndpoints` and `splitSupportShaft` are the concentration — 13
+literal calls, 8 of them in `state.ts`:
 
 ```ts
-// supportPlacementHotkeyTypes.ts — hazard, no compile error on rename
-export type SupportPlacementFamily = 'none' | 'branchFamily' | 'leaf' | 'kickstand';
-
-// a few lines below, the same concept done correctly
-export type SupportPlacementOwner = 'none' | Extract<SupportTypeId, 'branch' | 'brace' | 'leaf' | 'kickstand'>;
+resolveSegmentEndpoints('trunk', trunkRef.trunk, firstSeg, 0, { root: trunkRef.root })
+resolveSegmentEndpoints('branch', branchRef.branch, lastSeg, n, { hostKnot: parentKnot })
 ```
 
-Renaming `leaf` produces 4 errors on `SupportPlacementOwner` and **0** on
-`SupportPlacementFamily`, so the `intent.family === 'leaf'` comparison in
-`resolveSupportPlacementRouting` silently stops matching. A docstring above
-both claims they are derived; only one is.
+**Fix:** take the entity and read its own `typeId`. The write accessors already
+did this (`updateSupportEntity(entity)`); these are the readers left behind.
 
-**The fix, and the template already exists.** `ModelSurfaceGestureTypeId` in the
-registry is a mapped type filtered by a descriptor flag:
+Top files: `state.ts` (35 value literals, most of them this shape),
+`useJointInteraction.ts` (15), `useKnotInteraction.ts` (14).
+
+### B. Unions that are type-id subsets — **done, stage 1**
+
+The silent class. A hand-written union whose members are type ids produced **no
+compile error** on rename — proven, not assumed: the `branch` → `branchy` run
+left all three untouched.
+
+| union | where | verdict |
+| ----- | ----- | ------- |
+| `SupportPlacementFamily` | `supportPlacementHotkeyTypes.ts` | **fixed** — type-id members are `Extract<SupportTypeId, 'leaf' \| 'kickstand'>` |
+| `KickstandHostKind` | `SupportTypes/Kickstand/types.ts` | **fixed** — deleted; hosts are `KickstandHostTypeId`, derived from `KICKSTAND_HOST_BY_TYPE` |
+| `RemoveJointByIdResult` | `state.ts` | **fixed** — a mapped union on `JointRemovalTypeId`, built from `JOINT_REMOVAL_BY_TYPE` |
+| `SupportPlacementOwner` | `supportPlacementHotkeyTypes.ts` | correct — `Extract<SupportTypeId, …>`, produced 5 errors on rename |
+| `SizingPreset` | `parameterSizing.ts` | legitimate — a sizing tier that happens to spell `'anchor'` |
+| `SidebarTab` | `sidebarPanels.ts` | separate question — `'trunk'` here means the shared support-info tab, not the type. See §7 |
+
+**`KickstandHostKind` showed the concession rule has a hole.** A type's own folder
+may name itself — but when a union declared there is imported and used elsewhere,
+the concession stops applying and nothing flagged it. It is gone: the host set is
+now a registry fact (`hostsKickstand` + `KICKSTAND_HOST_BY_TYPE`), the guard is
+`isKickstandHostType`, and `kickstandSnapTargets.ts` walks `KICKSTAND_HOST_TYPES`
+instead of naming two collections.
+
+**How the fix reads.** The template was already in the registry —
+`ModelSurfaceGestureTypeId` is a mapped type filtered by a literal flag map:
 
 ```ts
-export type ModelSurfaceGestureTypeId = {
-    [K in SupportTypeId]: (typeof MODEL_SURFACE_GESTURE_BY_TYPE)[K] extends true ? K : never;
+export const KICKSTAND_HOST_BY_TYPE = {
+    trunk: true, branch: true, leaf: false, /* … one entry per type … */
+} as const satisfies Record<SupportTypeId, boolean>;
+
+export type KickstandHostTypeId = {
+    [K in SupportTypeId]: (typeof KICKSTAND_HOST_BY_TYPE)[K] extends true ? K : never;
 }[SupportTypeId];
 ```
 
-Same subsystem, same file imports it already. Declare a placement-family flag
-per descriptor (the name is the implementer's call), derive the union, then the
-bindings interface and the routing table follow from it.
+The map is a second spelling of a descriptor flag, so
+`__tests__/derivedTypeSubsets.test.ts` holds it to `descriptor.hostsKickstand`
+(and `JOINT_REMOVAL_BY_TYPE` to `hasSegments && !segmentsCarryBothJoints`), with
+`@ts-expect-error` negatives for `'leaf'` as a host and `'twig'` as
+joint-removable: widening either union makes the directive unused, which is a
+compile error. Both mutations were run and both fail.
 
-`'branchFamily'` is a genuine family name (branch + brace share a mode) and stays
-— but it should read from the registry too, as the set of types in that family,
-rather than as a magic string.
+`'branchFamily'` is a genuine family name (branch + brace share a mode) and
+stays, producing no literal.
 
-**How to find the rest:** any `export type X = 'a' | 'b'` where a member equals a
-type id. Grep the unions, then apply the §2 rename question to each member.
+**The rename test rose for two types, and that is the stage working.** `trunk`
+55 → 56 and `kickstand` 12 → 14: those are sites that were silently wrong and
+are now compile errors. `state.ts` reports `'"kickstand"' is not assignable to
+type '"trunk" | "branch"'` at the joint-removal return, and
+`supportPlacementRouting.ts` reports the `intent.family === 'kickstand'`
+comparison as having no overlap. Neither was visible to any instrument before.
 
-### G. Per-type prop and variable names — invisible to every instrument
+**Also reclassified:** `scripts/scan-type-name-literals.ts` carried a
+`.family ===` exemption that called these lines "other vocabulary". After the
+derivation they are dispatch, and the exemption hid them; it is removed. The
+budget is ratcheted to the newly measured counts (`dispatch` 12, `declaration` 3,
+`value` 137).
 
-Neither the rename test nor the literal count can see this one, and it is real
-duplication.
+**How to find more:** `rg "^export type \w+ = '"` and apply the §2 rename
+question to each member. That sweep also found the inline `kind: 'leaf' |
+'branch'` union spelled at four sites in `autoPlace.ts`, now the registry-typed
+`AttachmentKind`; and the render lookup's `activePreviewSupport.kind: 'trunk' |
+'branch' | 'kickstand'`, which nothing read — removed rather than derived.
 
-`SceneCanvas.tsx` takes `isBranchPlacementActive`, `isLeafPlacementActive`,
-`isBracePlacementActive`, `isKickstandPlacementActive` plus four tip/hover
-positions — then immediately rebuilds them into
-`activePlacementModes: Partial<Record<SupportTypeId, boolean>>`, generic from
-there on. The file holds **zero** type-id literals, so renaming a type breaks
-nothing in it and no metric moves. The per-type shape is in the *names*.
+### C. Behaviour dispatch — **17 sites**
 
-Behind it sit four placement hooks whose fields `useSupportInteractionManager`
-fans into flat per-type names. Collapsing it means passing the record instead of
-the flattened booleans — a design change, not a rename.
+Down from 50. What is left is concentrated in the settings UI, not the engine:
 
-**Do not expect a number to move when this lands.** Track it by the prop
-signature, not by the metric.
+```
+ 4  Settings/SupportSidebar.tsx
+ 4  Settings/AnatomyPreview/PreviewTypes/Trunk/TrunkPreview.tsx
+ 3  Settings/AnatomyPreview/SupportAnatomyPreviewCanvas.tsx
+ 2  autoSupport/autoPlace.ts          (one is origin === 'anchor' — not a type)
+ 2  interaction/.../supportPlacementRouting.ts
+ 1  autoSupport/settings.ts
+ 1  Settings/presets.ts
+```
 
-> **A measured counter-example, worth reading before any "deduplication".**
-> Removing the eight `selectedTrunkIds` / `selectedStickIds` / … aliases in
-> `SupportRenderer` took the rename test from 71 to **74** — it moved one
-> declaration into many use sites. The drag-preview-ref collapse did the same
-> (69 → 71).
->
-> An alias declared once and used often is *already* the collapsed form. Re-run
-> the rename test after every conversion rather than assuming a change that
-> looks like deduplication reduces anything.
+The two in `supportPlacementRouting.ts` are cause B's symptom — fix the union and
+they follow. The anatomy-preview cluster is a UI question: which preview to draw
+is arguably a panel decision, but it is spelled with type names today.
+
+### D. Value literals — **148 sites**
+
+Everything not dispatch. Mostly `draftAddEntity(d, 'branch', branch)` (6 in
+`autoPlace.ts`) and `kind: 'leaf'` results. `PlacementOutcomeKind` is already
+`SupportTypeId | 'reject'`, so the *type* is derived and only the call sites
+spell names.
+
+Lower priority than A–C: most are argument-position and a rename reaches them
+through the derived parameter type. Verify that per call site rather than
+assuming it.
+
+### E. Declarations — **1, and it is not a defect**
+
+`TYPE_PANELS` in `sidebarPanels.ts` is `readonly SupportTypeId[]`, so a rename is
+a compile error. Which panels the sidebar offers is a UI decision that matches no
+descriptor flag (twig and stick are in with `hasEditableSettings: false`;
+kickstand is out with `true`).
+
+Left as is. The compiler catches drift, which is the bar.
+
+### F. Per-type identifiers — **~1,410 distinct, invisible to every instrument**
+
+`branchId` (74 occurrences), `leafId` (70), `isLeafPlacementActive`,
+`leafHotkeyActive`, `kickstandRoots`, `selectedTrunkIds`. A type name inside a
+longer identifier is still a type name — each is a place a ninth type is
+silently absent.
+
+Neither the rename test nor any literal count sees these. Only
+`lysdiag/tools/inventory.py` does.
+
+**Worked example:** `SceneCanvas.tsx` holds **zero** type-id literals, yet takes
+`isBranchPlacementActive`, `isLeafPlacementActive`, `isBracePlacementActive`,
+`isKickstandPlacementActive` plus four tip/hover positions — then rebuilds them
+into `Partial<Record<SupportTypeId, boolean>>`, generic from there on. Renaming a
+type breaks nothing there and no metric moves.
+
+Behind it: four placement hooks whose fields `useSupportInteractionManager` fans
+into flat per-type names. Collapsing it means passing the record — a design
+change, not a rename. **Do not expect a number to move when this lands.**
+
+> **A measured counter-example, before any "deduplication".** Removing the eight
+> `selectedTrunkIds` / `selectedStickIds` aliases in `SupportRenderer` took the
+> rename test from 71 to **74** — it moved one declaration into many use sites.
+> An alias declared once and used often is already the collapsed form. Re-measure
+> after every conversion.
 
 ---
 
 ## 4. Staging
 
-Each stage is independently shippable and independently verifiable. Order is by
-ratio of volume removed to risk taken.
+Ordered by ratio of volume removed to risk taken. Each stage is independently
+shippable and independently verifiable.
 
-**Progress: stages 0, 1 (first half), 3 (renderer), 4 (host resolution) and 5 done. Literal dispatch 50 → 39.**
+| stage | work | cause | sites | risk | status |
+| --- | --- | --- | ---: | --- | --- |
+| **1** | Derive the three hazard unions from the registry | B | 3 | low | **done** — see §3B; three silent classes now fail to compile, test at `__tests__/derivedTypeSubsets.test.ts` |
+| **2** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | A | 13 | low | **next** |
+| **3** | The rest of cause A's accessors | A | 19 | low–med | pending |
+| **4** | Settings/anatomy-preview dispatch | C | 11 | medium | pending — needs a UI decision first, see below |
+| **5** | Value literals in argument position | D | 148 | low each | pending |
+| **6** | Per-type prop and hook names | F | ~1,410 | high | pending — design change, no metric moves |
 
-Dispatch count is one instrument. Against the rename test the set still reads
-`branch` 112 / `leaf` 67 / `trunk` 55 / `anchor` 2 — see §1.1 before treating
-a falling dispatch number as the work being nearly finished.
+**Start with stage 1.** Three unions, each a few lines, and it is the only class
+that fails *silently* — a rename leaves the code compiling and wrong. It is also
+the work previous passes skipped on purpose because of a wrong concession in §2.
 
-| stage | work | sites | risk | status |
-| --- | --- | --- | --- | --- |
-| **0** | Metric + CI ratchet (`scan-type-name-literals.ts`) | 0 | none | **done** |
-| **1a** | Store WRITE accessors derive from the entity; getters gain a typed return | ~45 | low | **done** — 14 casts deleted |
-| **1b** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | ~12 | low | **deferred** — the remaining literals sit inside `preview.kind === 'trunk'` branches, so removing them is stage 6 work, not stage 1 (see §3A) |
-| **2** | `TYPE_PANELS` derives from the registry | — | — | **closed, not a target** (see §3E) |
-| **3** | Renderer family loop | ~18 | medium | **done** — dispatch 53 → 51, value 241 → 237; see the note below for the two single-type sites left |
-| **4** | Knot-host resolution through the registry | ~10 | medium | **done (host resolution)** — see the correction below; the 7 `containerType ===` sites are behaviour dispatch, not host resolution, and sit in stage 6 |
-| **5** | `autoBrace` uses its flag; `branch` made reachable | 6 | medium | **done** — dispatch 44 → 39 |
-| **6** | Remaining concepts, one at a time | ~30 | high each | pending |
-| **7** | Payload fields | ~32 | low–medium | pending |
-| **8** | Placement-family union derived from the registry (§3F) | ~7 | low | pending — **do this early**; it was wrongly conceded in §2, so it is real work every previous pass skipped on purpose |
+**Stage 4 is blocked on a question, not on effort.** `SupportSidebar` and the
+anatomy previews dispatch on type name to choose which preview to draw. That may
+legitimately be a panel decision rather than a type decision — settle it before
+converting, or the conversion encodes the wrong model.
 
-**Stage 3 outcome.** The renderer's per-type table and hand-written JSX are now
-derived: each type registers its detail renderer from its own folder
-(`registerSupportDetailRenderer`), the JSX is one loop over `SUPPORT_TYPES`, root
-grouping is one loop over `ownsRoot` (with a `shaftFallback.fallbackDiameterMm`
-declared per type), and model-id resolution walks `ownsRoot` instead of naming
-kickstand. Two genuinely single-type sites remain in `SupportRenderer`: leaf base
-knots (`leafJointsBySupport`) and brace curve shafts (`sceneBatchedBraceShaftGroups`).
-Each is *about* one type, not a family dispatch, so they are the next thing to
-move into their type folders rather than a rename hazard in the loop.
+**Stage 6 will not move any number.** Track it by the prop signature.
 
-**Stage 4 correction, from doing it.** The stage was described as "the knot's
-`parentShaftId` should resolve to `(typeId, entity)` through the registry" and
-priced at 7 sites. That half is now done: `findHost` and the drag diameter path
-spelled out `'braceSegment:'` plus `getSupportEntities<Brace>('brace')`, which is
-a prefix string neither the rename test nor the literal metric sees. Both now use
-`parseKnotHostId` / `parsePrefixedSegmentId`, which read the declared prefix. The
-**7 dispatch sites** the metric reports in `useKnotInteraction.ts`, though, are
-`containerType === 'brace' | 'trunk' | 'twig'` comparisons — behaviour dispatch on
-an already-resolved type, not host resolution. They belong to stage 6.
+### Done
 
-**Do not parallelise stage 6.** Each concept needs the whole-run signature and the
-rename test to move under it; two landing together make a failure ambiguous.
+| work | evidence |
+| ---- | -------- |
+| **Hazard unions derived (stage 1)** | `SupportPlacementFamily`, `KickstandHostKind`, `RemoveJointByIdResult` all fail to compile on a rename; `hostsKickstand` + `KICKSTAND_HOST_BY_TYPE` + `JOINT_REMOVAL_BY_TYPE` in the registry, held to their flags by `__tests__/derivedTypeSubsets.test.ts` |
+| Renderer family loop | `SupportRenderer.tsx` holds zero dispatch literals; detail renderers register from their own folders |
+| History actions derived | strings and payload-map entries come from the type id |
+| Export geometry seam | `registerSupportExportGroup` + load-time completeness check |
+| Preview geometry seam | `registerSegmentPreviewBatchBuilder` |
+| Placement stores unified | one `createPlacementStore` primitive |
+| Host concept derived | `canBeGridHost` + `GRID_HOST_TYPES` |
+| Removal shapes derived | `SUPPORT_REMOVAL_SHAPES` |
+| Auto-bracing reads its flag | `isAutoBraceableShaftType`; `branch` reaches both passes |
+| Knot-host resolution | `KnotHostType` is `SupportTypeId \| 'leafCone'`, derived once |
+| Sidebar vocabulary | `sidebarPanels.ts` + `anatomyPreviewRegistry.ts`; `SUPPORT_KINDS` deleted |
+| Auto-placement overrides registered | each backed by a load-time error |
+| One derived placement shape | `PlacedSupport` as a mapped union on `typeId` |
 
-### 4.1 What stages 0/1a/5 taught that changes the rest
-
-1. **A "declared but unread" flag looks exactly like a false one.** `branch`
-   declared `isAutoBraceable: true` for as long as anyone can remember while six
-   literal filters discarded it. Nothing failed; the smoke alarm was simply not
-   wired. Any flag this plan adds needs a test asserting its effect, not its
-   value.
-2. **The type argument to a store READ accessor is load-bearing.** It is what
-   gives the caller a typed entity. Removing it trades a value literal for a
-   dispatch literal. Chase the CASTS there, not the literals. (§3A)
-3. **A list of types is not automatically a defect.** `TYPE_PANELS` is annotated,
-   so a rename is a compile error — the compiler does the job the metric would
-   have been standing in for. (§3E)
-4. **Beware a test that passes for the wrong reason.** The stage-5 reachability
-   test first used a scene containing a trunk, so `skippedSupportCount > 0` was
-   satisfied by the trunk and it passed under the old literal too. A
-   branches-only scene makes the filter the only possible cause. Mutating the fix
-   back out is what exposed it.
+**Notable negative result:** the `SUPPORT_KINDS` failure — flags whose bodies
+were inline `if`s in the sidebar, so nothing tied them to the registry and they
+drifted. That is why a registry mechanism needs a load-time error, not just a
+declaration.
 
 ---
 
@@ -498,14 +436,17 @@ rename test to move under it; two landing together make a failure ambiguous.
 
 Both must run from the DragonFruit repo root.
 
-### 5.2 The ratchet
+### 5.2 The ratchet — **shipped**
 
-Whatever CI exists today should gain:
+`npm run check:support-literals` (`scripts/scan-type-name-literals.ts --check`,
+wired into `test.yml` as `check:support-literals`) fails when any class rises
+above its ceiling in `BUDGET`. The ceiling only ever moves down, in a commit that
+lowers the count.
 
-1. `type-literal-metric.py --json` writes the inventory.
-2. A gate that **fails when the outside-`SupportTypes` total rises** above a
-   committed ceiling, per category.
-3. The ceiling only ever moves down in a commit that lowers it.
+Current ceilings: `dispatch: 12`, `declaration: 3`, `value: 137`. Stage 1 lowered
+`value` 149 → 137 and `dispatch` 39 → 12 (the old ceiling was stale; the measured
+count in that class rose 10 → 12 in the same commit, because a wrong
+`.family ===` exemption was removed — see §3B).
 
 A ratchet, not a target: this codebase has already added five literals while a
 metric watched and said nothing.
@@ -523,36 +464,7 @@ concept in stage C is verified by mutation rather than by the rename test.
 
 ---
 
-## 6. Two defects already visible in the inventory
-
-Found while measuring; fix as part of the stages that touch them.
-
-**`autoBrace` filters with its flag but branches on names.** `isAutoBraceable` IS
-read — it builds the sample pool — but the dispatch sites that follow still
-compare the sample's own `supportKind` against a type name:
-
-```
-buildSupportSamples(...).filter(s => s.supportKind === 'trunk')
-groupedSupports.forEach(g => g.forEach(s => { if (s.supportKind === 'trunk') …
-groupMembers.filter((s) => s.supportKind === 'trunk')
-groupMembers.filter((s) => s.supportKind === 'kickstand')
-trunkSamples.filter(s => s.modelId === modelId && s.supportKind === 'trunk')
-if (lowS.supportKind === 'trunk' && highS.supportKind === 'trunk')
-```
-
-So the pool is registry-derived and the *behaviour over it* is not. These are
-mostly "is this a shafted host" (`canBeGridHost` / `hasSegments`) and one
-kickstand case (`lateralStabiliserTypes()`). Earlier work converted the auto-brace
-**purge** to walk the declared types and found the same split. Stage 5.
-
-**`branch` declares `isAutoBraceable: true` but is unreachable in both auto-bracing
-passes.** Pre-existing, recorded in the findings doc. Stage 5 must decide whether
-to make it reachable or correct the flag — the flag currently lies, and a lying
-flag is worse than a literal because it looks derived.
-
----
-
-## 7. Verification discipline
+## 6. Verification discipline
 
 The rule this project has learned the hard way, restated because every stage
 below leans on it:
@@ -593,7 +505,7 @@ Therefore, for every stage:
 
 ---
 
-## 8. Decisions
+## 7. Decisions
 
 Each entry records who decided and on what evidence. An entry with neither is not
 a decision — mark it open rather than closing it on inference.
@@ -619,11 +531,28 @@ a decision — mark it open rather than closing it on inference.
 
    The remaining `activePanel === 'trunk'` **checks** are a separate question and
    stay open: they branch on which panel is showing, which is UI layout. Settle
-   when stage 6 reaches that file.
+   when stage 4 reaches that file.
 4. **`computeAndApplySupportDiameterProfile`** — **no seam needed.** It is a
    geometry routine, not a type; importing it across folders is not the defect
    this plan is about. Left as is. (The uncovered add-side repair in §6 stands on
    its own as a test gap.)
+5. **`hostsKickstand` is a new descriptor flag, not a reuse of an existing one.**
+   Decided in this session, preserving today's set (trunk + branch). The
+   evidence for not reusing: that pair is `isAutoBraceable` *minus* kickstand,
+   `canBeGridHost` too narrow (trunk alone), and `hasSegments` too broad (it
+   admits leaf, brace, twig, stick) — the same survey recorded in
+   `docs/dev/support-registry-findings.md` for the leaf's sprout hosts, which is
+   a *different* question that wants its own decision (below). The AGENTS rule —
+   one way to ask each question — forbids borrowing a flag whose question differs.
+   Backed by `derivedTypeSubsets.test.ts`.
+6. **`JOINT_REMOVAL_BY_TYPE` mirrors `hasSegments && !segmentsCarryBothJoints`
+   rather than adding a flag.** Decided in this session, on the evidence that
+   `segmentsCarryBothJoints` is documented as exactly this distinction ("False for
+   types whose endpoints come from elsewhere — a root, a parent knot, or a
+   neighbouring segment"). A second flag would restate it, and the mirrored map
+   carries a test. **Cheapest of the two to reverse**: if a shafted type ever
+   resolves its endpoints elsewhere *and* has no removable joint, it needs its own
+   flag and this entry is wrong.
 
 ### 8.1 Newly tracked: `sidebarTab` names a type but is not one
 
@@ -640,7 +569,7 @@ touches every descriptor plus `sidebarPanels.ts`.
 
 ---
 
-## 9. What "done" looks like
+## 8. What "done" looks like
 
 - `type-literal-metric.py` reports **0 dispatch** and **0 declaration** outside
   `SupportTypes/`.
@@ -648,20 +577,22 @@ touches every descriptor plus `sidebarPanels.ts`.
   folder, (b) a documented different vocabulary, or (c) an `addSupportEntity` call
   where the type genuinely does not exist yet.
 - `rename-test.py` reports **0 "real work"** errors for every one of the eight
-  types. Current standing, measured at `7012c6a2`:
+  types. Current standing, re-measured after stage 1:
 
-  | type | honest remaining | | type | honest remaining |
-  | --- | --- | --- | --- | --- |
-  | branch | **112** | | brace | 17 |
-  | leaf | 67 | | kickstand | 12 |
-  | trunk | 55 | | stick | 10 |
-  | | | | twig | 5 |
-  | | | | anchor | **2** |
+  | type | honest remaining | was | | type | honest remaining | was |
+  | --- | ---: | ---: | --- | --- | ---: | ---: |
+  | branch | **95** | 112 | | brace | 17 | 17 |
+  | trunk | 56 | 55 | | kickstand | 14 | 12 |
+  | leaf | 52 | 67 | | stick | 10 | 10 |
+  | | | | | twig | 5 | 5 |
+  | | | | | anchor | **2** | 2 |
 
-  **280 total**, down from 348. `anchor` at 2 is the proof the pattern works —
-  its conversion landed and it was comparable to the others beforehand. `stick`
-  at 10 is the number most often quoted; `branch` at 112 is the number that
-  describes the remaining work.
+  **251 total**, down from 280 (348 before the stage that preceded this one). The
+  two types that *rose* did so because a silent hazard became a compile error —
+  read §3B before treating either as a regression. `anchor` at 2 is the proof the
+  pattern works — its conversion landed and it was comparable to the others
+  beforehand. `stick` at 10 is the number most often quoted; `branch` at 95 is the
+  number that describes the remaining work.
 - The inventory (`inventory.py`) shows no token that would survive a rename
   *without* a compile error. The rename test cannot see those; the two
   instruments are not interchangeable.
