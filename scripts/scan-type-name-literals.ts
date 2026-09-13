@@ -69,7 +69,7 @@ const EXEMPT = [
  * docs/dev/support-type-literal-plan.md for the staged plan that lowers them.
  */
 const BUDGET = {
-    dispatch: 44,
+    dispatch: 39,
     declaration: 3,
     value: 175,
 };

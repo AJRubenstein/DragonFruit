@@ -33,7 +33,7 @@ import { applyRepeatingPattern } from './repeatingPattern';
 import { runZigZagChain } from './zigzagChain';
 import { buildBraceProfile } from './braceDiameter';
 import type { KickstandBuildResult } from '../SupportTypes/Kickstand/types';
-import { generateLateralStabilisers, getSupportTypeDescriptor, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
+import { generateLateralStabilisers, getSupportTypeDescriptor, isAutoBraceableShaftType, lateralStabiliserTypes, SUPPORT_TYPES, type SupportCollectionKey, type SupportEdge, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
 import { resolveSegmentEndpoints } from '../SupportPrimitives/Knot/segmentEndpoints';
 import { linePassesMeshClearance } from './meshClearance';
 
@@ -431,7 +431,9 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     const settings = normalizeAutoBracingSettings(inputSettings);
     const activeGridSettings = getSettings().grid;
     const maxRun = maxHorizontalRunFromBraceLen(settings.maxBraceLengthMm);
-    const trunkSamples = buildSupportSamples(snapshot).filter(s => s.supportKind === 'trunk');
+    // Every declared braceable shaft type -- trunk AND branch. This filtered on
+    // the literal 'trunk', so branch samples were built and then discarded here.
+    const trunkSamples = buildSupportSamples(snapshot).filter(s => isAutoBraceableShaftType(s.supportKind));
 
     if (trunkSamples.length < AUTO_BRACING_HARD_RULES.minGroupSize) {
         return {
@@ -649,7 +651,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     }
 
     const groupedIds = new Set<string>();
-    groupedSupports.forEach(g => g.forEach(s => { if (s.supportKind === 'trunk') groupedIds.add(s.supportId); }));
+    groupedSupports.forEach(g => g.forEach(s => { if (isAutoBraceableShaftType(s.supportKind)) groupedIds.add(s.supportId); }));
 
     // Keep braces this tool did not generate; `generatedBy` distinguishes them.
     const keptBraces: SupportState['braces'] = {};
@@ -740,7 +742,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
     for (let groupIndex = 0; groupIndex < groupedSupports.length; groupIndex += 1) {
         const groupMembers = groupedSupports[groupIndex];
-        const groupTrunks = groupMembers.filter((s) => s.supportKind === 'trunk');
+        const groupTrunks = groupMembers.filter((s) => isAutoBraceableShaftType(s.supportKind));
         const modelId = groupTrunks[0]?.modelId;
         let pairs = modelId ? pairsByModel.get(modelId) : undefined;
         if (!pairs) {
@@ -957,7 +959,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
     // kickstand decisions), so a trunk's braces match what the kickstand
     // logic saw — no kickstands next to fully braced trunks.
     for (const [modelId, pairs] of pairsByModel) {
-        const modelTrunks = trunkSamples.filter((s) => s.modelId === modelId && s.supportKind === 'trunk');
+        const modelTrunks = trunkSamples.filter((s) => s.modelId === modelId);
         const maxZ = Math.max(...modelTrunks.map(s => s.topReferenceZ));
 
         const ladder: number[] = [settings.initialDistanceMm];
@@ -1031,7 +1033,7 @@ export function buildAutoBracedSnapshot(snapshot: SupportState, inputSettings: A
 
                 // Only trunk↔trunk braces count toward the two-axis stability
                 // contract — braces to kickstands are the kickstand's own bracing.
-                if (lowS.supportKind === 'trunk' && highS.supportKind === 'trunk') {
+                if (isAutoBraceableShaftType(lowS.supportKind) && isAutoBraceableShaftType(highS.supportKind)) {
                     const angleRad = normalizeAxisAngleRad(Math.atan2(dy, dx));
                     for (const tid of [lowS.supportId, highS.supportId]) {
                         const list = bracedAxesByTrunkId.get(tid) ?? [];
