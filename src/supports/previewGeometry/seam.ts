@@ -1,5 +1,5 @@
 import type { PlacementPreviewBatch } from '../supportPlacementPreviewMath';
-import type { SupportTypeId } from '../supportTypeRegistry';
+import { SUPPORT_TYPES, type SupportTypeId } from '../supportTypeRegistry';
 
 /**
  * How a type whose placement preview is not a whole provisional support builds
@@ -47,6 +47,21 @@ export function registerSegmentPreviewBatchBuilder<P>(
     build: (id: string, preview: P, context: SegmentPreviewContext) => PlacementPreviewBatch | null,
 ): void {
     SEGMENT_BATCH_BUILDERS.set(typeId, build as SegmentPreviewBatchBuilder);
+}
+
+/**
+ * Segment-shaped types that registered no builder.
+ *
+ * A type declaring `previewShape: 'segment'` has no contact to describe, so the
+ * shared batch does not cover it: without a builder its preview draws nothing.
+ * `registerBuiltinPreviewBuilders` asserts this list is empty at load, the same
+ * way the detail-renderer and anatomy-preview barrels do.
+ */
+export function segmentPreviewTypesMissingBuilder(): readonly SupportTypeId[] {
+    return SUPPORT_TYPES
+        .filter((descriptor) => descriptor.previewShape === 'segment')
+        .filter((descriptor) => !SEGMENT_BATCH_BUILDERS.has(descriptor.id))
+        .map((descriptor) => descriptor.id);
 }
 
 /**

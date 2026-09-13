@@ -1,4 +1,4 @@
-import { registerSegmentPreviewBatchBuilder } from './seam';
+import { registerSegmentPreviewBatchBuilder, segmentPreviewTypesMissingBuilder } from './seam';
 import { buildBracePlacementPreviewBatch } from '../SupportTypes/Brace/bracePreviewBatch';
 import type { BracePreviewData } from '../SupportTypes/Brace/bracePlacementState';
 
@@ -14,3 +14,13 @@ import type { BracePreviewData } from '../SupportTypes/Brace/bracePlacementState
  * whole provisional support needs nothing -- the shared batch covers it.
  */
 registerSegmentPreviewBatchBuilder<BracePreviewData>('brace', buildBracePlacementPreviewBatch);
+
+// A type declaring `previewShape: 'segment'` draws nothing without a builder, and
+// nothing else would notice: the shared batch covers only whole supports.
+const missingPreviewBuilders = segmentPreviewTypesMissingBuilder();
+if (missingPreviewBuilders.length > 0) {
+    throw new Error(
+        `segment-preview types have no registered batch builder: ${missingPreviewBuilders.join(', ')}. `
+        + 'Register one above.',
+    );
+}

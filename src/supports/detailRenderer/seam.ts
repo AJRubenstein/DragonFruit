@@ -68,8 +68,8 @@ export function detailRenderersFor(context: DetailRendererContext): Partial<Reco
 
 /**
  * Types that reach the registry without a registered detail renderer. A ninth
- * type without one would draw nothing, silently -- so the renderer's load-time
- * check asserts this list is empty.
+ * type without one would draw nothing, silently, so
+ * `registerBuiltinDetailRenderers` asserts this list is empty at load.
  */
 export function detailRenderersMissingTypes(): readonly SupportTypeId[] {
     return SUPPORT_TYPES.filter((descriptor) => !FACTORIES.has(descriptor.id)).map((descriptor) => descriptor.id);
