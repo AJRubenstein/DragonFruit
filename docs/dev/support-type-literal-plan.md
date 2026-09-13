@@ -215,7 +215,7 @@ load-time error if a flag is declared without one.**
 
 | file | sites | what it dispatches on | likely mechanism |
 | --- | --- | --- | --- |
-| `Knot/useKnotInteraction.ts` | 7 | the knot's **host container type** | the knot's `parentShaftId` should resolve to `(typeId, entity)` through the registry, not be re-derived by comparing names |
+| `Knot/useKnotInteraction.ts` | 7 | the knot's **host container type** | `containerType === 'brace' \| 'trunk' \| 'twig'` behaviour dispatch (curve span, elastic-preview fast path, twig cone persistence) — the host *resolution* side is already registry-driven (§4) |
 | `autoBracing/autoBrace.ts` | 6 | `supportKind === 'trunk'` while a generic `isAutoBraceable` flag already exists | **this one is a real inconsistency** — see §6 |
 | `Curves/BezierGizmo/BezierGizmoManager.tsx` | 5 | which type's curve is being edited | a declared "editsCurve" flag or a registered curve resolver |
 | `Settings/*` (sidebar, anatomy canvas, TrunkPreview) | 10 | which panel/kind is active | partly done (`sidebarPanels.ts`); the remaining `activePanel === 'trunk'` checks are UI layout, and may legitimately stay |
@@ -297,7 +297,7 @@ construct.
 Each stage is independently shippable and independently verifiable. Order is by
 ratio of volume removed to risk taken.
 
-**Progress: stages 0, 1 (first half) and 5 done. Literal dispatch 50 → 39.**
+**Progress: stages 0, 1 (first half), 4 (host resolution) and 5 done. Literal dispatch 50 → 39.**
 
 | stage | work | sites | risk | status |
 | --- | --- | --- | --- | --- |
@@ -306,10 +306,20 @@ ratio of volume removed to risk taken.
 | **1b** | `resolveSegmentEndpoints` / `splitSupportShaft` take the entity | ~12 | low | **deferred** — the remaining literals sit inside `preview.kind === 'trunk'` branches, so removing them is stage 6 work, not stage 1 (see §3A) |
 | **2** | `TYPE_PANELS` derives from the registry | — | — | **closed, not a target** (see §3E) |
 | **3** | Renderer family loop | ~18 | medium | pending |
-| **4** | Knot-host resolution through the registry | ~10 | medium | pending |
+| **4** | Knot-host resolution through the registry | ~10 | medium | **done (host resolution)** — see the correction below; the 7 `containerType ===` sites are behaviour dispatch, not host resolution, and sit in stage 6 |
 | **5** | `autoBrace` uses its flag; `branch` made reachable | 6 | medium | **done** — dispatch 44 → 39 |
 | **6** | Remaining concepts, one at a time | ~30 | high each | pending |
 | **7** | Payload fields | ~32 | low–medium | pending |
+
+**Stage 4 correction, from doing it.** The stage was described as "the knot's
+`parentShaftId` should resolve to `(typeId, entity)` through the registry" and
+priced at 7 sites. That half is now done: `findHost` and the drag diameter path
+spelled out `'braceSegment:'` plus `getSupportEntities<Brace>('brace')`, which is
+a prefix string neither the rename test nor the literal metric sees. Both now use
+`parseKnotHostId` / `parsePrefixedSegmentId`, which read the declared prefix. The
+**7 dispatch sites** the metric reports in `useKnotInteraction.ts`, though, are
+`containerType === 'brace' | 'trunk' | 'twig'` comparisons — behaviour dispatch on
+an already-resolved type, not host resolution. They belong to stage 6.
 
 **Do not parallelise stage 6.** Each concept needs the whole-run signature and the
 rename test to move under it; two landing together make a failure ambiguous.
