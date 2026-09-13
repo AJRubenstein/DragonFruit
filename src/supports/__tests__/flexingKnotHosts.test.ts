@@ -6,6 +6,8 @@ import {
     getSupportTypeDescriptor,
     SUPPORT_TYPES,
 } from '../supportTypeRegistry';
+import { applySolvedJoints } from '../SupportPrimitives/Knot/elasticShaftPreview';
+import type { Segment } from '../types';
 
 /**
  * Which shafts flex when their host knot is dragged.
@@ -59,4 +61,36 @@ test('a flexing type names the contact field the capture reads', () => {
             + 'the elastic tip constraint would be dropped',
         );
     }
+});
+
+function segmentWithJoints(topZ: number, bottomZ: number): Segment {
+    return {
+        id: 'seg-1',
+        topJoint: { id: 'top', pos: { x: 0, y: 0, z: topZ } },
+        bottomJoint: { id: 'bottom', pos: { x: 0, y: 0, z: bottomZ } },
+    } as unknown as Segment;
+}
+
+test('applySolvedJoints reports no change when nothing moved', () => {
+    // The three call sites branch on null to decide whether to write a preview
+    // override at all, so "unchanged" must be distinguishable from "changed".
+    const segments = [segmentWithJoints(10, 0)];
+    const result = applySolvedJoints(segments, {
+        knotPos: { x: 0, y: 0, z: 0 },
+        jointPositions: { top: { x: 0, y: 0, z: 10 }, bottom: { x: 0, y: 0, z: 0 } },
+        isLocked: false,
+    });
+    assert.equal(result, null);
+});
+
+test('applySolvedJoints writes moved joints without mutating the input', () => {
+    const segments = [segmentWithJoints(10, 0)];
+    const result = applySolvedJoints(segments, {
+        knotPos: { x: 0, y: 0, z: 0 },
+        jointPositions: { top: { x: 0, y: 0, z: 25 }, bottom: { x: 0, y: 0, z: 0 } },
+        isLocked: false,
+    });
+    assert.ok(result, 'a moved joint must produce new segments');
+    assert.equal(result[0].topJoint?.pos.z, 25);
+    assert.equal(segments[0].topJoint?.pos.z, 10, 'the captured segments were mutated');
 });

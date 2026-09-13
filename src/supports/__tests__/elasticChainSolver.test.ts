@@ -8,6 +8,7 @@ const DEFAULT_MAX_ANGLE_DEG = 80;
 function makeChain(): ElasticChainInitialState {
     return {
         shaftId: 'shaft-1',
+        shaftTypeId: 'branch',
         knotPos: { x: 0, y: 0, z: 0 },
         joints: [
             // Rises from the knot: forward IK pass must push this joint up

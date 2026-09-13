@@ -456,7 +456,7 @@ shippable and independently verifiable.
 | **5** | Value literals in argument position | D | 129 | low | **done** — 114 were already compiler-checked; the 2 real silent ones are fixed. See §3D |
 | **6a** | The joint-drag arms | F | 4 arms | med | **done** — four arms collapsed to two; see §3F.1 |
 | **6b.1** | The elastic knot-drag capture | F | 2 captures | med | **done** — `flexesOnHostKnotDrag` + `FLEXING_KNOT_HOST_TYPES`; see §6b.1 |
-| **6b.2** | The knot-drag solve and preview channel | F | ~1,410 | high | **next** — `branchSegmentsById` and friends; producer only, the renderer is already id-keyed |
+| **6b.2** | The knot-drag solve and preview channel | F | 55 idents | med | **done** — one shared `elasticShaftPreview`; see §6b.2 |
 
 **Stages 1 and 2 have landed.** Stage 1 was the silent class — a rename left
 those unions compiling and wrong; stage 2 removed the type-id parameter from the
@@ -629,12 +629,43 @@ silently going dead.
 test 200 → **82 honest remaining**. Deriving the capture deleted the type-named
 locals around it.
 
-**What is left in these files (stage 6b.2).** The capture is derived; the
-*solve* and *preview* half is not. `branchSegmentsById`, `previewBranchSegments-
-ByIdRef` and `branchChanged` still name one type through the whole drag path,
-including across the `knotDragPreview` event payload. Note the consumer is
-already done: `SupportRenderer`'s `knotDragOverridesById` is a plain
-id-keyed map, so **this is a producer-side rename, not a redesign**.
+---
+
+### 6b.2. The knot-drag solve and preview channel — done
+
+6b.1 derived the capture but left the *solve* half naming one type, which made
+the capture's new reach a latent bug rather than a feature: a leaf pulled in by
+a future `flexesOnHostKnotDrag` would be captured, solved, and then dropped,
+because every write-back re-fetched the entity as `getSupportEntity('branch',
+id)`.
+
+That solve loop existed **three times**, copied near-identically:
+
+| where | tail behaviour |
+| --- | --- |
+| `useKnotInteraction`, per-frame drag | keeps a sync entry for a shaft that already had an override |
+| `useKnotInteraction`, on release | drops the override outright |
+| `KnotGizmo`, per-frame drag | same as the first |
+
+All three now call `collectSolvedShaft` in
+`SupportPrimitives/Knot/elasticShaftPreview.ts`, which takes that tail
+difference as a `keepSyncEntry` predicate rather than duplicating 30 lines. The
+entity is fetched **by id alone** -- `getSupportEntity(id)` has a
+single-argument overload, so no type is named at all. The capture itself moved
+there too, as `captureFlexingShafts`, so the two call sites share one
+implementation instead of two copies that had already drifted in their joint
+fallback.
+
+**The event payload was the load-bearing rename.** `KnotDragPreviewSnapshot.-
+branchSegmentsById` crossed a module boundary, so the name was a contract
+between producer and consumer; it is now `shaftSegmentsById`, typed as the
+shared `ShaftSegmentsById`. The consumer needed no structural change:
+`SupportRenderer`'s `knotDragOverridesById` was already a plain id-keyed map.
+
+**55 type-named identifiers removed** from the knot path -- every `branch*` one.
+Scan 5,735 to **5,562**. What remains in these files is `leafCone`, `braceHost`
+and `braceSpan`, which are the *host* vocabulary (`KnotHostType`), a different
+axis handled by its own derivation.
 
 ---
 

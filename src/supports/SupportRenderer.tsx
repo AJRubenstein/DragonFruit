@@ -148,7 +148,7 @@ const SCENE_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
  *  pre-compensate to keep the exact KnotRenderer sphere size. */
 const KNOT_BATCH_DIAMETER_PRECOMPENSATION_MM = SCENE_JOINT_DIAMETER_BLEND_MM - JOINT_DIAMETER_OFFSET_MM;
 const EMPTY_SUPPORT_ID_LIST: readonly string[] = Object.freeze([]);
-const EMPTY_KNOT_DRAG_BRANCH_SEGMENTS_BY_ID: Record<string, never> = Object.freeze({});
+const EMPTY_KNOT_DRAG_SHAFT_SEGMENTS_BY_ID: Record<string, never> = Object.freeze({});
 const FREEZE_DEPENDENT_PREVIEW_DURING_JOINT_DRAG = true;
 
 /** Simple line vector for debugSimpleSupportRender — like J×2 pathfinding debug, but for all shafts. */
@@ -1386,16 +1386,16 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return enableBraceLivePreview ? renderKnotsById : state.knots;
     }, [enableBraceLivePreview, renderKnotsById, state.knots]);
 
-    const knotDragPreviewBranchSegmentsById = activeKnotDragPreview?.branchSegmentsById ?? EMPTY_KNOT_DRAG_BRANCH_SEGMENTS_BY_ID;
-    const knotDragPreviewBranchIds = useMemo(() => Object.keys(knotDragPreviewBranchSegmentsById), [knotDragPreviewBranchSegmentsById]);
+    const knotDragPreviewShaftSegmentsById = activeKnotDragPreview?.shaftSegmentsById ?? EMPTY_KNOT_DRAG_SHAFT_SEGMENTS_BY_ID;
+    const knotDragPreviewShaftIds = useMemo(() => Object.keys(knotDragPreviewShaftSegmentsById), [knotDragPreviewShaftSegmentsById]);
     const branchListWithKnotDragPreview = useMemo(() => {
-        if (knotDragPreviewBranchIds.length === 0) return branchList;
+        if (knotDragPreviewShaftIds.length === 0) return branchList;
         return branchList.map((branch) => {
-            const previewSegments = knotDragPreviewBranchSegmentsById[branch.id];
+            const previewSegments = knotDragPreviewShaftSegmentsById[branch.id];
             if (!previewSegments || previewSegments === branch.segments) return branch;
             return { ...branch, segments: previewSegments };
         });
-    }, [branchList, knotDragPreviewBranchSegmentsById, knotDragPreviewBranchIds]);
+    }, [branchList, knotDragPreviewShaftSegmentsById, knotDragPreviewShaftIds]);
 
     /**
      * Entities a knot drag has reflowed, by entity id.

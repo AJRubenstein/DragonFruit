@@ -3,15 +3,14 @@ import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { ScreenSpaceGizmo } from '@/components/gizmo/ScreenSpaceGizmo';
 import { isKeyPressedSync } from '@/hotkeys/hotkeyStore';
-import { findShaftOwnerOfSegment, getSupportEntity, subscribe, getSnapshot, getKnotById, getSupportEntities, getRootById, updateKnot } from '../../state';
+import { findShaftOwnerOfSegment, getSupportEntity, subscribe, getSnapshot, getKnotById, getRootById, updateKnot } from '../../state';
 import { Branch, Knot, Segment } from '../../types';
-import { FLEXING_KNOT_HOST_TYPES, getSupportTypeDescriptor, updateSupportEntity, type SupportEdge, type SupportTypeId } from '../../supportTypeRegistry';
-import type { ContactCone } from '../ContactCone/types';
+import { getSupportTypeDescriptor, updateSupportEntity, type SupportEdge, type SupportTypeId } from '../../supportTypeRegistry';
 import { resolveSegmentEndpoints, type ShaftEntity } from './segmentEndpoints';
+import { captureFlexingShafts, collectSolvedShaft } from './elasticShaftPreview';
 import { knotMoveDescription, projectOntoSegment } from './knotUtils';
 import { ElasticChainInitialState, solveElasticChain } from '../../PlacementLogic/ElasticChainSolver';
 import { getSettings } from '../../Settings/state';
-import { getSocketPosition } from '../ContactCone';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { clearKnotDragPreview, emitKnotDragPreview, useActiveKnotDragPreview } from '../../interaction/knotDragPreview';
 
@@ -48,7 +47,7 @@ export function KnotGizmo() {
 
     // Elastic chain state - captured at drag start
     const elasticStateRef = useRef<Record<string, ElasticChainInitialState>>({});
-    const previewBranchSegmentsByIdRef = useRef<Record<string, Branch['segments']>>({});
+    const previewShaftSegmentsByIdRef = useRef<Record<string, Branch['segments']>>({});
     const previewKnotRef = useRef<Knot | null>(null);
     const activePreviewKnotIdRef = useRef<string | null>(null);
     const previewCoincidentKnotsRef = useRef<Knot[]>([]);
@@ -184,9 +183,9 @@ export function KnotGizmo() {
         let wasLocked = false;
 
         // Run elastic solver for each attached branch
-        const branchSegmentsById: Record<string, Branch['segments']> = {};
-        for (const branchId in elasticStateRef.current) {
-            const initialState = elasticStateRef.current[branchId];
+        const shaftSegmentsById: Record<string, Branch['segments']> = {};
+        for (const shaftId in elasticStateRef.current) {
+            const initialState = elasticStateRef.current[shaftId];
             const res = solveElasticChain(finalKnotPos, initialState, maxAngleDeg);
 
             // If solver clamped the knot, use the clamped position
@@ -195,45 +194,10 @@ export function KnotGizmo() {
                 wasLocked = true;
             }
 
-            // Update branch joints
-            const branch = getSupportEntity('branch', branchId);
-            if (!branch) continue;
-
-            let branchChanged = false;
-            const newSegments = branch.segments.map(seg => {
-                let segChanged = false;
-                let newTopJoint = seg.topJoint;
-                let newBottomJoint = seg.bottomJoint;
-
-                if (seg.topJoint && res.jointPositions[seg.topJoint.id]) {
-                    const newPos = res.jointPositions[seg.topJoint.id];
-                    if (Math.abs(newPos.z - seg.topJoint.pos.z) > 0.0001) {
-                        newTopJoint = { ...seg.topJoint, pos: newPos };
-                        segChanged = true;
-                    }
-                }
-
-                if (seg.bottomJoint && res.jointPositions[seg.bottomJoint.id]) {
-                    const newPos = res.jointPositions[seg.bottomJoint.id];
-                    if (Math.abs(newPos.z - seg.bottomJoint.pos.z) > 0.0001) {
-                        newBottomJoint = { ...seg.bottomJoint, pos: newPos };
-                        segChanged = true;
-                    }
-                }
-
-                if (segChanged) {
-                    branchChanged = true;
-                    return { ...seg, topJoint: newTopJoint, bottomJoint: newBottomJoint };
-                }
-                return seg;
-            });
-
-            if (branchChanged) {
-                branchSegmentsById[branch.id] = newSegments;
-            } else if (Object.prototype.hasOwnProperty.call(previewBranchSegmentsByIdRef.current, branch.id)) {
-                // Branch returned to committed geometry; mark it for preview-prune below.
-                branchSegmentsById[branch.id] = branch.segments;
-            }
+            // A shaft back at its committed geometry keeps an entry only if it
+            // already had a preview override, so the prune below can see it.
+            collectSolvedShaft(shaftSegmentsById, shaftId, res, (id) =>
+                Object.prototype.hasOwnProperty.call(previewShaftSegmentsByIdRef.current, id));
         }
 
         // Recalculate t based on final position
@@ -252,19 +216,19 @@ export function KnotGizmo() {
             t,
         };
 
-        const updatedBranchIds = Object.keys(branchSegmentsById);
-        if (updatedBranchIds.length > 0) {
-            const nextPreviewBranchSegmentsById = { ...previewBranchSegmentsByIdRef.current };
-            for (const branchId of updatedBranchIds) {
-                const nextSegments = branchSegmentsById[branchId];
-                const committedBranch = getSupportEntity('branch', branchId);
+        const updatedShaftIds = Object.keys(shaftSegmentsById);
+        if (updatedShaftIds.length > 0) {
+            const nextPreviewBranchSegmentsById = { ...previewShaftSegmentsByIdRef.current };
+            for (const shaftId of updatedShaftIds) {
+                const nextSegments = shaftSegmentsById[shaftId];
+                const committedBranch = getSupportEntity('branch', shaftId);
                 if (committedBranch && committedBranch.segments === nextSegments) {
-                    delete nextPreviewBranchSegmentsById[branchId];
+                    delete nextPreviewBranchSegmentsById[shaftId];
                 } else {
-                    nextPreviewBranchSegmentsById[branchId] = nextSegments;
+                    nextPreviewBranchSegmentsById[shaftId] = nextSegments;
                 }
             }
-            previewBranchSegmentsByIdRef.current = nextPreviewBranchSegmentsById;
+            previewShaftSegmentsByIdRef.current = nextPreviewBranchSegmentsById;
         }
 
         const w = getKnotGizmoWindowState() as any;
@@ -289,7 +253,7 @@ export function KnotGizmo() {
         emitKnotDragPreview({
             knotId: updated.id,
             knot: updated,
-            branchSegmentsById: previewBranchSegmentsByIdRef.current,
+            shaftSegmentsById: previewShaftSegmentsByIdRef.current,
             coincidentKnots: coincidentPreviewList,
         });
     });
@@ -311,7 +275,7 @@ export function KnotGizmo() {
         getKnotGizmoWindowState().__gizmoDragEndedThisFrame = false;
         document.body.style.cursor = 'grabbing';
         beforeHistoryRef.current = captureSupportEditSnapshot();
-        previewBranchSegmentsByIdRef.current = {};
+        previewShaftSegmentsByIdRef.current = {};
         previewKnotRef.current = null;
         activePreviewKnotIdRef.current = result.knot.id;
         clearKnotDragPreview();
@@ -339,50 +303,9 @@ export function KnotGizmo() {
         w.__draggedKnotGroup = isGroup ? coincident.map(k => k.id) : [result.knot.id];
 
         // Capture the initial state of every shaft that flexes off the dragged
-        // knots. Which types those are, and the field naming their knot, come
-        // from the registry.
-        const attached: { typeId: SupportTypeId; entity: ShaftEntity }[] = [];
-        for (const { typeId, knotFields } of FLEXING_KNOT_HOST_TYPES) {
-            for (const entity of getSupportEntities<ShaftEntity>(typeId)) {
-                const record = entity as unknown as Record<string, unknown>;
-                if (knotFields.some((field) => w.__draggedKnotGroup.includes(record[field]))) {
-                    attached.push({ typeId, entity });
-                }
-            }
-        }
-        const nextState: Record<string, ElasticChainInitialState> = {};
-
-        for (const { typeId, entity: branch } of attached) {
-            const joints: { id: string; pos: { x: number, y: number, z: number } }[] = [];
-
-            for (let i = 0; i < branch.segments.length; i++) {
-                const seg = branch.segments[i];
-                let joint = seg.topJoint;
-                if (!joint && i < branch.segments.length - 1) {
-                    joint = branch.segments[i + 1].bottomJoint;
-                }
-                if (joint) {
-                    joints.push({ id: joint.id, pos: { ...joint.pos } });
-                }
-            }
-
-            // Use SOCKET position (where shaft connects), not TIP position (where
-            // cone touches model). Which field holds the contact is the type's
-            // declared upper endpoint -- types spell it differently.
-            const upper = getSupportTypeDescriptor(typeId).upper;
-            const contact = upper.field
-                ? (branch as unknown as Record<string, ContactCone | undefined>)[upper.field]
-                : undefined;
-
-            nextState[branch.id] = {
-                shaftId: branch.id,
-                knotPos: { ...result.knot.pos },
-                joints,
-                contactCone: contact
-                    ? { pos: getSocketPosition(contact.pos, contact.normal, contact.profile) }
-                    : undefined,
-            };
-        }
+        // knots. Which types those are, the field naming their knot, and the
+        // field holding their contact all come from the registry.
+        const nextState = captureFlexingShafts(w.__draggedKnotGroup, result.knot.pos);
 
         elasticStateRef.current = nextState;
         return true;
@@ -402,11 +325,11 @@ export function KnotGizmo() {
         elasticStateRef.current = {};
         dragProjectionOffsetTRef.current = 0;
 
-        const previewBranchSegmentsById = previewBranchSegmentsByIdRef.current;
+        const previewShaftSegmentsById = previewShaftSegmentsByIdRef.current;
         const previewKnot = previewKnotRef.current;
 
-        for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsById)) {
-            const branch = getSupportEntity('branch', branchId);
+        for (const [shaftId, previewSegments] of Object.entries(previewShaftSegmentsById)) {
+            const branch = getSupportEntity('branch', shaftId);
             if (!branch) continue;
             updateSupportEntity({ ...branch, segments: previewSegments });
         }
@@ -427,7 +350,7 @@ export function KnotGizmo() {
             clearKnotDragPreview();
         }
         activePreviewKnotIdRef.current = null;
-        previewBranchSegmentsByIdRef.current = {};
+        previewShaftSegmentsByIdRef.current = {};
         previewKnotRef.current = null;
         previewCoincidentKnotsRef.current = [];
 
@@ -462,7 +385,7 @@ export function KnotGizmo() {
             dragProjectionOffsetTRef.current = 0;
             clearKnotDragPreview();
             activePreviewKnotIdRef.current = null;
-            previewBranchSegmentsByIdRef.current = {};
+            previewShaftSegmentsByIdRef.current = {};
             previewKnotRef.current = null;
             previewCoincidentKnotsRef.current = [];
             const w = getKnotGizmoWindowState() as any;
