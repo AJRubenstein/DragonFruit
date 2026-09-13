@@ -129,7 +129,7 @@ export function BezierGizmoManager() {
                 ?? getSupportEntity('trunk', ctx.entity.id);
             if (latestTrunk) {
                 // Final exact reconciliation after drag-time fast-path updates.
-                updateSupportEntity('trunk', latestTrunk);
+                updateSupportEntity(latestTrunk);
                 pushSupportHistory({
                     type: SUPPORT_UPDATE_TRUNK,
                     description: `Edit ${getSupportTypeDescriptor('trunk').singular} curve`,

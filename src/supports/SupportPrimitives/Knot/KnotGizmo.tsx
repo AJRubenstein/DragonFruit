@@ -391,7 +391,7 @@ export function KnotGizmo() {
         for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsById)) {
             const branch = getSupportEntity('branch', branchId);
             if (!branch) continue;
-            updateSupportEntity('branch', { ...branch, segments: previewSegments });
+            updateSupportEntity({ ...branch, segments: previewSegments });
         }
 
         if (previewKnot) {

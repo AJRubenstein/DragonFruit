@@ -835,7 +835,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             for (const [branchId, previewSegments] of Object.entries(previewBranchSegmentsByIdAtEnd)) {
                 const branch = getSupportEntity('branch', branchId);
                 if (branch) {
-                    updateSupportEntity('branch', { ...branch, segments: previewSegments });
+                    updateSupportEntity({ ...branch, segments: previewSegments });
                 }
             }
 
@@ -868,7 +868,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                     for (const leaf of attachedLeaves) {
                         if (!leaf.contactCone) continue;
                         if (leaf.contactCone.profile.bodyDiameterMm === localTwigDia) continue;
-                        updateSupportEntity('leaf', {
+                        updateSupportEntity({
                             ...leaf,
                             contactCone: {
                                 ...leaf.contactCone,

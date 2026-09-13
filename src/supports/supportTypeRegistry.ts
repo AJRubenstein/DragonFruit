@@ -1011,9 +1011,7 @@ export function resolveSupportTypeIdOf(entity: { typeId?: SupportTypeId; id: str
  * Returns false when nothing is registered for the id, so a caller can tell
  * "no updater" from "updated".
  */
-export function updateSupportEntity(
-    entity: { typeId?: SupportTypeId; id: string },
-): boolean;
+export function updateSupportEntity<E extends { typeId?: SupportTypeId; id: string }>(entity: E): boolean;
 export function updateSupportEntity(typeId: SupportTypeId, entity: unknown): boolean;
 export function updateSupportEntity(
     typeIdOrEntity: SupportTypeId | { typeId?: SupportTypeId; id: string },
