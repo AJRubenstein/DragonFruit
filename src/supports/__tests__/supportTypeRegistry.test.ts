@@ -22,14 +22,10 @@ test('every support type is declared exactly once', () => {
   // Two descriptors sharing one collection would silently overwrite each other.
   const keys = SUPPORT_TYPES.map((d) => d.location.key);
   assert.equal(new Set(keys).size, keys.length, 'two types share a collection');
-  // COMPLETENESS -- that the registry declares every type the second naming
-  // point does, and no others -- is asserted against an independent source (the
-  // folders on disk) by `supportTypeFolders.test.ts`, in both directions: every
-  // registered type has a folder, and every folder belongs to a registered type.
-  //
-  // A hand-written list of the eight names used to sit here. It was a second
-  // place a renamed type had to be edited by hand, and it duplicated ground the
-  // folder test covers from a source that cannot drift with the registry.
+  // Completeness -- that the registry declares every type and no others -- is
+  // asserted against the folders on disk by `supportTypeFolders.test.ts`, in
+  // both directions: every registered type has a folder, and every folder
+  // belongs to a registered type.
 });
 
 test('history actions match what the builders produce', () => {
@@ -72,9 +68,8 @@ test('empty collections cover every entity collection on SupportState', () => {
 
 test('selection resolves roots first, then support types in registry order', () => {
   const categories = SUPPORT_STATE_COLLECTIONS.map((c) => c.selectionCategory);
-  // A root is a primitive, not a type, so it is named. Everything after it must
-  // be the declared types IN ORDER, each selecting under its own id -- which is
-  // what this pins, and it is the registration's own order that defines it.
+  // A root is a primitive, not a type, so it is named. Everything after it is
+  // the declared types in registration order, each selecting under its own id.
   assert.equal(categories[0], 'root', 'roots resolve before any type');
   assert.deepEqual(
     categories.slice(1),
@@ -111,18 +106,13 @@ test('the modelId walk covers everything except knots', () => {
 });
 
 test("a type's display label names the same type its id does", () => {
-  // `label` is a SECOND spelling of the type's name inside the registry, and it
-  // cannot be derived from `id`: the plurals are English and irregular
-  // (`leaf` -> `Leaves`, not `Leafs`). Nothing checked it, so when the
-  // near-plate type was renamed `anchor` -> `stump` the label stayed `Anchors`
-  // and the debug overlay read "Anchors: 1" for a type called `stump` -- with
-  // every metric, test and compiler check green.
+  // `label` is a second spelling of the type's name and cannot be derived from
+  // `id`: the plurals are irregular (`leaf` -> `Leaves`, not `Leafs`). This
+  // catches a label left behind by a rename.
   //
-  // The invariant is deliberately weak, because a display label is allowed to
-  // be a nicer word than the id: it must share the type's STEM and not be a
-  // different word. Three characters is what the irregular plurals allow
-  // (`Leaves`/`leaf` agree only up to `lea`), and it is enough to catch a label
-  // left behind by a rename, which is the failure this exists for.
+  // The invariant is deliberately weak, since a label may be a nicer word than
+  // the id: it must share the type's stem. Three characters is what the
+  // irregular plurals allow -- `Leaves`/`leaf` agree only up to `lea`.
   for (const descriptor of SUPPORT_TYPES) {
     const stem = descriptor.id.slice(0, 3).toLowerCase();
     assert.ok(

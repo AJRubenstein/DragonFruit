@@ -1032,8 +1032,8 @@ function settleKnotDependentGeometry(
 /**
  * Remove one joint from a shafted entity, merging the segments it split.
  *
- * One body for every shafted type: the arms differed only in which lower
- * anchor they read, and the type declares that in its edges.
+ * One body for every shafted type; the lower end each reads is declared in its
+ * edges.
  */
 function removeShaftJoint<T extends SupportTypeId>(
     typeId: T,
@@ -1073,8 +1073,8 @@ function removeShaftJoint<T extends SupportTypeId>(
     // If we removed a segment, any knots attached to that removed segment must be rebound
     // to the merged segment so they stay connected.
     if (removedSegmentId) {
-        // The lower anchor is whichever the type DECLARES: a root it owns,
-        // or the knot it hangs from. Reading one field would answer for one type.
+        // The lower end is whichever the type declares: a root it owns, or the
+        // knot it hangs from.
         const hosts = resolveDeclaredHosts(typeId, entity as unknown as Record<string, unknown>);
         const anchored = hosts.root ?? hosts.hostKnot;
         const mergedSegmentId = after.segments[lowerIndex]?.id;
@@ -1150,8 +1150,7 @@ export type RemoveJointByIdResult = {
 
 export function removeJointById(jointId: string): RemoveJointByIdResult | null {
     // Every type declaring joint removal, in registry order. The cone guard and
-    // the knot rebind below both self-skip for a type that has neither, so one
-    // body serves all of them.
+    // the knot rebind below each skip a type that has neither.
     for (const typeId of JOINT_REMOVAL_TYPES) {
         const collection = state[getSupportTypeDescriptor(typeId).location.key] as unknown as
             Record<string, { segments: Segment[] }>;
@@ -1647,9 +1646,8 @@ export function transformSupportsForModel(
 
     let changed = false;
     // Only the three collections this function computes for itself. Every other
-    // type's collection is taken from `nextByCollection` below, which the
-    // transform loop fills by walking `SUPPORT_TYPES` -- so a new type needs no
-    // edit here.
+    // type's collection comes from `nextByCollection` below, which the transform
+    // loop fills by walking `SUPPORT_TYPES`.
     let nextRoots = state.roots;
     let nextTrunks = state.trunks;
     let nextKnots = state.knots;
@@ -1931,9 +1929,8 @@ export function transformSupportsForModel(
     }
 
     if (changed) {
-        // Derived, so a type added to the registry is committed without an edit
-        // here. The transform loop already fills one entry per collection it
-        // touched; anything else keeps the collection it had.
+        // The transform loop fills one entry per collection it touched; every
+        // other collection carries through unchanged.
         const nextCollections: Record<string, unknown> = {};
         for (const descriptor of SUPPORT_TYPES) {
             const key = descriptor.location.key;
@@ -3829,11 +3826,11 @@ import './generatedSupportRegistrations';
 
 /* --- Updater registration ------------------------------------------------
  * Every type updates through `applySupportEntityUpdate`. A type needing more
- * than that registers its own from its folder, so the generic pass below only
- * fills the slots those left empty and no type is named here.
+ * registers its own from its folder, and the pass below fills only the slots
+ * left empty.
  *
- * ORDER MATTERS: this must run after `generatedSupportRegistrations` above, or
- * the generic updater claims every slot and the bespoke ones never take effect.
+ * Must run after `generatedSupportRegistrations` above, or the generic updater
+ * claims every slot and the bespoke ones never take effect.
  * ---------------------------------------------------------------------- */
 for (const descriptor of SUPPORT_TYPES) {
     if (hasSupportUpdater(descriptor.id)) continue;

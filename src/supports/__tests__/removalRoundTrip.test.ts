@@ -131,9 +131,8 @@ function load() {
 function restore(snapshot: Record<string, unknown>) {
     const list = (field: string) => (snapshot[field] as unknown[] | undefined) ?? [];
     const one = (field: string) => snapshot[field] as never;
-    // The field a type's entity arrives under is its declared shape's `self`,
-    // which is the type's own name -- derived here, so a rename reaches these
-    // reads without editing them. The collection key does not rename.
+    // The field a type's entity arrives under is its declared shape's `self`.
+    // The collection key does not rename.
     const seed = (collection: SupportCollectionKey) =>
         one(removalShapeFor(typeIdForCollection(collection)).self);
     const putBack = (collection: string, entity: unknown) => {
@@ -173,10 +172,8 @@ function restore(snapshot: Record<string, unknown>) {
  * A removal case: the prose name, the collection the fixture seeds the entity
  * in, and that entity's id.
  *
- * The row is keyed on a collection because a collection key is a store fact
- * that does not rename -- `typeIdForCollection` turns it into the type id, so a
- * rename reaches every call below without editing this table. The fixture ids
- * are arbitrary strings and stay as written.
+ * Keyed on a collection, which does not rename; `typeIdForCollection` turns it
+ * into the type id. The fixture ids are arbitrary strings.
  */
 const CASES: [string, SupportCollectionKey, string][] = [
     ['removeTrunk (deep cascade)', 'trunks', 'trunk-a'],
@@ -191,8 +188,8 @@ const CASES: [string, SupportCollectionKey, string][] = [
 ];
 
 test('every declared type has a removal case', () => {
-    // A row cannot drop out silently: the table has to cover the registry. A
-    // type may hold more than one row -- trunk does, deep cascade and far side.
+    // The table must cover every declared type. A type may hold more than one
+    // row -- trunk does: deep cascade and far side.
     const covered = CASES.map(([, collection]) => typeIdForCollection(collection));
     assert.deepEqual(
         SUPPORT_TYPES.map((descriptor) => descriptor.id).filter((id) => !covered.includes(id)),

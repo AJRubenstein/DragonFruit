@@ -198,9 +198,9 @@ export function RaftProxyMeshLayer({
 }: RaftProxyMeshLayerProps) {
   const { hit } = usePicking();
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  // The collections the footprint reads, from the registry: the shared roots plus
-  // whichever types carry their own inline root. Used as the cache identity, so
-  // an edit to a type that puts nothing on the raft does not rebuild the meshes.
+  // The collections the footprint reads: the shared roots plus whichever types
+  // carry their own inline root. The cache identity, so editing a type that puts
+  // nothing on the raft does not rebuild the meshes.
   const footprintSourceRefs = React.useMemo(
     () => raftFootprintSourceRefs(supportState),
     [supportState],

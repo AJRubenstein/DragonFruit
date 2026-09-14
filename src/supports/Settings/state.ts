@@ -279,9 +279,9 @@ const STORAGE_KEY = 'support-settings';
  * Whether this context has the storage the settings persist to.
  *
  * The registry imports this module for `getSettings`, so anything importing the
- * registry loads it -- including the render-lookup worker, where `localStorage`
- * does not exist. Guarding on `window` is not enough: a worker has neither, but
- * a test environment can have one without the other.
+ * registry loads it -- including the render-lookup worker, which has no
+ * `localStorage`. Tested directly rather than through `window`: a test
+ * environment can have one without the other.
  */
 function hasLocalStorage(): boolean {
     return typeof localStorage !== 'undefined';

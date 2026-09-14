@@ -84,10 +84,8 @@ export function collectRaftBaseCirclesByModel(
     byModel.set(modelKey, [circle]);
   };
 
-  // Every plate-rooted support's base is a `Roots` record, and every one of them
-  // lives in this single collection -- a kickstand's root included, because a
-  // kickstand declares `rootId` onto `roots` like a trunk does. So one walk
-  // covers all of them, and no type is named.
+  // Every plate-rooted support's base is a `Roots` record in this one
+  // collection, a kickstand's included, so one walk covers all of them.
   for (const root of Object.values(state.roots ?? {})) {
     pushCircle(root.modelId, {
       x: root.transform.pos.x,
@@ -119,9 +117,8 @@ export function collectRaftBaseCirclesByModel(
 /**
  * The collections the raft footprint reads, in a stable order.
  *
- * A caller caching geometry keyed on the source uses this as its identity: it
- * changes when a contributing collection changes and not when an unrelated type
- * is edited, and it grows with the registry rather than with a hand-written list.
+ * A caller caching footprint geometry uses this as its identity: it changes when
+ * a contributing collection changes, and not when an unrelated type is edited.
  */
 export function raftFootprintSourceRefs(state: RaftFootprintSource): readonly unknown[] {
   return [

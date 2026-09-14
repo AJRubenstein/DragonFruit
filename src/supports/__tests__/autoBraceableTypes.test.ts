@@ -96,9 +96,8 @@ test('a lateral stabiliser is NOT a braceable member — it is generated as an e
 });
 
 test('types with no shaft, or that are not braceable, stay out', () => {
-    // Derived from the declared set rather than a hand-written list of the types
-    // known to be outside it: a list names five of them and silently stops
-    // covering a sixth, and it has to be edited whenever one is added.
+    // Derived from the declared set, so a type added to the registry is covered
+    // without editing this.
     const braceable = new Set<string>(autoBraceableShaftTypes());
     const excluded = SUPPORT_TYPES.filter((descriptor) => !braceable.has(descriptor.id));
     assert.ok(excluded.length > 0, 'precondition: some declared type is not braceable');

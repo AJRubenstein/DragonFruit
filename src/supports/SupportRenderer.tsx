@@ -140,14 +140,13 @@ const BATCHED_JOINT_WIDTH_SEGMENTS = 12;
 const BATCHED_JOINT_HEIGHT_SEGMENTS = 10;
 const MULTI_SELECTION_DETAIL_THRESHOLD = 24;
 const BULK_MULTI_SELECTED_COLOR = '#80fffd';
-/** Debug origin coloring (AutoSupport "Origin Colors" toggle): red = anchor
+/** Debug origin coloring (AutoSupport "Origin Colors" toggle): red = near-plate
  *  band, orange = overhang (grid infill / organic Poisson / fanned overhang),
  *  blue = island (voxel/minima), purple = standalone overhang trunks. */
 const ORIGIN_COLORS: Record<SupportOrigin, string> = {
-    // The near-plate origin is spelled after the type that claims that band, so a
-    // rename of that type breaks this line LOUDLY. It is left as a literal on
-    // purpose: a computed key would stop the Record proving it covers every
-    // origin, trading a compile error for a silently missing colour.
+    // Spelled after the type claiming the near-plate band, so renaming that type
+    // breaks this line at compile time. A computed key would stop the Record
+    // checking that every origin has a colour.
     stump: '#ff3b30',
     overhang: '#ff9f0a',
     island: '#0a84ff',

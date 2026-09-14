@@ -12,9 +12,9 @@ import type { Stump, Vec3 } from '../../types';
 // the stump's; the grid engine only decides WHICH type claims a tip height.
 import './stumpAutoPlacement';
 
-// An stump is a near-plate stub: a frustum root, ONE joint, one segment and a
-// contact cone. It has no Roots entry -- the frustum IS its root -- which is why
-// its geometry is built here rather than through the shared generator.
+// A stump is a near-plate stub: a frustum root, one joint, one segment and a
+// contact cone. It has no Roots entry -- the frustum is its root -- so its
+// geometry is built here rather than through the shared generator.
 registerSupportExportGroup<Stump>('stump', (stump) => {
     const group = new THREE.Group();
     addModelMetadata(group, stump.modelId);
@@ -55,5 +55,5 @@ registerSupportExportGroup<Stump>('stump', (stump) => {
     return group;
 });
 
-// Registered here rather than in the store's own list: an stump carries no knots, so it writes without repositioning any.
+// A stump carries no knots, so it writes without repositioning any.
 registerSupportUpdater<Stump>('stump', updateStump);

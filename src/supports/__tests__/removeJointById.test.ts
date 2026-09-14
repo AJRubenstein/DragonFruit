@@ -13,8 +13,7 @@ import type { Segment } from '../types';
 /**
  * Removing one joint merges the two segments it split.
  *
- * The only caller is a React hook, so nothing exercised this. Both the shafted
- * types and the one whose upper end is a knot go through the same body; these
+ * The shafted types and the one whose upper end is a knot share one body; these
  * pin what each does with the segment list and the entity it reports.
  */
 
@@ -46,8 +45,7 @@ function seedShaft(typeId: string, id: string) {
 }
 
 test('every joint-removal type merges its two segments into one', () => {
-    // Derived from the flag: a type that starts declaring joint removal is
-    // covered here without being named.
+    // Every type declaring joint removal, from the flag.
     assert.ok(JOINT_REMOVAL_TYPES.length > 0, 'no type declares joint removal');
 
     for (const typeId of JOINT_REMOVAL_TYPES) {

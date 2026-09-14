@@ -167,7 +167,7 @@ went away.
 
 **Gates before each of the three lands:** `tsc` (delete `tsconfig.tsbuildinfo`
 first -- the stale-cache trap has bitten this repo repeatedly), the full suite,
-all **50** golden tests (support 22, export and slice 28 -- the export and slice
+all **44** golden tests (support 16, export 16, slice 12 -- the export and slice
 suites are the ones a geometry change disturbs), `check:docs`, `check:lint`, and
 a real `next build`.
 

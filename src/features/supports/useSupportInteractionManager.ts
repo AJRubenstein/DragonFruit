@@ -293,8 +293,8 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
       const category = getSelectedCategory();
       const id = getSelectedId();
       if (!id || !category) return false;
-      // Every support type is deletable; 'joint' too. Enumerating them here is
-      // how anchors ended up deletable but gated out of single-selection Delete.
+      // Every support type is deletable, and 'joint' too, so this asks the
+      // registry rather than listing categories.
       if (category === 'joint' || getSupportTypeBySelectionCategory(category)) return true;
 
       // A knot is deletable when something hangs off it. Which types can, and

@@ -43,9 +43,9 @@ function source(collections: Record<string, Record<string, unknown>>): RaftFootp
 const INLINE = INLINE_ROOT_TYPES[0]!;
 
 test('a plate root, a kickstand root and an inline-root base all become circles', () => {
-  // A kickstand's root is a `Roots` record in the SHARED collection -- its
+  // A kickstand's root is a `Roots` record in the shared collection -- its
   // descriptor declares `rootId` onto `roots` -- so it arrives through the same
-  // walk as a trunk's and needs no argument of its own.
+  // walk as a trunk's.
   const circlesByModel = collectRaftBaseCirclesByModel(source({
     roots: {
       'trunk-root': root('trunk-root', 'model-a', 1, 2, 4),
@@ -103,8 +103,7 @@ test('an inline-root entity missing its declared radius contributes nothing', ()
 });
 
 test('the cache identity follows the contributing collections and nothing else', () => {
-  // This is why the index is derived rather than two hand-picked collections: a
-  // type that puts nothing on the raft must not invalidate the raft's meshes.
+  // A type that puts nothing on the raft must not invalidate the raft's meshes.
   const state = source({
     roots: { r: root('r', 'model-a', 0, 0, 2) },
     [INLINE.collectionKey]: {},

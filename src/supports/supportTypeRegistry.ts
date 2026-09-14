@@ -57,10 +57,8 @@ export interface SupportEndpoint {
     /**
      * For `inlineRoot`: the field holding the base's radius.
      *
-     * An inline root is plate geometry ON the entity, so unlike a `plateRoot` --
-     * which is a shared `Roots` record carrying its own `diameter` -- its width
-     * exists only as a field of the type's own entity. Declared so a generic
-     * reader can size it without knowing which type it is looking at.
+     * An inline root is plate geometry on the entity itself, so its width is a
+     * field of that entity rather than the `diameter` of a shared `Roots` record.
      */
     radiusField?: string;
 }
@@ -157,11 +155,8 @@ export interface SupportTypeDescriptor {
      * Plural display name, so panels listing collections need no label table.
      *
      * RENAMING A TYPE MUST UPDATE THIS. It is a second spelling of the type's
-     * name inside the registry, and it cannot be derived from `id`: these are
-     * English plurals and irregular (`leaf` -> `Leaves`, not `Leafs`). It is
-     * also invisible to every metric that looks for the id as a token, so a
-     * rename leaves it behind silently -- the debug overlay read "Anchors: 1"
-     * for a type called `stump` until this was corrected.
+     * name, and cannot be derived from `id`: these plurals are irregular
+     * (`leaf` -> `Leaves`, not `Leafs`). No rename check catches it.
      */
     label: string;
     /**
@@ -350,11 +345,7 @@ export interface SupportTypeDescriptor {
     placementRule?: SupportPlacementRule;
     /**
      * Names this type was known by before, for reading payloads written then.
-     *
-     * A rename is a fact about the TYPE, so the old spelling belongs here beside
-     * the new one rather than inside a migration that would otherwise have to
-     * name the current id as well -- which would make every future rename touch
-     * the migration too. `migrateSupportPayload` is the only reader.
+     * `migrateSupportPayload` is the only reader.
      */
     renamedFrom?: {
         /** Type ids this type's entities were stamped with. */
@@ -1892,13 +1883,12 @@ export const SUPPORT_ORIGINS = {
 export type SupportOriginId = keyof typeof SUPPORT_ORIGINS;
 
 /**
- * The origin a support is stamped with when it was placed in the near-plate band
- * -- the band a TYPE claims via its `placementRule`, so this origin is named
- * after that type and moves with it.
+ * The origin a support is stamped with when placed in the near-plate band. The
+ * band is claimed by a type through its `placementRule`, and the origin is named
+ * after that type.
  *
- * Derived rather than spelled at the comparison sites: an origin is its own
- * vocabulary, and a caller writing `origin === 'stump'` would silently stop
- * matching on a rename, because the origin keys do not follow `SupportTypeId`.
+ * Origin keys are their own vocabulary and do not follow `SupportTypeId`, so
+ * callers compare against this rather than spelling the name.
  */
 export const NEAR_PLATE_ORIGIN: SupportOriginId = (() => {
     const matches = (Object.keys(SUPPORT_ORIGINS) as SupportOriginId[])
@@ -2560,14 +2550,10 @@ export function bundledSupportTypeId(): SupportTypeId {
 }
 
 /**
- * The types whose base is geometry on the entity rather than a shared `Roots`.
+ * The types whose base is geometry on the entity rather than a shared `Roots`
+ * record, and the fields that base position and radius live in.
  *
- * A plate-rooted type's base is a `Roots` record in the shared collection, so a
- * reader finds it by walking that one collection. An inline-rooted type carries
- * its base as fields of its own entity, so the reader needs to know WHICH fields
- * -- and that is what this answers, so no caller has to name the type.
- *
- * Read through `inlineRootPlacementFor`, or iterate this for the whole set.
+ * Read one type through `inlineRootPlacementFor`, or iterate for the whole set.
  */
 export interface InlineRootPlacement {
     typeId: SupportTypeId;
@@ -2599,12 +2585,8 @@ export const INLINE_ROOT_TYPES: readonly InlineRootPlacement[] = SUPPORT_TYPES
 
 /**
  * The fields through which a type hangs off a host knot: its `hostedBy` edges
- * onto `knots`.
- *
- * A type with none is not hosted by a knot at all -- a trunk stands on its own
- * root, a stump likewise, and a contact-to-contact type spans two model
- * contacts. Callers that need "the knots these supports hang from" ask this
- * rather than naming a field per type, so a type added or renamed is covered.
+ * onto `knots`. Empty for a type that hangs off no knot -- one standing on its
+ * own root, or spanning two model contacts.
  */
 export function hostKnotFieldsFor(typeId: SupportTypeId): readonly string[] {
     return getSupportTypeDescriptor(typeId).edges

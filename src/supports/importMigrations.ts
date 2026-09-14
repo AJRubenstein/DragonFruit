@@ -4,17 +4,13 @@ import { SUPPORT_TYPES } from './supportTypeRegistry';
  * Rewrite a support payload written under a type's FORMER names into the shape
  * the store reads today.
  *
- * Why this exists: a `.voxl` scene or `.lys` import persists a support payload
- * whose key is the collection name (`anchors: [...]`). Renaming a type renames
- * that key, so a file saved before the rename would load with its entities in
- * neither collection -- no error, no warning, just supports silently missing
- * from a file the user already has. Measured on the `criosphinx` export fixture
- * before this landed: six meshes and ~1,100 vertices disappeared.
+ * A `.voxl` scene or `.lys` import keys its support payload by collection name
+ * (`anchors: [...]`). Renaming a type renames that key, so without this pass a
+ * file written under the old name loads with those entities in no collection at
+ * all -- they are dropped from the scene with no error.
  *
- * This module names NO type. The old spellings are declared on each descriptor
- * as `renamedFrom`, so a future rename only edits the descriptor -- the same
- * rule the rest of the codebase follows, and the reason this file will never
- * need touching again.
+ * This module names no type: the old spellings are declared on each descriptor
+ * as `renamedFrom`, so a later rename edits only the descriptor.
  */
 
 /** A payload keyed by support collection, as the wire format writes it. */

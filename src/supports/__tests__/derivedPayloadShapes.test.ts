@@ -12,23 +12,17 @@ import {
 } from '../supportTypeRegistry';
 
 /**
- * History payload shapes, derived from the registry rather than written out.
+ * History payload shapes, derived from the registry rather than written out:
+ * `{ self }` for an add, `{ self, ...cascade }` for a removal, both from the
+ * shape each type declares in `SUPPORT_REMOVAL_SHAPES`.
  *
- * Twig, stick and anchor each used to have a hand-written pair of payload
- * interfaces -- `{ self }` for the add and `{ self, knots, leaves }` for the
- * removal -- which `SUPPORT_REMOVAL_SHAPES` already declared. The intermediate
- * aliases are gone; these assertions are the real check, and they fail to build
- * if a derived payload stops matching the shape it replaced.
- *
- * Nothing here names a type. The field a payload is keyed on comes from the
- * declaration and the entity from the registry's entity mapping, so renaming a
- * type id moves both sides of every check below.
+ * These assertions fail to build if a derived payload stops matching its
+ * declared shape. Nothing here names a type.
  */
 
 /**
- * The shape the hand-written interfaces had, for one type: the field the entity
- * arrives under, carrying the type's own entity -- taken from the registry's
- * entity mapping rather than imported per name.
+ * An add payload for one type: the field the entity arrives under, carrying that
+ * type's entity from the registry's entity mapping.
  */
 type ExpectedEntityPayload<T extends SupportTypeId> = {
     [S in (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']]: SupportEntityFor<T>;

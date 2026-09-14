@@ -354,9 +354,9 @@ export function parseVoxlDocument(json: string): VoxlDocumentV1 {
     throw new Error('Invalid VOXL document structure.');
   }
 
-  // A document written before the near-plate type was renamed carries the old
-  // collection key. Migrate it here, at the boundary, so every consumer of the
-  // parsed document reads the current shape rather than each having to know.
+  // A document written under a type's former name carries the old collection
+  // key. Migrated here at the boundary, so every consumer of the parsed
+  // document reads the current shape.
   parsed.supports = migrateLegacySupportPayload(parsed.supports);
 
   for (const model of parsed.models) {

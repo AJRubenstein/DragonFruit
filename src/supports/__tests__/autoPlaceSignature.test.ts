@@ -299,9 +299,8 @@ function assertSignature(
     expected: (typeof RECORDED)['gridOn'] | (typeof RECORDED)['gridOff'],
 ) {
     // Compared per field so a failure names which part moved, rather than
-    // dumping two opaque objects. `placed` is read along the registry's axis --
-    // one entry per declared type, in `SUPPORT_TYPES` order -- so a renamed type
-    // id moves the expectation with it instead of being pinned as a spelling.
+    // dumping two opaque objects. `placed` is read along the registry's axis:
+    // one entry per declared type, in `SUPPORT_TYPES` order.
     assert.deepEqual(
         SUPPORT_TYPES.map((descriptor) => actual.placed[descriptor.id]),
         expected.placed,
@@ -346,7 +345,7 @@ test('the signature covers more than one placement path', () => {
         'the ledger must carry every declared type',
     );
     // Every type the recording says the scene places must still be placed, read
-    // off the registry along that same axis rather than spelled out here.
+    // off the registry along that same axis.
     for (const [index, count] of RECORDED.gridOn.placed.entries()) {
         if (count === 0) continue;
         const typeId = SUPPORT_TYPES[index].id;

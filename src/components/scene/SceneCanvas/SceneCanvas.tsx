@@ -1559,11 +1559,8 @@ export function SceneCanvas({
       expandByRadius(rootTop, rootRadius);
     }
 
-    // The knots this model's supports hang from, from the declared `hostedBy`
-    // knot edges. Four hand-written loops used to name the field per type
-    // (`parentKnotId`, `startKnotId`/`endKnotId`, `hostKnotId`); a type added to
-    // the registry is now covered, and the fields cannot drift from the edges
-    // the store's cascade already uses.
+    // The knots this model's supports hang from, read through each type's
+    // declared `hostedBy` knot edges.
     const modelKnotIds = new Set<string>();
     for (const descriptor of SUPPORT_TYPES) {
       const knotFields = hostKnotFieldsFor(descriptor.id);
@@ -3944,10 +3941,8 @@ export function SceneCanvas({
     supportDragTransactionId,
     isGizmoDragging,
     effectiveHoldSupportDragDelta,
-    // Derived, not listed: every support collection the registry declares, so a
-    // type added to the registry is covered here and a list cannot fall behind.
-    // (It had: `stumps` and `kickstands` were missing while the comment above
-    // claimed "support/kickstand refs".)
+    // Every support collection the registry declares, so a new type is covered
+    // without editing this key.
     ...Object.fromEntries(
       SUPPORT_COLLECTION_KEYS.map((key) => [`support_${key}`, supportStateForBounds[key]]),
     ),

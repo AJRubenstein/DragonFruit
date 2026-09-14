@@ -8,18 +8,14 @@
  * state, and pulling render-layer modules into the store's load reaches back
  * into the store it is still building.
  *
- * The IMPORTS are generated from the type folders, so a type's name is not
- * written down here in a path: renaming a type used to leave this module
- * pointing at a folder that no longer existed, which broke every consumer
- * rather than the one type.
+ * The imports are generated from the type folders, so no type's name is written
+ * here in a path.
  */
 import { detailRenderersMissingTypes } from './seam';
 import './generatedDetailRendererImports';
 
-// Every declared type must have registered, or it draws nothing and says so to
-// nobody. `detailRenderersMissingTypes` was written for this and only a test
-// called it, so the assertion it promised lived in the suite rather than at
-// load -- the gap that let three anatomy previews fall through unnoticed.
+// Every declared type must have registered. One that has not draws nothing and
+// reports nothing, so this fails the load instead.
 const missingRenderers = detailRenderersMissingTypes();
 if (missingRenderers.length > 0) {
     throw new Error(

@@ -69,15 +69,11 @@ test('every type folder provides the registration the generator looks for', () =
 
 test('every type renderer takes its entity under the name the renderer feeds it', () => {
     // `SupportRenderer.renderDetailFor` hands each detail renderer its entity
-    // under a COMPUTED key -- `getSupportTypeDescriptor(typeId).singular` -- so
-    // TypeScript cannot check that the component destructures the same name. It
-    // is a convention held only by agreement, and it broke silently when the
-    // near-plate type was renamed: the descriptor said `stump`, the component
-    // still read `anchor`, the prop arrived undefined, and the scene crashed on
-    // `anchor.id` at draw time rather than at build time.
+    // under a computed key -- `getSupportTypeDescriptor(typeId).singular` -- so
+    // TypeScript cannot check that the component destructures the same name. A
+    // mismatch delivers an undefined prop and crashes at draw time.
     //
-    // This is the same shape as the two tests above -- a file-name convention
-    // the compiler cannot see -- so it is asserted the same way.
+    // Same shape as the two tests above: a convention the compiler cannot see.
     for (const descriptor of SUPPORT_TYPES) {
         const name = folderFor(descriptor.id);
         const renderer = path.join(TYPES_DIR, name, `${name}Renderer.tsx`);

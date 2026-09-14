@@ -5,13 +5,12 @@ import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { buildStumpData } from './stumpBuilder';
 
 /**
- * The stump OVERRIDES auto-placement's default build for its band.
+ * The stump's build, overriding auto-placement's default for its band.
  *
  * Auto-placement stands a trunk on a contact by default. A stump claims the
- * near-plate band (the `tipHeight` rule on its descriptor) and puts a stub
- * there instead — a different primitive entirely. Registering that here is what
- * lets the grid engine ask "what does this contact's type build, and build it"
- * without importing this module or naming the stump.
+ * near-plate band through the `tipHeight` rule on its descriptor and puts a stub
+ * there instead. Registered here, so the grid engine builds whatever a contact's
+ * type declares without importing this module.
  */
 registerContactOverride('stump', (request) => {
     const built = buildStumpData({
@@ -32,11 +31,9 @@ registerContactOverride('stump', (request) => {
         supplied: {},
     };
 
-    // The stump's OWN invariant, tested here rather than in the grid engine:
-    // the cone body spans contact disk → socket and must never dip below the
-    // root joint, or an over-long cone on a downward axis pushes the shaft below
-    // the root, into -Z. The engine has no business reading a stump's joints
-    // and cone to check this.
+    // The cone body spans contact disk → socket and must never dip below the
+    // root joint: an over-long cone on a downward axis pushes the shaft below
+    // the root, into -Z.
     const jointZ = stump.joint.pos.z;
     const lowestShaftZ = Math.min(
         stump.contactCone.pos.z,

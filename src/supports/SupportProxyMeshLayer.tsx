@@ -125,13 +125,9 @@ function getDiskTipCenter(disk: ContactDisk): Vec3 {
 }
 
 /**
- * The namespace an interior-support id carries: the entity's OWN type, then a
- * colon. Two types cannot collide on a shared id.
- *
- * Read from the entity, not written here, and read the SAME way by the geometry
- * loops that look the id up -- so the writer and the reader always agree, even
- * for an entity whose stamp is wrong or missing. A literal prefix on either side
- * would go stale on a rename and silently hide that type's interior geometry.
+ * The namespace an interior-support id carries: the entity's own `typeId`, then
+ * a colon, so two types cannot collide on a shared id. The geometry loops that
+ * look an id up build it through here too, so both sides always agree.
  */
 function interiorIdPrefix(entity: { typeId?: SupportTypeId }): string {
     return `${entity.typeId}:`;
@@ -143,26 +139,18 @@ function interiorSupportKey(entity: { id: string; typeId?: SupportTypeId }): str
 }
 
 /**
- * Which supports the interior (cavity) view draws.
+ * Which supports the interior (cavity) view draws, from each type's declaration:
  *
- * Every question this asks is answered by a declaration, so a type added to the
- * registry is covered without editing it:
+ * - A type whose lower end is a `plateRoot` starts on the build plate in open
+ *   space, so none of its geometry is ever inside a cavity. It is skipped.
+ * - A type's contacts, and whether they are cones or disks, come from
+ *   `contactEndpointsFor` / `anyContactMatches`. Any interior contact qualifies.
+ * - A shaft is tested along its length only when its lower end is a `knot`: it
+ *   begins mid-air on another support and can cross a cavity on the way to its
+ *   contact. A shaft spanning two model contacts is already tested at both ends.
  *
- * - WHICH CONTACTS a type has, and whether they are cones or disks:
- *   `contactEndpointsFor` / `anyContactMatches`.
- * - WHICH TYPES CAN QUALIFY AT ALL: a support whose lower end is a `plateRoot`
- *   starts on the build plate in open space, so its geometry is never inside a
- *   cavity. That is trunk and kickstand, and it is why trunk has no loop below.
- * - WHICH TEST A SHAFT GETS: only a shaft whose lower end is a `knot` begins
- *   mid-air on another support, so only that one can cut through a cavity as it
- *   travels to its contact. A plate-rooted shaft cannot, and a shaft spanning two
- *   model contacts is already tested at both ends. `lower.kind === 'knot' &&
- *   hasSegments` selects exactly branch -- verified, not assumed: `hasSegments`
- *   alone would also admit twig, stick, stump and kickstand and change what the
- *   view hides.
- *
- * The predicates are injected so this stays pure and testable: the layer passes
- * BVH-backed ones, a test passes `placementSurface`-driven ones.
+ * The predicates are injected so this stays pure: the layer passes BVH-backed
+ * ones, a test passes `placementSurface`-driven ones.
  */
 export function interiorSupportIds(
     state: SupportState,

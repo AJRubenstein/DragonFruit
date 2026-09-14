@@ -16,9 +16,8 @@ import { buildSupportExportFromStores } from '@/features/scene/voxl/codec';
  * The field is optional on the interface only so files written before it
  * existed still typecheck. Anything the store hands out carries it.
  *
- * Every fixture below is built from what a type DECLARES -- `hasSegments`, its
- * edges, its contact fields -- so renaming a type id in the registry moves the
- * fixtures with it. Nothing here is keyed by a type's spelling.
+ * Every fixture below is built from what a type declares -- `hasSegments`, its
+ * edges, its contact fields. Nothing here is keyed by a type's spelling.
  */
 
 /** The straight segment `seg` builds, and so the shaft the knot scaffold rides. */
@@ -87,7 +86,7 @@ const hostSegmentId = () => `${instanceId(defaultPlacementToolTypeId())}-s`;
  * The numeric fields a type declares by path but carries no value for: the two
  * ends of its shaft taper, and the one its fallback diameter reads. A type
  * carrying a profile names every field of it here, so the object is built from
- * the declaration rather than from a hand-kept second copy.
+ * the declaration.
  */
 function declaredDiameterFields(descriptor: SupportTypeDescriptor): Record<string, string[]> {
     const fallback = descriptor.shaftFallback.fallbackDiameterMm;

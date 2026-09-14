@@ -886,10 +886,8 @@ test('no branch leaves its host shallower than the branch-angle rule', () => {
 
 // ---------------------------------------------------------------------------
 // The near-plate band: auto-support builds the type that overrides it, not a
-// trunk. Covered end to end because the unit tests reach only
-// `decideGridPlacement`; nothing asserted what `runAutoPlace` does with a
-// near-plate island, so a change to the band, the override or the commit path
-// would not have failed here.
+// trunk. Run end to end, since the unit tests reach only `decideGridPlacement`
+// and not the override or the commit path.
 // ---------------------------------------------------------------------------
 
 test('runAutoPlace builds the near-plate overridden type for a low island, not a trunk', () => {
@@ -897,14 +895,13 @@ test('runAutoPlace builds the near-plate overridden type for a low island, not a
     resetKickstandsInState();
     clearHistory();
 
-    // A tip below the near-plate threshold. The band is DECLARED, so ask the
-    // registry which type serves this height rather than naming one: the test
-    // then reads as "whatever the band resolves to" and a rename needs no edit.
+    // A tip below the near-plate threshold, with the serving type read from the
+    // declared band rather than named.
     const TIP_Z = 3;
     const nearPlateTypeId = selectTypeForPlacement('tipHeight', TIP_Z);
     assert.ok(nearPlateTypeId, 'a type must claim the near-plate band');
-    // The point of the band: the DEFAULT tool does not serve it. If it did, this
-    // test would be asserting the fallback and prove nothing.
+    // The default tool must not serve this band, or the assertions below would
+    // pass on the fallback.
     assert.notEqual(
         nearPlateTypeId,
         defaultPlacementToolTypeId(),
@@ -914,12 +911,12 @@ test('runAutoPlace builds the near-plate overridden type for a low island, not a
     const islands = [makeIsland('i-low', 0, 0, TIP_Z, 1)];
     const result = runAutoPlace(islands, 'model-a');
 
-    // The planner reports it under the resolved id...
+    // The planner reports it under the resolved id.
     assert.equal(result.placed[nearPlateTypeId], 1, 'one support of the resolved type');
     assert.equal(result.placed[defaultPlacementToolTypeId()] ?? 0, 0, 'no trunk stood on the band');
 
-    // ...and the store holds exactly one, in that type's own collection, stamped
-    // with its own type. The collection key is a store fact, not a type id.
+    // The store holds exactly one, in that type's own collection and stamped
+    // with its type.
     const snapshot = getSnapshot();
     const stored = Object.values(snapshot.stumps) as Array<{
         id: string; typeId?: string;
@@ -931,10 +928,8 @@ test('runAutoPlace builds the near-plate overridden type for a low island, not a
     assert.equal(entity.typeId, nearPlateTypeId, 'the entity carries its own type');
     assert.equal(getSupportTypeOf(entity.id), nearPlateTypeId, 'and resolves back to it');
 
-    // The two things the type itself is responsible for: it is anchored to the
-    // plate at the tip, and its cone never dips below the root joint -- the
-    // invariant its own placement module refuses for, checked here on the entity
-    // the store committed rather than on a preview.
+    // The type's own two invariants, checked on the committed entity: it meets
+    // the plate at the tip, and its cone never dips below the root joint.
     assert.ok(
         entity.contactCone.pos.z > entity.joint.pos.z - 1e-3,
         `cone dips below the root joint: ${entity.contactCone.pos.z} < ${entity.joint.pos.z}`,

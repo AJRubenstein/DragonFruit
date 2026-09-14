@@ -2062,8 +2062,8 @@ export default function Home() {
   // stub in support mode (trackSupportCollectionsInHome), so counting from it
   // would silently report zero exactly where orient needs the truth. In
   // prepare mode the stub mirrors the store, so existing callers are unaffected.
-  // Summed over every modelId-bearing collection: a hand-written list left
-  // anchors uncounted, so a model carrying only anchors skipped the warning.
+  // Summed over every modelId-bearing collection, so a model carrying only one
+  // type still reports its supports.
   const getSupportPrimitiveCountForModel = React.useCallback((modelId: string | null | undefined) => {
     if (!modelId) return 0;
 
@@ -6367,7 +6367,7 @@ export default function Home() {
     return false;
   }, []);
 
-  // Every collection, so a scene holding only anchors is not reported empty.
+  // Every collection, so a scene holding only one type is not reported empty.
   const hasSupportOrRaftGeometry = React.useMemo(() => {
     if (raftSettingsSnapshot.bottomMode !== 'off') return true;
     return SUPPORT_COLLECTION_KEYS.some((key) => hasAnyEntries(supportStateSnapshot[key]));
@@ -7211,8 +7211,7 @@ export default function Home() {
       }
     }
 
-    // Every type's joints and declared contacts. Written out per type this
-    // covered six of the eight, so an anchor never grew the bounds.
+    // Every type's joints and declared contacts, so each one grows the bounds.
     for (const descriptor of SUPPORT_TYPES) {
       const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as
         Record<string, { modelId?: string; segments?: Segment[] }>;

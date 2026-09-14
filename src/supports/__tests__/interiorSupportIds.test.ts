@@ -8,14 +8,12 @@ import type { SupportState } from '../types';
 /**
  * What the interior (cavity) view shows.
  *
- * This is a visual feature with no other coverage, and the code it replaced was
- * five hand-written per-type loops. The classification it performs is invisible
- * to every golden, so these assertions are the only thing standing between a
- * refactor of it and a silent change to what the view hides.
+ * A visual feature with no other coverage and invisible to every golden, so
+ * these assertions are the only check on what the view hides.
  *
  * The predicates are injected -- the layer passes BVH-backed ones, these pass
- * `placementSurface`-driven ones -- so the CLASSIFICATION is tested without
- * needing cavity geometry or a GPU.
+ * `placementSurface`-driven ones -- so the classification is tested without
+ * cavity geometry or a GPU.
  */
 
 const MODEL = 'model-1';
@@ -32,10 +30,7 @@ const isContactInterior = (c: unknown): boolean =>
 const isSegmentsInterior = (segs: readonly unknown[]): boolean =>
     (segs as Array<{ interior?: boolean }>).some((s) => s.interior === true);
 
-/**
- * One entity per declared type, its contact fields taken from the DESCRIPTOR, so
- * a type added to the registry is covered here without editing the fixture.
- */
+/** One entity per declared type, its contact fields taken from the descriptor. */
 function stateWithContacts(surface: 'interior' | 'exterior'): SupportState {
     const state: Record<string, Record<string, unknown>> = {};
     for (const descriptor of SUPPORT_TYPES) {
@@ -75,8 +70,7 @@ test('an interior contact puts its type in the set; an exterior one keeps it out
 
 test('a plate-rooted type never qualifies, however its contact is stamped', () => {
     // A support rooted in the build plate starts in open space, so its primitive
-    // is never inside a cavity. `lower.kind` is the declaration that says so --
-    // this used to be a comment next to an omitted loop.
+    // is never inside a cavity. `lower.kind` is the declaration that says so.
     const rooted = SUPPORT_TYPES.filter((d) => d.lower.kind === 'plateRoot');
     assert.ok(rooted.length > 0, 'precondition: something is plate-rooted');
 
@@ -101,9 +95,9 @@ test('only a shaft rooted at a knot gets the segment test', () => {
     // can cut through a cavity on its way to the contact. One rooted in the plate
     // cannot, and one spanning two contacts is already tested at both ends.
     //
-    // The predicate is `lower.kind === 'knot' && hasSegments`, and this pins that
-    // `hasSegments` ALONE is not it: it is true for twig, stick, stump and
-    // kickstand too, so deriving from it would admit four extra types.
+    // The predicate is `lower.kind === 'knot' && hasSegments`. This pins that
+    // `hasSegments` alone is not it: that is true for twig, stick, stump and
+    // kickstand too, which would admit four extra types.
     const state: Record<string, Record<string, unknown>> = {};
     for (const descriptor of SUPPORT_TYPES) {
         const entity: Record<string, unknown> = {

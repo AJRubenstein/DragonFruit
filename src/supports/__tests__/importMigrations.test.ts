@@ -6,20 +6,13 @@ import { getSnapshot, loadFromImportFormat, resetStore } from '../state';
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
 
 /**
- * A scene saved before the near-plate type was renamed from `anchor` to `stump`
- * stores its entities under the LEGACY collection key and stamps them with the
- * legacy id. The loader reads the collection key off each descriptor, so without
- * a migration those entities are simply not found: no error, no warning, just a
- * support missing from a file the user already has. That is the failure these
- * tests exist for -- measured, not imagined: six meshes and ~1,100 vertices
- * disappeared from the `criosphinx` export fixture before the migration landed.
+ * A scene saved under a type's former name stores its entities under the legacy
+ * collection key and stamps them with the legacy id. The loader reads the
+ * collection key off each descriptor, so without a migration those entities are
+ * not found at all -- they load with no error and no entities.
  */
 
-/**
- * The type under test is whichever descriptor declares FORMER NAMES -- that
- * declaration is the whole subject here, so finding it by that fact keeps the
- * test working across any future rename without naming a type itself.
- */
+/** The type under test: whichever descriptor declares former names. */
 const RENAMED = SUPPORT_TYPES.find((d) => d.renamedFrom?.ids?.length && d.renamedFrom.collectionKeys?.length);
 if (!RENAMED) throw new Error('no descriptor declares former names, so there is nothing to migrate');
 const STUMP = RENAMED;
