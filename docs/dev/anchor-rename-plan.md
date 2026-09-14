@@ -34,7 +34,8 @@ Three instruments disagree, and each is right about a different thing.
 | --- | ---: | --- |
 | `rename-test.py anchor` | **0** | the compiler-visible work is DONE |
 | `scan:support-types` | part of 5,151 | counts identifiers, most of which are not this type |
-| `inventory.py` | 766 occurrences, 99 tokens | every token containing the string |
+| `inventory.py` | 766 occurrences | every token containing the string |
+| a raw source sweep | 1,161 mentions, **154 tokens** | the honest ceiling; see the census |
 
 **`rename-test.py` reading 0 is not success.** It sees only what `tsc` can prove.
 Everything below compiles clean after a rename and is wrong at runtime, which is
@@ -79,8 +80,10 @@ SIZING PRESET that happens to share the word.
 gain. If the type is ever renamed, this preset keeps its own name, and that is
 correct: they were never the same thing.
 
-The same reasoning applies to `ANCHOR_BELOW_ROOT` and `ANCHOR_FLOOR_MM2` --
-check each against the type before touching it.
+`ANCHOR_BELOW_ROOT` is the opposite case: it reads like geometry but IS the
+type -- a `LimitationCode` raised only by the anchor's own placement rule. Every
+token is classified in [anchor-token-census.md](anchor-token-census.md); read it
+before touching anything, because the word cuts both ways.
 
 ## How to work
 
