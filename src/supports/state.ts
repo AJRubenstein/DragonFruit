@@ -3620,38 +3620,6 @@ function inferSettingsFromDescriptor(
     };
 }
 
-function inferSettingsFromTrunk(trunk: Trunk, root: Roots | null, base?: SupportSettings): SupportSettings {
-    const merged = mergeSettingsWithDefaults(base);
-    const coneProfile = trunk.contactCone?.profile;
-    const diskConeProfile = coneProfile?.type === 'disk' ? coneProfile : undefined;
-    const shaftDiameter = trunk.baseDiameterMm ?? trunk.segments[0]?.diameter ?? merged.shaft.diameterMm;
-
-    return {
-        ...merged,
-        tip: {
-            ...merged.tip,
-            contactDiameterMm: coneProfile?.contactDiameterMm ?? merged.tip.contactDiameterMm,
-            bodyDiameterMm: coneProfile?.bodyDiameterMm ?? merged.tip.bodyDiameterMm,
-            lengthMm: coneProfile?.lengthMm ?? merged.tip.lengthMm,
-            penetrationMm: coneProfile?.penetrationMm ?? merged.tip.penetrationMm,
-            diskThicknessMm: diskConeProfile?.diskThicknessMm ?? merged.tip.diskThicknessMm,
-            maxStandoffMm: diskConeProfile?.maxStandoffMm ?? merged.tip.maxStandoffMm,
-            standoffAngleThreshold: diskConeProfile?.standoffAngleThreshold ?? merged.tip.standoffAngleThreshold,
-        },
-        shaft: {
-            ...merged.shaft,
-            diameterMm: shaftDiameter,
-            secondaryDiameterMm: shaftDiameter,
-        },
-        roots: {
-            ...merged.roots,
-            diameterMm: root?.diameter ?? merged.roots.diameterMm,
-            diskHeightMm: root?.diskHeight ?? merged.roots.diskHeightMm,
-            coneHeightMm: root?.coneHeight ?? merged.roots.coneHeightMm,
-        },
-    };
-}
-
 function updateSegmentDiametersAndJoints(
     segments: Segment[],
     shaftDiameterMm: number,
@@ -3919,11 +3887,6 @@ for (const descriptor of SUPPORT_TYPES) {
         bespoke ?? ((entity: { id: string }) => applySupportEntityUpdate(descriptor.id, entity)),
     );
 }
-
-// Settings inference per type. Trunks read their root, which is why this is a
-// slot rather than something the registry could hold directly.
-registerSettingsInference<Trunk, SupportSettings, SupportSettings>('trunk', (trunk, base) =>
-    inferSettingsFromTrunk(trunk, state.roots[trunk.rootId] ?? null, base));
 
 // The registry's `updateSupportEntity(entity)` form reads the type off the
 // entity, and needs this only for one that lost it on the way in. A slot for

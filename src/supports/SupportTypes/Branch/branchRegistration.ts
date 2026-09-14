@@ -5,11 +5,6 @@ import { registerSettingsInference } from '../../supportTypeRegistry';
 import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
 import type { Branch } from '../../types';
 
-// The removal reshape is its own module (it reaches into the trunk machinery),
-// imported here so this folder's registration entry loads all of a branch's
-// registrations.
-// MUTATION: reshape module not loaded
-
 function inferSettingsFromBranch(branch: Branch, base?: SupportSettings): SupportSettings {
     const merged = mergeSettingsWithDefaults(base);
     const coneProfile = branch.contactCone?.profile;

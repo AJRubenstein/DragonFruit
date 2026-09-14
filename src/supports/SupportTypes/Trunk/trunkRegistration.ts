@@ -2,7 +2,10 @@ import * as THREE from 'three';
 
 import { registerSupportExportGroup } from '../../exportGeometry/seam';
 import { addModelMetadata, raftSettingsFor, SupportGeometryGenerator } from '../../exportGeometry/helpers';
-import type { Trunk } from '../../types';
+import { registerSettingsInference } from '../../supportTypeRegistry';
+import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
+import { getRootById } from '../../state';
+import type { Roots, Trunk } from '../../types';
 
 // A trunk yields its grid node to a higher candidate, rehosting its own
 // attachments onto the promoted shaft. Registered here because those rules are
@@ -29,3 +32,42 @@ registerSupportExportGroup<Trunk>('trunk', (trunk, context) => {
     addModelMetadata(group, modelId);
     return group;
 });
+
+function inferSettingsFromTrunk(trunk: Trunk, root: Roots | null, base?: SupportSettings): SupportSettings {
+    const merged = mergeSettingsWithDefaults(base);
+    const coneProfile = trunk.contactCone?.profile;
+    const diskConeProfile = coneProfile?.type === 'disk' ? coneProfile : undefined;
+    const shaftDiameter = trunk.baseDiameterMm ?? trunk.segments[0]?.diameter ?? merged.shaft.diameterMm;
+
+    return {
+        ...merged,
+        tip: {
+            ...merged.tip,
+            contactDiameterMm: coneProfile?.contactDiameterMm ?? merged.tip.contactDiameterMm,
+            bodyDiameterMm: coneProfile?.bodyDiameterMm ?? merged.tip.bodyDiameterMm,
+            lengthMm: coneProfile?.lengthMm ?? merged.tip.lengthMm,
+            penetrationMm: coneProfile?.penetrationMm ?? merged.tip.penetrationMm,
+            diskThicknessMm: diskConeProfile?.diskThicknessMm ?? merged.tip.diskThicknessMm,
+            maxStandoffMm: diskConeProfile?.maxStandoffMm ?? merged.tip.maxStandoffMm,
+            standoffAngleThreshold: diskConeProfile?.standoffAngleThreshold ?? merged.tip.standoffAngleThreshold,
+        },
+        shaft: {
+            ...merged.shaft,
+            diameterMm: shaftDiameter,
+            secondaryDiameterMm: shaftDiameter,
+        },
+        roots: {
+            ...merged.roots,
+            diameterMm: root?.diameter ?? merged.roots.diameterMm,
+            diskHeightMm: root?.diskHeight ?? merged.roots.diskHeightMm,
+            coneHeightMm: root?.coneHeight ?? merged.roots.coneHeightMm,
+        },
+    };
+}
+
+// A trunk's settings come partly from the plate root it owns, which the store
+// holds separately -- hence the lookup rather than a pure read off the entity.
+registerSettingsInference<Trunk, SupportSettings, SupportSettings>(
+    'trunk',
+    (trunk, base) => inferSettingsFromTrunk(trunk, getRootById(trunk.rootId) ?? null, base),
+);
