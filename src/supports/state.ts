@@ -1148,11 +1148,10 @@ export type RemoveJointByIdResult = {
 }[JointRemovalTypeId];
 
 export function removeJointById(jointId: string): RemoveJointByIdResult | null {
-    // Every type declaring joint removal, in registry order. A type whose UPPER
-    // end is a knot is handled below instead: it terminates on another support,
-    // so nothing rides its shaft and there is no knot to rebind.
+    // Every type declaring joint removal, in registry order. The cone guard and
+    // the knot rebind below both self-skip for a type that has neither, so one
+    // body serves all of them.
     for (const typeId of JOINT_REMOVAL_TYPES) {
-        if (getSupportTypeDescriptor(typeId).upper.kind === 'knot') continue;
         const collection = state[getSupportTypeDescriptor(typeId).location.key] as unknown as
             Record<string, { segments: Segment[] }>;
         for (const [entityId, entity] of Object.entries(collection ?? {})) {
@@ -1165,40 +1164,6 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
         }
     }
 
-    // Checked separately from the shafted types above: a kickstand joint should
-    // delete just that joint, not the whole support.
-    for (const [kickstandId, kickstand] of Object.entries(state.kickstands)) {
-        const hasJoint = kickstand.segments.some(
-            (seg) => seg.topJoint?.id === jointId || seg.bottomJoint?.id === jointId,
-        );
-        if (!hasJoint) continue;
-
-        const lowerIndex = resolveLowerSegmentIndex(kickstand.segments, jointId);
-        if (lowerIndex === -1) return null;
-
-        const before = deepClone(kickstand);
-        const after = deepClone(kickstand);
-        const segments = after.segments;
-        const lowerSegment = segments[lowerIndex];
-        if (!lowerSegment) return null;
-
-        const nextIndex = lowerIndex + 1;
-        const upperSegment = nextIndex < segments.length ? segments[nextIndex] : undefined;
-
-        if (upperSegment) {
-            // Merge: lower segment absorbs upper segment's top joint
-            lowerSegment.topJoint = upperSegment.topJoint
-                ? deepClone(upperSegment.topJoint)
-                : undefined;
-            segments.splice(nextIndex, 1);
-        } else {
-            // Last joint in the chain — just drop it
-            lowerSegment.topJoint = undefined;
-        }
-
-        applySupportEntityUpdate(after);
-        return { typeId: 'kickstand', id: kickstandId, before, after };
-    }
 
     return null;
 }
