@@ -20,6 +20,7 @@
             "useEditorHotkeys",
             "useHistoryControls",
             "packageManager",
+            "contributesCrossSectionGeometry",
             "island_replay",
             "pushToast",
             "javascript_gc_object_count",
@@ -87,7 +88,7 @@
             "schematic names": "registerX/subscribeX/getX* and the Gadget* family are invented stand-ins in walkthroughs (registration-seams.md, state-and-stores.md, support-type-extension.md), not real symbols.",
             "external symbols": "n_coords is a field of the third-party LYS format; version_comparator is a tauri-plugin-updater API.",
             "deliberately removed": "kerf_mm is named in organic-cut-surface-redesign.md precisely to record that it is gone.",
-            "aspirational": "page-tsx-refactor-handoff.md is a refactor plan; its symbols name extractions not yet made. packageManager is a package.json key npm has not adopted here.",
+            "aspirational": "page-tsx-refactor-handoff.md is a refactor plan; its symbols name extractions not yet made. packageManager is a package.json key npm has not adopted here. contributesCrossSectionGeometry is a flag per-type-alias-cleanup.md PROPOSES adding if a derived cache key proves too broad.",
             "generated at build time": "the paths are produced by scripts/generate-plugin-registry.mjs and scripts/generate-support-registrations.mjs, and are gitignored (**/generated*), so they are absent from a clean checkout.",
             "proposed, not built": "island_replay is the name ADR-0025 proposes for a capability not yet folded in; pushToast is named in notifications.md precisely to state that no such API exists.",
             "upstream windowing APIs": "PlatformWebview and cef_window_handle_t are tauri and CEF APIs; wl_surface and wl_subsurface are Wayland protocol objects; windowless_rendering_enabled and set_as_windowless belong to the cef crate. ADR-0005 and ADR-0040 cite them to explain why the Linux CEF build embeds through an X11 window id, so they name code we depend on but do not own."
