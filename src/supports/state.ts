@@ -2440,7 +2440,7 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
     // a SupportState collection now, and addKickstand would mutate `state` only
     // for `state = newState` below to discard it.
     for (const build of effectiveData.kickstands ?? []) {
-        newState.kickstands[build.kickstand.id] = { ...migrateLegacyGeneratedBy(build.kickstand), typeId: 'kickstand' };
+        newState.kickstands[build.kickstand.id] = { ...migrateLegacyGeneratedBy(build.kickstand), typeId: bundledSupportTypeId() };
         newState.roots[build.root.id] = build.root;
         newState.knots[build.hostKnot.id] = build.hostKnot;
     }
