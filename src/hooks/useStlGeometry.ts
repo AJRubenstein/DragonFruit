@@ -1,4 +1,5 @@
 import { isTauriRuntime } from '@/utils/tauriRuntime';
+import { getSavedWorkspaceCameraSettings } from '@/components/settings/workspaceCameraPreferences';
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -50,9 +51,13 @@ export type GeometryWithBounds = {
   /** Present when defective vertex data was detected and auto-repaired */
   meshDefects?: MeshDefects;
   /**
-   * Pre-computed hard-edge geometry for the Higher Contrast Model Edges overlay.
-   * Uses a 30° threshold angle — only crease edges are included, not every triangle edge.
-   * Computed once during import to avoid synchronous lag when toggling the setting on.
+   * Hard-edge geometry (30°) for the Higher Contrast Model Edges overlay.
+   *
+   * Only built when the user has the overlay enabled — see
+   * {@link buildModelEdgeGeometry} for why it is never built otherwise. It
+   * caches on the geometry so every consumer and every remount reuses one
+   * build, and so a geometry swap (hollow, punch, mirror, split) rebuilds
+   * exactly once.
    */
   edgeGeometry?: THREE.EdgesGeometry;
   /** Present when an oversized native source was reduced for interactive use. */
@@ -164,11 +169,10 @@ const IN_PLACE_PROCESSING_VERTEX_THRESHOLD = 12_000_000;
 // practical benefit in auto-import flows. In auto mode, skip native processing
 // beyond this size and let users opt-in via manual Repair.
 const AUTO_NATIVE_PROCESSING_TRIANGLE_THRESHOLD = 3_000_000;
-// EdgesGeometry builds an internal hash map keyed by unique edge hashes using
-// a plain object, then iterates it with `for...in`. V8 throws "Too many
-// properties to enumerate" when the hash map exceeds ~2M entries. Skip
-// precomputation for meshes above this threshold to avoid the wasted work.
-// The Higher Contrast Model Edges overlay simply won't be available for that model.
+// EdgesGeometry builds an internal hash map keyed by unique vertex positions
+// using a plain object, then iterates it with `for...in`. V8 throws "Too many
+// properties to enumerate" when the hash map exceeds ~2M entries, so meshes
+// above this threshold get no Higher Contrast Model Edges overlay at all.
 const EDGE_GEOMETRY_MAX_TRIANGLES = 800_000;
 // Loading an STL file larger than this will be rejected with a user-facing
 // error. A 300 MB binary STL contains ~6M triangles, which after Three.js
@@ -601,27 +605,22 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
     console.log(`[${new Date().toISOString()}] [processGeometry] Flattening Planes finished. Took ${(performance.now() - startPlanes).toFixed(2)}ms`);
   }
 
-  // Yield before edge geometry computation (can be expensive for large meshes)
+  // Yield before the optional edge overlay build
   await new Promise<void>(r => setTimeout(r, 0));
 
+  // Built only when the user actually has the overlay on: it costs ~1.9 s for a
+  // 500k-triangle model and is off by default, so a scene that never enables it
+  // must never pay for it. A later toggle is handled by the scene
+  // (useSceneCollectionManager's ensure pass), which builds for already-loaded
+  // models one at a time.
+  const computeEdgeGeometry = options.computeEdgeGeometry
+    ?? getSavedWorkspaceCameraSettings().higherContrastModelEdges;
   let edgeGeometry: THREE.EdgesGeometry | undefined;
-  if (sourceTriangleEstimate >= EDGE_GEOMETRY_MAX_TRIANGLES) {
-    console.warn(
-      `[processGeometry] Skipping edge geometry for large mesh (` +
-      `${sourceTriangleEstimate.toLocaleString()} triangles, threshold=${EDGE_GEOMETRY_MAX_TRIANGLES.toLocaleString()}).`,
-    );
-  } else {
+  if (computeEdgeGeometry) {
     console.log(`[${new Date().toISOString()}] [processGeometry] Computing Edge Geometry`);
     const startEdges = performance.now();
-    try {
-      edgeGeometry = new THREE.EdgesGeometry(geometry, 30);
-      console.log(`[${new Date().toISOString()}] [processGeometry] Edge Geometry finished. Took ${(performance.now() - startEdges).toFixed(2)}ms`);
-    } catch (edgeError) {
-      console.warn(
-        `[processGeometry] Edge geometry computation failed for large mesh (${sourceTriangleEstimate.toLocaleString()} triangles).`,
-        edgeError,
-      );
-    }
+    edgeGeometry = buildModelEdgeGeometry(geometry);
+    console.log(`[${new Date().toISOString()}] [processGeometry] Edge Geometry finished. Took ${(performance.now() - startEdges).toFixed(2)}ms`);
   }
 
   const shouldSurfaceDefects = meshDefects.hasDefects || meshDefects.nativeRepairReport != null;
