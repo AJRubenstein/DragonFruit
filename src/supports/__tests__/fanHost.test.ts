@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { pickFanHost, leafPathCrossesSupports, collectFanShaftPoints, fanLeafToHost, findMergeHost, buildConsolidationBranch, type FanShaftPoint } from '../autoSupport/autoPlace';
 import type { SupportState } from '../types';
+import { NEAR_PLATE_ORIGIN } from '../supportTypeRegistry';
 
 function emptySnapshot(): SupportState {
     return {
@@ -190,7 +191,7 @@ test('collectFanShaftPoints excludes anchor-origin trunks', () => {
         id: 'stump',
         modelId: 'm',
         rootId: 'r-anchor',
-        origin: 'stump',
+        origin: NEAR_PLATE_ORIGIN,
         segments: [{
             id: 'seg-anchor',
             diameter: 1,
@@ -212,7 +213,7 @@ test('findMergeHost never returns an anchor-origin trunk', () => {
         id: 'stump',
         modelId: 'm',
         rootId: 'r-anchor',
-        origin: 'stump',
+        origin: NEAR_PLATE_ORIGIN,
         segments: [{
             id: 'seg-anchor',
             diameter: 1,
