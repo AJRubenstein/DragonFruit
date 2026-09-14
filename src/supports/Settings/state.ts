@@ -275,7 +275,20 @@ export function getSettingsSnapshot(): SupportSettings {
 
 const STORAGE_KEY = 'support-settings';
 
+/**
+ * Whether this context has the storage the settings persist to.
+ *
+ * The registry imports this module for `getSettings`, so anything importing the
+ * registry loads it -- including the render-lookup worker, where `localStorage`
+ * does not exist. Guarding on `window` is not enough: a worker has neither, but
+ * a test environment can have one without the other.
+ */
+function hasLocalStorage(): boolean {
+    return typeof localStorage !== 'undefined';
+}
+
 export function saveSettingsToLocalStorage(): void {
+    if (!hasLocalStorage()) return;
     try {
         // Exclude dev tools settings from saved state to reset on next app startup
         const toSave = {
@@ -291,6 +304,7 @@ export function saveSettingsToLocalStorage(): void {
 }
 
 export function loadSettingsFromLocalStorage(): boolean {
+    if (!hasLocalStorage()) return false;
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (!stored) return false;
@@ -314,6 +328,4 @@ export function loadSettingsFromLocalStorage(): boolean {
 
 // --- Initialize ---
 
-if (typeof window !== 'undefined') {
-    loadSettingsFromLocalStorage();
-}
+loadSettingsFromLocalStorage();
