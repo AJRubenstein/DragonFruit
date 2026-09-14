@@ -80,7 +80,7 @@ SIZING PRESET that happens to share the word.
 gain. If the type is ever renamed, this preset keeps its own name, and that is
 correct: they were never the same thing.
 
-`ANCHOR_BELOW_ROOT` is the opposite case: it reads like geometry but IS the
+`STUMP_BELOW_ROOT` is the opposite case: it reads like geometry but IS the
 type -- a `LimitationCode` raised only by the anchor's own placement rule. Every
 token is classified in [anchor-token-census.md](anchor-token-census.md); read it
 before touching anything, because the word cuts both ways.
@@ -103,7 +103,7 @@ by nature.
 
 **Nor classify by file.** The census was first built that way and got two things
 wrong in both directions: `supportSidebarAnchorRef` sits in a supports file and
-is an `HTMLDivElement`, while `ANCHOR_BELOW_ROOT` reads like geometry and is the
+is an `HTMLDivElement`, while `STUMP_BELOW_ROOT` reads like geometry and is the
 type. The test is what the token IS -- a `Vec3`, a DOM ref, a screen direction,
 an entity -- not where it lives. Every row in the census carries that evidence.
 
@@ -180,7 +180,7 @@ every declared type where they previously checked one.
 
 ### Two corrections to the plan and census
 
-1. **`ANCHOR_BELOW_ROOT` is NOT the type.** The census says it "needs renaming
+1. **`STUMP_BELOW_ROOT` is NOT the type.** The census says it "needs renaming
    with the type". It is a member of `GridPlacementRejectReason` — a vocabulary of
    rejection reasons beside `KNOT_ABOVE_TIP` and `NO_HOST_SEGMENT` — raised by
    `anchorAutoPlacement.ts` and read by `useTrunkPlacement.ts`. Both sides share
@@ -221,3 +221,69 @@ from it: a probe that renames only one naming point, or that guesses the
 collection plural, or that skips the folders, manufactures errors that do not
 exist — which is how an earlier `remaining-worklist.py` reported 167 where the
 honest figure was 10.
+
+---
+
+## The rename happened: the type is now `stump`
+
+Everything above is the plan as written while the type was still called `anchor`.
+It was carried out, and this is what it cost.
+
+### The two hazards the plan did not predict
+
+Both were found by loading a scene in the app, not by any test or the compiler.
+
+1. **The detail-renderer prop name.** `SupportRenderer.renderDetailFor` passes a
+   renderer its entity under a COMPUTED key -- the descriptor's `singular` -- so
+   TypeScript cannot check that the component destructures the same name. After
+   the rename the descriptor said `stump` and `StumpRenderer` still read `anchor`:
+   the prop was `undefined` and the scene crashed at draw time, with 0 tsc errors
+   and the whole suite green. Now asserted by `supportTypeFolders.test.ts`.
+
+2. **The payload collection key.** A support payload stores its entities under a
+   collection name (`anchors:`), so a scene saved before the rename loaded with
+   those entities simply absent -- no error, just missing geometry. Measured on
+   the `criosphinx` export fixture: six meshes and ~1,100 vertices gone.
+   `src/supports/importMigrations.ts` now rewrites both the former key and the
+   former `typeId`/`origin` stamps, driven by a `renamedFrom` declaration on the
+   descriptor so the migration itself names no type.
+
+Neither is the kind of thing a literal-count metric can see, and both are the
+reason the plan insists on a manual place/render/export/undo check.
+
+### What the rename actually needed
+
+- **Both naming points**: `types.ts` (the entity interface, `StumpFields`, the
+  `SupportFieldsByType` key, the `SupportCollectionByType` key) and
+  `supportTypeRegistry.ts` (the descriptor id, the ten per-type flag tables, the
+  collection map, the removal shape).
+- **The type's own folder**: `Anchor/` -> `Stump/`, and its three DERIVED names
+  (`StumpRenderer.tsx`, `stumpRegistration.ts`, and the folder itself), which
+  `supportTypeFolders.test.ts` and the registrations generator both derive from
+  the id.
+- **The collection key** `anchors` -> `stumps`, everywhere `SupportState`, the
+  wire format, the clipboard payload and the raft-footprint input name it.
+- **The origin value**: the near-plate origin was spelled after the type, so it
+  moved too -- as its own migration, and its comparison is now derived through
+  `NEAR_PLATE_ORIGIN` rather than spelled, because an origin key does NOT follow
+  `SupportTypeId` and a stale comparison would fail silently.
+
+Not renamed, because they are different vocabularies that merely share the word:
+the sizing preset (`'anchor'` beside `'detail'`/`'structure'`, persisted in user
+settings), geometric anchoring (`sortAnchor`, `lowAnchor`, `resolveShaftAnchor`,
+`socketAnchorRef`, `anchorZ`), the floating-panel layout map
+(`LayoutProfile.anchors`), the lucide `Anchor` ICON in the top bar, and
+the rejection-reason vocabulary (`STUMP_BELOW_ROOT` beside `KNOT_ABOVE_TIP`).
+
+### Cost, measured
+
+**53 files** carried the word; **~20** needed a real change beyond the rename
+itself; two of those were the hazards above. The test scaffolding dominated:
+seven files built type-keyed fixtures, and the fix in each was the same shape the
+plan prescribes -- pin the value, derive the name.
+
+### Verification
+
+`python ../lysdiag/tools/rename-probe.py stump --new stumpx` now reports
+**0 tsc errors**, with only the golden `typeId` recordings differing (the store
+asserting what it stamps). Before the work the same probe on `anchor` reported 53.
