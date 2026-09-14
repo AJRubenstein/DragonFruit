@@ -109,3 +109,25 @@ test('the modelId walk covers everything except knots', () => {
     const all = Object.keys(createEmptySupportCollections());
     assert.deepEqual(all.filter((key) => !walked.has(key)), ['knots']);
 });
+
+test("a type's display label names the same type its id does", () => {
+  // `label` is a SECOND spelling of the type's name inside the registry, and it
+  // cannot be derived from `id`: the plurals are English and irregular
+  // (`leaf` -> `Leaves`, not `Leafs`). Nothing checked it, so when the
+  // near-plate type was renamed `anchor` -> `stump` the label stayed `Anchors`
+  // and the debug overlay read "Anchors: 1" for a type called `stump` -- with
+  // every metric, test and compiler check green.
+  //
+  // The invariant is deliberately weak, because a display label is allowed to
+  // be a nicer word than the id: it must share the type's STEM and not be a
+  // different word. Three characters is what the irregular plurals allow
+  // (`Leaves`/`leaf` agree only up to `lea`), and it is enough to catch a label
+  // left behind by a rename, which is the failure this exists for.
+  for (const descriptor of SUPPORT_TYPES) {
+    const stem = descriptor.id.slice(0, 3).toLowerCase();
+    assert.ok(
+      descriptor.label.toLowerCase().startsWith(stem),
+      `${descriptor.id}: label "${descriptor.label}" does not look like a name for this type`,
+    );
+  }
+});

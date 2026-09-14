@@ -144,7 +144,16 @@ export interface SupportEdge {
  */
 export interface SupportTypeDescriptor {
     id: SupportTypeId;
-    /** Plural display name, so panels listing collections need no label table. */
+    /**
+     * Plural display name, so panels listing collections need no label table.
+     *
+     * RENAMING A TYPE MUST UPDATE THIS. It is a second spelling of the type's
+     * name inside the registry, and it cannot be derived from `id`: these are
+     * English plurals and irregular (`leaf` -> `Leaves`, not `Leafs`). It is
+     * also invisible to every metric that looks for the id as a token, so a
+     * rename leaves it behind silently -- the debug overlay read "Anchors: 1"
+     * for a type called `stump` until this was corrected.
+     */
     label: string;
     /**
      * Singular lower-case name, for history descriptions like
@@ -945,7 +954,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         hostsKickstand: false,
         isAutoPlaced: true,
         hasSegments: true,
-        label: 'Anchors',
+        label: 'Stumps',
         singular: 'stump',
         location: { store: 'support', key: 'stumps' },
         selectionCategory: 'stump',
