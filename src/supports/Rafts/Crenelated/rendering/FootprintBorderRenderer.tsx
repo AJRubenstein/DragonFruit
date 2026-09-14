@@ -166,10 +166,7 @@ export default function FootprintBorderRenderer({
   const hullCacheKeyRef = React.useRef<string | null>(null);
 
   const supportFootprintPoints = React.useMemo(() => {
-    const circlesByModel = collectRaftBaseCirclesByModel({
-      roots: Object.values(supportState.roots),
-      stumps: Object.values(supportState.stumps),
-    }, modelId != null
+    const circlesByModel = collectRaftBaseCirclesByModel(supportState, modelId != null
       ? { modelFilterId: modelId, fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY }
       : { fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY });
 

@@ -75,9 +75,9 @@ profiles for no gain. Leave it, and leave its user-facing strings.
 | `updateStump` | 3 | `state.ts` |
 | `AnchorRenderer` | 2 | `SupportRenderer`, `registerBuiltinDetailRenderers` |
 | `stumpRegistration` | 3 | the generated barrel -- **derived, leave it** |
-| `supportStumps`, `supportStumpsRef` | 11 | `RaftProxyMeshLayer` -- reads `supportState.stumps` |
+| the raft layer's collection aliases and their cache refs | 0 | **gone** -- it caches on the source the registry names, so an edit to an unrelated type no longer rebuilds the raft |
 | `stumpList` | 3 | `SupportRenderer` |
-| `StumpLike` | 2 | `raftFootprintCircles.ts` -- `Pick<Stump, …>` |
+| the footprint's per-type input alias | 0 | **gone** -- the inline-root walk is derived from the registry's declared inline roots |
 | `anchorCount`, `anchorClusters`, `anchorRegions` | 9 | `autoSupport/types.ts` -- report fields |
 | `stabilizationAnchors`, `computeStabilizationAnchors`, `StabilizationAnchor`, `MAX_ANCHORS` | 21 | `stabilization.ts` -- these place anchors |
 | `ANCHOR_HEIGHT_THRESHOLD_MM` | 2 | the height at which a trunk becomes an anchor |

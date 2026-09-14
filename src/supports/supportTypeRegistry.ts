@@ -54,6 +54,15 @@ export type SupportEndpointKind =
 export interface SupportEndpoint {
     kind: SupportEndpointKind;
     field?: string;
+    /**
+     * For `inlineRoot`: the field holding the base's radius.
+     *
+     * An inline root is plate geometry ON the entity, so unlike a `plateRoot` --
+     * which is a shared `Roots` record carrying its own `diameter` -- its width
+     * exists only as a field of the type's own entity. Declared so a generic
+     * reader can size it without knowing which type it is looking at.
+     */
+    radiusField?: string;
 }
 
 /**
@@ -944,7 +953,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
             shaftMultiplier: 1.25,
         },
         isAutoBraceable: false,
-        lower: { kind: 'inlineRoot', field: 'rootPos' },
+        lower: { kind: 'inlineRoot', field: 'rootPos', radiusField: 'rootBaseDiameter' },
         upper: { kind: 'cone', field: 'contactCone' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
@@ -2555,6 +2564,44 @@ export function bundledSupportTypeId(): SupportTypeId {
     }
     return typeId;
 }
+
+/**
+ * The types whose base is geometry on the entity rather than a shared `Roots`.
+ *
+ * A plate-rooted type's base is a `Roots` record in the shared collection, so a
+ * reader finds it by walking that one collection. An inline-rooted type carries
+ * its base as fields of its own entity, so the reader needs to know WHICH fields
+ * -- and that is what this answers, so no caller has to name the type.
+ *
+ * Read through `inlineRootPlacementFor`, or iterate this for the whole set.
+ */
+export interface InlineRootPlacement {
+    typeId: SupportTypeId;
+    /** The collection the entities live in. */
+    collectionKey: SupportCollectionKey;
+    /** The field holding the base position. */
+    posField: string;
+    /** The field holding the base radius. */
+    radiusField: string;
+}
+
+export const INLINE_ROOT_TYPES: readonly InlineRootPlacement[] = SUPPORT_TYPES
+    .filter((descriptor) => descriptor.lower.kind === 'inlineRoot')
+    .map((descriptor) => {
+        const { field, radiusField } = descriptor.lower;
+        if (!field || !radiusField) {
+            throw new Error(
+                `${descriptor.id} declares an inlineRoot without both a position and a radius field, `
+                + 'so nothing can place its base on the raft',
+            );
+        }
+        return {
+            typeId: descriptor.id,
+            collectionKey: descriptor.location.key,
+            posField: field,
+            radiusField,
+        };
+    });
 
 /** Whether this type hosts knots on a selectable span. */
 export function isSpanKnotHost(typeId: SupportTypeId): boolean {
