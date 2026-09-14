@@ -34,25 +34,25 @@ from it. `SupportState`'s collections, the modelId and shafted walks, root
 ownership, the updater and knot-diameter slots, and several behaviour decisions
 that used to be hardcoded type names now come from there.
 
-**Adoption is partway.** Measured by `npm run scan:support-types`: **5,909
-hand-written type references across 152 files**, down from 12,164. History
+**Adoption is partway.** Measured by `npm run scan:support-types`: **5,219
+hand-written type references across 148 files**, down from 12,164. History
 handlers, registration slots, the support primitives, the clipboard, geometry
-export and most of `state.ts` are converted; `state.ts` (912),
-`SupportRenderer.tsx` (494) and auto-placement (425) remain the largest
+export and most of `state.ts` are converted; `state.ts` (751),
+`SupportRenderer.tsx` (457) and auto-placement (325) remain the largest
 holdouts. Adding a type is therefore still partly manual — see
 `dev/support-type-extension.md`, which marks each step.
 
 **Quote the per-type rename test, not one headline.** `rename-test.py <type>`
-is the goal mechanised, and the eight types are nowhere near each other:
-`branch` 112, `leaf` 67, `trunk` 55, down to `anchor` 2. Progress has mostly
-been measured on `stick` (10), the easiest one, which makes the work read as
-nearly finished when `branch` is ten times worse. The detail lives in
+is the goal mechanised, and the types differ: `branch` 16, `leaf` 14, `trunk` 3,
+`anchor` 1, `stick` 0. Measuring on the easiest type alone reads as finished
+when another is ten times worse. The detail lives in
 `dev/support-type-literal-plan.md` §1.1.
 
 Neither instrument alone is the picture: the rename test sees only what `tsc`
 can prove, so a literal that survives a rename *without* a compile error is
 invisible to it. That is what the token inventory (`lysdiag/tools/inventory.py`,
-6,955 occurrences) catches. Report both.
+736 distinct tokens over 6,014 occurrences) catches. Report both. A string
+literal is invisible to BOTH: the knot-host prefixes needed a source scan.
 
 **Remaining goal:** move the rest of the per-type threading behind the registry,
 so the renderer, interaction manager and export derive their behaviour rather

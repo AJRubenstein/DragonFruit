@@ -58,14 +58,18 @@ Three instruments, and none of them alone is the picture:
 **Re-measured after stage 6a** (§4). Previous readings, kept for the delta, are
 in the *was* column.
 
+Only the two `npm` rows are reproducible from a clone. The rest live in
+`lysdiag/tools/`, which is never committed, so quote them as working notes --
+anything a reviewer must be able to check belongs in a repo script.
+
 | instrument | what it answers | now | start of stage 1 |
 | ---------- | --------------- | --- | --- |
-| `remaining-worklist.py` | honest rename errors, with the failing source line | **10** | 280 (old metric — see §4) |
-| `inventory.py` + `report.py` | every token containing a type name | **6,014** occurrences, 736 tokens | 6,955 / 778 |
 | `npm run scan:support-types` | the headline reference metric | **5,219** across 148 files | 5,909 |
-| `type-literal-metric.py` | every string literal equal to a type id | 16 value outside `SupportTypes`, 4 dispatch, 0 declaration | 163 / 16 / 5 |
-| `npm run check:support-literals` | the same, with the ratchet | **30 value, 0 dispatch, 0 declaration** | 149 / 10 / 3 |
-| `silent-value-sites.py` | **value literals a rename does NOT reach** | **11, 0 of them real** | 17 real=2 |
+| `npm run check:support-literals` | every string literal equal to a type id, with the ratchet | **10 value, 0 dispatch, 0 declaration** (30 counting comments and other vocab) | 149 / 10 / 3 |
+| `remaining-worklist.py` *(local)* | honest rename errors, with the failing source line | **10** | 280 (old metric — see §4) |
+| `inventory.py` + `report.py` *(local)* | every token containing a type name | **6,014** occurrences, 736 tokens | 6,955 / 778 |
+| `type-literal-metric.py` *(local)* | the same literals, unratcheted | 16 value outside `SupportTypes`, 4 dispatch, 0 declaration | 163 / 16 / 5 |
+| `silent-value-sites.py` *(local)* | **value literals a rename does NOT reach** | **11, 0 of them real** | 17 real=2 |
 
 **The `remaining-worklist.py` row is not comparable to its own history.** The tool
 was corrected mid-refactor (§4); it reported 167 under a metric that could not
