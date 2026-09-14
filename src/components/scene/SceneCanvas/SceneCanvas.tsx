@@ -1521,6 +1521,15 @@ export function SceneCanvas({
   const selectedTintColor = selectionColor ?? '#ec2a77';
   const likelySupportGeometryTintColor = '#c8752a';
 
+  // One walk per state change, keyed by model, so the per-model bounds callback
+  // below does not re-walk every collection for every model.
+  const raftBaseCirclesByModelKey = React.useMemo(
+    () => collectRaftBaseCirclesByModel(supportStateForBounds, {
+      fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
+    }),
+    [supportStateForBounds],
+  );
+
   const computeSupportAndRaftWorldBounds = React.useCallback((modelId: string): THREE.Box3 | null => {
     // During active gizmo drags, keep bounds work minimal to preserve interaction FPS.
     if (isGizmoDragging || isGizmoRetargeting) return null;
@@ -1639,12 +1648,13 @@ export function SceneCanvas({
       }
     }
 
-    if (rootsForModel.length > 0 && raftSettingsForBounds.bottomMode !== 'off') {
-      const circles: SupportBaseCircle[] = rootsForModel.map((root) => ({
-        x: root.transform.pos.x,
-        y: root.transform.pos.y,
-        r: root.diameter / 2,
-      }));
+    // The same base circles the raft is drawn from, so bounds account for the
+    // raft that actually exists. This read `roots` alone and so missed the types
+    // carrying their own inline root, and skipped the raft entirely for a model
+    // whose only bases were of those types.
+    const modelBaseCircles = raftBaseCirclesByModelKey.get(modelId) ?? [];
+    if (modelBaseCircles.length > 0 && raftSettingsForBounds.bottomMode !== 'off') {
+      const circles: SupportBaseCircle[] = modelBaseCircles;
 
       const thickness = raftSettingsForBounds.bottomMode === 'line' ? raftSettingsForBounds.lineHeightMm : raftSettingsForBounds.thickness;
       const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsForBounds.chamferAngle))));
@@ -1674,7 +1684,7 @@ export function SceneCanvas({
     }
 
     return hasAny ? bounds : null;
-  }, [isGizmoDragging, isGizmoRetargeting, raftSettingsForBounds, supportStateForBounds]);
+  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
 
   const computeModelWorldBounds = React.useCallback((
     model: LoadedModel,
