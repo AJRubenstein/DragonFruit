@@ -5,13 +5,13 @@ import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import { buildStumpData } from './stumpBuilder';
 
 /**
- * The anchor OVERRIDES auto-placement's default build for its band.
+ * The stump OVERRIDES auto-placement's default build for its band.
  *
- * Auto-placement stands a trunk on a contact by default. An anchor claims the
+ * Auto-placement stands a trunk on a contact by default. A stump claims the
  * near-plate band (the `tipHeight` rule on its descriptor) and puts a stub
  * there instead — a different primitive entirely. Registering that here is what
  * lets the grid engine ask "what does this contact's type build, and build it"
- * without importing this module or naming the anchor.
+ * without importing this module or naming the stump.
  */
 registerContactOverride('stump', (request) => {
     const built = buildStumpData({
@@ -23,27 +23,27 @@ registerContactOverride('stump', (request) => {
         mesh: request.mesh as THREE.Mesh | undefined,
     });
 
-    const { anchor, supportData } = built;
+    const { stump, supportData } = built;
     const placed: PlacedSupport = {
-        // An anchor declares no `edges`: its frustum root IS the support, so it
+        // A stump declares no `edges`: its frustum root IS the support, so it
         // carries no separate primitive into the draft.
         typeId: 'stump',
-        entity: anchor,
+        entity: stump,
         supplied: {},
     };
 
-    // The anchor's OWN invariant, tested here rather than in the grid engine:
+    // The stump's OWN invariant, tested here rather than in the grid engine:
     // the cone body spans contact disk → socket and must never dip below the
     // root joint, or an over-long cone on a downward axis pushes the shaft below
-    // the root, into -Z. The engine has no business reading an anchor's joints
+    // the root, into -Z. The engine has no business reading a stump's joints
     // and cone to check this.
-    const jointZ = anchor.joint.pos.z;
+    const jointZ = stump.joint.pos.z;
     const lowestShaftZ = Math.min(
-        anchor.contactCone.pos.z,
-        getFinalSocketPosition(anchor.contactCone).z,
+        stump.contactCone.pos.z,
+        getFinalSocketPosition(stump.contactCone).z,
     );
     if (lowestShaftZ < jointZ - 1e-3) {
-        // Preview the invalid anchor (red, with the reason as `error`) so the
+        // Preview the invalid stump (red, with the reason as `error`) so the
         // hover tooltip explains the rejection.
         return {
             placed,

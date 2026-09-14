@@ -1092,7 +1092,7 @@ function sceneArrange(args: ReturnType<typeof parseArgs>): void {
   const spacing = parseFloat(optionalFlag(args.flags, 'spacing') ?? '2.0');
   const plateW = parseFloat(optionalFlag(args.flags, 'build-width-mm') ?? '218.0');
   const plateD = parseFloat(optionalFlag(args.flags, 'build-depth-mm') ?? '122.0');
-  const anchorMode = (optionalFlag(args.flags, 'stump') ?? 'center') as ArrangeAnchorMode;
+  const anchorMode = (optionalFlag(args.flags, 'anchor') ?? 'center') as ArrangeAnchorMode;
 
   const visibleModels = doc.models.filter((m) => m.visible);
   if (visibleModels.length === 0) throw new Error('No visible models to arrange');

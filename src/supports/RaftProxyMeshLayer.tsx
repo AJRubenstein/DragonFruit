@@ -58,7 +58,7 @@ type VisibleRaftEntry = {
 
 type RaftProxyCacheEntry = {
   supportRootsRef: ReturnType<typeof getSnapshot>['roots'];
-  supportAnchorsRef: ReturnType<typeof getSnapshot>['stumps'];
+  supportStumpsRef: ReturnType<typeof getSnapshot>['stumps'];
   raftSignature: string;
   geometriesByModel: Map<string, CachedRaftGeometry>;
 };
@@ -197,7 +197,7 @@ export function RaftProxyMeshLayer({
   const { hit } = usePicking();
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const supportRoots = supportState.roots;
-  const supportAnchors = supportState.stumps;
+  const supportStumps = supportState.stumps;
   const raft = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
 
   const selectedModelIdSet = React.useMemo(() => new Set(selectedModelIds), [selectedModelIds]);
@@ -226,7 +226,7 @@ export function RaftProxyMeshLayer({
     if (
       raftProxyCache
       && raftProxyCache.supportRootsRef === supportRoots
-      && raftProxyCache.supportAnchorsRef === supportAnchors
+      && raftProxyCache.supportStumpsRef === supportStumps
       && raftProxyCache.raftSignature === raftSignature
     ) {
       return raftProxyCache.geometriesByModel;
@@ -234,7 +234,7 @@ export function RaftProxyMeshLayer({
 
     const rootCirclesByModel = collectRaftBaseCirclesByModel({
       roots: Object.values(supportRoots),
-      stumps: Object.values(supportAnchors),
+      stumps: Object.values(supportStumps),
     }, {
       fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
     });
@@ -296,13 +296,13 @@ export function RaftProxyMeshLayer({
 
     raftProxyCache = {
       supportRootsRef: supportRoots,
-      supportAnchorsRef: supportAnchors,
+      supportStumpsRef: supportStumps,
       raftSignature,
       geometriesByModel: next,
     };
 
     return next;
-  }, [raft, raftSignature, supportRoots, supportAnchors]);
+  }, [raft, raftSignature, supportRoots, supportStumps]);
 
   const visibleEntries = React.useMemo<VisibleRaftEntry[]>(() => {
     const entries: VisibleRaftEntry[] = [];

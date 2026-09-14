@@ -4,11 +4,11 @@ import type { Stump, Roots } from '@/supports/types';
 export const RAFT_UNASSIGNED_MODEL_KEY = '__raft_unassigned__';
 
 type RootLike = Pick<Roots, 'modelId' | 'diameter' | 'transform'>;
-type AnchorLike = Pick<Stump, 'modelId' | 'rootBaseDiameter' | 'rootPos'>;
+type StumpLike = Pick<Stump, 'modelId' | 'rootBaseDiameter' | 'rootPos'>;
 
 type CollectRaftBaseCirclesInput = {
   roots?: Iterable<RootLike>;
-  stumps?: Iterable<AnchorLike>;
+  stumps?: Iterable<StumpLike>;
   kickstandRoots?: Iterable<RootLike>;
 };
 
@@ -94,11 +94,11 @@ export function collectRaftBaseCirclesByModel(
     });
   }
 
-  for (const anchor of input.stumps ?? []) {
-    pushCircle(anchor.modelId, {
-      x: anchor.rootPos.x,
-      y: anchor.rootPos.y,
-      r: anchor.rootBaseDiameter / 2,
+  for (const stump of input.stumps ?? []) {
+    pushCircle(stump.modelId, {
+      x: stump.rootPos.x,
+      y: stump.rootPos.y,
+      r: stump.rootBaseDiameter / 2,
     });
   }
 

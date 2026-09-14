@@ -16,7 +16,7 @@ import { emitSupportModelPointerHover } from './interaction/clickHandlers';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { ContactDisk, Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
-import { knotHostId, spanKnotHostType } from './supportTypeRegistry';
+import { knotHostId, spanKnotHostType, type SupportTypeId } from './supportTypeRegistry';
 
 interface SupportProxyMeshLayerProps {
   mode?: 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -117,6 +117,18 @@ function getDiskTipCenter(disk: ContactDisk): Vec3 {
   };
 }
 
+/**
+ * The namespace an interior-support id carries: the entity's OWN type, then a
+ * colon. Two types cannot collide on a shared id.
+ *
+ * The type is read from the entity rather than written here: every entity in the
+ * store is stamped with its `typeId` through the registry, so this follows a
+ * rename without an edit -- which a literal prefix did not.
+ */
+function interiorIdPrefix(entity: { typeId?: SupportTypeId }): string {
+    return `${entity.typeId}:`;
+}
+
 export function SupportProxyMeshLayer({
   mode,
   clipLower,
@@ -161,7 +173,7 @@ export function SupportProxyMeshLayer({
   const supportTwigs = supportState.twigs;
   const supportSticks = supportState.sticks;
   const supportBraces = supportState.braces;
-  const supportAnchors = supportState.stumps;
+  const supportStumps = supportState.stumps;
   // Every entity collection as one identity, rebuilt when any changes. Used
   // for the cache signature; the geometry loops below still read their own
   // collection, because each builds different primitives.
@@ -445,9 +457,9 @@ export function SupportProxyMeshLayer({
       const onB = isInteriorContactCone(stick.contactConeB, stick.modelId);
       if (onA || onB) ids.add(`stick:${stick.id}`);
     }
-    for (const anchor of Object.values(supportState.stumps)) {
-      if (isInteriorContactCone(anchor.contactCone, anchor.modelId)) {
-        ids.add(`anchor:${anchor.id}`);
+    for (const stump of Object.values(supportState.stumps)) {
+      if (isInteriorContactCone(stump.contactCone, stump.modelId)) {
+        ids.add(`${interiorIdPrefix(stump)}${stump.id}`);
       }
     }
     for (const twig of Object.values(supportTwigs)) {
@@ -925,25 +937,25 @@ export function SupportProxyMeshLayer({
     // selection-only interaction affordances in SupportRenderer, so leaving
     // them out keeps the proxy geometry clean.
 
-    // Anchors: root + contact cone, no shafts
-    for (const anchor of Object.values(supportAnchors)) {
-      if (interiorSupportIdSet && !interiorSupportIdSet.has(`anchor:${anchor.id}`)) continue;
+    // Stumps: root + contact cone, no shafts
+    for (const stump of Object.values(supportStumps)) {
+      if (interiorSupportIdSet && !interiorSupportIdSet.has(`${interiorIdPrefix(stump)}${stump.id}`)) continue;
       pushRoot({
-        id: `${anchor.id}:root`,
-        supportId: anchor.id,
-        modelId: anchor.modelId,
-        basePos: anchor.rootPos,
-        bottomRadius: Math.max(0.001, anchor.rootBaseDiameter / 2),
-        topRadius: Math.max(0.001, anchor.rootTopDiameter / 2),
+        id: `${stump.id}:root`,
+        supportId: stump.id,
+        modelId: stump.modelId,
+        basePos: stump.rootPos,
+        bottomRadius: Math.max(0.001, stump.rootBaseDiameter / 2),
+        topRadius: Math.max(0.001, stump.rootTopDiameter / 2),
         effectiveDiskHeight: 0.1,
-        coneHeight: Math.max(0, anchor.rootHeight),
+        coneHeight: Math.max(0, stump.rootHeight),
       });
 
-      if (includeDetailedPrimitives && anchor.contactCone) {
+      if (includeDetailedPrimitives && stump.contactCone) {
         pushCone({
-          ...anchor.contactCone,
-          supportId: anchor.id,
-          modelId: anchor.modelId,
+          ...stump.contactCone,
+          supportId: stump.id,
+          modelId: stump.modelId,
         });
       }
     }
@@ -1023,7 +1035,7 @@ export function SupportProxyMeshLayer({
     supportTwigs,
     supportSticks,
     supportBraces,
-    supportAnchors,
+    supportStumps,
     hasSolidBottom,
     raftThickness,
     includeDetailedPrimitives,

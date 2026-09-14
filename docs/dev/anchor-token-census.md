@@ -75,9 +75,9 @@ profiles for no gain. Leave it, and leave its user-facing strings.
 | `updateStump` | 3 | `state.ts` |
 | `AnchorRenderer` | 2 | `SupportRenderer`, `registerBuiltinDetailRenderers` |
 | `stumpRegistration` | 3 | the generated barrel -- **derived, leave it** |
-| `supportAnchors`, `supportAnchorsRef` | 11 | `RaftProxyMeshLayer` -- reads `supportState.anchors` |
-| `anchorList` | 3 | `SupportRenderer` |
-| `AnchorLike` | 2 | `raftFootprintCircles.ts` -- `Pick<Anchor, …>` |
+| `supportStumps`, `supportStumpsRef` | 11 | `RaftProxyMeshLayer` -- reads `supportState.stumps` |
+| `stumpList` | 3 | `SupportRenderer` |
+| `StumpLike` | 2 | `raftFootprintCircles.ts` -- `Pick<Stump, …>` |
 | `anchorCount`, `anchorClusters`, `anchorRegions` | 9 | `autoSupport/types.ts` -- report fields |
 | `stabilizationAnchors`, `computeStabilizationAnchors`, `StabilizationAnchor`, `MAX_ANCHORS` | 21 | `stabilization.ts` -- these place anchors |
 | `ANCHOR_HEIGHT_THRESHOLD_MM` | 2 | the height at which a trunk becomes an anchor |

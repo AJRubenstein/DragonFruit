@@ -15,8 +15,10 @@
 import { readFileSync } from 'node:fs';
 import { parseVoxlAuto } from '../src/features/scene/voxl/codec';
 import type { DragonfruitImportFormat } from '../src/supports/types';
+import { SUPPORT_TYPES } from '../src/supports/supportTypeRegistry';
 
 type XY = { x: number; y: number };
+type XYZ = XY & { z: number };
 type Tip = XY & { z: number; kind: string };
 
 const [oursPath, proPath] = process.argv.slice(2);
@@ -40,16 +42,40 @@ function load(path: string): DragonfruitImportFormat {
     return supports;
 }
 
+/**
+ * Every tip and plate footprint in a payload, labelled by the type it came from.
+ *
+ * Driven by `SUPPORT_TYPES` rather than one loop per type: the label IS the
+ * registry's id, and a type added to the registry is reported without editing
+ * this. Each type's shapes come from its declared endpoints -- a cone contact
+ * contributes a tip at its position, an `inlineRoot` lower end contributes a
+ * footprint at the entity's own root -- so nothing here knows what the types
+ * are called.
+ */
 function extract(s: DragonfruitImportFormat): { tips: Tip[]; rootXY: XY[] } {
     const tips: Tip[] = [];
-    for (const t of s.trunks ?? []) if (t.contactCone?.pos) tips.push({ ...t.contactCone.pos, kind: 'trunk' });
-    for (const b of s.branches ?? []) if (b.contactCone?.pos) tips.push({ ...b.contactCone.pos, kind: 'branch' });
-    for (const l of s.leaves ?? []) if (l.contactCone?.pos) tips.push({ ...l.contactCone.pos, kind: 'leaf' });
-    for (const a of s.stumps ?? []) tips.push({ x: a.rootPos.x, y: a.rootPos.y, z: 0, kind: 'stump' });
-    const rootXY: XY[] = [
-        ...(s.roots ?? []).map((r) => ({ x: r.transform.pos.x, y: r.transform.pos.y })),
-        ...(s.stumps ?? []).map((a) => ({ x: a.rootPos.x, y: a.rootPos.y })),
-    ];
+    const rootXY: XY[] = [...(s.roots ?? []).map((r) => ({ x: r.transform.pos.x, y: r.transform.pos.y }))];
+    const payload = s as unknown as Record<string, Record<string, unknown>[] | undefined>;
+
+    for (const descriptor of SUPPORT_TYPES) {
+        const entities = payload[descriptor.location.key] ?? [];
+        const coneField = descriptor.upper.kind === 'cone' ? descriptor.upper.field : undefined;
+        // An inline root is geometry on the entity itself, at a declared field.
+        const rootField = descriptor.lower.kind === 'inlineRoot' ? descriptor.lower.field : undefined;
+
+        for (const entity of entities) {
+            const cone = coneField ? (entity[coneField] as { pos?: XYZ } | undefined) : undefined;
+            if (cone?.pos) {
+                tips.push({ ...cone.pos, kind: descriptor.id });
+                continue;
+            }
+            const rootPos = rootField ? (entity[rootField] as XYZ | undefined) : undefined;
+            if (rootPos) {
+                tips.push({ x: rootPos.x, y: rootPos.y, z: 0, kind: descriptor.id });
+                rootXY.push({ x: rootPos.x, y: rootPos.y });
+            }
+        }
+    }
     return { tips, rootXY };
 }
 

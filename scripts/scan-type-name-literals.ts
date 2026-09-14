@@ -36,7 +36,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { SUPPORT_TYPES } from '../src/supports/supportTypeRegistry';
+import { SUPPORT_ORIGINS, SUPPORT_TYPES } from '../src/supports/supportTypeRegistry';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const SRC = join(ROOT, 'src');
@@ -67,6 +67,16 @@ const EXEMPT = [
  * catches. See docs/dev/support-type-literal-plan.md for the staged plan that
  * lowers them.
  */
+/**
+ * `origin === '<one of the declared origin keys>'`.
+ *
+ * Built from `SUPPORT_ORIGINS`, so renaming an origin -- or a type that lends its
+ * name to one -- keeps this exemption correct without an edit here.
+ */
+const ORIGIN_COMPARISON = new RegExp(
+    `origin\\s*(?:===|!==)\\s*['"](?:${Object.keys(SUPPORT_ORIGINS).join('|')})['"]`,
+);
+
 const BUDGET = {
     dispatch: 0,
     declaration: 0,
@@ -109,9 +119,14 @@ function classify(line: string, ids: string[]): LiteralClass {
 
     // A word that belongs to another vocabulary. Checked FIRST, because these
     // lines also match the dispatch shape and must not be counted as targets.
-    //   origin:        `origin === 'stump'` -- SUPPORT_ORIGINS
-    //   sizing preset: 'detail' | 'structure' | 'stump'
-    if (/origin\s*(?:===|!==)\s*['"](?:anchor|overhang|island|standalone)['"]/.test(line)) {
+    //   origin:        `origin === '<an origin key>'` -- SUPPORT_ORIGINS
+    //   sizing preset: 'detail' | 'structure' | 'anchor' (a tier, not a type)
+    //
+    // The origin keys are read from the registry rather than listed here: the
+    // origin that names the near-plate band is spelled after the type that
+    // claims that band, so a hardcoded list goes stale on a rename and starts
+    // reporting the origin comparison as a dispatch target.
+    if (ORIGIN_COMPARISON.test(line)) {
         return 'other-vocab';
     }
     if (/sizingPreset/.test(line) || /['"](?:detail|structure)['"]/.test(line)) {

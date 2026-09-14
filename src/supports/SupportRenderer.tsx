@@ -527,7 +527,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [twigList, activeTwigDragPreview]);
     const stickList = useMemo(() => Object.values(state.sticks), [state.sticks]);
     const braceList = useMemo(() => Object.values(state.braces), [state.braces]);
-    const anchorList = useMemo(() => Object.values(state.stumps), [state.stumps]);
+    const stumpList = useMemo(() => Object.values(state.stumps), [state.stumps]);
     const kickstandList = useMemo(() => Object.values(state.kickstands), [state.kickstands]);
     const matchesInteriorContact = useMemo<InteriorContactFilter>(() => {
         if (!interiorView) return () => true;
@@ -870,12 +870,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const supportIdByContactDiskId = useMemo(() => {
         const map = new Map<string, string>();
         for (const [id, supportId] of Object.entries(supportRenderLookup.supportIdByContactDiskId)) map.set(id, supportId);
-        // Add anchor contact cones (not indexed by render lookup worker)
-        for (const anchor of anchorList) {
-            if (anchor.contactCone?.id) map.set(anchor.contactCone.id, anchor.id);
+        // Add the near-plate type's contact cones (not indexed by the render lookup worker)
+        for (const stump of stumpList) {
+            if (stump.contactCone?.id) map.set(stump.contactCone.id, stump.id);
         }
         return map;
-    }, [supportRenderLookup.supportIdByContactDiskId, anchorList]);
+    }, [supportRenderLookup.supportIdByContactDiskId, stumpList]);
 
     const hoveredSupportIdFromPicking = useMemo(() => {
         return resolveHoveredSupportOwnerId(

@@ -1646,13 +1646,12 @@ export function transformSupportsForModel(
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
     let changed = false;
+    // Only the three collections this function computes for itself. Every other
+    // type's collection is taken from `nextByCollection` below, which the
+    // transform loop fills by walking `SUPPORT_TYPES` -- so a new type needs no
+    // edit here.
     let nextRoots = state.roots;
     let nextTrunks = state.trunks;
-    let nextBranches = state.branches;
-    let nextLeaves = state.leaves;
-    let nextTwigs = state.twigs;
-    let nextSticks = state.sticks;
-    let nextBraces = state.braces;
     let nextKnots = state.knots;
 
     const touchedRootIds = new Set<string>();
@@ -1842,7 +1841,7 @@ export function transformSupportsForModel(
     }
 
     // What moves is declared: segments and contactFields, plus whatever
-    // SUPPORT_TRANSFORM_EXTRAS names (a brace curve, an anchor's own root).
+    // SUPPORT_TRANSFORM_EXTRAS names (a brace curve, a stump's own root).
     const nextByCollection: Partial<Record<SupportCollectionKey, Record<string, unknown>>> = {};
 
     for (const descriptor of SUPPORT_TYPES) {
@@ -1905,13 +1904,6 @@ export function transformSupportsForModel(
         }
     }
 
-    if (nextByCollection.branches) nextBranches = nextByCollection.branches as typeof nextBranches;
-    if (nextByCollection.leaves) nextLeaves = nextByCollection.leaves as typeof nextLeaves;
-    if (nextByCollection.twigs) nextTwigs = nextByCollection.twigs as typeof nextTwigs;
-    if (nextByCollection.sticks) nextSticks = nextByCollection.sticks as typeof nextSticks;
-    if (nextByCollection.braces) nextBraces = nextByCollection.braces as typeof nextBraces;
-    const nextAnchors = (nextByCollection.stumps ?? state.stumps) as typeof state.stumps;
-
 
     for (const knot of Object.values(state.knots)) {
         const parentShaftId = knot.parentShaftId;
@@ -1939,18 +1931,20 @@ export function transformSupportsForModel(
     }
 
     if (changed) {
-        setState({
-            ...state,
-            roots: nextRoots,
-            trunks: nextTrunks,
-            branches: nextBranches,
-            leaves: nextLeaves,
-            twigs: nextTwigs,
-            sticks: nextSticks,
-            braces: nextBraces,
-            stumps: nextAnchors,
-            knots: nextKnots,
-        });
+        // Derived, so a type added to the registry is committed without an edit
+        // here. The transform loop already fills one entry per collection it
+        // touched; anything else keeps the collection it had.
+        const nextCollections: Record<string, unknown> = {};
+        for (const descriptor of SUPPORT_TYPES) {
+            const key = descriptor.location.key;
+            nextCollections[key] = nextByCollection[key] ?? state[key];
+        }
+        // The three this function computes itself win over the generic pass.
+        nextCollections.roots = nextRoots;
+        nextCollections.trunks = nextTrunks;
+        nextCollections.knots = nextKnots;
+
+        setState({ ...state, ...nextCollections } as SupportState);
         notify();
     }
 
@@ -2064,16 +2058,16 @@ export function transformAllSupportsForSingleModel(
                 } as unknown as typeof entity;
             }
             case 'stumps': {
-                const anchor = entity as unknown as Stump;
+                const stump = entity as unknown as Stump;
                 return {
-                    ...anchor,
-                    rootPos: transformVec3(anchor.rootPos, deltaMatrix),
+                    ...stump,
+                    rootPos: transformVec3(stump.rootPos, deltaMatrix),
                     joint: {
-                        ...anchor.joint,
-                        pos: transformVec3(anchor.joint.pos, deltaMatrix),
+                        ...stump.joint,
+                        pos: transformVec3(stump.joint.pos, deltaMatrix),
                     },
-                    segments: anchor.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-                    contactCone: transformContactCone(anchor.contactCone, deltaMatrix, normalMatrix),
+                    segments: stump.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
+                    contactCone: transformContactCone(stump.contactCone, deltaMatrix, normalMatrix),
                 } as unknown as typeof entity;
             }
             default:
@@ -3086,14 +3080,14 @@ function replaceSupportEntity(
 }
 
 /**
- * The anchor's own updater, registered from `stumpRegistration.ts`.
+ * The stump's own updater, registered from `stumpRegistration.ts`.
  *
- * NOT the generic path: an anchor carries no knots, so it does a plain write
+ * NOT the generic path: a stump carries no knots, so it does a plain write
  * where `applySupportEntityUpdate` would cache the settings hex and reposition
  * the knots riding its segments.
  */
-export function updateStump(anchor: Stump) {
-    replaceSupportEntity(anchor);
+export function updateStump(stump: Stump) {
+    replaceSupportEntity(stump);
 }
 
 /**

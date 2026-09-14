@@ -7,39 +7,39 @@ import { addModelMetadata, appendConeGeometry, appendShafts, SupportGeometryGene
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import type { Stump, Vec3 } from '../../types';
 
-// The anchor puts its own primitive in the near-plate band, overriding
+// The stump puts its own primitive in the near-plate band, overriding
 // auto-placement's default trunk. Registered here because the stub's geometry is
-// the anchor's; the grid engine only decides WHICH type claims a tip height.
+// the stump's; the grid engine only decides WHICH type claims a tip height.
 import './stumpAutoPlacement';
 
-// An anchor is a near-plate stub: a frustum root, ONE joint, one segment and a
+// An stump is a near-plate stub: a frustum root, ONE joint, one segment and a
 // contact cone. It has no Roots entry -- the frustum IS its root -- which is why
 // its geometry is built here rather than through the shared generator.
-registerSupportExportGroup<Stump>('stump', (anchor) => {
+registerSupportExportGroup<Stump>('stump', (stump) => {
     const group = new THREE.Group();
-    addModelMetadata(group, anchor.modelId);
+    addModelMetadata(group, stump.modelId);
 
-    const rootHeight = Math.max(0.001, anchor.rootHeight);
+    const rootHeight = Math.max(0.001, stump.rootHeight);
     const rootMesh = new THREE.Mesh(
         new THREE.CylinderGeometry(
-            Math.max(0.001, anchor.rootTopDiameter / 2),
-            Math.max(0.001, anchor.rootBaseDiameter / 2),
+            Math.max(0.001, stump.rootTopDiameter / 2),
+            Math.max(0.001, stump.rootBaseDiameter / 2),
             rootHeight,
             20,
         ),
     );
-    rootMesh.position.set(anchor.rootPos.x, anchor.rootPos.y, anchor.rootPos.z + (rootHeight / 2));
+    rootMesh.position.set(stump.rootPos.x, stump.rootPos.y, stump.rootPos.z + (rootHeight / 2));
     rootMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
     group.add(rootMesh);
 
-    group.add(SupportGeometryGenerator.generateJointMesh(anchor.joint));
+    group.add(SupportGeometryGenerator.generateJointMesh(stump.joint));
 
-    let currentStart: Vec3 = anchor.joint.pos;
-    anchor.segments.forEach((segment) => {
+    let currentStart: Vec3 = stump.joint.pos;
+    stump.segments.forEach((segment) => {
         const end = segment.topJoint
             ? segment.topJoint.pos
-            : anchor.contactCone
-                ? getFinalSocketPosition(anchor.contactCone)
+            : stump.contactCone
+                ? getFinalSocketPosition(stump.contactCone)
                 : currentStart;
 
         appendShafts(group, segment, currentStart, end);
@@ -51,9 +51,9 @@ registerSupportExportGroup<Stump>('stump', (anchor) => {
         currentStart = end;
     });
 
-    appendConeGeometry(group, anchor.contactCone);
+    appendConeGeometry(group, stump.contactCone);
     return group;
 });
 
-// Registered here rather than in the store's own list: an anchor carries no knots, so it writes without repositioning any.
+// Registered here rather than in the store's own list: an stump carries no knots, so it writes without repositioning any.
 registerSupportUpdater<Stump>('stump', updateStump);
