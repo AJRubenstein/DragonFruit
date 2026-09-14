@@ -2610,3 +2610,8 @@ export const JOINT_REMOVAL_BY_TYPE = {
 export type JointRemovalTypeId = {
     [K in SupportTypeId]: (typeof JOINT_REMOVAL_BY_TYPE)[K] extends true ? K : never;
 }[SupportTypeId];
+
+/** The same set at runtime, for the scan that answers which entity holds a joint. */
+export const JOINT_REMOVAL_TYPES: readonly JointRemovalTypeId[] =
+    (Object.keys(JOINT_REMOVAL_BY_TYPE) as SupportTypeId[])
+        .filter((id): id is JointRemovalTypeId => JOINT_REMOVAL_BY_TYPE[id]);

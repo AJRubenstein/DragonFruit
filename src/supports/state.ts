@@ -9,7 +9,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -1028,21 +1028,31 @@ function settleKnotDependentGeometry(
 }
 
 
-function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: Trunk } | null {
-    const trunk = state.trunks[trunkId];
-    if (!trunk) return null;
+/**
+ * Remove one joint from a shafted entity, merging the segments it split.
+ *
+ * One body for every shafted type: the arms differed only in which lower
+ * anchor they read, and the type declares that in its edges.
+ */
+function removeShaftJoint<T extends SupportTypeId>(
+    typeId: T,
+    entityId: string,
+    jointId: string,
+): { before: SupportEntityFor<T>; after: SupportEntityFor<T> } | null {
+    const entity = getSupportEntity(typeId, entityId) as { id: string; segments: Segment[]; contactCone?: { socketJointId?: string } } | null;
+    if (!entity) return null;
 
     // Prevent deletion of the top joint that connects to the contact cone
-    if (trunk.contactCone?.socketJointId && trunk.contactCone.socketJointId === jointId) {
+    if (entity.contactCone?.socketJointId && entity.contactCone.socketJointId === jointId) {
         console.warn('Cannot delete the top joint that connects to the contact cone');
         return null;
     }
 
-    const lowerIndex = resolveLowerSegmentIndex(trunk.segments, jointId);
+    const lowerIndex = resolveLowerSegmentIndex(entity.segments, jointId);
     if (lowerIndex === -1) return null;
 
-    const before = deepClone(trunk);
-    const after = deepClone(trunk);
+    const before = deepClone(entity);
+    const after = deepClone(entity);
 
     const segments = after.segments;
     const lowerSegment = segments[lowerIndex];
@@ -1062,12 +1072,15 @@ function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: 
     // If we removed a segment, any knots attached to that removed segment must be rebound
     // to the merged segment so they stay connected.
     if (removedSegmentId) {
-        const root = state.roots[trunk.rootId];
+        // The lower anchor is whichever the type DECLARES: a root it owns,
+        // or the knot it hangs from. Reading one field would answer for one type.
+        const hosts = resolveDeclaredHosts(typeId, entity as unknown as Record<string, unknown>);
+        const anchored = hosts.root ?? hosts.hostKnot;
         const mergedSegmentId = after.segments[lowerIndex]?.id;
         const mergedSegment = after.segments[lowerIndex];
 
-        if (root && mergedSegmentId && mergedSegment) {
-            const endpoints = resolveSegmentEndpoints(after, mergedSegment, lowerIndex, { root });
+        if (anchored && mergedSegmentId && mergedSegment) {
+            const endpoints = resolveSegmentEndpoints(after, mergedSegment, lowerIndex, hosts);
             if (endpoints) {
                 const startVec = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
                 const endVec = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
@@ -1109,99 +1122,15 @@ function removeJoint(trunkId: string, jointId: string): { before: Trunk; after: 
         }
     }
 
-    // Route through the generic update so ALL knots attached to this trunk stay connected after joint removal.
+    // Route through the generic update so ALL knots attached to this shaft stay connected after joint removal.
     applySupportEntityUpdate(after);
 
     return {
-        before,
-        after: deepClone(after),
+        before: before as SupportEntityFor<T>,
+        after: deepClone(after) as SupportEntityFor<T>,
     };
 }
 
-function removeBranchJoint(branchId: string, jointId: string): { before: Branch; after: Branch } | null {
-    const branch = state.branches[branchId];
-    if (!branch) return null;
-
-    // Prevent deletion of the top joint that connects to the contact cone
-    if (branch.contactCone?.socketJointId && branch.contactCone.socketJointId === jointId) {
-        console.warn('Cannot delete the top joint that connects to the contact cone');
-        return null;
-    }
-
-    const lowerIndex = resolveLowerSegmentIndex(branch.segments, jointId);
-    if (lowerIndex === -1) return null;
-
-    const before = deepClone(branch);
-    const after = deepClone(branch);
-
-    const segments = after.segments;
-    const lowerSegment = segments[lowerIndex];
-    if (!lowerSegment) return null;
-
-    const nextIndex = lowerIndex + 1;
-    const upperSegment = nextIndex < segments.length ? segments[nextIndex] : undefined;
-    const removedSegmentId = upperSegment?.id ?? null;
-
-    if (upperSegment) {
-        lowerSegment.topJoint = upperSegment.topJoint ? deepClone(upperSegment.topJoint) : undefined;
-        segments.splice(nextIndex, 1);
-    } else {
-        lowerSegment.topJoint = undefined;
-    }
-
-    if (removedSegmentId) {
-        const parentKnot = state.knots[branch.parentKnotId];
-        const mergedSegmentId = after.segments[lowerIndex]?.id;
-        const mergedSegment = after.segments[lowerIndex];
-
-        if (parentKnot && mergedSegmentId && mergedSegment) {
-            const endpoints = resolveSegmentEndpoints(after, mergedSegment, lowerIndex, { hostKnot: parentKnot });
-            if (endpoints) {
-                const startVec = new THREE.Vector3(endpoints.start.x, endpoints.start.y, endpoints.start.z);
-                const endVec = new THREE.Vector3(endpoints.end.x, endpoints.end.y, endpoints.end.z);
-
-                const updatedKnots: Record<string, Knot> = { ...state.knots };
-                let knotsChanged = false;
-
-                for (const knot of Object.values(state.knots)) {
-                    if (knot.parentShaftId !== removedSegmentId) continue;
-
-                    const knotPosVec = new THREE.Vector3(knot.pos.x, knot.pos.y, knot.pos.z);
-                    const segLen = startVec.distanceTo(endVec);
-                    let t = 0;
-                    if (segLen > 0.000001) {
-                        const dir = endVec.clone().sub(startVec);
-                        const lenSq = dir.lengthSq();
-                        if (lenSq > 0.000001) {
-                            const v = knotPosVec.clone().sub(startVec);
-                            t = THREE.MathUtils.clamp(v.dot(dir) / lenSq, 0, 1);
-                        }
-                    }
-
-                    const newPos = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, mergedSegment, t);
-                    updatedKnots[knot.id] = {
-                        ...knot,
-                        parentShaftId: mergedSegmentId,
-                        t,
-                        pos: newPos,
-                    };
-                    knotsChanged = true;
-                }
-
-                if (knotsChanged) {
-                    setState({ ...state, knots: updatedKnots });
-                }
-            }
-        }
-    }
-
-    applySupportEntityUpdate(after);
-
-    return {
-        before,
-        after: deepClone(after),
-    };
-}
 
 /**
  * Which support lost a joint, and its before/after for the undo payload.
@@ -1219,25 +1148,20 @@ export type RemoveJointByIdResult = {
 }[JointRemovalTypeId];
 
 export function removeJointById(jointId: string): RemoveJointByIdResult | null {
-    for (const [trunkId, trunk] of Object.entries(state.trunks)) {
-        const hasJoint = trunk.segments.some(
-            (seg) => seg.topJoint?.id === jointId || seg.bottomJoint?.id === jointId
-        );
-        if (!hasJoint) continue;
-        const result = removeJoint(trunkId, jointId);
-        if (result) {
-            return { typeId: 'trunk', id: trunkId, ...result };
-        }
-    }
-
-    for (const [branchId, branch] of Object.entries(state.branches)) {
-        const hasJoint = branch.segments.some(
-            (seg) => seg.topJoint?.id === jointId || seg.bottomJoint?.id === jointId
-        );
-        if (!hasJoint) continue;
-        const result = removeBranchJoint(branchId, jointId);
-        if (result) {
-            return { typeId: 'branch', id: branchId, ...result };
+    // Every type declaring joint removal, in registry order. A type whose UPPER
+    // end is a knot is handled below instead: it terminates on another support,
+    // so nothing rides its shaft and there is no knot to rebind.
+    for (const typeId of JOINT_REMOVAL_TYPES) {
+        if (getSupportTypeDescriptor(typeId).upper.kind === 'knot') continue;
+        const collection = state[getSupportTypeDescriptor(typeId).location.key] as unknown as
+            Record<string, { segments: Segment[] }>;
+        for (const [entityId, entity] of Object.entries(collection ?? {})) {
+            const hasJoint = entity.segments.some(
+                (seg) => seg.topJoint?.id === jointId || seg.bottomJoint?.id === jointId,
+            );
+            if (!hasJoint) continue;
+            const result = removeShaftJoint(typeId, entityId, jointId);
+            if (result) return { typeId, id: entityId, ...result } as RemoveJointByIdResult;
         }
     }
 
