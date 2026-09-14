@@ -16,7 +16,14 @@ import { emitSupportModelPointerHover } from './interaction/clickHandlers';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { ContactDisk, Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
-import { knotHostId, spanKnotHostType, type SupportTypeId } from './supportTypeRegistry';
+import {
+    anyContactMatches,
+    contactEndpointsFor,
+    knotHostId,
+    spanKnotHostType,
+    SUPPORT_TYPES,
+    type SupportTypeId,
+} from './supportTypeRegistry';
 
 interface SupportProxyMeshLayerProps {
   mode?: 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -121,12 +128,72 @@ function getDiskTipCenter(disk: ContactDisk): Vec3 {
  * The namespace an interior-support id carries: the entity's OWN type, then a
  * colon. Two types cannot collide on a shared id.
  *
- * The type is read from the entity rather than written here: every entity in the
- * store is stamped with its `typeId` through the registry, so this follows a
- * rename without an edit -- which a literal prefix did not.
+ * Read from the entity, not written here, and read the SAME way by the geometry
+ * loops that look the id up -- so the writer and the reader always agree, even
+ * for an entity whose stamp is wrong or missing. A literal prefix on either side
+ * would go stale on a rename and silently hide that type's interior geometry.
  */
 function interiorIdPrefix(entity: { typeId?: SupportTypeId }): string {
     return `${entity.typeId}:`;
+}
+
+/** The key an entity contributes to, and looks itself up under. */
+function interiorSupportKey(entity: { id: string; typeId?: SupportTypeId }): string {
+    return `${interiorIdPrefix(entity)}${entity.id}`;
+}
+
+/**
+ * Which supports the interior (cavity) view draws.
+ *
+ * Every question this asks is answered by a declaration, so a type added to the
+ * registry is covered without editing it:
+ *
+ * - WHICH CONTACTS a type has, and whether they are cones or disks:
+ *   `contactEndpointsFor` / `anyContactMatches`.
+ * - WHICH TYPES CAN QUALIFY AT ALL: a support whose lower end is a `plateRoot`
+ *   starts on the build plate in open space, so its geometry is never inside a
+ *   cavity. That is trunk and kickstand, and it is why trunk has no loop below.
+ * - WHICH TEST A SHAFT GETS: only a shaft whose lower end is a `knot` begins
+ *   mid-air on another support, so only that one can cut through a cavity as it
+ *   travels to its contact. A plate-rooted shaft cannot, and a shaft spanning two
+ *   model contacts is already tested at both ends. `lower.kind === 'knot' &&
+ *   hasSegments` selects exactly branch -- verified, not assumed: `hasSegments`
+ *   alone would also admit twig, stick, stump and kickstand and change what the
+ *   view hides.
+ *
+ * The predicates are injected so this stays pure and testable: the layer passes
+ * BVH-backed ones, a test passes `placementSurface`-driven ones.
+ */
+export function interiorSupportIds(
+    state: SupportState,
+    isContactInterior: (contact: unknown, modelId?: string) => boolean,
+    areSegmentsInterior: (segments: readonly Segment[], modelId?: string) => boolean,
+): Set<string> {
+    const ids = new Set<string>();
+
+    for (const descriptor of SUPPORT_TYPES) {
+        // Rooted in the plate: never inside a cavity.
+        if (descriptor.lower.kind === 'plateRoot') continue;
+        if (contactEndpointsFor(descriptor.id).length === 0) continue;
+
+        const collection = state[descriptor.location.key] as unknown as
+            Record<string, { id: string; typeId?: SupportTypeId; modelId?: string; segments?: Segment[] }> | undefined;
+
+        for (const entity of Object.values(collection ?? {})) {
+            const key = interiorSupportKey(entity);
+            if (anyContactMatches(descriptor.id, entity, (contact) => isContactInterior(contact, entity.modelId))) {
+                ids.add(key);
+                continue;
+            }
+            if (descriptor.lower.kind === 'knot'
+                && descriptor.hasSegments
+                && areSegmentsInterior(entity.segments ?? [], entity.modelId)) {
+                ids.add(key);
+            }
+        }
+    }
+
+    return ids;
 }
 
 export function SupportProxyMeshLayer({
@@ -390,18 +457,18 @@ export function SupportProxyMeshLayer({
       return dot > 0 || result.distance < INTERIOR_WALL_THRESHOLD_MM;
     };
 
-    const isInteriorContactCone = (cone: { pos: Vec3; placementSurface?: 'interior' | 'exterior' } | undefined, modelId?: string): boolean => {
-      if (!cone) return false;
-      if (cone.placementSurface === 'interior') return true;
-      if (cone.placementSurface === 'exterior') return false;
-      return isOnInteriorSide(cone.pos, modelId);
-    };
-
-    const isInteriorContactDisk = (disk: { pos: Vec3; placementSurface?: 'interior' | 'exterior' } | undefined, modelId?: string): boolean => {
-      if (!disk) return false;
-      if (disk.placementSurface === 'interior') return true;
-      if (disk.placementSurface === 'exterior') return false;
-      return isOnInteriorSide(disk.pos, modelId);
+    // A contact is interior when its placement surface says so, or -- for a
+    // contact that has not been stamped -- when its position is on the cavity
+    // side. Cone and disk are the same question, so they are the same predicate.
+    //
+    // Takes `unknown` because `interiorSupportIds` hands it whichever field the
+    // descriptor declared; it narrows here rather than at the seam.
+    const isInteriorContact = (contact: unknown, modelId?: string): boolean => {
+      const c = contact as { pos?: Vec3; placementSurface?: 'interior' | 'exterior' } | null | undefined;
+      if (!c?.pos) return false;
+      if (c.placementSurface === 'interior') return true;
+      if (c.placementSurface === 'exterior') return false;
+      return isOnInteriorSide(c.pos, modelId);
     };
 
     // Sample a segment shaft for cavity interior crossing. Both endpoints are
@@ -409,7 +476,7 @@ export function SupportProxyMeshLayer({
     // The shaft may only pass through the cavity over a short fraction of its
     // length, so we sample at 10% increments to catch narrow crossings.
     const isAnySegmentPointInterior = (
-      segs: Array<{ bottomJoint?: { pos: Vec3 }; topJoint?: { pos: Vec3 } }>,
+      segs: readonly Segment[],
       modelId?: string,
     ): boolean => {
       for (const seg of segs) {
@@ -433,42 +500,10 @@ export function SupportProxyMeshLayer({
       return false;
     };
 
-    // Trunks always have roots (raft-connected) — their shafts originate at the
-    // build plate and their tips are at the model exterior surface. They never
-    // belong in the interior cavity view.
-    // (trunk loop intentionally omitted — trunks are never added to the set)
-
-    for (const branch of Object.values(supportBranches)) {
-      if (isInteriorContactCone(branch.contactCone, branch.modelId)) {
-        ids.add(`branch:${branch.id}`);
-        continue;
-      }
-      if (isAnySegmentPointInterior(branch.segments, branch.modelId)) {
-        ids.add(`branch:${branch.id}`);
-      }
-    }
-    for (const leaf of Object.values(supportLeaves)) {
-      if (isInteriorContactCone(leaf.contactCone, leaf.modelId)) {
-        ids.add(`leaf:${leaf.id}`);
-      }
-    }
-    for (const stick of Object.values(supportSticks)) {
-      const onA = isInteriorContactCone(stick.contactConeA, stick.modelId);
-      const onB = isInteriorContactCone(stick.contactConeB, stick.modelId);
-      if (onA || onB) ids.add(`stick:${stick.id}`);
-    }
-    for (const stump of Object.values(supportState.stumps)) {
-      if (isInteriorContactCone(stump.contactCone, stump.modelId)) {
-        ids.add(`${interiorIdPrefix(stump)}${stump.id}`);
-      }
-    }
-    for (const twig of Object.values(supportTwigs)) {
-      const onA = isInteriorContactDisk(twig.contactDiskA, twig.modelId);
-      const onB = isInteriorContactDisk(twig.contactDiskB, twig.modelId);
-      if (onA || onB) ids.add(`twig:${twig.id}`);
-    }
-
-    return ids;
+    // A support rooted in the build plate can never be inside a cavity, and every
+    // other question -- which contacts a type has, and whether a shaft gets the
+    // segment test -- is answered by the descriptor. See `interiorSupportIds`.
+    return interiorSupportIds(supportState, isInteriorContact, isAnySegmentPointInterior);
   }, [
     interiorView,
     cavityGeometryByModelId,
@@ -598,7 +633,7 @@ export function SupportProxyMeshLayer({
     };
 
     for (const trunk of Object.values(supportTrunks)) {
-      if (interiorSupportIdSet && !interiorSupportIdSet.has(`trunk:${trunk.id}`)) continue;
+      if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(trunk))) continue;
       const root = supportRoots[trunk.rootId];
       if (!root) continue;
 
@@ -659,7 +694,7 @@ export function SupportProxyMeshLayer({
     }
 
     for (const branch of Object.values(supportBranches)) {
-      if (interiorSupportIdSet && !interiorSupportIdSet.has(`branch:${branch.id}`)) continue;
+      if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(branch))) continue;
       const parentKnot = supportKnots[branch.parentKnotId];
       if (!parentKnot) continue;
 
@@ -723,7 +758,7 @@ export function SupportProxyMeshLayer({
 
     if (includeDetailedPrimitives) {
       for (const leaf of Object.values(supportLeaves)) {
-        if (interiorSupportIdSet && !interiorSupportIdSet.has(`leaf:${leaf.id}`)) continue;
+        if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(leaf))) continue;
         leafModelIdById.set(leaf.id, leaf.modelId);
         leafSupportIdById.set(leaf.id, leaf.id);
         pushCone({
@@ -766,7 +801,7 @@ export function SupportProxyMeshLayer({
     }
 
     for (const twig of Object.values(supportTwigs)) {
-      if (interiorSupportIdSet && !interiorSupportIdSet.has(`twig:${twig.id}`)) continue;
+      if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(twig))) continue;
       if (includeDetailedPrimitives) {
         pushCone({
           id: twig.contactDiskA.id,
@@ -837,7 +872,7 @@ export function SupportProxyMeshLayer({
     }
 
     for (const stick of Object.values(supportSticks)) {
-      if (interiorSupportIdSet && !interiorSupportIdSet.has(`stick:${stick.id}`)) continue;
+      if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(stick))) continue;
       if (includeDetailedPrimitives) {
         pushCone({
           ...stick.contactConeA,
@@ -939,7 +974,7 @@ export function SupportProxyMeshLayer({
 
     // Stumps: root + contact cone, no shafts
     for (const stump of Object.values(supportStumps)) {
-      if (interiorSupportIdSet && !interiorSupportIdSet.has(`${interiorIdPrefix(stump)}${stump.id}`)) continue;
+      if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(stump))) continue;
       pushRoot({
         id: `${stump.id}:root`,
         supportId: stump.id,
@@ -961,7 +996,7 @@ export function SupportProxyMeshLayer({
     }
 
     for (const kickstand of Object.values(supportState.kickstands)) {
-      if (interiorSupportIdSet && !interiorSupportIdSet.has(`kickstand:${kickstand.id}`)) continue;
+      if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(kickstand))) continue;
       const root = supportRoots[kickstand.rootId];
       const hostKnot = supportKnots[kickstand.hostKnotId];
       if (!root || !hostKnot) continue;
