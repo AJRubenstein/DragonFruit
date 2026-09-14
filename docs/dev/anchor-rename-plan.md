@@ -284,6 +284,31 @@ plan prescribes -- pin the value, derive the name.
 
 ### Verification
 
-`python ../lysdiag/tools/rename-probe.py stump --new stumpx` now reports
-**0 tsc errors**, with only the golden `typeId` recordings differing (the store
-asserting what it stamps). Before the work the same probe on `anchor` reported 53.
+`python ../lysdiag/tools/rename-probe.py stump --new stumpx`, after all of the
+above:
+
+| check | result |
+| --- | --- |
+| `tsc -p` | **1 error**, and it is loud: `ORIGIN_COLORS` in `SupportRenderer` |
+| suite | 16 failures: 15 golden `typeId` recordings plus the renderer-prop convention test |
+| silent failures | **none** -- every residual is a compile error or a named test |
+
+For comparison, the same probe on `anchor` reported **53 errors** before this work,
+and the first several of those were harness artifact (see §"Cost, measured").
+
+**Why `ORIGIN_COLORS` keeps its literal.** The near-plate origin is spelled after the
+type, so a rename must touch it. It is left as a literal because the alternative --
+a computed key `[NEAR_PLATE_ORIGIN]: '#ff3b30'` -- stops the
+`Record<SupportOrigin, string>` annotation proving it covers every origin, which
+trades a loud compile error for a silently missing colour. A loud one-line residual
+is the better half of that trade, and it is the same reasoning that keeps the eight
+loud literals in `state.ts` (see `support-type-literal-plan.md` §3E).
+
+**The origin had to move with the type, but not the way the first attempt assumed.**
+`autoPlace` compared `entity.origin === 'anchor'` -- an origin key, which does NOT
+follow `SupportTypeId`, so that comparison would have gone stale in silence. It now
+reads `NEAR_PLATE_ORIGIN`, derived by matching the origin keys against declared type
+ids, and throws at load if the two ever stop lining up. `rename-probe.py` also had to
+drop the protection it used to hold around `SUPPORT_ORIGINS`: it was right when the
+origin was a separate vocabulary, and wrong the moment the origin was renamed -- the
+stale protection reported a load-time throw as though it were a stale reference.
