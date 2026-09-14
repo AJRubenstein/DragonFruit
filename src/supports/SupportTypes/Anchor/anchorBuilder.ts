@@ -2,7 +2,9 @@ import type { Anchor, Joint, Vec3 } from '../../types';
 import type { ContactCone, SupportTipProfile } from '../../SupportPrimitives/ContactCone/types';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import type * as THREE from 'three';
-import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/ContactDisk';
+// Direct, not through the barrel: the barrel re-exports renderers and their
+// React hooks, which a server route cannot import.
+import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/ContactDisk/ContactDiskInteraction';
 import { getSettings } from '../../Settings/state';
 import { resolveConeAxisPolicy } from '../../PlacementLogic/ConeAxisPolicy';
 import { encodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
