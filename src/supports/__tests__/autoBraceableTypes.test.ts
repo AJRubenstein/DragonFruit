@@ -67,7 +67,7 @@ function branch(id: string, modelId: string, parentKnotId: string, x: number, y:
 function emptySnapshot(): SupportState {
     return {
         roots: {}, trunks: {}, branches: {}, leaves: {}, twigs: {}, sticks: {},
-        braces: {}, anchors: {}, kickstands: {}, knots: {},
+        braces: {}, stumps: {}, kickstands: {}, knots: {},
         selectedId: null, selectedCategory: null, hoveredId: null,
         hoveredCategory: 'none', interactionWarning: null,
     };
@@ -95,7 +95,7 @@ test('a lateral stabiliser is NOT a braceable member — it is generated as an e
 });
 
 test('types with no shaft, or that are not braceable, stay out', () => {
-    for (const typeId of ['leaf', 'twig', 'stick', 'brace', 'anchor']) {
+    for (const typeId of ['leaf', 'twig', 'stick', 'brace', 'stump']) {
         assert.equal(isAutoBraceableShaftType(typeId), false, `${typeId} must not be braceable`);
     }
 });

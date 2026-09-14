@@ -579,8 +579,8 @@ export function useTrunkPlacementV2() {
             ? null
             : decision.kind === 'reject' && decision.reason === 'KNOT_ABOVE_TIP'
                 ? 'KNOT_ABOVE_TIP'
-                : decision.kind === 'reject' && decision.reason === 'ANCHOR_BELOW_ROOT'
-                    ? 'ANCHOR_BELOW_ROOT'
+                : decision.kind === 'reject' && decision.reason === 'STUMP_BELOW_ROOT'
+                    ? 'STUMP_BELOW_ROOT'
                     : decision.kind === 'reject' && decision.reason === 'COLLISION_WITH_MODEL'
                         ? 'COLLISION_WITH_MODEL'
                         : null

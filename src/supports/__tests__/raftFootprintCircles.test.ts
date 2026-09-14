@@ -15,7 +15,7 @@ test('collectRaftBaseCirclesByModel includes support roots, anchors, and kicksta
         transform: { pos: { x: 1, y: 2, z: 0 }, rot: { x: 0, y: 0, z: 0, w: 1 } },
       },
     ],
-    anchors: [
+    stumps: [
       {
         modelId: 'model-a',
         rootBaseDiameter: 6,

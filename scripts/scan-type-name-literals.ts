@@ -70,7 +70,7 @@ const EXEMPT = [
 const BUDGET = {
     dispatch: 0,
     declaration: 0,
-    value: 30,
+    value: 3,
 };
 
 /**
@@ -109,8 +109,8 @@ function classify(line: string, ids: string[]): LiteralClass {
 
     // A word that belongs to another vocabulary. Checked FIRST, because these
     // lines also match the dispatch shape and must not be counted as targets.
-    //   origin:        `origin === 'anchor'` -- SUPPORT_ORIGINS
-    //   sizing preset: 'detail' | 'structure' | 'anchor'
+    //   origin:        `origin === 'stump'` -- SUPPORT_ORIGINS
+    //   sizing preset: 'detail' | 'structure' | 'stump'
     if (/origin\s*(?:===|!==)\s*['"](?:anchor|overhang|island|standalone)['"]/.test(line)) {
         return 'other-vocab';
     }

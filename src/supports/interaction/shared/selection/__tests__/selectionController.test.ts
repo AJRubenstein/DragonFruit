@@ -51,7 +51,7 @@ function seedTrunks(...ids: string[]) {
         twigs: {},
         sticks: {},
         braces: {},
-        anchors: {},
+        stumps: {},
         kickstands: {},
         knots: {},
         selectedId: null,

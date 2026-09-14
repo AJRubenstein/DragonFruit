@@ -248,7 +248,7 @@ function runSignature(gridEnabled: boolean): RunSignature {
             leaves: Object.keys(state.leaves ?? {}).length,
             twigs: Object.keys(state.twigs ?? {}).length,
             sticks: Object.keys(state.sticks ?? {}).length,
-            anchors: Object.keys(state.anchors ?? {}).length,
+            anchors: Object.keys(state.stumps ?? {}).length,
             knots: Object.keys(state.knots ?? {}).length,
             roots: Object.keys(state.roots ?? {}).length,
         },

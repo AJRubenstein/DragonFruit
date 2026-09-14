@@ -9,7 +9,7 @@ export type GridNodeKey = string;
 
 export type GridPlacementRejectReason =
     | 'KNOT_ABOVE_TIP'
-    | 'ANCHOR_BELOW_ROOT'
+    | 'STUMP_BELOW_ROOT'
     | 'NO_HOST_SEGMENT'
     | 'MODEL_MISMATCH'
     | 'NO_VALID_ATTACHMENT'

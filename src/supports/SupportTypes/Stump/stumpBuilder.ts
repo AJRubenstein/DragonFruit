@@ -1,4 +1,4 @@
-import type { Anchor, Joint, Vec3 } from '../../types';
+import type { Stump, Joint, Vec3 } from '../../types';
 import type { ContactCone, SupportTipProfile } from '../../SupportPrimitives/ContactCone/types';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import type * as THREE from 'three';
@@ -16,19 +16,19 @@ const ANCHOR_ROOT_TOP_DIAMETER_MM = 1.5;
 const ANCHOR_ROOT_HEIGHT_MM = 1.0;
 const ANCHOR_JOINT_DIAMETER_MM = 1.5;
 
-export interface AnchorBuildInput {
+export interface StumpBuildInput {
     tipPos: Vec3;
     tipNormal: Vec3;
     modelId: string;
     mesh?: THREE.Mesh;
 }
 
-export interface AnchorBuildResult {
-    anchor: Anchor;
+export interface StumpBuildResult {
+    anchor: Stump;
     supportData: SupportData;
 }
 
-export function buildAnchorData(input: AnchorBuildInput): AnchorBuildResult {
+export function buildStumpData(input: StumpBuildInput): StumpBuildResult {
     const { tipPos, tipNormal, modelId, mesh } = input;
 
     const settings = getSettings();
@@ -139,7 +139,7 @@ export function buildAnchorData(input: AnchorBuildInput): AnchorBuildResult {
     };
 
     const anchorId = uuidv4();
-    const anchor: Anchor = {
+    const anchor: Stump = {
         id: anchorId,
         modelId,
         settingsCodeHex,

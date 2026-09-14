@@ -2854,7 +2854,7 @@ export function SceneCanvas({
       ]);
     }
 
-    for (const anchor of Object.values(supportStateForBounds.anchors)) {
+    for (const anchor of Object.values(supportStateForBounds.stumps)) {
       chain(anchor.id, anchor.modelId, [
         anchor.rootPos,
         anchor.joint?.pos,

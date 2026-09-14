@@ -1,14 +1,14 @@
 import type { SupportBaseCircle } from './RaftTypes';
-import type { Anchor, Roots } from '@/supports/types';
+import type { Stump, Roots } from '@/supports/types';
 
 export const RAFT_UNASSIGNED_MODEL_KEY = '__raft_unassigned__';
 
 type RootLike = Pick<Roots, 'modelId' | 'diameter' | 'transform'>;
-type AnchorLike = Pick<Anchor, 'modelId' | 'rootBaseDiameter' | 'rootPos'>;
+type AnchorLike = Pick<Stump, 'modelId' | 'rootBaseDiameter' | 'rootPos'>;
 
 type CollectRaftBaseCirclesInput = {
   roots?: Iterable<RootLike>;
-  anchors?: Iterable<AnchorLike>;
+  stumps?: Iterable<AnchorLike>;
   kickstandRoots?: Iterable<RootLike>;
 };
 
@@ -94,7 +94,7 @@ export function collectRaftBaseCirclesByModel(
     });
   }
 
-  for (const anchor of input.anchors ?? []) {
+  for (const anchor of input.stumps ?? []) {
     pushCircle(anchor.modelId, {
       x: anchor.rootPos.x,
       y: anchor.rootPos.y,

@@ -92,7 +92,7 @@ function fixture(): DragonfruitImportFormat {
             { id: 'brace-a', modelId: MODEL_A, startKnotId: 'knot-a', endKnotId: 'knot-b', profile: { diameter: 0.8 } },
             { id: 'brace-ks', modelId: MODEL_A, startKnotId: 'knot-on-kickstand', endKnotId: 'knot-on-branch', profile: { diameter: 0.8 } },
         ],
-        anchors: [{
+        stumps: [{
             id: 'anchor-a', modelId: MODEL_A,
             rootPos: { x: 5, y: 0, z: 0 }, rootBaseDiameter: 2, rootTopDiameter: 1, rootHeight: 1,
             joint: { id: 'anchor-a-joint', pos: { x: 5, y: 0, z: 1 }, diameter: 1 },
@@ -147,7 +147,7 @@ function restore(snapshot: Record<string, unknown>) {
     putBack('trunks', seed('trunks'));
     putBack('twigs', seed('twigs'));
     putBack('sticks', seed('sticks'));
-    putBack('anchors', seed('anchors'));
+    putBack('stumps', seed('stumps'));
 
     for (const knot of list('knots')) putBack('knots', knot);
     putBack('knots', one('knot'));
@@ -186,7 +186,7 @@ const CASES: [string, SupportCollectionKey, string][] = [
     ['removeTwig', 'twigs', 'twig-a'],
     ['removeStick', 'sticks', 'stick-a'],
     ['removeBrace', 'braces', 'brace-a'],
-    ['removeAnchor', 'anchors', 'anchor-a'],
+    ['removeAnchor', 'stumps', 'anchor-a'],
     ['removeKickstand', 'kickstands', 'ks-a'],
 ];
 

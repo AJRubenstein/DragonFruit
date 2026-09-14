@@ -240,7 +240,7 @@ export default function LineRaftRenderer({
 
     const rootsByModel = collectRaftBaseCirclesByModel({
       roots: Object.values(supportState.roots),
-      anchors: Object.values(supportState.anchors),
+      stumps: Object.values(supportState.stumps),
     }, {
       modelFilterId,
       excludeModelId,

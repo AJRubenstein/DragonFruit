@@ -119,7 +119,7 @@ test('VOXL support roundtrip preserves imported leaf and brace normalization int
                 profile: { diameter: 1.0 },
             },
         ],
-        anchors: [],
+        stumps: [],
         knots: [
             {
                 id: 'k-parent',

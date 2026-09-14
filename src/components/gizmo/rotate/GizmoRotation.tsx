@@ -460,7 +460,7 @@ export function GizmoRotation({
       return;
     }
 
-    // Anchor the dial where the handle visually is. Zero of the dial, zero of
+    // Stump the dial where the handle visually is. Zero of the dial, zero of
     // the sweep and the handle are then the same place, which is what makes the
     // gesture relative: the marks count degrees away from the model's current
     // rotation, not away from any absolute reference.

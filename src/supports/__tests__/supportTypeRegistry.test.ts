@@ -65,7 +65,7 @@ test('every type lives on SupportState', () => {
 test('empty collections cover every entity collection on SupportState', () => {
   const keys = Object.keys(createEmptySupportCollections()).sort();
   assert.deepEqual(keys, [
-    'anchors', 'braces', 'branches', 'kickstands', 'knots', 'leaves', 'roots', 'sticks', 'trunks', 'twigs',
+    'braces', 'branches', 'kickstands', 'knots', 'leaves', 'roots', 'sticks', 'stumps', 'trunks', 'twigs',
   ]);
 });
 

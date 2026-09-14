@@ -514,7 +514,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
             }
             const snap = leafPlacementStore.getSnapshot();
 
-            // Click 1 (Anchor Lock)
+            // Click 1 (Stump Lock)
             if (stage === 'idle' && snap.sproutParentingLockHeld) {
                 const snapTarget = leafPlacementStore.getSnapTarget();
                 if (!snapTarget) return;

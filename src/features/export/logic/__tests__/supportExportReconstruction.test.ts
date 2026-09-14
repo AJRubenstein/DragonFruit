@@ -127,7 +127,7 @@ function makeSupportState(): SupportState {
         profile: { diameter: 0.6 },
       },
     },
-    anchors: {
+    stumps: {
       'anchor-a': {
         id: 'anchor-a',
         modelId: 'model-a',
@@ -232,10 +232,10 @@ test('scoped support export document keeps only requested model supports', () =>
   assert.equal(scoped.branches.length, 1);
   assert.equal(scoped.leaves.length, 1);
   assert.equal(scoped.braces.length, 1);
-  assert.equal(scoped.anchors?.length ?? 0, 1);
+  assert.equal(scoped.stumps?.length ?? 0, 1);
   assert.equal(scoped.kickstands?.length ?? 0, 1);
 
-  for (const collection of [scoped.roots, scoped.trunks, scoped.branches, scoped.leaves, scoped.braces, scoped.anchors ?? []]) {
+  for (const collection of [scoped.roots, scoped.trunks, scoped.branches, scoped.leaves, scoped.braces, scoped.stumps ?? []]) {
     for (const item of collection) {
       assert.equal(item.modelId, 'model-a');
     }

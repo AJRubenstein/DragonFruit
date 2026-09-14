@@ -41,7 +41,7 @@ import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationMan
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
 import { BezierGizmoManager } from './Curves/BezierGizmo/BezierGizmoManager';
-import { ContactDisk, SupportMode, BezierSegment, type Anchor, type Brace, type Knot, type Leaf, type Roots, type Segment, type SupportEntityAny, type Twig, type SupportOrigin, type Vec3 } from './types';
+import { ContactDisk, SupportMode, BezierSegment, type Stump, type Brace, type Knot, type Leaf, type Roots, type Segment, type SupportEntityAny, type Twig, type SupportOrigin, type Vec3 } from './types';
 import { resolveTwigDiameterAtSegmentT } from './SupportTypes/Twig/twigTaper';
 import { bezierSegmentToBatchedShaft, braceBezierToBatchedShaft } from './Curves/batchedBezierShaft';
 import { EMPTY_PLACEMENT_PREVIEWS, type SupportData, type SupportPlacementPreviews } from './rendering';
@@ -128,7 +128,7 @@ const BULK_MULTI_SELECTED_COLOR = '#80fffd';
  *  band, orange = overhang (grid infill / organic Poisson / fanned overhang),
  *  blue = island (voxel/minima), purple = standalone overhang trunks. */
 const ORIGIN_COLORS: Record<SupportOrigin, string> = {
-    anchor: '#ff3b30',
+    stump: '#ff3b30',
     overhang: '#ff9f0a',
     island: '#0a84ff',
     standalone: '#bf5af2',
@@ -507,7 +507,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [twigList, activeTwigDragPreview]);
     const stickList = useMemo(() => Object.values(state.sticks), [state.sticks]);
     const braceList = useMemo(() => Object.values(state.braces), [state.braces]);
-    const anchorList = useMemo(() => Object.values(state.anchors), [state.anchors]);
+    const anchorList = useMemo(() => Object.values(state.stumps), [state.stumps]);
     const kickstandList = useMemo(() => Object.values(state.kickstands), [state.kickstands]);
     const matchesInteriorContact = useMemo<InteriorContactFilter>(() => {
         if (!interiorView) return () => true;
@@ -2633,7 +2633,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ) => {
         // Past MULTI_SELECTION_DETAIL_THRESHOLD the per-type selected sets are
         // left empty, so `isSelected` never reaches a detail renderer and the
-        // bulk colour is the only thing marking a selection. Anchor has no
+        // bulk colour is the only thing marking a selection. Stump has no
         // batched shaft pass, so without this it never highlights in a large
         // marquee.
         if (hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)) {
@@ -2978,7 +2978,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         state.twigs,
         state.sticks,
         state.braces,
-        state.anchors,
+        state.stumps,
         state.knots,
         kickstandRootsById,
         state.kickstands,

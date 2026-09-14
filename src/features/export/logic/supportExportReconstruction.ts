@@ -8,7 +8,7 @@ import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk
 import { getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
 import type { Kickstand, KickstandBuildResult } from '@/supports/SupportTypes/Kickstand/types';
 import type {
-  Anchor,
+  Stump,
   Brace,
   Branch,
   DragonfruitImportFormat,
@@ -33,7 +33,7 @@ export interface ScopedSupportPayload {
   twigs: Twig[];
   sticks: Stick[];
   braces: Brace[];
-  anchors: Anchor[];
+  stumps: Stump[];
   knots: Knot[];
   kickstands: Kickstand[];
 }
@@ -296,7 +296,7 @@ export function buildScopedSupportExportDocument(
     twigs: payload.twigs,
     sticks: payload.sticks,
     braces: payload.braces,
-    anchors: payload.anchors,
+    stumps: payload.stumps,
     knots: payload.knots,
     kickstands: kickstandBuilds,
   };

@@ -260,7 +260,7 @@ export function ArrangePanel({
           )}
 
           <div className="rounded-md border p-2" style={panelCardStyle}>
-            <div className="ui-meta" style={{ color: 'var(--text-muted)' }}>Placement Anchor</div>
+            <div className="ui-meta" style={{ color: 'var(--text-muted)' }}>Placement Stump</div>
             <Select
               value={anchorMode}
               onChange={(e) => onAnchorModeChange(e.target.value as ArrangeAnchorMode)}

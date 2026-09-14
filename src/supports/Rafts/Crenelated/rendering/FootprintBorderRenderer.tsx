@@ -168,7 +168,7 @@ export default function FootprintBorderRenderer({
   const supportFootprintPoints = React.useMemo(() => {
     const circlesByModel = collectRaftBaseCirclesByModel({
       roots: Object.values(supportState.roots),
-      anchors: Object.values(supportState.anchors),
+      stumps: Object.values(supportState.stumps),
     }, modelId != null
       ? { modelFilterId: modelId, fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY }
       : { fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY });
@@ -184,7 +184,7 @@ export default function FootprintBorderRenderer({
 
     const raftOuterBoundary = computeRaftOuterBoundary(baseProfile, raft);
     return raftOuterBoundary && raftOuterBoundary.length >= 3 ? raftOuterBoundary : [];
-  }, [modelId, raft, supportState.anchors, supportState.roots]);
+  }, [modelId, raft, supportState.stumps, supportState.roots]);
 
   React.useEffect(() => {
     if (!modelGeometry || !modelTransform) {

@@ -13,6 +13,7 @@ import {
   type VoxlVec3,
 } from './types';
 import { isVoxlBinaryV2, parseVoxlBinaryV2 } from './codec-v2';
+import { migrateLegacySupportPayload } from '@/supports/importMigrations';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -248,7 +249,7 @@ export function buildSupportExportFromStores(
     twigs: Object.values(supportState.twigs),
     sticks: Object.values(supportState.sticks),
     braces: Object.values(supportState.braces),
-    anchors: Object.values(supportState.anchors),
+    stumps: Object.values(supportState.stumps),
     knots: Object.values(supportState.knots),
     kickstands,
   };
@@ -352,6 +353,11 @@ export function parseVoxlDocument(json: string): VoxlDocumentV1 {
   if (!parsed.meta || !parsed.scene || !Array.isArray(parsed.models) || !parsed.supports) {
     throw new Error('Invalid VOXL document structure.');
   }
+
+  // A document written before the near-plate type was renamed carries the old
+  // collection key. Migrate it here, at the boundary, so every consumer of the
+  // parsed document reads the current shape rather than each having to know.
+  parsed.supports = migrateLegacySupportPayload(parsed.supports);
 
   for (const model of parsed.models) {
     if (!model?.id || !model?.name || !model?.transform) {

@@ -7,7 +7,7 @@ import { decideGridPlacement } from '../PlacementLogic/Grid/gridPlacement';
 import { getFinalSocketPosition } from '../SupportPrimitives/ContactCone';
 import { setSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
-import type { Anchor, SupportState } from '../types';
+import type { Stump, SupportState } from '../types';
 import {
     buildTrunkDataFromPlacement,
     type TrunkBuildInput,
@@ -41,7 +41,7 @@ function makeEmptySnapshot(): SupportState {
         twigs: {},
         sticks: {},
         braces: {},
-        anchors: {},
+        stumps: {},
         kickstands: {},
         knots: {},
         selectedId: null,
@@ -503,11 +503,11 @@ test('decideGridPlacement rejects an anchor whose tip sits below the root joint 
         modelId: MODEL_ID,
     });
 
-    if (decision.kind !== 'reject' || decision.reason !== 'ANCHOR_BELOW_ROOT') {
-        assert.fail(`expected ANCHOR_BELOW_ROOT reject, got ${decision.kind}`);
+    if (decision.kind !== 'reject' || decision.reason !== 'STUMP_BELOW_ROOT') {
+        assert.fail(`expected STUMP_BELOW_ROOT reject, got ${decision.kind}`);
     }
     // Ghost preview carries the reason so the hover tooltip can render it.
-    assert.equal(decision.supportData?.error, 'ANCHOR_BELOW_ROOT');
+    assert.equal(decision.supportData?.error, 'STUMP_BELOW_ROOT');
 });
 
 test('decideGridPlacement places a valid anchor for an above-root near-plate tip', () => {
@@ -533,7 +533,7 @@ test('decideGridPlacement places a valid anchor for an above-root near-plate tip
     if (decision.kind !== 'place') assert.fail(`expected place, got ${decision.kind}`);
     // The decision no longer names the type; it carries the id the registry
     // resolved for this tip height, and the entity that type's own builder made.
-    const anchor = decision.placed.entity as Anchor;
+    const anchor = decision.placed.entity as Stump;
     const socketZ = getFinalSocketPosition(anchor.contactCone).z;
     const lowestShaftZ = Math.min(anchor.contactCone.pos.z, socketZ);
     assert.ok(

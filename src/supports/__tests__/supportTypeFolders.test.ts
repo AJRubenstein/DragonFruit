@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
@@ -63,6 +63,35 @@ test('every type folder provides the registration the generator looks for', () =
             files.includes(registration),
             `${descriptor.id} has no SupportTypes/${name}/${registration}`
             + ' — its per-type registrations would never load',
+        );
+    }
+});
+
+test('every type renderer takes its entity under the name the renderer feeds it', () => {
+    // `SupportRenderer.renderDetailFor` hands each detail renderer its entity
+    // under a COMPUTED key -- `getSupportTypeDescriptor(typeId).singular` -- so
+    // TypeScript cannot check that the component destructures the same name. It
+    // is a convention held only by agreement, and it broke silently when the
+    // near-plate type was renamed: the descriptor said `stump`, the component
+    // still read `anchor`, the prop arrived undefined, and the scene crashed on
+    // `anchor.id` at draw time rather than at build time.
+    //
+    // This is the same shape as the two tests above -- a file-name convention
+    // the compiler cannot see -- so it is asserted the same way.
+    for (const descriptor of SUPPORT_TYPES) {
+        const name = folderFor(descriptor.id);
+        const renderer = path.join(TYPES_DIR, name, `${name}Renderer.tsx`);
+        if (!existsSync(renderer)) continue;
+        const source = readFileSync(renderer, 'utf8');
+        // An interface field (`trunk: Trunk;`) or a destructured binding
+        // (`branch,`, or aliased `branch: baseBranch,`): the component must take
+        // the prop under the descriptor's name, whatever it renames it to
+        // locally. All three forms appear across the eight renderers.
+        const destructured = new RegExp(`^\\s*${descriptor.singular}\\s*[:,]`, 'm');
+        assert.ok(
+            destructured.test(source),
+            `${descriptor.id}: ${name}Renderer.tsx does not take its entity as \`${descriptor.singular}\`, `
+            + 'which is the prop name the renderer passes it under',
         );
     }
 });

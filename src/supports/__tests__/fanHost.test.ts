@@ -7,7 +7,7 @@ import type { SupportState } from '../types';
 function emptySnapshot(): SupportState {
     return {
         roots: {}, trunks: {}, branches: {}, leaves: {}, twigs: {}, sticks: {},
-        braces: {}, anchors: {}, kickstands: {}, knots: {},
+        braces: {}, stumps: {}, kickstands: {}, knots: {},
         selectedId: null, selectedCategory: null,
         hoveredId: null, hoveredCategory: 'none', interactionWarning: null,
     };
@@ -186,11 +186,11 @@ test('buildConsolidationBranch refuses a link whose shaft would leave too flat',
 test('collectFanShaftPoints excludes anchor-origin trunks', () => {
     // Anchors are load-bearing standalone pillars — never fan hosts.
     const draft = trunkWithShaft('host', 0, 0, 0, 19);
-    draft.trunks['anchor'] = {
-        id: 'anchor',
+    draft.trunks['stump'] = {
+        id: 'stump',
         modelId: 'm',
         rootId: 'r-anchor',
-        origin: 'anchor',
+        origin: 'stump',
         segments: [{
             id: 'seg-anchor',
             diameter: 1,
@@ -208,11 +208,11 @@ test('findMergeHost never returns an anchor-origin trunk', () => {
     // A tip 0.5 mm from the anchor shaft's bottom joint would merge without
     // the exclusion (joint within the 4 mm radius) — with it, no host.
     const draft = trunkWithShaft('island', 0, 0, 0, 19);
-    draft.trunks['anchor'] = {
-        id: 'anchor',
+    draft.trunks['stump'] = {
+        id: 'stump',
         modelId: 'm',
         rootId: 'r-anchor',
-        origin: 'anchor',
+        origin: 'stump',
         segments: [{
             id: 'seg-anchor',
             diameter: 1,

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { findShaftOwnerOfSegment, getSnapshot, getSupportEntity, getSupportEntities, getKnotById, getRootById, setInteractionWarning, updateKnot, subscribe } from '../../state';
-import { Anchor, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
+import { Stump, Brace, Knot, Leaf, Roots, Segment, Trunk, Twig, Stick, Vec3 } from '../../types';
 import { resolveSegmentEndpoints, type EndpointHosts, type ShaftEntity } from './segmentEndpoints';
 import {
     captureFlexingShafts, collectSolvedShaft, contactOf, flexingShaftsOn, getFlexingShaft,

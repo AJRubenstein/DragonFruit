@@ -1,4 +1,15 @@
-import { contactBridgeTypes, contactEndpointsFor, getSupportTypeDescriptor, GRID_HOST_TYPES, isOriginConvertibleToTree, promoteAwayHost, resolveSupportTypeIdOf, SHAFT_HOSTED_MEMBER_TYPES, SUPPORT_TYPES } from '../supportTypeRegistry';
+import {
+    contactBridgeTypes,
+    contactEndpointsFor,
+    getSupportTypeDescriptor,
+    GRID_HOST_TYPES,
+    isOriginConvertibleToTree,
+    promoteAwayHost,
+    resolveSupportTypeIdOf,
+    SHAFT_HOSTED_MEMBER_TYPES,
+    SUPPORT_TYPES,
+    NEAR_PLATE_ORIGIN,
+} from '../supportTypeRegistry';
 import type { SupportCollectionKey, ShaftHostedMemberType, ShaftHostedMemberTypeId } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
@@ -566,7 +577,7 @@ function isHostAtAttachmentCapacity(
 // ---------------------------------------------------------------------------
 
 /** Find the closest existing host (shaft or tip) within merge radius.
- *  Anchor-origin entities never host merges: anchors are load-bearing
+ *  Stump-origin entities never host merges: anchors are load-bearing
  *  standalone pillars, leaves are not. */
 export function findMergeHost(
     tipPos: { x: number; y: number; z: number },
@@ -594,7 +605,7 @@ export function findMergeHost(
 
     for (const { hostTypeId, hostId, entity } of collectHostEntities(snapshot)) {
         if (entity.modelId !== modelId) continue;
-        if (entity.origin === 'anchor') continue;
+        if (entity.origin === NEAR_PLATE_ORIGIN) continue;
 
         // Check the host's tip (contact cone).
         const tp = entity.contactCone?.pos;
@@ -1394,7 +1405,7 @@ const MAX_FANNING_PASSES = 5;
  *
  * The pool is every collection whose type declares `canBeGridHost`, so a type
  * added to that set is offered as a host without a second edit here.
- * Anchor-origin trunks are excluded: anchors are load-bearing standalone
+ * Stump-origin trunks are excluded: anchors are load-bearing standalone
  * pillars and never host fan leaves.
  *
  * The pool spans EVERY model in the snapshot, so host choosers must filter on
@@ -1404,7 +1415,7 @@ const MAX_FANNING_PASSES = 5;
 export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
     const shaftPoints: FanShaftPoint[] = [];
     for (const { hostTypeId, hostId, entity } of collectHostEntities(draft)) {
-        if (entity.origin === 'anchor') continue;
+        if (entity.origin === NEAR_PLATE_ORIGIN) continue;
         for (const seg of entity.segments ?? []) {
             // Both joints must exist: a knot attached to a joint-less segment
             // is culled later as missingHost — never offer such a segment.
@@ -2239,7 +2250,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
 
     return {
         hostCount: collectHostEntities(draft).length,
-        anchorCount: Object.keys(draft.anchors).length,
+        anchorCount: Object.keys(draft.stumps).length,
         leafCount: Object.keys(draft.leaves).length,
         branchCount: Object.keys(draft.branches).length,
         stickCount: Object.keys(draft.sticks).length,
@@ -2799,7 +2810,7 @@ export function computeAutoSupportPlan(
             `Overhang consolidation: ${consolidated} standalone trunks merged into fan trees`);
     }
 
-    // ── Anchor pass: none ──────────────────────────────────────────
+    // ── Stump pass: none ──────────────────────────────────────────
     // Near-plate contacts place as anchor primitives upstream (tip Z below
     // ANCHOR_HEIGHT_THRESHOLD_MM) and stay standalone.
 

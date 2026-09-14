@@ -152,7 +152,7 @@ test('twig contact disks are successfully appended to the sliced geometry', asyn
     twigs: { 'twig-1': mockTwig as any },
     sticks: {},
     braces: {},
-    anchors: {},
+    stumps: {},
     kickstands: {},
     knots: {},
     selectedId: null,
@@ -190,7 +190,7 @@ test('twig contact disks are successfully appended to the sliced geometry', asyn
     twigs: {},
     sticks: {},
     braces: {},
-    anchors: {},
+    stumps: {},
     kickstands: {},
     knots: {},
     selectedId: null,
@@ -239,7 +239,7 @@ test('anchor supports contribute root, joint, and cone triangles to the sliced g
     twigs: {},
     sticks: {},
     braces: {},
-    anchors: {},
+    stumps: {},
     kickstands: {},
     knots: {},
     selectedId: null,
@@ -259,7 +259,7 @@ test('anchor supports contribute root, joint, and cone triangles to the sliced g
   });
 
   // With one anchor.
-  setSnapshot({ ...emptyState, anchors: { 'anchor-1': mockAnchor } });
+  setSnapshot({ ...emptyState, stumps: { 'anchor-1': mockAnchor } });
   const withAnchor = await buildSolidSliceMeshForWasm({
     models: [model],
     printerProfile: mockPrinterProfile,
@@ -270,7 +270,7 @@ test('anchor supports contribute root, joint, and cone triangles to the sliced g
   assert.equal(withAnchor.modelTriangleCount, 2);
   assert.ok(
     withAnchor.trianglesXYZ.length > baseline.trianglesXYZ.length,
-    'Anchor root frustum, joint sphere, and contact cone must add slice triangles',
+    'Stump root frustum, joint sphere, and contact cone must add slice triangles',
   );
 
   setSnapshot(emptyState);

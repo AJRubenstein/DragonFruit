@@ -1,4 +1,4 @@
-import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Anchor } from './types';
+import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Stump } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import { resolveSegmentEndpoints, type ShaftEntity } from './SupportPrimitives/Knot/segmentEndpoints';
@@ -11,6 +11,7 @@ import { collectCascade, groupByCollection, isReferencedOutside } from './suppor
 import { pushSupportHistory } from './history/supportHistory';
 import { hasSupportUpdater, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
+import { migrateLegacySupportPayload } from './importMigrations';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
@@ -1909,7 +1910,7 @@ export function transformSupportsForModel(
     if (nextByCollection.twigs) nextTwigs = nextByCollection.twigs as typeof nextTwigs;
     if (nextByCollection.sticks) nextSticks = nextByCollection.sticks as typeof nextSticks;
     if (nextByCollection.braces) nextBraces = nextByCollection.braces as typeof nextBraces;
-    const nextAnchors = (nextByCollection.anchors ?? state.anchors) as typeof state.anchors;
+    const nextAnchors = (nextByCollection.stumps ?? state.stumps) as typeof state.stumps;
 
 
     for (const knot of Object.values(state.knots)) {
@@ -1947,7 +1948,7 @@ export function transformSupportsForModel(
             twigs: nextTwigs,
             sticks: nextSticks,
             braces: nextBraces,
-            anchors: nextAnchors,
+            stumps: nextAnchors,
             knots: nextKnots,
         });
         notify();
@@ -2062,8 +2063,8 @@ export function transformAllSupportsForSingleModel(
                         : brace.curve,
                 } as unknown as typeof entity;
             }
-            case 'anchors': {
-                const anchor = entity as unknown as Anchor;
+            case 'stumps': {
+                const anchor = entity as unknown as Stump;
                 return {
                     ...anchor,
                     rootPos: transformVec3(anchor.rootPos, deltaMatrix),
@@ -2363,7 +2364,7 @@ function migrateLegacyGeneratedBy(kickstand: Kickstand): Kickstand {
 
 export function loadFromImportFormat(data: DragonfruitImportFormat) {
     const importDefaults = getSavedImportDefaultsSettings();
-    const effectiveData = applyImportDefaultsToSupportPayload(data, importDefaults);
+    const effectiveData = applyImportDefaultsToSupportPayload(migrateLegacySupportPayload(data), importDefaults);
 
     const newState: SupportState = {
         ...createEmptySupportCollections(),
@@ -2744,7 +2745,7 @@ function reconcileSupportModelIds(
 export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelId?: string) {
     const importDefaults = getSavedImportDefaultsSettings();
     const reconciled = ownerModelId ? reconcileSupportModelIds(data, ownerModelId) : data;
-    const effectiveData = applyImportDefaultsToSupportPayload(reconciled, importDefaults);
+    const effectiveData = applyImportDefaultsToSupportPayload(migrateLegacySupportPayload(reconciled), importDefaults);
     const isolated = isolateImportedSupportPayload(effectiveData);
 
     const merged: SupportState = {
@@ -2756,7 +2757,7 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
         twigs: { ...state.twigs },
         sticks: { ...state.sticks },
         braces: { ...state.braces },
-        anchors: { ...state.anchors },
+        stumps: { ...state.stumps },
         kickstands: { ...state.kickstands },
         knots: { ...state.knots },
     };
@@ -2805,7 +2806,7 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
         twigs: Object.keys(state.twigs).length,
         sticks: Object.keys(state.sticks).length,
         braces: Object.keys(state.braces).length,
-        anchors: Object.keys(state.anchors).length,
+        stumps: Object.keys(state.stumps).length,
         knots: Object.keys(state.knots).length,
         kickstands: Object.keys(state.kickstands).length,
     });
@@ -3085,13 +3086,13 @@ function replaceSupportEntity(
 }
 
 /**
- * The anchor's own updater, registered from `anchorRegistration.ts`.
+ * The anchor's own updater, registered from `stumpRegistration.ts`.
  *
  * NOT the generic path: an anchor carries no knots, so it does a plain write
  * where `applySupportEntityUpdate` would cache the settings hex and reposition
  * the knots riding its segments.
  */
-export function updateAnchor(anchor: Anchor) {
+export function updateStump(anchor: Stump) {
     replaceSupportEntity(anchor);
 }
 

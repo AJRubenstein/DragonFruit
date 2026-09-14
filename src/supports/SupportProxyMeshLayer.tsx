@@ -161,7 +161,7 @@ export function SupportProxyMeshLayer({
   const supportTwigs = supportState.twigs;
   const supportSticks = supportState.sticks;
   const supportBraces = supportState.braces;
-  const supportAnchors = supportState.anchors;
+  const supportAnchors = supportState.stumps;
   // Every entity collection as one identity, rebuilt when any changes. Used
   // for the cache signature; the geometry loops below still read their own
   // collection, because each builds different primitives.
@@ -445,7 +445,7 @@ export function SupportProxyMeshLayer({
       const onB = isInteriorContactCone(stick.contactConeB, stick.modelId);
       if (onA || onB) ids.add(`stick:${stick.id}`);
     }
-    for (const anchor of Object.values(supportState.anchors)) {
+    for (const anchor of Object.values(supportState.stumps)) {
       if (isInteriorContactCone(anchor.contactCone, anchor.modelId)) {
         ids.add(`anchor:${anchor.id}`);
       }
@@ -466,7 +466,7 @@ export function SupportProxyMeshLayer({
     supportLeaves,
     supportSticks,
     supportTwigs,
-    supportState.anchors,
+    supportState.stumps,
   ]);
 
   const baseProxyByModel = React.useMemo(() => {

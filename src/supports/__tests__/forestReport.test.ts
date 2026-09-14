@@ -11,7 +11,7 @@ function emptySnapshot(): SupportState {
         roots: {},
         branches: {},
         leaves: {},
-        anchors: {},
+        stumps: {},
         knots: {},
         braces: {},
         twigs: {},

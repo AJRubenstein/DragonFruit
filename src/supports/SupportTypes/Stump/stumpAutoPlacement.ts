@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 
 import { registerContactOverride, type PlacedSupport } from '../../supportTypeRegistry';
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
-import { buildAnchorData } from './anchorBuilder';
+import { buildStumpData } from './stumpBuilder';
 
 /**
  * The anchor OVERRIDES auto-placement's default build for its band.
@@ -13,8 +13,8 @@ import { buildAnchorData } from './anchorBuilder';
  * lets the grid engine ask "what does this contact's type build, and build it"
  * without importing this module or naming the anchor.
  */
-registerContactOverride('anchor', (request) => {
-    const built = buildAnchorData({
+registerContactOverride('stump', (request) => {
+    const built = buildStumpData({
         tipPos: request.tipPos,
         tipNormal: request.tipNormal,
         modelId: request.modelId,
@@ -27,7 +27,7 @@ registerContactOverride('anchor', (request) => {
     const placed: PlacedSupport = {
         // An anchor declares no `edges`: its frustum root IS the support, so it
         // carries no separate primitive into the draft.
-        typeId: 'anchor',
+        typeId: 'stump',
         entity: anchor,
         supplied: {},
     };
@@ -47,8 +47,8 @@ registerContactOverride('anchor', (request) => {
         // hover tooltip explains the rejection.
         return {
             placed,
-            refusal: 'ANCHOR_BELOW_ROOT',
-            supportData: { ...supportData, error: 'ANCHOR_BELOW_ROOT' },
+            refusal: 'STUMP_BELOW_ROOT',
+            supportData: { ...supportData, error: 'STUMP_BELOW_ROOT' },
         };
     }
     return { placed, supportData };

@@ -58,7 +58,7 @@ type VisibleRaftEntry = {
 
 type RaftProxyCacheEntry = {
   supportRootsRef: ReturnType<typeof getSnapshot>['roots'];
-  supportAnchorsRef: ReturnType<typeof getSnapshot>['anchors'];
+  supportAnchorsRef: ReturnType<typeof getSnapshot>['stumps'];
   raftSignature: string;
   geometriesByModel: Map<string, CachedRaftGeometry>;
 };
@@ -197,7 +197,7 @@ export function RaftProxyMeshLayer({
   const { hit } = usePicking();
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const supportRoots = supportState.roots;
-  const supportAnchors = supportState.anchors;
+  const supportAnchors = supportState.stumps;
   const raft = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
 
   const selectedModelIdSet = React.useMemo(() => new Set(selectedModelIds), [selectedModelIds]);
@@ -234,7 +234,7 @@ export function RaftProxyMeshLayer({
 
     const rootCirclesByModel = collectRaftBaseCirclesByModel({
       roots: Object.values(supportRoots),
-      anchors: Object.values(supportAnchors),
+      stumps: Object.values(supportAnchors),
     }, {
       fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
     });

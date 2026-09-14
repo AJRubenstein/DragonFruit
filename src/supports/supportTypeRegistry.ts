@@ -330,6 +330,20 @@ export interface SupportTypeDescriptor {
      * Enforced by `__tests__/placementRules.test.ts`.
      */
     placementRule?: SupportPlacementRule;
+    /**
+     * Names this type was known by before, for reading payloads written then.
+     *
+     * A rename is a fact about the TYPE, so the old spelling belongs here beside
+     * the new one rather than inside a migration that would otherwise have to
+     * name the current id as well -- which would make every future rename touch
+     * the migration too. `migrateSupportPayload` is the only reader.
+     */
+    renamedFrom?: {
+        /** Type ids this type's entities were stamped with. */
+        ids?: readonly string[];
+        /** SupportState collection keys its entities were stored under. */
+        collectionKeys?: readonly string[];
+    };
     /** Auto-placement density and shaft sizing. See {@link SupportAutoPlacement}. */
     autoPlacement?: SupportAutoPlacement;
     /**
@@ -500,7 +514,7 @@ export interface SupportTypeDescriptor {
      * Whether unselected contact cones are drawn by the shared batched pass.
      *
      * A type that draws its own cone instead would get two if it also batched.
-     * Anchor is the one: its renderer draws the cone directly, and only while
+     * Stump is the one: its renderer draws the cone directly, and only while
      * selected.
      */
     batchesContactCones: boolean;
@@ -510,7 +524,7 @@ export interface SupportTypeDescriptor {
      *
      * One flag, because "the batch builds that support" is one fact the two
      * passes ask about the same set of types. Brace opts out -- its shaft is a
-     * curve between two knots and it builds its own set. Anchor declares a
+     * curve between two knots and it builds its own set. Stump declares a
      * shaft but builds none: its renderer draws the single joint directly, so
      * there is nothing per-segment for either pass to collect.
      */
@@ -885,7 +899,9 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         selectionCategory: 'brace',
     },
     {
-        id: 'anchor',
+        id: 'stump',
+        // Written before the rename, so payloads saved then still load.
+        renamedFrom: { ids: ['anchor'], collectionKeys: ['anchors'] },
         sidebarTab: 'supportInfo',
         hasEditableSettings: false,
         offersSidebarPanel: false,
@@ -899,7 +915,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         jointDragUsesLivePreview: true,
         batchesContactCones: false,
         batchesShaft: false,
-        bezierContextIdPrefix: 'anchor-',
+        bezierContextIdPrefix: 'stump-',
         broadcastsAttachmentsWhileDragging: false,
         knotTakesJointDiameter: false,
         projectsUnparameterisedKnots: false,
@@ -930,9 +946,9 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         isAutoPlaced: true,
         hasSegments: true,
         label: 'Anchors',
-        singular: 'anchor',
-        location: { store: 'support', key: 'anchors' },
-        selectionCategory: 'anchor',
+        singular: 'stump',
+        location: { store: 'support', key: 'stumps' },
+        selectionCategory: 'stump',
     },
     {
         id: 'kickstand',
@@ -1131,7 +1147,7 @@ export const SUPPORT_REMOVAL_SHAPES = {
     twig: { self: 'twig', cascade: { knots: 'knots', leaves: 'leaves' } },
     stick: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
     brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
-    anchor: { self: 'anchor', cascade: { knots: 'knots', leaves: 'leaves' } },
+    stump: { self: 'stump', cascade: { knots: 'knots', leaves: 'leaves' } },
     kickstand: { self: 'kickstand', cascade: { roots: 'roots', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
     // `satisfies` keeps the literal narrowing the result types read, while
     // making a renamed type a compile error here rather than at the call site.
@@ -1202,7 +1218,7 @@ type UnionToIntersection<U> =
 /** Type id -> the collection its entities live in, kept literal for the above. */
 export const SUPPORT_TYPE_COLLECTION: SupportCollectionByType = {
     trunk: 'trunks', branch: 'branches', leaf: 'leaves', twig: 'twigs',
-    stick: 'sticks', brace: 'braces', anchor: 'anchors', kickstand: 'kickstands',
+    stick: 'sticks', brace: 'braces', stump: 'stumps', kickstand: 'kickstands',
 };
 
 /** Compile-time check that every support type declares a removal shape. */
@@ -1781,7 +1797,7 @@ export function typesMissingHostPromotion(): readonly SupportTypeId[] {
 
 export const SUPPORT_TRANSFORM_EXTRAS = {
     brace: ['curve'],
-    anchor: ['rootPos', 'joint'],
+    stump: ['rootPos', 'joint'],
 } as const satisfies Partial<Record<SupportTypeId, readonly string[]>>;
 
 /** Extra transform fields this type declares, or none. */
@@ -1849,13 +1865,34 @@ export function isEditableSupportType(id: string): id is SupportTypeId {
  * plate and island trunks carry their own geometry, so neither converts.
  */
 export const SUPPORT_ORIGINS = {
-    anchor: { convertibleToTree: false },
+    stump: { convertibleToTree: false },
     overhang: { convertibleToTree: true },
     island: { convertibleToTree: false },
     standalone: { convertibleToTree: true },
 } as const;
 
 export type SupportOriginId = keyof typeof SUPPORT_ORIGINS;
+
+/**
+ * The origin a support is stamped with when it was placed in the near-plate band
+ * -- the band a TYPE claims via its `placementRule`, so this origin is named
+ * after that type and moves with it.
+ *
+ * Derived rather than spelled at the comparison sites: an origin is its own
+ * vocabulary, and a caller writing `origin === 'stump'` would silently stop
+ * matching on a rename, because the origin keys do not follow `SupportTypeId`.
+ */
+export const NEAR_PLATE_ORIGIN: SupportOriginId = (() => {
+    const matches = (Object.keys(SUPPORT_ORIGINS) as SupportOriginId[])
+        .filter((origin) => SUPPORT_TYPES.some((descriptor) => descriptor.id === origin));
+    const [origin, ...rest] = matches;
+    if (!origin || rest.length > 0) {
+        throw new Error(
+            `expected exactly one origin named after a support type, found: ${matches.join(', ') || 'none'}.`,
+        );
+    }
+    return origin;
+})();
 
 /** Whether a trunk with this origin may be converted into a tree. */
 export function isOriginConvertibleToTree(origin: string | undefined): boolean {
@@ -1960,7 +1997,7 @@ export const AUTO_PLACED_BY_TYPE = {
     twig: true,
     stick: true,
     brace: false,
-    anchor: true,
+    stump: true,
     kickstand: false,
 } as const satisfies Record<SupportTypeId, boolean>;
 
@@ -2223,7 +2260,7 @@ export const PLACEMENT_MODE_OWNER_BY_TYPE = {
     twig: false,
     stick: false,
     brace: true,
-    anchor: false,
+    stump: false,
     kickstand: true,
 } as const satisfies Record<SupportTypeId, boolean>;
 
@@ -2314,7 +2351,7 @@ export const JOINT_DRAG_PREVIEW_BY_TYPE = {
     twig: false,
     stick: false,
     brace: false,
-    anchor: false,
+    stump: false,
     kickstand: true,
 } as const satisfies Record<SupportTypeId, boolean>;
 
@@ -2344,7 +2381,7 @@ export const MODEL_SURFACE_GESTURE_BY_TYPE = {
     twig: false,
     stick: false,
     brace: false,
-    anchor: false,
+    stump: false,
     kickstand: false,
 } as const satisfies Record<SupportTypeId, boolean>;
 
@@ -2576,7 +2613,7 @@ export const KICKSTAND_HOST_BY_TYPE = {
     twig: false,
     stick: false,
     brace: false,
-    anchor: false,
+    stump: false,
     kickstand: false,
 } as const satisfies Record<SupportTypeId, boolean>;
 
@@ -2607,7 +2644,7 @@ export const JOINT_REMOVAL_BY_TYPE = {
     twig: false,
     stick: false,
     brace: false,
-    anchor: false,
+    stump: false,
     kickstand: true,
 } as const satisfies Record<SupportTypeId, boolean>;
 
