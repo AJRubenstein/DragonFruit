@@ -23,7 +23,7 @@ exactly what a derived key would have made impossible.
 
 ---
 
-## 1. `SupportProxyMeshLayer.tsx` -- the interior-id loops
+## 1. `SupportProxyMeshLayer.tsx` -- the interior-id loops -- DONE
 
 **The shape.** Nine aliases (`supportTrunks` … `supportStumps`) feed five
 near-identical loops that differ only in which contact fields they test:
@@ -68,7 +68,7 @@ silent change to what the cavity view hides.
 
 ---
 
-## 2. `RaftProxyMeshLayer.tsx` -- two aliases
+## 2. `RaftProxyMeshLayer.tsx` -- two aliases -- DONE
 
 `supportRoots` and `supportStumps` only. Small, same treatment, and worth doing
 in the same pass so the two mesh layers stay the same shape.
@@ -79,37 +79,75 @@ walks declared types -- compare against it.
 
 ---
 
-## 3. `SceneCanvas.tsx` -- the memo key, then the fan-out
+## 3. `SceneCanvas.tsx` -- the memo key, then the fan-out -- DONE
 
-### 3a. Fix the key (small, and a real fix)
+### 3a. Fix the key -- DONE, but the reason stated here was wrong
 
-Replace the eight hand-written entries with one derived spread:
+Landed as written: the eight hand-written entries became one derived spread over
+`SUPPORT_COLLECTION_KEYS`, so `stumps` and `kickstands` are covered and the key
+cannot fall behind the registry.
 
-```ts
-...Object.fromEntries(
-  SUPPORT_COLLECTION_KEYS.map((key) => [`support_${key}`, supportStateForBounds[key]]),
-),
-```
+**The premise above is inverted, and the measurement is the point.** The cache
+was never under-invalidating: `supportStateForBounds` is itself in that memo's
+dependency array, so the memo re-runs on every store change and the eight
+per-collection refs are inert. Measured against the real store -- a
+hover/selection change moves the state object's identity while leaving the
+collection identities untouched. The memo therefore recached on hover/selection
+churn, which is exactly what its comment claimed it avoided. It over-invalidated;
+it never under-invalidated.
 
-**This changes behaviour**, and that is the point: stumps and kickstands start
-invalidating the cache. Expect more recaching than before, because the cache was
-under-invalidating. If that costs measurable frame time, the answer is a
-narrower DERIVED predicate (a `contributesCrossSectionGeometry` flag on the
-descriptor), never a hand-written list.
+Consequences:
 
-**Verify:** edit a stump, then a kickstand, with the cross-section view open.
-Before the change the section does not update; after, it does. Record that in
-the PR -- it is the user-visible proof.
+- Deriving the list is correctness hygiene, not the behaviour change predicted
+  here. Nothing recaches more than before.
+- The `stumps`/`kickstands` omission was harmless *today* and a hazard *tomorrow*:
+  drop the whole-state dependency to get the narrow invalidation this section
+  wanted, and an incomplete derived key becomes a stale cross-section.
+- **Deliberately not done:** dropping `supportStateForBounds` from that
+  dependency array. It is a performance change (fewer recaches) carrying a
+  staleness risk if the derived key is ever incomplete, and it is not what this
+  section asked for. It needs a frame-time measurement first.
 
-### 3b. The prop fan-out (49 sites)
+**Verify:** the manual check this section originally named -- edit a stump, then
+a kickstand, with the cross-section open -- does NOT distinguish the two states,
+because the section updates either way. It was not run: there is no app-drivable
+path (auto-support needs the native `scanMeshMinima` call) and the running app is
+the user's. It remains manually verifiable by the user.
 
-`supportStateForBounds.<collection>` appears 49 times. Once the memo key is
-derived, work through the rest by the same rule: a site that names a collection
-to ask a question the registry can answer should ask the registry.
+### 3b. The prop fan-out (49 sites) -- classified
 
-Leave any site where the collection is named because that ENTITY TYPE is
-genuinely what the code is about -- a renderer for one type, say. The test is
-the same as everywhere else: is this the type, or is this every type?
+The 49 sites are not one question. Two were genuinely asking for a registry
+answer and are done:
+
+- **The model-knot collection** walked four types by hand, naming each one's knot
+  field (`parentKnotId`, `startKnotId`/`endKnotId`, `hostKnotId`). Those fields
+  ARE the declared `hostedBy` edges onto `knots`, so it now asks
+  `hostKnotFieldsFor` per descriptor, which also replaced the three anonymous
+  copies of that edge filter in the registry. Verified identical to the loops it
+  replaces over the criosphinx fixture (121 braces, 22 branches, 50 leaves, 3
+  kickstands).
+- **Three copies of "which bases define the raft footprint"** -- the drawn raft,
+  the marquee ring, and the model bounds -- two of which read `roots` alone and
+  so ignored the types carrying their own inline root. All three now share
+  `collectRaftBaseCirclesByModel`. Measured: the circle set was missing the
+  stump's inline root (88 -> 89, r=1mm). That base is interior on the only
+  available fixture, so the profile is unchanged there; this closes a latent
+  disagreement between what is drawn and what is grabbable or bounded, not an
+  observed one. The bounds walk is hoisted into a memo because that callback runs
+  once per model.
+
+Left alone, with the reason:
+
+- **`supportMarqueeShapes`** (~2803-2875): eight per-type loops whose bodies
+  differ in which endpoints contribute, whether sockets are included, and whether
+  a contact cone is required. Deriving it needs the descriptor to declare a
+  type's pickable geometry -- a far larger declaration than this plan
+  contemplates. Here the type genuinely is the subject.
+- **`sourceSupportAnchor`** (~3318): a supports-centroid for the duplicate
+  preview, `roots` only. Same shape as the raft sites, but changing it moves
+  where a duplicated model is previewed -- a visible behaviour change with no
+  measured drift to justify it. Left deliberately.
+
 
 ---
 
