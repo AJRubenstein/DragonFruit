@@ -72,26 +72,13 @@ from the registry or declare it as a descriptor property. Never subtract
 (`.filter(id => id !== 'trunk')`): a new type silently joins or skips the set,
 which is the exact failure the registry exists to prevent.
 
-Known remaining hand-written lists worth converting:
-
-- **`autoPlace.ts` gap-fill stalemate count** — `if (kind === 'trunk' || kind ===
-  'anchor') placedThisPass++` names two types by hand, and `placedThisPass` is
-  the coverage-convergence loop's ONLY termination signal (`if (placedThisPass
-  === 0) break`). A gap-fill candidate that resolved to any other kind reads as
-  "no progress" and ends the pass early. Deriving it to "any non-reject
-  placement" is not a rename: the loop would run further and place more
-  supports. Needs a decision on what the counter is meant to measure — supports
-  placed, or plate-reaching supports (trunk/anchor are exactly the two kinds
-  that reach the plate) — before it changes. Raised but not settled; see
-  `support-registry-findings.md`.
-
 ### Bugs found while converting
 
 Converting each hand-written type list turned up defects where the list
 disagreed with the registry. They are recorded in
-[`support-registry-findings.md`](support-registry-findings.md) -- 101 findings,
-29 still open -- rather than here, because they are per-site detail rather than
-rules to follow.
+[`support-registry-findings.md`](support-registry-findings.md) -- 22 still open
+-- rather than here, because they are per-site detail rather than rules to
+follow.
 
 The rule they add up to is the one above: derive, never subtract. Two were
 invisible to the whole suite AND every golden, so passing tests are not
