@@ -50,9 +50,9 @@ when another is ten times worse. The detail lives in
 
 Neither instrument alone is the picture: the rename test sees only what `tsc`
 can prove, so a literal that survives a rename *without* a compile error is
-invisible to it. That is what the token inventory (`lysdiag/tools/inventory.py`,
-736 distinct tokens over 6,014 occurrences) catches. Report both. A string
-literal is invisible to BOTH: the knot-host prefixes needed a source scan.
+invisible to it. Catching those needs a scan of every distinct token (736 of
+them over 6,014 occurrences when last measured). Report both. A string literal
+is invisible to BOTH: the knot-host prefixes needed a source scan.
 
 **Remaining goal:** move the rest of the per-type threading behind the registry,
 so the renderer, interaction manager and export derive their behaviour rather

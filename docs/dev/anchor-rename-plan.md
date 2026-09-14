@@ -109,14 +109,18 @@ an entity -- not where it lives. Every row in the census carries that evidence.
 
 ## Verifying, at the end
 
-The rename test will still say 0, so it proves nothing here. Use the real one:
+A rename test that touches one naming point will say 0 and prove nothing. Do the
+whole rename, then revert it -- it is a probe, not a commit:
 
-```
-python ../lysdiag/tools/rename-all.py anchor <newname>
-```
-
-then `tsc`, the suite, the goldens, and a manual place/render/export/undo. Revert
-the rename afterwards -- it is a probe, not a commit.
+1. Rename the id in `supportTypeRegistry.ts` AND the collection key in
+   `types.ts`. Renaming one without the other collapses the derived entity
+   mapping to `unknown` and manufactures errors far from any naming point.
+2. Rename the type's folder under `SupportTypes/`, and the two filenames derived
+   from it (`<Folder>Renderer.tsx`, `<id>Registration.ts`).
+3. Regenerate both generated barrels, or a missing build step reads as a stale
+   literal.
+4. Run `npx tsc --noEmit -p tsconfig.json` (delete `tsconfig.tsbuildinfo`
+   first), the suite, the goldens, and a manual place/render/export/undo.
 
 **A passing suite is not evidence.** Two flags in this refactor were invisible to
 the whole suite AND every golden. If a site cannot be covered, say so in the PR
@@ -209,13 +213,8 @@ shape.
 
 ### How to re-run the acceptance
 
-```
-python ../lysdiag/tools/rename-probe.py anchor --new anchory
-```
-
-It renames both naming points, the type's folder and the three names derived from
-it (folder, `<Folder>Renderer.tsx`, `<id>Registration.ts`), REGENERATES both
-generated barrels, runs `tsc` and the suite INCLUDING the goldens, then restores
+Apply the full rename above to a throwaway name, regenerate both barrels, run
+`tsc` and the suite including the goldens, then restore
 everything and verifies the restore. Read its docstring before trusting a number
 from it: a probe that renames only one naming point, or that guesses the
 collection plural, or that skips the folders, manufactures errors that do not
@@ -284,8 +283,7 @@ plan prescribes -- pin the value, derive the name.
 
 ### Verification
 
-`python ../lysdiag/tools/rename-probe.py stump --new stumpx`, after all of the
-above:
+A full `stump` -> `stumpx` probe, after all of the above:
 
 | check | result |
 | --- | --- |

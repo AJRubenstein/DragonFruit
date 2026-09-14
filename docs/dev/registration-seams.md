@@ -125,10 +125,9 @@ rebuilt by `predev` / `prebuild` / `pretest` — the same arrangement as
 checkout always has it before anything compiles or tests.
 
 A folder qualifies when it holds `<type>Registration.ts` (e.g.
-`Trunk/trunkRegistration.ts`). Both metrics — `npm run scan:support-types` and the
-`lysdiag` token inventory — exclude generated modules: they name every type by
-construction, so counting them would measure generated output rather than
-hand-written code.
+`Trunk/trunkRegistration.ts`). Any metric here excludes generated modules: they
+name every type by construction, so counting them would measure generated output
+rather than hand-written code.
 
 ## Placement preview geometry
 
@@ -201,10 +200,10 @@ the type rows are answered by `typePanelFacts(typeId)` from the registry:
 | `drawsOwnPreview` | `hasOwnAnatomyPreview(id)` — see above |
 
 The compound forms are load-bearing, not incidental: twig and stick have shafts
-and no *editable* shaft diameter, and an anchor has a root with its own fields
+and no *editable* shaft diameter, and a stump has a root with its own fields
 rather than a plate root. Geometry and editability are different questions.
 
-Every type answers, including those with no panel today, so offering one (anchor
+Every type answers, including those with no panel today, so offering one (stump
 is the obvious candidate) is a UI change rather than a data gap.
 
 ## Writing a new seam

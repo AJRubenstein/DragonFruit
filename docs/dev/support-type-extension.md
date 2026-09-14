@@ -6,7 +6,7 @@ work on its own: **declaring** a type is registry work, **wiring** it is still
 partly manual. Steps below are marked accordingly.
 
 The existing types are `Trunk`, `Branch`, `Leaf`, `Twig`, `Stick`, `Brace`,
-`Anchor`, `Kickstand`.
+`Stump`, `Kickstand`.
 
 **Three documents, no overlap:** this one is how to add a type;
 `support-type-literal-plan.md` is what is left to convert;
@@ -107,7 +107,7 @@ whether the type is user-placeable.
   `useGadgetPlacement` hook, and a `GadgetPlacementController` listed in
   `supports/placementControllers.ts`. `placementComparators.ts` has the shared
   value comparisons (`vecEq`, `hostSnapTargetEq`) before you write your own.
-- `index.ts` barrels are **optional** — only Anchor and Kickstand have one.
+- `index.ts` barrels are **optional** — only Stump and Kickstand have one.
 
 ## 3. Rendering — your own folder *(registry-driven)*
 
@@ -120,7 +120,7 @@ whether the type is user-placeable.
 3. *Optional*: declare `batchesShaft` so unselected
    straight shafts and joints render via `InstancedShaftGroup`.
 4. *Optional*: add the type to the render-lookup worker for primitive picking.
-   Anchors skip it entirely, so it is not required for selectability.
+   Stumps skip it entirely, so it is not required for selectability.
 
 `detailRendererCoverage.test.ts` fails if a declared type has no entry.
 

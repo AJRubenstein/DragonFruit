@@ -1,25 +1,14 @@
 /**
  * Every support-type-name literal in `src/`, classified by what the literal does.
  *
- * ## Why this exists beside `scan-support-type-references.ts`
+ * Counts string literals equal to a type id and says what each is doing, which
+ * is what separates the risks: a literal in a comparison is a rename hazard
+ * nothing catches, one passed as an argument is caught by the compiler, and one
+ * in the registry is the naming point.
  *
- * That scanner counts every occurrence of a type's STEM anywhere in an
- * identifier, and its `--check --budget` ratchets the TOTAL. The total is not a
- * progress metric: it rose during the refactor that removed real coupling,
- * because deriving a concept adds registry-side mentions while deleting
- * scattered ones. A budget on it would penalise correct work.
- *
- * It is also blind in the direction that matters. Commit `1bd7bfa2` turned two
- * decision kinds into type-name literals in ARGUMENT position --
- * `placementOf('branch', …)`, `leafTypeId: 'leaf'` -- and the dispatch count did
- * not move. Those five literals were added and then removed with every existing
- * instrument reading exactly the same number.
- *
- * So this counts STRING LITERALS equal to a type id, and says what each one is
- * doing. A literal in a comparison is a rename hazard nothing catches; a literal
- * passed as an argument is a rename hazard the compiler catches; a literal in
- * the registry is the naming point. Those are different amounts of work and
- * different amounts of risk, and a single number cannot express that.
+ * `scan-support-type-references.ts` counts a type's stem in any identifier and
+ * ratchets the total. That total does not separate those cases, and it rises
+ * when deriving a concept moves mentions to the registry.
  *
  * ## Usage
  *
@@ -67,12 +56,7 @@ const EXEMPT = [
  * catches. See docs/dev/support-type-literal-plan.md for the staged plan that
  * lowers them.
  */
-/**
- * `origin === '<one of the declared origin keys>'`.
- *
- * Built from `SUPPORT_ORIGINS`, so renaming an origin -- or a type that lends its
- * name to one -- keeps this exemption correct without an edit here.
- */
+/** `origin === '<declared origin key>'`, built from `SUPPORT_ORIGINS`. */
 const ORIGIN_COMPARISON = new RegExp(
     `origin\\s*(?:===|!==)\\s*['"](?:${Object.keys(SUPPORT_ORIGINS).join('|')})['"]`,
 );
@@ -122,10 +106,8 @@ function classify(line: string, ids: string[]): LiteralClass {
     //   origin:        `origin === '<an origin key>'` -- SUPPORT_ORIGINS
     //   sizing preset: 'detail' | 'structure' | 'anchor' (a tier, not a type)
     //
-    // The origin keys are read from the registry rather than listed here: the
-    // origin that names the near-plate band is spelled after the type that
-    // claims that band, so a hardcoded list goes stale on a rename and starts
-    // reporting the origin comparison as a dispatch target.
+    // An origin can be spelled after the type claiming its band, so the keys are
+    // read from the registry rather than listed here.
     if (ORIGIN_COMPARISON.test(line)) {
         return 'other-vocab';
     }

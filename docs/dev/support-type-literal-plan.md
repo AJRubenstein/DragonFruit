@@ -156,29 +156,19 @@ the `branch` → `branchy` run leaves `supportPlacementHotkeyResolver` and
 `supportPlacementRouting` with `TS2322`/`TS2367` on `'branch'`, and `state.ts`
 with `'branch'` not assignable to the narrowed joint-removal union.
 
-### 1.2 A measurement failure worth reading first
+### 1.2 Two ways the measurement lies
 
-`lysdiag/tools/dispatch-metric.py` counts only `=== 'type'` / `!== 'type'`.
+**A dispatch-only count cannot see the most likely regression.** Counting only
+`=== 'type'` / `!== 'type'` misses literals in *argument position*
+(`placementOf('branch', …)`, `leafTypeId: 'leaf'`), which is the shape
+regressions actually take: five such literals were added and removed with that
+number never moving. Use `npm run scan:support-literals`, which classifies every
+string literal equal to a type id (§5).
 
-That is **not the shape the regressions actually take.** In `1bd7bfa2` the grid
-engine's two decision kinds (place_leaf, place_branch) were turned into
-type-name literals spelled at five sites — `placementOf('branch', …)`,
-`leafTypeId: 'leaf'` — all in *argument position*. The dispatch metric did not
-move at all. Five literals were added, then removed, and the number never
-changed.
-
-**Consequence:** a dispatch-only count cannot see the most likely regression. It
-reads as coverage while measuring one narrow syntax form.
-
-`lysdiag/tools/type-literal-metric.py` counts and classifies **every** string
-literal equal to a type id. Both tools are described in §6.
-
-**The same failure has a second form, and it is the one that bit this plan.** A
-count can be correct and still be reasoned away afterwards. The inventory *did*
-itemise `supportPlacementRouting.ts`; the error was a classification call that
-labelled it "placement family vocabulary — not dispatch", which then hardened
-into a formal concession in §2. A wrong concession is worse than a missed count:
-every later pass skips the site *on purpose*. When classifying a literal as
+**A correct count can still be reasoned away.** `supportPlacementRouting.ts` was
+itemised, then classified "placement family vocabulary — not dispatch", and that
+hardened into a concession in §2. A wrong concession is worse than a missed
+count: every later pass skips the site on purpose. When classifying a literal as
 out-of-scope, apply the rename question in §2 and record the answer.
 
 ---
@@ -441,8 +431,8 @@ Left as is. The compiler catches drift, which is the bar.
 longer identifier is still a type name — each is a place a ninth type is
 silently absent.
 
-Neither the rename test nor any literal count sees these. Only
-`lysdiag/tools/inventory.py` does.
+Neither the rename test nor any literal count sees these: catching them needs a
+scan of every distinct token, which no committed script does today.
 
 **Worked example (partly closed):** `SceneCanvas.tsx` holds **zero** type-id
 literals. It used to take four flat booleans — one per placement mode — and
@@ -527,9 +517,10 @@ because deriving the capture deleted the type-named locals around it too. Track
 
 ### Where the rename test's remaining errors are — the full worklist
 
-`lysdiag/tools/remaining-worklist.py` prints every honest rename error with the
-source line that fails, for all eight types. It is the actionable form of the
-table below: run it, pick a cluster, convert, re-run.
+The actionable form of the table below is a real rename: rename one type at
+every naming point, then read `tsc`'s failing source lines. Pick a cluster,
+convert, revert, re-run. (The author drives this from local tooling; the method
+is what matters, not the script.)
 
 **Four measurement corrections, and the fourth invalidated the totals.**
 
@@ -570,19 +561,17 @@ under one consistent metric, are the honest deltas. By cluster:
 
 ### The measurement trap, and why `branch`/`leaf` always led
 
-The worst instrument failure of the refactor was not a wrong number but a wrong
-*shape*: a rename harness that treats one naming point as the whole and guesses
-the collection plural. `types.ts` declares `branch: 'branches'`, so for the two
-largest types the harness never renamed the collection key at all. Its remaining
-errors then included every consumer of a collapsed entity type — errors that do
-not exist in the tree and that no amount of work would remove. An agent in this
-session proved it by rebuilding the check and watching its own cluster go to zero
-under the corrected metric while the old one still reported 18.
+**A rename harness that renames one naming point and guesses the rest
+manufactures errors.** `types.ts` declares `branch: 'branches'`, so a harness
+guessing the collection plural never renamed the key for the two largest types.
+Its remaining errors then counted every consumer of a collapsed entity type —
+phantoms that no work would remove. Rebuilding the check took that cluster to
+zero while the old one still reported 18.
 
-**A measurement that manufactures errors is worse than no measurement**, because
-it directs effort at phantoms and it hides real regressions inside the noise. Two
-habits guard against it: report the failing SOURCE LINE, not a count, and keep an
-independent instrument (§5) whose number is expected to disagree.
+**A measurement that manufactures errors is worse than no measurement**: it
+directs effort at phantoms and hides real regressions in the noise. Report the
+failing SOURCE LINE, not a count, and keep an independent instrument (§5) whose
+number is expected to disagree.
 
 ### CORRECTED: the `Extract<SupportTypeId, …>` unions WERE a defect
 
@@ -842,13 +831,20 @@ brace), which is the point: it never saw these.
 
 ### 5.1 Two metrics, and which to trust
 
-- `lysdiag/tools/dispatch-metric.py` — counts `=== 'type'` only. **Keep for
-  continuity, but do not treat as the target.** It misses value-position
-  literals entirely (§1.1).
-- `lysdiag/tools/type-literal-metric.py` — **new.** Counts every string literal
-  equal to a type id and classifies it `dispatch` / `value` / `declaration` /
-  `other-vocab` / `object-key` / `comment`, splitting outside vs. inside a type's
-  own folder. Supports `--json` and `--verbose`.
+**In the repo, and what to use:**
+
+- `npm run scan:support-literals` — counts every string literal equal to a type
+  id and classifies it `dispatch` / `value` / `declaration` / `other-vocab` /
+  `object-key` / `comment`, splitting outside vs. inside a type's own folder.
+  `npm run check:support-literals` is the same scan as a ratchet.
+- `npm run scan:support-types` — counts a type's stem in any identifier. A total,
+  not a target: it rises when deriving a concept moves mentions to the registry.
+
+**Not in the repo.** The author's survey tooling (a dispatch-only `=== 'type'`
+count, a token inventory, and a rename harness) is local and never committed, so
+numbers quoted from it are working notes, not something a reviewer can rerun.
+Anything a reviewer must check belongs in a repo script. The dispatch-only count
+in particular misses value-position literals entirely (§1.1).
 
 `silent-value-sites.py` — **the stage-5 instrument.** It renames each type in
 `types.ts`, runs `tsc`, and asks which value literals no error landed on. That is
@@ -876,10 +872,10 @@ metric watched and said nothing.
 
 ### 5.3 The rename test
 
-`lysdiag/tools/rename-test.py <type>` renames one type in `types.ts` only and
-counts `tsc` errors in three buckets (registry / own folder / real work), then
-reverts. It is the *semantic* check — it catches a literal that compilation
-actually breaks on.
+Rename one type at every naming point, count `tsc` errors in three buckets
+(registry / own folder / real work), then revert. It is the *semantic* check —
+it catches a literal that compilation actually breaks on. Renaming fewer than
+all the naming points manufactures phantom errors; see the trap in §4.
 
 Its blind spot: a string literal in a comparison does **not** break compilation.
 That is why the metric ratchet in §5.2 is needed alongside it, and why every
@@ -922,8 +918,8 @@ Therefore, for every stage:
   form reports real errors — it nearly let a file that does not compile be
   committed, and neither the suite nor the goldens catch it (they run through
   `tsx`).
-- Full suite (990 tests) + goldens, **including untracked test files** —
-  `git ls-files` silently skips them.
+- Full suite (925 src, 82 plugins) + all 44 goldens (support 16, export 16,
+  slice 12), **including untracked test files** — `git ls-files` skips them.
 - `npm run check:docs` clean.
 - Gated lint, `--max-warnings 0`.
 - The whole-run signature (`__tests__/autoPlaceSignature.test.ts`) unchanged for
