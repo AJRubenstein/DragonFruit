@@ -2157,9 +2157,7 @@ export function findKnotHost(
 ): { typeId: SupportTypeId; id: string } | null {
     for (const typeId of order) {
         const descriptor = getSupportTypeDescriptor(typeId);
-        const fields = descriptor.edges
-            .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
-            .map((edge) => edge.field);
+        const fields = hostKnotFieldsFor(descriptor.id);
         if (fields.length === 0) continue;
 
         const record = state[descriptor.location.key] as unknown as
@@ -2184,9 +2182,7 @@ export const FLEXING_KNOT_HOST_TYPES: readonly {
     .filter((descriptor) => descriptor.flexesOnHostKnotDrag)
     .map((descriptor) => ({
         typeId: descriptor.id,
-        knotFields: descriptor.edges
-            .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
-            .map((edge) => edge.field),
+        knotFields: [...hostKnotFieldsFor(descriptor.id)],
     }));
 
 /** Precedence `findKnotHost` resolves in when several types name one knot. */
@@ -2347,9 +2343,7 @@ export type PlacementFamilyName = 'branchFamily' | OwnNamedPlacementFamilyTypeId
 export const SHAFT_HOSTED_MEMBER_TYPES: readonly ShaftHostedMemberType[] =
     SHAFT_HOSTED_MEMBER_TYPE_ORDER.map((typeId) => {
         const descriptor = getSupportTypeDescriptor(typeId);
-        const knotField = descriptor.edges.find(
-            (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
-        )?.field;
+        const knotField = hostKnotFieldsFor(typeId)[0];
         if (!knotField) {
             throw new Error(`${typeId} is walked as a shaft-hosted member but declares no hostedBy edge onto knots`);
         }
@@ -2602,6 +2596,21 @@ export const INLINE_ROOT_TYPES: readonly InlineRootPlacement[] = SUPPORT_TYPES
             radiusField,
         };
     });
+
+/**
+ * The fields through which a type hangs off a host knot: its `hostedBy` edges
+ * onto `knots`.
+ *
+ * A type with none is not hosted by a knot at all -- a trunk stands on its own
+ * root, a stump likewise, and a contact-to-contact type spans two model
+ * contacts. Callers that need "the knots these supports hang from" ask this
+ * rather than naming a field per type, so a type added or renamed is covered.
+ */
+export function hostKnotFieldsFor(typeId: SupportTypeId): readonly string[] {
+    return getSupportTypeDescriptor(typeId).edges
+        .filter((edge) => edge.to === 'knots' && edge.ownership === 'hostedBy')
+        .map((edge) => edge.field);
+}
 
 /** Whether this type hosts knots on a selectable span. */
 export function isSpanKnotHost(typeId: SupportTypeId): boolean {

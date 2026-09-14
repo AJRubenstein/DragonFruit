@@ -35,8 +35,9 @@ import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogi
 import type { ScanResults } from '@/volumeAnalysis/IslandScan/ScanOrchestrator';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, Segment, SupportMode, WarningCode } from '@/supports/types';
-import { getSupportTypeDescriptor, previewTypesByPriority, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import { getSupportTypeDescriptor, hostKnotFieldsFor, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
+import { collectRaftBaseCirclesByModel, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
 import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -1549,20 +1550,24 @@ export function SceneCanvas({
       expandByRadius(rootTop, rootRadius);
     }
 
+    // The knots this model's supports hang from, from the declared `hostedBy`
+    // knot edges. Four hand-written loops used to name the field per type
+    // (`parentKnotId`, `startKnotId`/`endKnotId`, `hostKnotId`); a type added to
+    // the registry is now covered, and the fields cannot drift from the edges
+    // the store's cascade already uses.
     const modelKnotIds = new Set<string>();
-    for (const branch of Object.values(supportStateForBounds.branches)) {
-      if (branch.modelId === modelId) modelKnotIds.add(branch.parentKnotId);
-    }
-    for (const leaf of Object.values(supportStateForBounds.leaves)) {
-      if (leaf.modelId === modelId) modelKnotIds.add(leaf.parentKnotId);
-    }
-    for (const brace of Object.values(supportStateForBounds.braces)) {
-      if (brace.modelId !== modelId) continue;
-      modelKnotIds.add(brace.startKnotId);
-      modelKnotIds.add(brace.endKnotId);
-    }
-    for (const kickstand of Object.values(supportStateForBounds.kickstands)) {
-      if (kickstand.modelId === modelId) modelKnotIds.add(kickstand.hostKnotId);
+    for (const descriptor of SUPPORT_TYPES) {
+      const knotFields = hostKnotFieldsFor(descriptor.id);
+      if (knotFields.length === 0) continue;
+      const collection = supportStateForBounds[descriptor.location.key] as unknown as
+        Record<string, Record<string, unknown>> | undefined;
+      for (const entity of Object.values(collection ?? {})) {
+        if (entity.modelId !== modelId) continue;
+        for (const field of knotFields) {
+          const knotId = entity[field];
+          if (typeof knotId === 'string') modelKnotIds.add(knotId);
+        }
+      }
     }
 
     for (const knotId of modelKnotIds) {
@@ -2713,17 +2718,14 @@ export function SceneCanvas({
     const map = new Map<string, Array<Array<{ x: number; y: number; z: number }>>>();
     if (raftSettingsForBounds.bottomMode === 'off') return map;
 
-    const circlesByModelId = new Map<string, SupportBaseCircle[]>();
-    const collectRoot = (modelId: string | undefined, pos: { x: number; y: number }, diameter: number) => {
-      if (!modelId) return;
-      const circles = circlesByModelId.get(modelId) ?? [];
-      circles.push({ x: pos.x, y: pos.y, r: diameter / 2 });
-      circlesByModelId.set(modelId, circles);
-    };
-
-    for (const root of Object.values(supportStateForBounds.roots)) {
-      collectRoot(root.modelId, root.transform.pos, root.diameter);
-    }
+    // The same base circles the rendered raft is built from, so the ring a drag
+    // catches cannot disagree with the raft a user sees. This read only `roots`
+    // before, which missed the types that carry their own inline root -- their
+    // bases pushed the drawn raft out but not the grabbable outline.
+    const circlesByModelId = collectRaftBaseCirclesByModel(supportStateForBounds, {
+      fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
+    });
+    circlesByModelId.delete(RAFT_UNASSIGNED_MODEL_KEY);
 
     const thickness = raftSettingsForBounds.bottomMode === 'line'
       ? raftSettingsForBounds.lineHeightMm
@@ -2749,7 +2751,10 @@ export function SceneCanvas({
     }
 
     return map;
-  }, [raftSettingsForBounds, supportStateForBounds.roots]);
+    // The whole state, because the footprint walks the collections the registry
+    // names rather than `roots` alone. This memo only profiles circles, so it is
+    // cheap; the raft MESHES are the expensive part and they cache separately.
+  }, [raftSettingsForBounds, supportStateForBounds]);
 
   // Every support drawn as the polyline that runs along it: root or host knot,
   // each joint in order, and the contact cone at the tip. Built once per state
@@ -3929,17 +3934,13 @@ export function SceneCanvas({
     supportDragTransactionId,
     isGizmoDragging,
     effectiveHoldSupportDragDelta,
-    // Restrict invalidation to geometry-bearing support/kickstand refs plus
-    // raft geometry parameters. This avoids recaching on hover/selection-only
-    // snapshot churn that does not alter cross-section source geometry.
-    supportTrunksRef: supportStateForBounds.trunks,
-    supportRootsRef: supportStateForBounds.roots,
-    supportKnotsRef: supportStateForBounds.knots,
-    supportBranchesRef: supportStateForBounds.branches,
-    supportLeavesRef: supportStateForBounds.leaves,
-    supportTwigsRef: supportStateForBounds.twigs,
-    supportSticksRef: supportStateForBounds.sticks,
-    supportBracesRef: supportStateForBounds.braces,
+    // Derived, not listed: every support collection the registry declares, so a
+    // type added to the registry is covered here and a list cannot fall behind.
+    // (It had: `stumps` and `kickstands` were missing while the comment above
+    // claimed "support/kickstand refs".)
+    ...Object.fromEntries(
+      SUPPORT_COLLECTION_KEYS.map((key) => [`support_${key}`, supportStateForBounds[key]]),
+    ),
     raftBottomMode: raftSettingsForBounds.bottomMode,
     raftThickness: raftSettingsForBounds.thickness,
     raftLineHeightMm: raftSettingsForBounds.lineHeightMm,
