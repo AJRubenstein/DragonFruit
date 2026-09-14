@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 
 import { registerSupportExportGroup } from '../../exportGeometry/seam';
+import { registerSupportUpdater } from '../../supportTypeRegistry';
+import { updateAnchor } from '../../state';
 import { addModelMetadata, appendConeGeometry, appendShafts, SupportGeometryGenerator } from '../../exportGeometry/helpers';
 import { getFinalSocketPosition } from '../../SupportPrimitives/ContactCone';
 import type { Anchor, Vec3 } from '../../types';
@@ -52,3 +54,6 @@ registerSupportExportGroup<Anchor>('anchor', (anchor) => {
     appendConeGeometry(group, anchor.contactCone);
     return group;
 });
+
+// Registered here rather than in the store's own list: an anchor carries no knots, so it writes without repositioning any.
+registerSupportUpdater<Anchor>('anchor', updateAnchor);

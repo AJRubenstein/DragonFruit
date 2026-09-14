@@ -1013,6 +1013,11 @@ export function registerSupportUpdater<T>(typeId: SupportTypeId, update: (entity
     UPDATERS.set(typeId, update as SupportUpdater);
 }
 
+/** Whether a type has already claimed its updater slot from its own folder. */
+export function hasSupportUpdater(typeId: SupportTypeId): boolean {
+    return UPDATERS.has(typeId);
+}
+
 /**
  * Resolves an id to its type by looking in the store.
  *

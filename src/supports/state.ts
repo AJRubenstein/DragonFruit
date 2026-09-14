@@ -9,7 +9,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { hasSupportUpdater, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
@@ -3870,21 +3870,18 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
 import './generatedSupportRegistrations';
 
 /* --- Updater registration ------------------------------------------------
- * Every type updates through `applySupportEntityUpdate`. The three listed here
- * do something the generic path cannot: a leaf reshapes its cone, a brace
- * recomputes its curve, an anchor writes without touching knots.
+ * Every type updates through `applySupportEntityUpdate`. A type needing more
+ * than that registers its own from its folder, so the generic pass below only
+ * fills the slots those left empty and no type is named here.
+ *
+ * ORDER MATTERS: this must run after `generatedSupportRegistrations` above, or
+ * the generic updater claims every slot and the bespoke ones never take effect.
  * ---------------------------------------------------------------------- */
-const BESPOKE_UPDATERS: Partial<Record<SupportTypeId, (entity: never) => void>> = {
-    leaf: updateLeaf,
-    brace: updateBrace,
-    anchor: updateAnchor,
-};
-
 for (const descriptor of SUPPORT_TYPES) {
-    const bespoke = BESPOKE_UPDATERS[descriptor.id];
+    if (hasSupportUpdater(descriptor.id)) continue;
     registerSupportUpdater(
         descriptor.id,
-        bespoke ?? ((entity: { id: string }) => applySupportEntityUpdate(descriptor.id, entity)),
+        (entity: { id: string }) => applySupportEntityUpdate(descriptor.id, entity),
     );
 }
 
