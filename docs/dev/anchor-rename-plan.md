@@ -129,3 +129,95 @@ per-type cost for the other seven. `anchor` is the smallest, so treat its number
 as a floor rather than an average -- `trunk` and `branch` are far larger, and
 `branch` additionally suffers the identifier problem (`branchId` and friends)
 that `anchor` does not have.
+
+---
+
+## Outcome: `anchor` is clear
+
+Renaming the id in the registry, the `types.ts` keys, and the type's own folder
+now needs **no other edit**. Measured with `rename-probe.py anchor --new anchory`:
+
+| check | result |
+| --- | --- |
+| `tsc --noEmit -p tsconfig.json` | **0 errors** |
+| `src/**` suite | **910 / 910 pass** |
+| test fixtures edited for the rename | **none** — the recorded data is untouched |
+| support golden masters | **byte-identical to before this work** |
+
+`rename-test.py` still reads 0, as it did before anything was done — which is why
+it was never the instrument for this. It renames `types.ts` alone and counts
+compile errors; every site this task fixed compiled perfectly with the old name.
+
+### What the work actually was
+
+**One production hazard, and it was not a literal.**
+
+`src/supports/detailRenderer/registerBuiltinDetailRenderers.ts` imported all eight
+renderers by hand-written PATH:
+
+```ts
+import '../SupportTypes/Anchor/AnchorRenderer';
+```
+
+A path is a place a type's name is written down, and no scanner classifies one as
+a type literal — `"anchor"` never appears as a string. Renaming the type left that
+import pointing at a folder that no longer existed, and because the renderer
+module is loaded by the SCENE, everything that renders anything failed to LOAD:
+**253 tests never ran** (909 → 656) from that one line, and the failure named a
+module path rather than the type.
+
+It is now generated from the folders, exactly as `generatedSupportRegistrations.ts`
+already was (`scripts/generate-support-renderers.mjs`), and wired into
+`predev` / `prebuild` / `pretest`. `supportTypeFolders.test.ts` already asserted
+the `<Folder>Renderer.tsx` convention, so the two halves meet.
+
+**Everything else was test scaffolding that named a type to build a fixture.**
+Seven files, and the fix in each was the same shape: pin the VALUE, derive the
+NAME. The strongest of them is `entityTypeId.test.ts`, whose per-type seed table
+is now built from the descriptor's declared facts (`hasSegments`, `contactFields`,
+`edges`) — a rename needs no edit, and two of its tests came out STRONGER, checking
+every declared type where they previously checked one.
+
+### Two corrections to the plan and census
+
+1. **`ANCHOR_BELOW_ROOT` is NOT the type.** The census says it "needs renaming
+   with the type". It is a member of `GridPlacementRejectReason` — a vocabulary of
+   rejection reasons beside `KNOT_ABOVE_TIP` and `NO_HOST_SEGMENT` — raised by
+   `anchorAutoPlacement.ts` and read by `useTrunkPlacement.ts`. Both sides share
+   the literal, so a type rename leaves it consistent, and the message it renders
+   ("lower than the anchor root") describes geometry. It is the same class as
+   `ANCHOR_PRESET`: the word, not the type id. Renaming it would be a defect.
+
+2. **The golden masters are not rename-INVARIANT, and that is correct.** The
+   recorded JSON stores every entity's `typeId` as a value, so renaming a type
+   legitimately changes every recording that leaves one of its entities in the
+   state. Under the probe, nine of the ten cascade goldens differ for exactly this
+   reason — and `cascade-remove-anchor` does not, because the anchor is gone from
+   its output. This is the store asserting what it stamps, not a stale literal. The
+   plan's "goldens stay byte-identical" is a statement about the REFACTOR (they
+   prove the conversions changed no behaviour, and they pass unchanged), not about
+   an actual rename.
+
+### The per-type cost, as a floor
+
+`anchor` needed **seven test files** and **one production file** (the renderer
+barrel). That is the smallest type, so treat it as a floor. Two things make the
+others larger: `branch` writes itself into identifiers (`branchId`,
+`branchPlacement`) that no rename can derive, and the per-type fixture tables that
+anchor could build from descriptor facts are richer for types with more declared
+shape.
+
+### How to re-run the acceptance
+
+```
+python ../lysdiag/tools/rename-probe.py anchor --new anchory
+```
+
+It renames both naming points, the type's folder and the three names derived from
+it (folder, `<Folder>Renderer.tsx`, `<id>Registration.ts`), REGENERATES both
+generated barrels, runs `tsc` and the suite INCLUDING the goldens, then restores
+everything and verifies the restore. Read its docstring before trusting a number
+from it: a probe that renames only one naming point, or that guesses the
+collection plural, or that skips the folders, manufactures errors that do not
+exist — which is how an earlier `remaining-worklist.py` reported 167 where the
+honest figure was 10.
