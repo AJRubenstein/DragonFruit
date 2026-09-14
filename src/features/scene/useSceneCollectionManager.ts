@@ -5075,7 +5075,14 @@ export function useSceneCollectionManager() {
 
             const embeddedName = meshRef.fileName?.trim() || `${model.name || 'model'}.stl`;
 
+            // Baked classification (VOXL V2.4): the file carries the model/support
+            // split this mesh was saved with, so skip the classifier instead of
+            // re-deriving it. Auto-repair supersedes it — a repair pass produces
+            // its own report for the geometry it rebuilt.
+            const bakedClassification = autoRepairScenes ? undefined : model.classification;
+
             geometry = await loadMeshGeometry(bytes, embeddedName, {
+              ...(bakedClassification ? { bakedClassification } : {}),
               nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
               assumeSupportGeometry: model.isSupportGeometry,
               skipClassification: model.isSupportGeometry,

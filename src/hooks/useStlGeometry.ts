@@ -133,6 +133,21 @@ export interface ProcessGeometryOptions {
   _nativeModelTriangleCount?: number;
   /** Skip classification/repair in Tauri when loading a pre-repaired mesh */
   skipClassification?: boolean;
+  /**
+   * Classification the source container already carries for this exact
+   * geometry (VOXL V2.4 model entries). When present the native classify pass
+   * is skipped — the report describes the triangles as they are, so re-running
+   * the classifier over the same bytes could only reproduce it. The report is
+   * consumed exactly where a native classify-only result would be, including
+   * the model/support section split.
+   */
+  bakedClassification?: MeshHealthReport;
+  /**
+   * Build the Higher Contrast Model Edges overlay geometry. Defaults to the
+   * user's `higherContrastModelEdges` setting; pass `false` from a context that
+   * knows the overlay is unwanted (e.g. a slicing-only geometry).
+   */
+  computeEdgeGeometry?: boolean;
   /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
   _skipComputeNormals?: boolean;
   _isTauriRuntime?: () => boolean;
@@ -236,6 +251,60 @@ function stripEmbeddedColorAttributes(geometry: THREE.BufferGeometry): void {
   }
 }
 
+/**
+ * Splits the geometry's position soup at `modelTriangleCount` into the two
+ * section geometries the scene renders: the support section (orange overlay)
+ * and the model section (scopes the non-manifold red flag to the part, so it
+ * never stripes the supports). Both classifiers and baked classifications
+ * produce the same model-first ordering, so this is their single consumer.
+ *
+ * Returns null when the boundary does not address this geometry — out of
+ * range, or the whole mesh is one section.
+ */
+function buildSectionGeometries(
+  geometry: THREE.BufferGeometry,
+  modelTriangleCount: number,
+): Pick<MeshDefects, 'supportSectionGeometry' | 'modelSectionGeometry'> | null {
+  const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | null;
+  if (!posAttr) return null;
+  const allPos = posAttr.array as Float32Array;
+  const modelFloatEnd = modelTriangleCount * 9; // 3 vertices × 3 floats per tri
+  if (modelFloatEnd >= allPos.length) return null;
+
+  const supportPositions = allPos.slice(modelFloatEnd);
+  const supportGeo = new THREE.BufferGeometry();
+  supportGeo.setAttribute('position', new THREE.BufferAttribute(supportPositions, 3));
+  supportGeo.computeVertexNormals();
+
+  const modelPositions = allPos.slice(0, modelFloatEnd);
+  const modelGeo = new THREE.BufferGeometry();
+  modelGeo.setAttribute('position', new THREE.BufferAttribute(modelPositions, 3));
+
+  return { supportSectionGeometry: supportGeo, modelSectionGeometry: modelGeo };
+}
+
+/**
+ * Builds the Higher Contrast Model Edges overlay geometry, or returns undefined
+ * when the mesh is too large for it (see `EDGE_GEOMETRY_MAX_TRIANGLES`).
+ *
+ * This is the single most expensive thing an import does — measured ~1.9 s per
+ * 500k-triangle non-indexed model, ~93% of all post-processing — and the overlay
+ * is off by default, so every caller must gate it on
+ * `higherContrastModelEdges`. Building it speculatively (which is what import
+ * did) is what made a six-model scene take 18 s of long tasks.
+ */
+export function buildModelEdgeGeometry(geometry: THREE.BufferGeometry): THREE.EdgesGeometry | undefined {
+  const triangleCount = (geometry.getIndex()?.count ?? geometry.getAttribute('position')?.count ?? 0) / 3;
+  if (triangleCount >= EDGE_GEOMETRY_MAX_TRIANGLES) return undefined;
+
+  try {
+    return new THREE.EdgesGeometry(geometry, 30);
+  } catch (edgeError) {
+    console.warn('[useStlGeometry] Edge geometry build failed; the model edge overlay stays off.', edgeError);
+    return undefined;
+  }
+}
+
 export async function processGeometry(bufferGeometry: THREE.BufferGeometry, options: ProcessGeometryOptions = { center: true }): Promise<GeometryWithBounds> {
   console.log(`[${new Date().toISOString()}] [processGeometry] Starting Geometry Prep`);
   const startPrep = performance.now();
@@ -286,7 +355,10 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // In the browser we fall back to the legacy Manifold WASM path (which only
   // activates when NaN defects were detected).
   let nativeModifiedGeometry = false;
-  const skipAll = options.skipClassification === true;
+  // A baked classification is the answer the native classify pass would
+  // produce for this geometry, so there is nothing left to compute.
+  const bakedClassification = options.bakedClassification ?? null;
+  const skipAll = options.skipClassification === true || bakedClassification != null;
   const checkTauri = options._isTauriRuntime ?? isTauriRuntime;
   
   if (checkTauri() && !skipAll) {
@@ -418,28 +490,9 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
           if (!report.model_triangle_count) {
             report.model_triangle_count = effectiveModelTriCount;
           }
-          const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
-          const allPos = posAttr.array as Float32Array;
-          const modelFloatEnd = effectiveModelTriCount * 9; // 3 vertices × 3 floats per tri
-          if (modelFloatEnd < allPos.length) {
-            const supportPositions = allPos.slice(modelFloatEnd);
-            const supportGeo = new THREE.BufferGeometry();
-            supportGeo.setAttribute('position', new THREE.BufferAttribute(supportPositions, 3));
-            supportGeo.computeVertexNormals();
-
-            // Model-section (part) geometry: the first model_triangle_count triangles.
-            // Used to scope the non-manifold red overlay to the part alone so it never
-            // stripes the supports. Normals are unnecessary — the overlay shader only
-            // reads world-space position.
-            const modelPositions = allPos.slice(0, modelFloatEnd);
-            const modelGeo = new THREE.BufferGeometry();
-            modelGeo.setAttribute('position', new THREE.BufferAttribute(modelPositions, 3));
-
-            meshDefects = {
-              ...meshDefects,
-              supportSectionGeometry: supportGeo,
-              modelSectionGeometry: modelGeo,
-            };
+          const sections = buildSectionGeometries(geometry, effectiveModelTriCount);
+          if (sections) {
+            meshDefects = { ...meshDefects, ...sections };
           }
         }
       }
@@ -471,6 +524,25 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
     } else {
       console.warn(`[processGeometry] Manifold repair unavailable or failed — using NaN-sanitized geometry.`);
     }
+  }
+
+  // Baked classification: restore what a native classify-only pass would have
+  // produced, minus the round trip. Everything downstream reads the report
+  // (Split Supports, orange support tint, shells, non-manifold red flag, slicing).
+  if (bakedClassification) {
+    const sections = bakedClassification.model_triangle_count != null
+      && bakedClassification.model_triangle_count > 0
+      ? buildSectionGeometries(geometry, bakedClassification.model_triangle_count)
+      : null;
+    meshDefects = {
+      ...meshDefects,
+      nativeRepairReport: bakedClassification,
+      ...(sections ?? {}),
+    };
+    console.log(
+      `[${new Date().toISOString()}] [processGeometry] Restored baked mesh classification ` +
+      `(model section: ${bakedClassification.model_triangle_count ?? 'none'}t).`,
+    );
   }
 
   // Yield to let the loading indicator repaint before each heavy synchronous op
