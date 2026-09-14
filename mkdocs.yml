@@ -122,6 +122,7 @@ nav:
           - Auto-Orientation (Pre-Plan): dev/auto-orientation.md
           - Adding a New Support Type: dev/support-type-extension.md
           - Removing Support-Type Literals: dev/support-type-literal-plan.md
+          - Cleaning Up One Support Type: dev/anchor-rename-plan.md
           - Support Pathfinding V3: dev/support-pathfinding-v3.md
           - Grid and Branching: dev/grid-and-branching.md
           - Raft Geometry: dev/raft-geometry.md
