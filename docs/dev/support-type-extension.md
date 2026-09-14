@@ -86,8 +86,9 @@ entity needs more than the tip/root/shaft the descriptor already declares.
 
 You do **not** register an updater. `state.ts` walks the registry and gives every
 type the generic one, which writes the entity, repositions the knots riding its
-shafts and recomputes dependent geometry. Add an entry to `BESPOKE_UPDATERS` only
-if your type genuinely needs different work -- three do.
+shafts and recomputes dependent geometry. If your type genuinely needs different
+work -- three do -- call `registerSupportUpdater` from your own registration
+file, and the generic pass leaves that slot alone.
 
 ## 2. The per-type directory — `src/supports/SupportTypes/Gadget/` *(hand-wired)*
 
