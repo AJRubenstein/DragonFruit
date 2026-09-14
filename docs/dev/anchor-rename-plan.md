@@ -101,6 +101,12 @@ Do not batch a regex across files. The prefix cleanup tried that once and
 dropped an argument; every site here needs reading because the word is ambiguous
 by nature.
 
+**Nor classify by file.** The census was first built that way and got two things
+wrong in both directions: `supportSidebarAnchorRef` sits in a supports file and
+is an `HTMLDivElement`, while `ANCHOR_BELOW_ROOT` reads like geometry and is the
+type. The test is what the token IS -- a `Vec3`, a DOM ref, a screen direction,
+an entity -- not where it lives. Every row in the census carries that evidence.
+
 ## Verifying, at the end
 
 The rename test will still say 0, so it proves nothing here. Use the real one:

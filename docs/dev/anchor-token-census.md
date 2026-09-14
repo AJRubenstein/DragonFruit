@@ -21,7 +21,6 @@ Counts are mentions, not lines. 1,161 mentions across 154 tokens.
 | `AnchorPoint` / `AnchorCandidate` | 5 | `autoBrace.ts` |
 | `getSupportBottomAnchor` | 3 | `autoBrace.ts` -- returns a `Vec3` |
 | `resolveAnchorAtZ` | 7 | `autoBrace.ts` |
-| `sameTierAnchor` | 4 | `autoBrace.ts` |
 | `bestReachableAnchorZ` | 8 | `heightCoverageAnalysis.ts` |
 | `requiredAnchorZ`, `maxAnchorZFromNeighbor` | 7 | `heightCoverageAnalysis.ts` |
 | `ANCHOR_SAFETY_MARGIN_MM` | 2 | `heightCoverageAnalysis.ts` |
@@ -30,8 +29,8 @@ Counts are mentions, not lines. 1,161 mentions across 154 tokens.
 | `candidateAnchors`, `CandidateAnchor` | 7 | `kickstandStabiliser.ts` -- sample points |
 | `topAnchorX/Y/Pos` | 9 | `kickstandStabiliser.ts` |
 | `anchorPoints` | 4 | `smartPlacementCandidateSearch.ts` |
-| `anchorIndex`, `anchorPenalty` | 11 | `smartPlacementCandidateSearch.ts`, `ModelManagerPanel` |
-| `anchorZ` | 4 | `BracePreview.tsx` |
+| `anchorIndex`, `anchorPenalty` | 11 | **Evidence:** `orderedModelIds.indexOf(anchorId)` in `ModelManagerPanel` -- a list index; `anchorPenalty` scores distance from it |
+| `anchorZ` | 4 | `autoBrace.ts` (`ladder.forEach((anchorZ, …))`) and `BracePreview.tsx`. **Evidence:** a Z height |
 
 ### A different feature entirely
 
@@ -40,13 +39,13 @@ Counts are mentions, not lines. 1,161 mentions across 154 tokens.
 | `arrangeAnchorMode`, `ArrangeAnchorMode`, `setArrangeAnchorMode`, `anchorMode`, `onAnchorModeChange` | 65 | scene arrange |
 | `packingAnchor`, `anchorDistSq`, `toAnchor`, `toAnchorX/Y` | 28 | `highPrecisionArrange.ts` |
 | `tenonAnchor`, `TenonAnchor`, `onTenonAnchorChange`, `anchorW`, `anchorL`, `sameAnchor` | 65 | organic cut |
-| `anchorPos`, `anchorSize`, `anchorRule`, `anchorTargetId`, `AnchorSide`, `LayoutAnchorRule`, `isEdgeAnchored`, `shouldPreferAnchor`, `shouldPinEdgeAnchor`, `getAnchoredDesiredPosition`, `effectiveAnchorTarget`, `anchorTargetOverride`, `forceAnchoredPanelIds`, `hasProfileAnchor` | 40 | `FloatingPanelStack.tsx` -- panel layout |
-| `textAnchor`, `labelAnchor`, `xLabelAnchor` | 10 | SVG attributes, `LutCurveEditor` |
-| `shouldLockDragAnchor` | 3 | `ScreenSpaceGizmo` |
-| `sourceSupportAnchor`, `sourceSupportAnchorCount`, `setMultiGizmoAnchorPosition`, `multiGizmoAnchorRef`, `anchorProgress` | 25 | `SceneCanvas` gizmo positioning |
-| `sliceIntentAnchorRef`, `inAnchor` | 6 | `SlicingPanel` |
-| `supportSidebarAnchorRef` | 3 | `SupportSidebar` -- a DOM ref |
-| `anchor` as `document.createElement('a')` | ~6 | `rasterLayerZipExport`, `usePrintingMonitorManager`, `page.tsx` |
+| `anchorPos`, `anchorSize`, `anchorRule`, `anchorTargetId`, `AnchorSide`, `LayoutAnchorRule`, `isEdgeAnchored`, `shouldPreferAnchor`, `shouldPinEdgeAnchor`, `getAnchoredDesiredPosition`, `effectiveAnchorTarget`, `anchorTargetOverride`, `forceAnchoredPanelIds`, `hasProfileAnchor` | 40 | `FloatingPanelStack.tsx`. **Evidence:** the file imports nothing from `supports/`; `anchorTargetId` is a PANEL id (`rule.to`), `anchorSize` is `getPanelSize(anchorTargetId)`, and `AnchorSide` is `'below' \| 'above' \| 'right' \| 'left' \| …` -- a screen direction |
+| `textAnchor`, `labelAnchor`, `xLabelAnchor` | 10 | `LutCurveEditor`. **Evidence:** SVG attributes, values `'start' \| 'middle' \| 'end'` |
+| `shouldLockDragAnchor` | 3 | `ScreenSpaceGizmo`. **Evidence:** `(operation) => operation === 'rotate' \|\| operation === 'scale'` |
+| `sourceSupportAnchor`, `sourceSupportAnchorCount`, `setMultiGizmoAnchorPosition`, `multiGizmoAnchorRef`, `anchorProgress` | 25 | `SceneCanvas`. **Evidence:** all `THREE.Vector3` / `THREE.Group`. `sourceSupportAnchor` averages root positions -- it is a POINT belonging to supports, not an anchor entity |
+| `sliceIntentAnchorRef`, `inAnchor` | 6 | `SlicingPanel`. **Evidence:** `useRef<HTMLDivElement>`, used for `contains(target)` click-outside |
+| `supportSidebarAnchorRef` | 3 | `SupportSidebar`. **Evidence:** `useRef<HTMLDivElement>` -- a DOM node a popover positions against. In a supports file, still not the type |
+| `anchor` as `document.createElement('a')` | ~6 | `rasterLayerZipExport`, `usePrintingMonitorManager`, `page.tsx`. **Evidence:** `anchor.href` / `anchor.download` -- a download link |
 
 ### The sizing preset (shares the word, is not the type)
 
