@@ -18,11 +18,18 @@ import * as actionTypes from '../history/actionTypes';
 
 test('every support type is declared exactly once', () => {
   const ids = SUPPORT_TYPES.map((d) => d.id);
-  assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(
-    [...ids].sort(),
-    ['anchor', 'brace', 'branch', 'kickstand', 'leaf', 'stick', 'trunk', 'twig'].sort(),
-  );
+  assert.equal(new Set(ids).size, ids.length, 'a type is declared more than once');
+  // Two descriptors sharing one collection would silently overwrite each other.
+  const keys = SUPPORT_TYPES.map((d) => d.location.key);
+  assert.equal(new Set(keys).size, keys.length, 'two types share a collection');
+  // COMPLETENESS -- that the registry declares every type the second naming
+  // point does, and no others -- is asserted against an independent source (the
+  // folders on disk) by `supportTypeFolders.test.ts`, in both directions: every
+  // registered type has a folder, and every folder belongs to a registered type.
+  //
+  // A hand-written list of the eight names used to sit here. It was a second
+  // place a renamed type had to be edited by hand, and it duplicated ground the
+  // folder test covers from a source that cannot drift with the registry.
 });
 
 test('history actions match what the builders produce', () => {
@@ -64,9 +71,15 @@ test('empty collections cover every entity collection on SupportState', () => {
 
 
 test('selection resolves roots first, then support types in registry order', () => {
+  const categories = SUPPORT_STATE_COLLECTIONS.map((c) => c.selectionCategory);
+  // A root is a primitive, not a type, so it is named. Everything after it must
+  // be the declared types IN ORDER, each selecting under its own id -- which is
+  // what this pins, and it is the registration's own order that defines it.
+  assert.equal(categories[0], 'root', 'roots resolve before any type');
   assert.deepEqual(
-    SUPPORT_STATE_COLLECTIONS.map((c) => c.selectionCategory),
-    ['root', 'trunk', 'branch', 'leaf', 'twig', 'stick', 'brace', 'anchor', 'kickstand'],
+    categories.slice(1),
+    SUPPORT_STATE_TYPES.map((d) => d.id),
+    'each declared type selects under its own id, in registry order',
   );
 });
 

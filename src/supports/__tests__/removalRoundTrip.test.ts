@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getSnapshot, loadFromImportFormat, removeSupportEntity, resetStore } from '../state';
-import { restoreToCollection, SUPPORT_COLLECTION_KEYS } from '../supportTypeRegistry';
+import {
+    removalShapeFor,
+    restoreToCollection,
+    SUPPORT_COLLECTION_KEYS,
+    SUPPORT_TYPES,
+    typeIdForCollection,
+    type SupportCollectionKey,
+} from '../supportTypeRegistry';
 import { DEFAULT_TIP_PROFILE } from '../SupportPrimitives/ContactCone/types';
 import type { DragonfruitImportFormat } from '../types';
 
@@ -124,6 +131,11 @@ function load() {
 function restore(snapshot: Record<string, unknown>) {
     const list = (field: string) => (snapshot[field] as unknown[] | undefined) ?? [];
     const one = (field: string) => snapshot[field] as never;
+    // The field a type's entity arrives under is its declared shape's `self`,
+    // which is the type's own name -- derived here, so a rename reaches these
+    // reads without editing them. The collection key does not rename.
+    const seed = (collection: SupportCollectionKey) =>
+        one(removalShapeFor(typeIdForCollection(collection)).self);
     const putBack = (collection: string, entity: unknown) => {
         if (entity) restoreToCollection(collection as never, entity);
     };
@@ -132,10 +144,10 @@ function restore(snapshot: Record<string, unknown>) {
     putBack('roots', one('root'));
 
     // Hosts first: a hosted entity cannot come back before the thing it rides.
-    putBack('trunks', one('trunk'));
-    putBack('twigs', one('twig'));
-    putBack('sticks', one('stick'));
-    putBack('anchors', one('anchor'));
+    putBack('trunks', seed('trunks'));
+    putBack('twigs', seed('twigs'));
+    putBack('sticks', seed('sticks'));
+    putBack('anchors', seed('anchors'));
 
     for (const knot of list('knots')) putBack('knots', knot);
     putBack('knots', one('knot'));
@@ -148,40 +160,63 @@ function restore(snapshot: Record<string, unknown>) {
     for (const branch of list('branches')) putBack('branches', branch);
 
     for (const leaf of list('leaves')) putBack('leaves', leaf);
-    putBack('leaves', one('leaf'));
+    putBack('leaves', seed('leaves'));
 
     for (const brace of list('braces')) putBack('braces', brace);
-    putBack('braces', one('brace'));
+    putBack('braces', seed('braces'));
 
     for (const build of list('kickstands')) putBack('kickstands', build);
     putBack('kickstands', snapshot.build);
 }
 
-const CASES: [string, () => Record<string, unknown> | null][] = [
-    ['removeTrunk (deep cascade)', () => removeSupportEntity('trunk', 'trunk-a') as never],
-    ['removeTrunk (far side)', () => removeSupportEntity('trunk', 'trunk-b') as never],
-    ['removeBranch', () => removeSupportEntity('branch', 'branch-a') as never],
-    ['removeLeaf', () => removeSupportEntity('leaf', 'leaf-a') as never],
-    ['removeTwig', () => removeSupportEntity('twig', 'twig-a') as never],
-    ['removeStick', () => removeSupportEntity('stick', 'stick-a') as never],
-    ['removeBrace', () => removeSupportEntity('brace', 'brace-a') as never],
-    ['removeAnchor', () => removeSupportEntity('anchor', 'anchor-a') as never],
-    ['removeKickstand', () => removeSupportEntity('kickstand', 'ks-a') as never],
+/**
+ * A removal case: the prose name, the collection the fixture seeds the entity
+ * in, and that entity's id.
+ *
+ * The row is keyed on a collection because a collection key is a store fact
+ * that does not rename -- `typeIdForCollection` turns it into the type id, so a
+ * rename reaches every call below without editing this table. The fixture ids
+ * are arbitrary strings and stay as written.
+ */
+const CASES: [string, SupportCollectionKey, string][] = [
+    ['removeTrunk (deep cascade)', 'trunks', 'trunk-a'],
+    ['removeTrunk (far side)', 'trunks', 'trunk-b'],
+    ['removeBranch', 'branches', 'branch-a'],
+    ['removeLeaf', 'leaves', 'leaf-a'],
+    ['removeTwig', 'twigs', 'twig-a'],
+    ['removeStick', 'sticks', 'stick-a'],
+    ['removeBrace', 'braces', 'brace-a'],
+    ['removeAnchor', 'anchors', 'anchor-a'],
+    ['removeKickstand', 'kickstands', 'ks-a'],
 ];
 
-for (const [name, remove] of CASES) {
+test('every declared type has a removal case', () => {
+    // A row cannot drop out silently: the table has to cover the registry. A
+    // type may hold more than one row -- trunk does, deep cascade and far side.
+    const covered = CASES.map(([, collection]) => typeIdForCollection(collection));
+    assert.deepEqual(
+        SUPPORT_TYPES.map((descriptor) => descriptor.id).filter((id) => !covered.includes(id)),
+        [],
+        'every declared type is covered by a removal case',
+    );
+});
+
+for (const [name, collection, entityId] of CASES) {
     test(`${name}: its snapshot rebuilds what it removed`, () => {
         load();
         const before = census();
 
-        const snapshot = remove();
+        const snapshot = removeSupportEntity(
+            typeIdForCollection(collection),
+            entityId,
+        ) as unknown as Record<string, unknown> | null;
         assert.ok(snapshot, 'the remover should report what it took');
 
         const after = census();
         const removedAnything = SUPPORT_COLLECTION_KEYS.some((key) => after[key] < before[key]);
         assert.ok(removedAnything, 'the removal should have deleted something');
 
-        restore(snapshot as Record<string, unknown>);
+        restore(snapshot);
         assert.deepEqual(census(), before, 'restoring the snapshot should undo the removal');
     });
 }

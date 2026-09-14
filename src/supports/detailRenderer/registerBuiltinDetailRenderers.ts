@@ -7,16 +7,14 @@
  * Loaded by the RENDERER, not the store: each entry closes over live scene
  * state, and pulling render-layer modules into the store's load reaches back
  * into the store it is still building.
+ *
+ * The IMPORTS are generated from the type folders, so a type's name is not
+ * written down here in a path: renaming a type used to leave this module
+ * pointing at a folder that no longer existed, which broke every consumer
+ * rather than the one type.
  */
 import { detailRenderersMissingTypes } from './seam';
-import '../SupportTypes/Trunk/TrunkRenderer';
-import '../SupportTypes/Branch/BranchRenderer';
-import '../SupportTypes/Leaf/LeafRenderer';
-import '../SupportTypes/Brace/BraceRenderer';
-import '../SupportTypes/Twig/TwigRenderer';
-import '../SupportTypes/Stick/StickRenderer';
-import '../SupportTypes/Kickstand/KickstandRenderer';
-import '../SupportTypes/Anchor/AnchorRenderer';
+import './generatedDetailRendererImports';
 
 // Every declared type must have registered, or it draws nothing and says so to
 // nobody. `detailRenderersMissingTypes` was written for this and only a test

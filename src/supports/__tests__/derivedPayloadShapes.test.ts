@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    removalShapeFor,
     SUPPORT_REMOVAL_SHAPES,
     SUPPORT_TYPES,
+    type SupportEntityFor,
     type SupportEntityPayload,
     type SupportRemovalResult,
+    type SupportTypeId,
 } from '../supportTypeRegistry';
-import type { Anchor, Knot, Leaf, Stick, Twig } from '../types';
 
 /**
  * History payload shapes, derived from the registry rather than written out.
@@ -17,38 +19,86 @@ import type { Anchor, Knot, Leaf, Stick, Twig } from '../types';
  * removal -- which `SUPPORT_REMOVAL_SHAPES` already declared. The intermediate
  * aliases are gone; these assertions are the real check, and they fail to build
  * if a derived payload stops matching the shape it replaced.
+ *
+ * Nothing here names a type. The field a payload is keyed on comes from the
+ * declaration and the entity from the registry's entity mapping, so renaming a
+ * type id moves both sides of every check below.
  */
 
-// The shapes the hand-written interfaces had. A derived type that drifts from
-// these is a compile error, not a silent change.
-const _twigAdd: SupportEntityPayload<'twig'> = { twig: {} as Twig };
-const _stickAdd: SupportEntityPayload<'stick'> = { stick: {} as Stick };
-const _anchorAdd: SupportEntityPayload<'anchor'> = { anchor: {} as Anchor };
-
-const _twigRemove: SupportRemovalResult<'twig'> = {
-    twig: {} as Twig, knots: [] as Knot[], leaves: [] as Leaf[],
-};
-const _stickRemove: SupportRemovalResult<'stick'> = {
-    stick: {} as Stick, knots: [] as Knot[], leaves: [] as Leaf[],
-};
-const _anchorRemove: SupportRemovalResult<'anchor'> = {
-    anchor: {} as Anchor, knots: [] as Knot[], leaves: [] as Leaf[],
+/**
+ * The shape the hand-written interfaces had, for one type: the field the entity
+ * arrives under, carrying the type's own entity -- taken from the registry's
+ * entity mapping rather than imported per name.
+ */
+type ExpectedEntityPayload<T extends SupportTypeId> = {
+    [S in (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']]: SupportEntityFor<T>;
 };
 
-void _twigAdd; void _stickAdd; void _anchorAdd;
-void _twigRemove; void _stickRemove; void _anchorRemove;
+/**
+ * The fields a removal of `T` reports: its own entity field, plus one name per
+ * declared cascade entry. An entry declared as an array names several slots
+ * rather than one.
+ */
+type ExpectedRemovalFields<T extends SupportTypeId> =
+    | (typeof SUPPORT_REMOVAL_SHAPES)[T]['self']
+    | {
+        [K in keyof (typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade']]:
+            (typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade'][K] extends readonly string[]
+                ? (typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade'][K][number]
+                : (typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade'][K]
+    }[keyof (typeof SUPPORT_REMOVAL_SHAPES)[T]['cascade']];
+
+/** Whether two types are the same, in both directions. */
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+/**
+ * The declared types whose derived payloads no longer match the shape they
+ * declare; empty when every one agrees.
+ *
+ * The mutual check on `SupportEntityPayload` is what pins the entity: the
+ * payload reaches its collection through `SUPPORT_TYPE_COLLECTION` and reports
+ * it through `SupportRemovedEntityByCollection`, while the expectation above
+ * uses the registry's entity mapping -- so a collection that grows a nested
+ * removal form stops matching here. `SupportRemovalResult` must still carry
+ * that field, and report exactly the declared field names.
+ *
+ * Mapped rather than a conditional over the whole union, so every check below
+ * is evaluated for one declared type at a time.
+ */
+type PayloadShapeDrift = {
+    [T in SupportTypeId]:
+        Same<SupportEntityPayload<T>, ExpectedEntityPayload<T>> extends true
+            ? SupportRemovalResult<T> extends ExpectedEntityPayload<T>
+                ? Same<keyof SupportRemovalResult<T>, ExpectedRemovalFields<T>> extends true ? never : T
+                : T
+            : T;
+}[SupportTypeId];
+
+/**
+ * The compile-time net, over every declared type: `never` when nothing drifts,
+ * and the failing type ids otherwise -- which is what this initialiser then
+ * fails to satisfy.
+ */
+const _payloadShapeDrift: Record<PayloadShapeDrift, true> = true;
+void _payloadShapeDrift;
 
 test('the derived payloads carry the fields their shape declares', () => {
-    // The runtime half: the declaration those types read from still names the
-    // fields the assertions above rely on.
-    for (const typeId of ['twig', 'stick', 'anchor'] as const) {
-        const shape = SUPPORT_REMOVAL_SHAPES[typeId];
-        assert.equal(shape.self, typeId, `${typeId}: payload keyed on its own name`);
-        assert.deepEqual(
-            Object.entries(shape.cascade).sort(),
-            [['knots', 'knots'], ['leaves', 'leaves']],
-            `${typeId}: cascades knots and leaves`,
-        );
+    // The runtime half: the declaration those types read from names, for every
+    // declared type, the field its payload is keyed on and the slots its
+    // removal reports.
+    for (const descriptor of SUPPORT_TYPES) {
+        const shape = removalShapeFor(descriptor.id);
+        // The payload is keyed on the type's own name, which is what lets the
+        // compile-time expectation above and the derived type move together.
+        assert.equal(shape.self, descriptor.id, `${descriptor.id}: payload keyed on its own name`);
+
+        // Every collection a removal drains, and the field each one reports
+        // under. Every type takes knots with it -- a shaft it hosts them on, a
+        // knot it rides, or a leaf's contact cone -- so a shape that dropped
+        // them would leave undo with orphans.
+        const drained = Object.keys(shape.cascade);
+        assert.ok(drained.length > 0, `${descriptor.id} declares a cascade`);
+        assert.ok(drained.includes('knots'), `${descriptor.id} cascades its knots`);
     }
 });
 
@@ -56,7 +106,7 @@ test('every type declares a removal shape keyed on a real field name', () => {
     // A shape whose `self` was empty would derive a payload with no entity
     // field at all, which no handler could seed from.
     for (const descriptor of SUPPORT_TYPES) {
-        const shape = SUPPORT_REMOVAL_SHAPES[descriptor.id];
+        const shape = removalShapeFor(descriptor.id);
         assert.ok(shape, `${descriptor.id} declares a shape`);
         assert.ok(shape.self.length > 0, `${descriptor.id} names its entity field`);
     }

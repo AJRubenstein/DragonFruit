@@ -5,9 +5,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { runAutoPlace } from '../autoSupport/autoPlace';
 import { setModelMesh } from '../autoSupport/meshStore';
+import type { AutoPlaceResult } from '../autoSupport/types';
 import { getSnapshot, resetStore, resetKickstandsInState } from '../state';
 import { getSettings, setSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
+import { SUPPORT_TYPES } from '../supportTypeRegistry';
 import { initializeBVH, accelerateGeometry } from '@/utils/bvh';
 import { footprintFromPoints } from '@/volumeAnalysis/Islands/voxelFootprint';
 import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
@@ -194,7 +196,20 @@ function fanTarget(xOffsetMm: number, zOffsetMm: number): DetectedIsland {
     };
 }
 
-function runSignature(gridEnabled: boolean) {
+/**
+ * One whole-run signature: what `runSignature` returns and `assertSignature`
+ * pins. `placed` is the ladder's own per-type ledger, keyed by the registry.
+ */
+interface RunSignature {
+    placed: AutoPlaceResult['placed'];
+    rejectedCandidates: number;
+    changed: boolean;
+    /** The visible outcome, keyed by `SupportState` collection. */
+    inStore: Record<string, number>;
+    forest: { hostCount: number; leafCount: number; branchCount: number; bareHosts: number } | null;
+}
+
+function runSignature(gridEnabled: boolean): RunSignature {
     resetStore();
     resetKickstandsInState();
     initializeBVH();
@@ -256,13 +271,14 @@ function runSignature(gridEnabled: boolean) {
  * The recorded signatures. Regenerate ONLY after confirming a change is
  * intended, and say why in the commit.
  *
- * `placed` is what the ladder decided; `inStore` is what survived the resize
- * and consolidation passes. Both move under a rewrite, so both are pinned.
+ * `placed` is what the ladder decided, one number per `SUPPORT_TYPES` entry in
+ * registry order; `inStore` is what survived the resize and consolidation
+ * passes. Both move under a rewrite, so both are pinned.
  */
 const RECORDED = {
     /** Grid enabled: candidates resolve through `decideGridPlacement`, branch-heavy. */
     gridOn: {
-        placed: { trunk: 49, branch: 151, leaf: 0, twig: 198, stick: 0, brace: 0, anchor: 1, kickstand: 0 },
+        placed: [49, 151, 0, 198, 0, 0, 1, 0],
         rejectedCandidates: 0,
         changed: true,
         inStore: { trunks: 28, branches: 172, leaves: 0, twigs: 198, sticks: 0, anchors: 1, knots: 172, roots: 28 },
@@ -270,7 +286,7 @@ const RECORDED = {
     },
     /** Grid disabled: candidates resolve through the merge/trunk/cavity ladder, leaf-heavy. */
     gridOff: {
-        placed: { trunk: 73, branch: 0, leaf: 127, twig: 197, stick: 0, brace: 0, anchor: 1, kickstand: 0 },
+        placed: [73, 0, 127, 197, 0, 0, 1, 0],
         rejectedCandidates: 0,
         changed: true,
         inStore: { trunks: 73, branches: 0, leaves: 127, twigs: 197, sticks: 0, anchors: 1, knots: 127, roots: 73 },
@@ -279,12 +295,18 @@ const RECORDED = {
 } as const;
 
 function assertSignature(
-    actual: ReturnType<typeof runSignature>,
+    actual: RunSignature,
     expected: (typeof RECORDED)['gridOn'] | (typeof RECORDED)['gridOff'],
 ) {
     // Compared per field so a failure names which part moved, rather than
-    // dumping two opaque objects.
-    assert.deepEqual(actual.placed, expected.placed, 'per-type placement counts moved');
+    // dumping two opaque objects. `placed` is read along the registry's axis --
+    // one entry per declared type, in `SUPPORT_TYPES` order -- so a renamed type
+    // id moves the expectation with it instead of being pinned as a spelling.
+    assert.deepEqual(
+        SUPPORT_TYPES.map((descriptor) => actual.placed[descriptor.id]),
+        expected.placed,
+        'per-type placement counts moved (SUPPORT_TYPES order)',
+    );
     assert.equal(actual.rejectedCandidates, expected.rejectedCandidates, 'rejection count moved');
     assert.deepEqual(actual.inStore, expected.inStore, 'what landed in the store moved');
     assert.deepEqual(actual.forest, expected.forest, 'the forest report moved');
@@ -316,10 +338,20 @@ test('the signature covers more than one placement path', () => {
     const actual = runSignature(true).placed;
     const kinds = Object.entries(actual).filter(([, n]) => n > 0).map(([k]) => k);
     assert.ok(kinds.length >= 4, `the scene should exercise several types, got: ${kinds.join(', ')}`);
-    assert.ok(actual.trunk > 0, 'trunks are covered');
-    assert.ok(actual.branch > 0, 'branch placement is covered');
-    assert.ok(actual.twig > 0, 'the cavity fallback is covered');
-    assert.ok(actual.anchor > 0, 'the near-plate short-circuit is covered');
+    // The ledger carries one entry per declared type, which is what lets the
+    // recorded counts be compared along the registry's axis without losing a key.
+    assert.deepEqual(
+        Object.keys(actual).sort(),
+        SUPPORT_TYPES.map((descriptor) => descriptor.id).sort(),
+        'the ledger must carry every declared type',
+    );
+    // Every type the recording says the scene places must still be placed, read
+    // off the registry along that same axis rather than spelled out here.
+    for (const [index, count] of RECORDED.gridOn.placed.entries()) {
+        if (count === 0) continue;
+        const typeId = SUPPORT_TYPES[index].id;
+        assert.ok(actual[typeId] > 0, `${typeId} placement is covered`);
+    }
 });
 
 test('a second run of the same scene is identical', () => {

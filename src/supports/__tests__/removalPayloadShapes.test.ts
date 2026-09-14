@@ -139,12 +139,32 @@ test('a branch removal re-solves its host trunk and reports the repair', () => {
 });
 
 test('a type that does not repair its host reports no trunk update', () => {
-    // `repairsHostOnRemoval` is the gate; an anchor removal must not carry a
-    // trunk repair, or undo would restore a trunk nobody touched.
-    load();
-    const removed = removeSupportEntityWithPayload('anchor', 'anchor-a');
-    assert.ok(removed, 'the anchor was removed');
-    assert.equal(removed.payload.hostUpdate, undefined, 'no repair reported');
+    // `repairHostAfterRemoval` bails first on the removed type's own `edges`:
+    // the entity finds the host it hung from through a `hostedBy` edge onto
+    // knots, and a type declaring no such edge has no host to repair. That
+    // declaration is the fact keyed on here, for whichever types are hostless.
+    const hostless = SUPPORT_TYPES.filter((descriptor) => !descriptor.edges.some(
+        (edge) => edge.to === 'knots' && edge.ownership === 'hostedBy',
+    ));
+    assert.ok(hostless.length > 0, 'the registry declares a type with no host knot');
+
+    let checked = 0;
+    for (const descriptor of hostless) {
+        load();
+        const key = descriptor.location.key as keyof SupportState;
+        const seeded = Object.keys(
+            ((getSnapshot() as unknown as Record<string, Record<string, unknown>>)[key]) ?? {},
+        );
+        for (const id of seeded) {
+            load();
+            const removed = removeSupportEntityWithPayload(descriptor.id, id);
+            assert.ok(removed, `the ${descriptor.id} ${id} was removed`);
+            assert.equal(removed.payload.hostUpdate, undefined, `${descriptor.id} ${id}: no repair reported`);
+            checked++;
+        }
+    }
+    // The property is only exercised if the fixture seeded one of them.
+    assert.ok(checked > 0, 'the fixture seeds an entity for a hostless type');
 });
 
 test('an unknown id removes nothing and reports nothing', () => {
