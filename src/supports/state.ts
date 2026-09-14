@@ -3085,13 +3085,11 @@ function replaceSupportEntity(
 }
 
 /**
- * The anchor's own updater, registered in `BESPOKE_UPDATERS` below.
+ * The anchor's own updater, registered from `anchorRegistration.ts`.
  *
  * NOT the generic path: an anchor carries no knots, so it does a plain write
  * where `applySupportEntityUpdate` would cache the settings hex and reposition
- * the knots riding its segments. The two stacked `@deprecated` notes that used
- * to sit here contradicted its actual role — it is the registered updater, not
- * a leftover.
+ * the knots riding its segments.
  */
 export function updateAnchor(anchor: Anchor) {
     replaceSupportEntity(anchor);
