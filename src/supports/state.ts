@@ -2601,19 +2601,13 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     const effectiveData = applyImportDefaultsToSupportPayload(migrateLegacySupportPayload(reconciled), importDefaults);
     const isolated = isolateImportedSupportPayload(effectiveData);
 
+    // A copy-on-write shell of every collection, walked rather than listed: the
+    // list this replaces named ten and would silently miss a type added to the
+    // registry, whose import would then mutate the previous state in place.
     const merged: SupportState = {
         ...state,
-        roots: { ...state.roots },
-        trunks: { ...state.trunks },
-        branches: { ...state.branches },
-        leaves: { ...state.leaves },
-        twigs: { ...state.twigs },
-        sticks: { ...state.sticks },
-        braces: { ...state.braces },
-        stumps: { ...state.stumps },
-        kickstands: { ...state.kickstands },
-        knots: { ...state.knots },
-    };
+        ...Object.fromEntries(SUPPORT_COLLECTION_KEYS.map((key) => [key, { ...state[key] }])),
+    } as SupportState;
 
     isolated.roots.forEach(r => { merged.roots[r.id] = r; });
     if (isolated.knots) { isolated.knots.forEach(k => { merged.knots[k.id] = k; }); }
@@ -2651,18 +2645,9 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     setState(merged);
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('mergeFromImportFormat');
-    console.log('[SupportStore] Merged from LYS:', {
-        roots: Object.keys(state.roots).length,
-        trunks: Object.keys(state.trunks).length,
-        branches: Object.keys(state.branches).length,
-        leaves: Object.keys(state.leaves).length,
-        twigs: Object.keys(state.twigs).length,
-        sticks: Object.keys(state.sticks).length,
-        braces: Object.keys(state.braces).length,
-        stumps: Object.keys(state.stumps).length,
-        knots: Object.keys(state.knots).length,
-        kickstands: Object.keys(state.kickstands).length,
-    });
+    console.log('[SupportStore] Merged from LYS:', Object.fromEntries(
+        SUPPORT_COLLECTION_KEYS.map((key) => [key, Object.keys(merged[key]).length]),
+    ));
     notify();
 }
 
