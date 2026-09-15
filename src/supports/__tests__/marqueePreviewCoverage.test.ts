@@ -5,7 +5,50 @@ import '../state';
 import '../detailRenderer/registerBuiltinDetailRenderers';
 import { detailRenderersFor } from '../detailRenderer/seam';
 import { SUPPORT_TYPES } from '../supportTypeRegistry';
-import { typeHasBatchedMarqueeOverlay } from '../SupportRenderer';
+import { supportIsDrawnSelected, typeHasBatchedMarqueeOverlay } from '../SupportRenderer';
+
+/**
+ * A support marked selected by ANY route is drawn as selected.
+ *
+ * `supportIsDrawnSelected` is the single place that decides this, because every
+ * type's detail renderer dims a support it does not consider selected --
+ * `dimNonSelected && !isSelected` -- which OVERWRITES whatever colour it was
+ * handed. A support marked only by the bulk colour was therefore dimmed instead
+ * of highlighted, and a type whose only draw path is its detail renderer went
+ * grey: brace and stump, whose marquee selection looked like it had not
+ * registered while a click worked (a click selects one, under the threshold).
+ */
+
+test('a bulk-selected support is drawn as selected', () => {
+    // The regression: past MULTI_SELECTION_DETAIL_THRESHOLD the per-type sets are
+    // empty by design, so the set is what CANNOT say. Miss this and the bulk
+    // colour is overwritten by the dim in every renderer.
+    assert.equal(
+        supportIsDrawnSelected({ inSelectedSet: false, bulkSelected: true, marqueePreview: false }),
+        true,
+    );
+});
+
+test('a support marked by no route is not drawn as selected', () => {
+    assert.equal(
+        supportIsDrawnSelected({ inSelectedSet: false, bulkSelected: false, marqueePreview: false }),
+        false,
+        'an unmarked support must stay dimmable',
+    );
+});
+
+test('each route on its own is enough to be drawn as selected', () => {
+    // The three routes are independent: a small selection, a bulk selection, and
+    // a live drag. Any one of them marks the support selected.
+    for (const route of ['inSelectedSet', 'bulkSelected', 'marqueePreview'] as const) {
+        const input = { inSelectedSet: false, bulkSelected: false, marqueePreview: false, [route]: true };
+        assert.equal(
+            supportIsDrawnSelected(input),
+            true,
+            `${route} alone should mark the support selected`,
+        );
+    }
+});
 
 /**
  * Every type can show that a marquee drag has caught it.

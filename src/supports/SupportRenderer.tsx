@@ -154,6 +154,32 @@ const BULK_MULTI_SELECTED_COLOR = '#80fffd';
  * preview through that renderer instead; see `sharedRenderProps`. Without the
  * second route a drag sweeps over them showing nothing at all.
  */
+/**
+ * Whether a support should be DRAWN as selected.
+ *
+ * Three routes mark one, and a detail renderer has to be told about all of them:
+ * it dims any support it does not consider selected -- `dimNonSelected &&
+ * !isSelected` in every type's renderer -- which OVERWRITES the colour it was
+ * handed. A support marked only by the bulk colour was therefore dimmed instead
+ * of highlighted, and a type whose only draw path is its detail renderer went
+ * grey: the symptom brace and stump had, and the reason a marquee looked like it
+ * had not registered while a click worked.
+ *
+ * - `inSelectedSet`: this entity is in its type's selected set, which is how a
+ *   selection at or under the detail threshold is expressed.
+ * - `bulkSelected`: past that threshold the per-type sets are left EMPTY on
+ *   purpose -- one colour stands in for all of them -- so the set cannot say.
+ * - `marqueePreview`: a drag is currently over it. Not a selection, but it is
+ *   drawn the same way so the drag reads as catching it.
+ */
+export function supportIsDrawnSelected(input: {
+    inSelectedSet: boolean;
+    bulkSelected: boolean;
+    marqueePreview: boolean;
+}): boolean {
+    return input.inSelectedSet || input.bulkSelected || input.marqueePreview;
+}
+
 export function typeHasBatchedMarqueeOverlay(typeId: SupportTypeId): boolean {
     const descriptor = getSupportTypeDescriptor(typeId);
     return descriptor.batchesShaft || descriptor.batchesContactCones || descriptor.ownsRoot;
@@ -1151,14 +1177,17 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         return origin ? ORIGIN_COLORS[origin] : ORIGIN_NO_ORIGIN_COLOR;
     }, [debugOriginColors, originById]);
 
+    /** Whether the bulk marquee colour is what marks this support selected. */
+    const isBulkSelected = React.useCallback((supportId: string) => (
+        hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)
+    ), [hasSupportMultiSelection, useMultiSelectionDetail, selectedSupportIdSet]);
+
     const resolveSceneSupportColor = React.useCallback((
         modelId: string | undefined,
         supportId: string,
         typeId?: SupportTypeId,
     ) => {
-        if (hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)) {
-            return BULK_MULTI_SELECTED_COLOR;
-        }
+        if (isBulkSelected(supportId)) return BULK_MULTI_SELECTED_COLOR;
 
         // Debug origin coloring: anchor / overhang / island / standalone, gray
         // for an entity stamped before origins existed, and a separate slate
@@ -1171,7 +1200,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return dimNonSelected ? '#666666' : resolveBaseColor(modelId);
-    }, [hasSupportMultiSelection, useMultiSelectionDetail, selectedSupportIdSet, dimNonSelected, resolveBaseColor, debugOriginColors, originColorFor]);
+    }, [isBulkSelected, dimNonSelected, resolveBaseColor, debugOriginColors, originColorFor]);
 
     const resolveModelDropOffsetZ = React.useCallback((modelId?: string) => {
         if (!modelId) return 0;
@@ -2669,22 +2698,18 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         modelId?: string,
     ) => {
         // Past MULTI_SELECTION_DETAIL_THRESHOLD the per-type selected sets are
-        // left empty, so `isSelected` never reaches a detail renderer and the
-        // bulk colour is the only thing marking a selection. Stump has no
-        // batched shaft pass, so without this it never highlights in a large
-        // marquee.
-        if (hasSupportMultiSelection && !useMultiSelectionDetail && selectedSupportIdSet.has(supportId)) {
-            return BULK_MULTI_SELECTED_COLOR;
-        }
+        // left empty, so the bulk colour is the only thing marking a selection.
+        // Handing the colour back is not enough on its own: the renderer's dim
+        // gate overwrites it unless it is also told the support is selected --
+        // see `supportIsDrawnSelected`.
+        if (isBulkSelected(supportId)) return BULK_MULTI_SELECTED_COLOR;
 
         if (!debugOriginColors) return resolveBaseColor(modelId);
         return getSupportTypeDescriptor(typeId).hasOrigin
             ? originColorFor(supportId) ?? ORIGIN_NO_ORIGIN_COLOR
             : ORIGIN_NOT_APPLICABLE_COLOR;
     }, [
-        hasSupportMultiSelection,
-        useMultiSelectionDetail,
-        selectedSupportIdSet,
+        isBulkSelected,
         debugOriginColors,
         originColorFor,
         resolveBaseColor,
@@ -2702,21 +2727,25 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         entity: { id: string; modelId?: string },
         isSelected: boolean,
     ) => {
-        // A support the marquee is currently over is previewed in the selection
-        // colour. Where a batched overlay can reach the type, that overlay draws
-        // the preview; where none can, the type's own detail renderer is the only
-        // thing that can, so the flag is handed to it as a selection.
-        //
-        // Without this, brace and stump -- the two types with no batched
-        // primitives -- are the only ones a drag sweeps over showing nothing.
-        const previewHighlight = !isSelected
-            && marqueeHoveredSupportIdSet.has(entity.id)
+        // Two routes besides the per-type selected set can mark this support
+        // selected, and the renderer has to be told about both: the bulk marquee
+        // colour (past the detail threshold the sets are deliberately empty), and
+        // a drag currently over it. Otherwise the renderer's dim gate overwrites
+        // the colour it was handed -- see `supportIsDrawnSelected`.
+        const bulkSelected = isBulkSelected(entity.id);
+        const marqueePreview = marqueeHoveredSupportIdSet.has(entity.id)
             && !typeHasBatchedMarqueeOverlay(typeId);
+        const drawnSelected = supportIsDrawnSelected({
+            inSelectedSet: isSelected,
+            bulkSelected,
+            marqueePreview,
+        });
 
         return {
-            isSelected: isSelected || previewHighlight,
-            // Keyed on the REAL selection, not the preview: a preview must not
-            // expose what a selection exposes, such as the contact-disk HUD.
+            isSelected: drawnSelected,
+            // Keyed on the REAL selection, not on the bulk or preview marking: a
+            // support merely previewed or bulk-marked must not expose what a
+            // selection exposes, such as the contact-disk HUD.
             selectedId: isSelected ? selectedId : null,
             dimNonSelected,
             isHovered: hoveredSupportIdForVisual === entity.id
@@ -2731,6 +2760,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         hoveredSupportIdForVisual,
         marqueeHoveredSupportIdSet,
         resolveDetailSupportColor,
+        isBulkSelected,
         suppressHover,
         isInteractable,
     ]);
