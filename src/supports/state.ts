@@ -2876,12 +2876,9 @@ function applySupportEntityUpdate(
 
     setState({
         ...state,
-        // The settle defaults FIRST, then the entity's own collection, so a write
-        // to a collection named `leaves` cannot be overwritten by the generic
-        // leaf default below it. The collision is real: leaf's own collection IS
-        // `leaves`, so with the order the other way round `updateSupportEntity`
-        // silently kept the pre-write leaves and returned true. It was latent for
-        // as long as leaf had a bespoke updater that never took this path.
+        // The generic defaults first, then the entity's own collection, so a type
+        // whose collection IS one of the defaults -- leaf and `leaves` -- writes
+        // the post-write collection rather than the pre-write one below it.
         knots: nextKnots,
         leaves: nextLeaves,
         [key]: nextCollection,
