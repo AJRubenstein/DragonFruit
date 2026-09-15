@@ -548,15 +548,23 @@ function maxMemberSpanMm(
     }
     if (knotById.size === 0) return 0;
     let longest = 0;
-    const members = [...Object.values(draft.leaves), ...Object.values(draft.branches)];
-    for (const m of members) {
-        const knotPos = knotById.get(m.parentKnotId);
-        const tip = m.contactCone?.pos;
-        if (!knotPos || !tip) continue;
-        const span = Math.sqrt(
-            (tip.x - knotPos.x) ** 2 + (tip.y - knotPos.y) ** 2 + (tip.z - knotPos.z) ** 2,
-        );
-        if (span > longest) longest = span;
+    // The members come off `SHAFT_HOSTED_MEMBER_TYPES`, the way every other walk
+    // in this file reaches them. This one hand-wrote `leaves` and `branches`,
+    // which is the member set the registry declares -- so a member type added or
+    // removed would have been missed here while the rest of the file followed it.
+    for (const { collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        const collection = draft[collectionKey] as unknown as
+            | Record<string, { parentKnotId?: string; contactCone?: { pos: { x: number; y: number; z: number } } }>
+            | undefined;
+        for (const member of Object.values(collection ?? {})) {
+            const knotPos = member.parentKnotId ? knotById.get(member.parentKnotId) : undefined;
+            const tip = member.contactCone?.pos;
+            if (!knotPos || !tip) continue;
+            const span = Math.sqrt(
+                (tip.x - knotPos.x) ** 2 + (tip.y - knotPos.y) ** 2 + (tip.z - knotPos.z) ** 2,
+            );
+            if (span > longest) longest = span;
+        }
     }
     return longest;
 }

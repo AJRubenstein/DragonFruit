@@ -1,7 +1,7 @@
 # The next phase: the five hotspot files
 
-**Status: sections 1 and 2 are DONE (1 converted, 2 measured and left).
-Sections 3-5 are not started.** Work them in order.
+**Status: sections 1-3 are DONE (1 and 3 converted, 2 measured and left).
+Sections 4 and 5 are not started.** Work them in order.
 
 The stump/stick plan is finished. It cleared the two smallest types to 36 and 84
 and, in doing so, built the pattern the rest of the work uses: a per-type fact
@@ -118,12 +118,50 @@ declaration for a fact the file already states by being about braces, which is
 the opposite of the plan's rule. The reference count here measures vocabulary,
 not coupling.
 
-### 3. `autoSupport/autoPlace.ts` (306)
+### 3. `autoSupport/autoPlace.ts` -- ONE CONVERSION, TWO FINDINGS RECORDED
 
-Leaf 120, branch 102. The fan and merge logic. Two known open findings live in
-this file (the cavity-bridge cap measuring from the wrong contact, the
-consolidation host-order rule), so expect to find more; record them rather than
-folding fixes into a derivation.
+Leaf 120, branch 102. As expected, this file had more in it than a conversion.
+
+**Converted: `maxMemberSpanMm` hand-wrote its member set.**
+
+```ts
+const members = [...Object.values(draft.leaves), ...Object.values(draft.branches)];
+```
+
+That is `SHAFT_HOSTED_MEMBER_TYPES`, and this SAME FILE already walks it in nine
+other places (lines 1838, 1849, 1857, 1885, 1899, 1926, 2214 at the time of
+writing) -- so the derived pattern was already the file's convention and this was
+the one exception. It now iterates the declared list and reads each member type's
+`collectionKey`, which also drops the intermediate array the spread built.
+
+**Verified identical over 2,941 `findMergeHost` results** -- a grid of tip
+positions across the whole support field, captured BEFORE the change. The member
+set feeds each host's load score, so the ranking would move if the set did.
+
+**Finding recorded, NOT resolved: `syncContactConeDiameters` walks two types
+where four qualify.** It builds its segment-diameter map from `draft.trunks` and
+`draft.branches`, both hand-written. The declared set of types whose upper
+endpoint is a cone AND which carry segments is FOUR:
+
+```
+trunk   upper=cone  hasSegments  collection=trunks
+branch  upper=cone  hasSegments  collection=branches
+stick   upper=cone  hasSegments  collection=sticks
+stump   upper=cone  hasSegments  collection=stumps
+```
+
+Deriving it would therefore ADD stick and stump -- a behaviour change, not a
+rename, and one that decides whether a stick's or stump's cone body diameter gets
+resynced to its shaft. That may well be intentional (a stick's cone is placed
+against a socket, a stump's frustum is not a shaft at all), but deciding it is
+not this plan's job. Recorded here by the rule that a discrepancy is recorded
+rather than silently resolved in either direction.
+
+**Finding recorded as legitimate, not a smell: the brace walk at line 1902.** It
+is commented "Brace knots are separate -- never cull a knot that is a brace
+endpoint", and that is exactly right: a brace's endpoints are knots it does not
+own the way a member is hosted by one, so counting knot users needs the separate
+pass. Brace is the subject.
 
 ### 4. `SupportRenderer.tsx` (457)
 
