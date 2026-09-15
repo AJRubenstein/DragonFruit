@@ -12,9 +12,8 @@ import type { Vec3 } from '../types';
 /**
  * Where each type's proxy primitives come from.
  *
- * The layer used to hold one hand-written loop per type, naming that type's
- * fields inline. It now walks `SUPPORT_TYPES` and asks each type what it emits,
- * so a type contributes its geometry by registering a recipe in its own folder.
+ * The layer walks `SUPPORT_TYPES` and asks each type what it emits, so a type
+ * contributes its geometry by registering a recipe in its own folder.
  *
  * Two failures are possible and neither is covered by a golden:
  *

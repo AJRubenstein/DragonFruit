@@ -8,15 +8,14 @@ import type { InstancedContactCone } from '../SupportPrimitives/ContactCone/Inst
 /**
  * How a support type contributes its primitives to the proxy view.
  *
- * A slot for the same reason the export seam is one: the primitives a type is
- * drawn from are a fact about that type -- a stump is a frustum with its own
- * radii, a stick is two cones, a twig is two disks -- so each recipe lives in
- * that type's own folder and registers itself here. Nothing else names a type:
+ * The primitives a type is drawn from are a fact about that type -- a stump is
+ * a frustum with its own radii, a stick is two cones, a twig is two disks -- so
+ * each recipe lives in that type's own folder and registers itself here.
  * `collectProxyPrimitives` walks `SUPPORT_TYPES` and asks each one what it
- * emits.
+ * emits, naming no type itself. Mirrors `exportGeometry/seam.ts`.
  *
- * The registry declares what a type IS, not how it draws, so this seam lives
- * beside the proxy layer rather than in `supportTypeRegistry.ts`.
+ * Lives beside the proxy layer rather than in the registry, which declares what
+ * a type is rather than how it draws.
  */
 
 /** Where a recipe puts the primitives it builds. */
@@ -51,10 +50,9 @@ export interface ProxyGeometryContext extends ProxyPrimitiveSink {
  * What a type's recipe declares about WHEN it runs, as opposed to what it
  * builds.
  *
- * Both are genuinely per type rather than uniform: a brace is a connecting
- * structure between supports rather than one facing the model, so the interior
- * view hides it; a leaf is a cone and a rod with nothing else to draw, so the
- * coarse view has nothing to show.
+ * Both are per type: a brace connects supports rather than facing the model, so
+ * the interior view hides it; a leaf is a cone and a rod, so the coarse view has
+ * nothing to show.
  */
 export interface ProxyGeometryRegistration {
     /** Skipped entirely in the interior view. */

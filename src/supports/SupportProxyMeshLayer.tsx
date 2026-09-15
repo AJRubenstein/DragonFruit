@@ -356,9 +356,8 @@ export function SupportProxyMeshLayer({
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
 
-  // Per-collection aliases used to sit here for the cache signature and the two
-  // memo dep arrays. The walk reads the state itself now, so the snapshot is the
-  // one identity that covers every collection.
+  // The walk reads the state itself, so the snapshot is the one identity the
+  // cache signature and the memo deps need.
   const hasSolidBottom = raftSettings.bottomMode === 'solid';
   const raftThickness = raftSettings.thickness ?? 0;
 
@@ -626,8 +625,7 @@ export function SupportProxyMeshLayer({
   const baseProxyByModel = React.useMemo(() => {
     // One identity covers every collection the walk reads: the store snapshot is
     // replaced on any change, so `supportState` alone decides whether the merged
-    // view is rebuilt. The per-collection refs this used to list alongside it
-    // were redundant with it, and one of them could be forgotten.
+    // view is rebuilt.
     if (
       sharedProxyCache
       && sharedProxyCache.supportStateRef === supportState
