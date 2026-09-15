@@ -1,8 +1,8 @@
 # Clearing the last stump and stick references
 
 `npm run scan:support-types` reports per type. Stump and stick are the two
-smallest, and neither is a leftover from an unfinished rename: both are the same
-four shapes, which is what makes them worth doing together.
+smallest, and they reduce to the same four shapes, which is what makes them
+worth doing together.
 
 ```
     923  trunk        674  kickstand     225  twig
@@ -13,6 +13,13 @@ four shapes, which is what makes them worth doing together.
 Counts are identifiers outside the registry, `types.ts` and each type's own
 folder. Comments and strings are invisible to this scan -- use
 `npm run scan:support-literals` and a source scan as well.
+
+The near-plate type was renamed `anchor` -> `stump`. `anchor` is still an
+ordinary word here for geometric anchoring, the `Anchor` sizing preset, the
+scene-arrange anchor and the auto-support anchor BAND -- none of which are the
+type. Four rename errors have already been found in that direction (a UI label,
+a preset dialog, a submodule comment, a limitation message), so check what a
+token IS before changing it. See [anchor-token-census.md](anchor-token-census.md).
 
 ---
 
@@ -29,83 +36,25 @@ They fall into four groups.
 `updateStump`, `updateLeaf` and `updateBrace` live in `state.ts` while being
 registered from their own folders -- `stumpRegistration.ts` does
 `registerSupportUpdater<Stump>('stump', updateStump)` and imports the body back
-out of `state.ts`. See section 4.
+out of `state.ts`. Section 1.
 
 **2. A hand-written per-type search.** `toggleSegmentCurve` in `state.ts`
 (~2124-2338) searches five collections in sequence for the one holding a
 segment, each with its own loop, its own target-id variable and its own
 result arm. It declares `let container: Trunk | Branch | Twig | Stick |
-Kickstand | null` -- a union of five type names.
+Kickstand | null` -- a union of five type names. Section 2.
 
 **3. A local named after the collection it loops.** `for (const stick of
 Object.values(state.sticks))` inside code that is not about sticks. The loop
-exists only because the list was hand-written.
+exists only because the list was hand-written. Section 3.
 
 **4. A dud.** `stickiness` (drag bias), and the string "models stick out of the
 printer build volume". Already excluded or invisible; listed here so they are
-not chased.
+not chased. Section 4.
 
 ---
 
-## 1. `toggleSegmentCurve` -- the five-collection search
-
-**The shape.** Five near-identical blocks: search a collection for the segment,
-record which collection won, then branch on that at the end to write the result
-back. The type names appear in the union, in the five `Object.values(state.x)`
-calls, in three target-id locals and in the write-back arms.
-
-**Why it matters more than its count.** A hand-written union of type ids
-survives a rename with NO compile error -- `state.ts` has already produced that
-failure once (`KickstandHostKind`). The union here is the same class. The
-`targetTrunkId` / `targetKickstandId` split then forces every caller-visible arm
-to know which types exist.
-
-**What replaces it.** The registry already declares `hasSegments` per type, and
-`SUPPORT_TYPES` is ordered. One walk over the types that declare segments finds
-the owner and returns `{ typeId, entity, segmentIndex }`; the write-back arms
-collapse to one that dispatches on the returned `typeId`.
-
-**Check before assuming it is uniform.** The kickstand arm reads from a
-different source than the other four (see the `kickstands` local above the
-loop), and the trunk and kickstand arms do extra work the others do not. If an
-arm is genuinely different, that difference becomes a declaration on the
-descriptor, not an `if`.
-
-**Verify.** `toggleSegmentCurve` is reachable from a hotkey. Capture the
-before/after state for a scene holding one of every shafted type, toggle a
-segment on each, and assert the result is identical. Mutation-test it: making
-the walk skip one type must fail.
-
----
-
-## 2. Collection-named locals
-
-`for (const stick of …state.sticks)`, `for (const stump of …state.stumps)` in
-code that is not about that type: `SceneCanvas` bounds and marquee shapes,
-`SupportProxyMeshLayer` interior ids, `SupportRenderer` lookups.
-
-Each is a per-type loop inside a function that wants every type. The fix is the
-same collapse already made in `SupportRenderer` and `SupportProxyMeshLayer`:
-walk `SUPPORT_TYPES`, read `descriptor.location.key`, ask the registry the
-question the loop body asks by hand.
-
-**`supportMarqueeShapes` in `SceneCanvas` is the exception.** Its per-type
-geometry (which endpoints, whether sockets count, whether a contact cone is
-required) is genuinely per type. Renaming the local is the honest fix there --
-a local variable name cannot be derived.
-
----
-
-## 3. Two that are already correct
-
-- `NOT_THE_TYPE` in `scan-support-type-references.ts` holds `stickiness` and
-  `CURRENT_SEGMENT_STICKINESS`. `--duds` prints what it excluded.
-- The string "models stick out of the printer build volume" is prose in a
-  comment field; the scan blanks strings, so it never counted.
-
----
-
-## 4. The three bespoke updaters in `state.ts`
+## 1. The three bespoke updaters in `state.ts`
 
 `updateStump`, `updateLeaf` and `updateBrace` are each registered from their own
 folder and imported back out of `state.ts`. The registration is derived; the
@@ -137,6 +86,64 @@ and repositions riding knots), so it needs the goldens, not just the suite.
 
 ---
 
+## 2. `toggleSegmentCurve` -- the five-collection search
+
+**The shape.** Five near-identical blocks: search a collection for the segment,
+record which collection won, then branch on that at the end to write the result
+back. The type names appear in the union, in the five `Object.values(state.x)`
+calls, in three target-id locals and in the write-back arms.
+
+**Why it matters more than its count.** A hand-written union of type ids
+survives a rename with NO compile error -- `state.ts` has already produced that
+failure once (`KickstandHostKind`). The union here is the same class. The
+`targetTrunkId` / `targetKickstandId` split then forces every caller-visible arm
+to know which types exist.
+
+**What replaces it.** The registry already declares `hasSegments` per type, and
+`SUPPORT_TYPES` is ordered. One walk over the types that declare segments finds
+the owner and returns `{ typeId, entity, segmentIndex }`; the write-back arms
+collapse to one that dispatches on the returned `typeId`.
+
+**Check before assuming it is uniform.** The kickstand arm reads from a
+different source than the other four (see the `kickstands` local above the
+loop), and the trunk and kickstand arms do extra work the others do not. If an
+arm is genuinely different, that difference becomes a declaration on the
+descriptor, not an `if`.
+
+**Verify.** `toggleSegmentCurve` is reachable from a hotkey. Capture the
+before/after state for a scene holding one of every shafted type, toggle a
+segment on each, and assert the result is identical. Mutation-test it: making
+the walk skip one type must fail.
+
+---
+
+## 3. Collection-named locals
+
+`for (const stick of …state.sticks)`, `for (const stump of …state.stumps)` in
+code that is not about that type: `SceneCanvas` bounds and marquee shapes,
+`SupportProxyMeshLayer` interior ids, `SupportRenderer` lookups.
+
+Each is a per-type loop inside a function that wants every type. The fix is the
+same collapse already made in `SupportRenderer` and `SupportProxyMeshLayer`:
+walk `SUPPORT_TYPES`, read `descriptor.location.key`, ask the registry the
+question the loop body asks by hand.
+
+**`supportMarqueeShapes` in `SceneCanvas` is the exception.** Its per-type
+geometry (which endpoints, whether sockets count, whether a contact cone is
+required) is genuinely per type. Renaming the local is the honest fix there --
+a local variable name cannot be derived.
+
+---
+
+## 4. The duds, already handled
+
+- `NOT_THE_TYPE` in `scan-support-type-references.ts` holds `stickiness` and
+  `CURRENT_SEGMENT_STICKINESS`. `--duds` prints what it excluded.
+- The string "models stick out of the printer build volume" is prose in a
+  comment field; the scan blanks strings, so it never counted.
+
+---
+
 ## Expect the count to RISE before it falls
 
 Renaming a stale local from `anchor` to `stump` makes it visible to a scan
@@ -163,6 +170,22 @@ than went away.
 **Gates:** delete `tsconfig.tsbuildinfo`, then `npx tsc --noEmit -p
 tsconfig.json`, the full suite (925 src, 82 plugins), all 44 goldens (support
 16, export 16, slice 12), `check:docs`, `check:lint`, and a real `next build`.
+
+**Running them on Windows**, where the obvious commands mislead:
+
+- `npm test` does not expand its glob and reports success having run NOTHING.
+  Expand it yourself:
+  `node --import tsx --test $(find src -name '*.test.ts' -o -name '*.test.tsx')`
+- The goldens are three separate test files under `local-only/` (support-goldens,
+  export-goldens, slice-goldens), all needed. A geometry change shows up in the
+  export and slice suites, not in the support 16.
+- `npm run check:lint` dies with `spawn npx ENOENT`. It is a ratchet over a
+  43-directory whitelist, so lint those directories directly at
+  `--max-warnings 0` instead.
+- A stale `tsconfig.tsbuildinfo` makes `tsc` print nothing while real errors
+  exist. Delete it first, every time, and use `-p tsconfig.json`.
+- `.next/` holds generated `.d.ts` files that report syntax errors of their own.
+  They are not source; `rm -rf .next/dev` if they appear.
 
 **A passing suite is not evidence.** `toggleSegmentCurve` had no coverage when
 this was written. Add the test before the refactor, not after.
