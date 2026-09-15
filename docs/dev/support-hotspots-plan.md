@@ -1,6 +1,7 @@
 # The next phase: the five hotspot files
 
-**Status: section 1 is DONE. Sections 2-5 are not started.** Work them in order.
+**Status: sections 1 and 2 are DONE (1 converted, 2 measured and left).
+Sections 3-5 are not started.** Work them in order.
 
 The stump/stick plan is finished. It cleared the two smallest types to 36 and 84
 and, in doing so, built the pattern the rest of the work uses: a per-type fact
@@ -75,13 +76,47 @@ to derive.
 
 References: 3,936 -> 3,904.
 
-### 2. `autoBracing/autoBrace.ts` (232)
+### 2. `autoBracing/autoBrace.ts` -- MEASURED, NOTHING TO CONVERT
 
-Mostly trunk (99) and brace (89). A brace is the subject here, so much of it is
-legitimately per-type -- but `autoBrace` is also the file the findings doc flags
-as scoring high on the false-positive `anchor` word, so **measure before
-converting**. Run `--type brace --lines` and `--type trunk --lines` and classify
-before touching anything.
+Measured with `--type brace --lines` and `--type trunk --lines`, as instructed.
+The prediction held: **the file is already derived where derivation applies**, and
+every remaining mention is either the subject of the file or the word "brace" as
+domain vocabulary rather than a type name.
+
+Already derived, so there was nothing to replace:
+
+```
+157  for (const descriptor of SUPPORT_TYPES) { if (!descriptor.isAutoBraceable) continue; }
+436  buildSupportSamples(snapshot).filter((s) => isAutoBraceableShaftType(s.supportKind))
+654  if (isAutoBraceableShaftType(s.supportKind)) …
+667  const bracesKey = getSupportTypeDescriptor(spanKnotHostType()).location.key;
+701  for (const descriptor of SUPPORT_TYPES) …
+1039 isAutoBraceableShaftType(lowS.supportKind) && isAutoBraceableShaftType(highS.supportKind)
+```
+
+Grepped for the two shapes that would mean otherwise -- arrays of type-name
+literals, and functions named per type -- and found **neither**.
+
+What the remaining 89 brace and 99 trunk references actually are:
+
+- **The brace as the subject.** This is the auto-bracing feature:
+  `generatedBraceCount` / `removedBraceCount`, `keptBraces`, `braceIds`,
+  `braceKnotIds`, `createUniqueIdFactory('auto-brace', …)`,
+  `brace.generatedBy === 'autoBracing'`, `AutoBraceStatus`. A brace IS what the
+  file is about, which is the plan's own test for leaving a name alone.
+- **The word, not the type.** `maxBraceLenMm`, `braceDiameterMm`,
+  `buildBraceProfile`, `maxHorizontalRunFromBraceLen`, `SUPPORT_AUTO_BRACE_REPLACE`
+  -- these share the word `brace` and name no type. The same class the anchor
+  census spent its length on.
+- **Two genuinely per-type loops, both the subject:** the trunk walk that builds
+  `segmentOwnerTrunkId` (trunks host the stabilisers being placed) and the
+  kickstand walk that copies a kickstand's own root and host knot into the
+  snapshot.
+
+**Conclusion: no change.** Deriving any of the above would mean inventing a
+declaration for a fact the file already states by being about braces, which is
+the opposite of the plan's rule. The reference count here measures vocabulary,
+not coupling.
 
 ### 3. `autoSupport/autoPlace.ts` (306)
 
