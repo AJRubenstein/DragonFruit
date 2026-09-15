@@ -1,23 +1,22 @@
 # Clearing the last stump and stick references
 
-**Status: sections 1-7 are DONE.** Neither type is clean, and neither reaches
+**Status: sections 1-8 are DONE.** Neither type is clean, and neither reaches
 zero: what remains is the type's own folder, the registry, the tests, and
-`supportMarqueeShapes` in SceneCanvas, which is the one per-type geometry left
-that has not been given a seam.
+`updateLeaf` / `updateBrace` in `state.ts`.
 
 `npm run scan:support-types` reports per type. Stump and stick are the two
 smallest, and they reduce to the same shapes, which is what makes them worth
 doing together.
 
-Current, after sections 1-7 (4,001 total across 110 files):
+Current, after sections 1-8 (3,936 total across 110 files):
 
 ```
-    874  trunk        596  branch        159  twig
-    822  brace        599  kickstand      93  stick
-    813  leaf                              45  stump
+    866  trunk        588  branch        152  twig
+    816  brace        588  kickstand      84  stick
+    806  leaf                              36  stump
 ```
 
-Stump went 77 -> 45 and stick 145 -> 93 across the seven sections. Every
+Stump went 77 -> 36 and stick 145 -> 84 across the eight sections. Every
 reference count above measures how much code still SPELLS a type; none of it
 dispatches on one -- the literal budget stays at 0 dispatch / 0 declaration.
 
@@ -382,6 +381,53 @@ in either direction. `resolveSegmentEndpoints` has the same 10-vs-5 question to
 answer for the export and slice paths, and the captured baseline is what would
 catch it.
 
+### 8. `supportMarqueeShapes` -- the last per-type geometry
+
+**DONE.** The note in "Carried over" prescribed this piece and the prescription
+was right on every point, so it was followed literally.
+
+**Extract first.** The emitter became
+`collectSupportMarqueeShapes(state: SupportState): SupportMarqueeShape[]`, in
+`components/scene/SceneCanvas/supportMarqueeShapes.ts`, and the memo became a
+call to it. The extraction was checked as a PURE MOVE before anything else
+changed: the 81 logic lines of the new function are identical to the old memo
+body, modulo the inline shape type becoming the exported `SupportMarqueeShape`
+and the state reference being renamed.
+
+**Capture before, not after.** The polylines were dumped for the whole
+criosphinx fixture -- 374 shapes, 103,358 bytes -- while the code was still the
+old memo. That file is what makes the comparison below meaningful; a capture
+taken afterwards would have re-read the new code and proved nothing.
+
+**Then move each recipe.** `supports/marqueeGeometry/seam.ts` mirrors the proxy
+and export seams, and each type's `<Type>/<type>MarqueeShape.ts` is imported for
+its side effect from that folder's `<type>Registration.ts`. The nine loops
+collapsed to one walk over `SUPPORT_TYPES`. Roots keep their own pass, because a
+root is a primitive rather than a support type.
+
+**Result: identical, 374 shapes, 103,358 bytes** -- same file, byte for byte,
+after the move and again after the dead imports were swept.
+
+**Two things the move made explicit rather than changed:**
+
+- The kickstand's model id falls back to its ROOT's. The marquee groups shapes by
+  model, so a shape with no model id is never hit-testable -- a kickstand without
+  that fallback would silently stop being selectable.
+- A branch whose parent knot is missing still produces a polyline, starting from
+  its own bottom joint. That is what the old loop did, so the recipe keeps it;
+  worth knowing before anyone "fixes" it, since the polyline then starts where
+  the shaft does not actually attach.
+
+**Coverage.** `marqueeShapeRegistration.test.ts` holds the completeness check --
+a type whose recipe never registers is skipped by the walk, so it becomes
+unselectable by a drag while every golden still passes -- plus a per-type check
+that each recipe yields a polyline with points, struts to hit-test and a model
+id. Mutation-tested: a registration removed fails both by name, and a recipe
+that passes no positions fails the second.
+
+**Counts:** stump 45 -> 36 and stick 93 -> 84, both BELOW the floor estimated in
+this plan (40 and 90). 4,001 -> 3,936 references.
+
 ### Carried over
 
 - **`updateLeaf` and `updateBrace`** still live in `state.ts` and still name
@@ -390,15 +436,12 @@ catch it.
   dependency exposed as a named seam before it can move. Section 1 explains.
   `updateStump` was deleted rather than moved -- the generic pass already did
   what it did.
-- **`supportMarqueeShapes` in `SceneCanvas`** builds a pickable polyline per
-  type. This was "same class as section 7, same verdict" -- and section 7's
-  verdict moved, so the same seam shape applies: a per-type recipe registered
-  from the type's own folder. Not done, and now the ONLY per-type geometry left
-  outside a type's folder. **This is the next piece.** Copy
-  `proxyGeometry/seam.ts`: extract the emitter as a pure exported function
-  first, capture its output for every type BEFORE changing anything, then move
-  each recipe. A pickable polyline decides what a drag selects, so a silent
-  change here is a selection bug with no test to catch it.
+- **`supportMarqueeShapes` in `SceneCanvas`** -- **DONE as section 8, by the
+  route this note prescribed.** The emitter came out as an exported pure
+  function, `collectSupportMarqueeShapes(state)`, its output was captured for the
+  whole fixture BEFORE anything moved, and each type's recipe then moved to its
+  own folder behind `marqueeGeometry/seam.ts`. See section 8. Nothing is left
+  outside a type's folder now except `updateLeaf` and `updateBrace` above.
 - **`hostKnot` assembled from `lower.kind`** -- **FIXED**. It was called a latent
   defect here; it was live. Both call sites (`KNOT_PLACEMENT_BY_TYPE` in
   `state.ts` and the context menu in `page.tsx`) handed a kickstand no knot,
@@ -408,12 +451,11 @@ catch it.
 
 ### The floor
 
-Measured, with sections 5-7 done: stump 45 and stick 93. The estimate here was
-40 and 90, so after the proxy emitters moved the two are within a few
-references of it. What is left is the marquee geometry, plus the type's own
-folder, the registry and the tests, which are exempt or are the type's own
-subject. Neither type reaches zero, and should not: zero would mean the renderer
-had no per-type geometry at all.
+Measured, with sections 5-8 done: stump 36 and stick 84 -- both BELOW the 40 and
+90 estimated here, because the marquee geometry turned out to be moveable after
+all. What is left is the type's own folder, the registry and the tests, which are
+exempt or are the type's own subject, plus `updateLeaf` and `updateBrace`. Neither
+type reaches zero, and should not: zero would mean nothing rendered per type.
 
 
 ---

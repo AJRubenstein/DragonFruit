@@ -8,6 +8,7 @@ import type { Twig } from '../../types';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from './twigTaper';
 import { buildTwig } from './twigBuilder';
 import './twigProxyGeometry';
+import './twigMarqueeShape';
 
 // Twigs taper along their length, so a knot on one is sized from the taper
 // rather than the generic segment-diameter rule.

@@ -5,6 +5,7 @@ import { registerSettingsInference } from '../../supportTypeRegistry';
 import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
 import type { Branch } from '../../types';
 import './branchProxyGeometry';
+import './branchMarqueeShape';
 
 function inferSettingsFromBranch(branch: Branch, base?: SupportSettings): SupportSettings {
     const merged = mergeSettingsWithDefaults(base);

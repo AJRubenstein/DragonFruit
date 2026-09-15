@@ -10,6 +10,7 @@ import type { Stump, Vec3 } from '../../types';
 // the stump's; the grid engine only decides WHICH type claims a tip height.
 import './stumpAutoPlacement';
 import './stumpProxyGeometry';
+import './stumpMarqueeShape';
 
 // A stump is a near-plate stub: a frustum root, one joint, one segment and a
 // contact cone. It has no Roots entry -- the frustum is its root -- so its

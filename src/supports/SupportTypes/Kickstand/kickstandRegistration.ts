@@ -7,6 +7,7 @@ import type { SupportState } from '../../types';
 import type { AutoBracingSettings } from '../../autoBracing/settings';
 import { generateRequiredKickstands } from './kickstandStabiliser';
 import './kickstandProxyGeometry';
+import './kickstandMarqueeShape';
 
 /**
  * A kickstand stabilises a shaft without needing a partner to brace against,

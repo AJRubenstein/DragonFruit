@@ -34,11 +34,11 @@ import type { SelectionHighlightMode } from '@/components/selection';
 import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogic';
 import type { ScanResults } from '@/volumeAnalysis/IslandScan/ScanOrchestrator';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
-import type { LimitationCode, Segment, SupportMode, WarningCode } from '@/supports/types';
+import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types';
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
 import { collectRaftBaseCirclesByModel, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
-import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types';
+import { collectSupportMarqueeShapes } from './supportMarqueeShapes';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { getModelIdForSupportEntityId } from '@/supports/state';
@@ -115,7 +115,6 @@ import {
   ringHitsMarquee,
   shapeHitsMarquee,
   type MarqueePoint,
-  type MarqueeSegment,
   type ProjectedMesh,
 } from './marqueeHitTest';
 import { PickingEmptySpaceHoverResetter, SceneRenderBindings } from './SceneCanvasInteractionBits';
@@ -2777,127 +2776,10 @@ export function SceneCanvas({
   // each joint in order, and the contact cone at the tip. Built once per state
   // change — the marquee walks this on every pointer move. A curved segment is
   // approximated by its chord.
-  const supportMarqueeShapes = React.useMemo(() => {
-    type SupportPoint = { x: number; y: number; z: number };
-
-    const shapes: Array<{
-      id: string;
-      modelId: string | undefined;
-      points: SupportPoint[];
-      struts: MarqueeSegment[];
-    }> = [];
-
-    const chain = (
-      id: string,
-      modelId: string | undefined,
-      positions: Array<SupportPoint | null | undefined>,
-    ) => {
-      if (!id) return;
-
-      const points: SupportPoint[] = [];
-      for (const position of positions) {
-        if (!position) continue;
-        const previous = points[points.length - 1];
-        // Consecutive segments share a joint; keep it once.
-        if (previous && previous.x === position.x && previous.y === position.y && previous.z === position.z) {
-          continue;
-        }
-        points.push(position);
-      }
-
-      if (points.length === 0) return;
-
-      const struts: MarqueeSegment[] = [];
-      for (let i = 1; i < points.length; i += 1) {
-        struts.push([i - 1, i]);
-      }
-
-      shapes.push({ id, modelId, points, struts });
-    };
-
-    const jointPositions = (segments: Segment[]) => segments.flatMap((segment) => [
-      segment.bottomJoint?.pos,
-      segment.topJoint?.pos,
-    ]);
-
-    const conePositions = (cone: ContactCone) => [getFinalSocketPosition(cone), cone.pos];
-
-    for (const root of Object.values(supportStateForBounds.roots)) {
-      chain(root.id, root.modelId, [root.transform.pos]);
-    }
-
-    for (const trunk of Object.values(supportStateForBounds.trunks)) {
-      const root = supportStateForBounds.roots[trunk.rootId];
-      chain(trunk.id, trunk.modelId, [
-        root?.transform.pos,
-        ...jointPositions(trunk.segments),
-        ...(trunk.contactCone ? conePositions(trunk.contactCone) : []),
-      ]);
-    }
-
-    for (const branch of Object.values(supportStateForBounds.branches)) {
-      chain(branch.id, branch.modelId, [
-        supportStateForBounds.knots[branch.parentKnotId]?.pos,
-        ...jointPositions(branch.segments),
-        ...(branch.contactCone ? conePositions(branch.contactCone) : []),
-      ]);
-    }
-
-    for (const leaf of Object.values(supportStateForBounds.leaves)) {
-      if (!leaf.contactCone) continue;
-      chain(leaf.id, leaf.modelId, [
-        supportStateForBounds.knots[leaf.parentKnotId]?.pos,
-        ...conePositions(leaf.contactCone),
-      ]);
-    }
-
-    for (const twig of Object.values(supportStateForBounds.twigs)) {
-      chain(twig.id, twig.modelId, [
-        twig.contactDiskA.pos,
-        ...jointPositions(twig.segments),
-        twig.contactDiskB.pos,
-      ]);
-    }
-
-    for (const stick of Object.values(supportStateForBounds.sticks)) {
-      chain(stick.id, stick.modelId, [
-        stick.contactConeA.pos,
-        getFinalSocketPosition(stick.contactConeA),
-        ...jointPositions(stick.segments),
-        getFinalSocketPosition(stick.contactConeB),
-        stick.contactConeB.pos,
-      ]);
-    }
-
-    for (const brace of Object.values(supportStateForBounds.braces)) {
-      chain(brace.id, brace.modelId, [
-        supportStateForBounds.knots[brace.startKnotId]?.pos,
-        supportStateForBounds.knots[brace.endKnotId]?.pos,
-      ]);
-    }
-
-    for (const stump of Object.values(supportStateForBounds.stumps)) {
-      chain(stump.id, stump.modelId, [
-        stump.rootPos,
-        stump.joint?.pos,
-        ...jointPositions(stump.segments),
-        ...(stump.contactCone ? conePositions(stump.contactCone) : []),
-      ]);
-    }
-
-    for (const kickstand of Object.values(supportStateForBounds.kickstands)) {
-      const kickstandModelId = kickstand.modelId
-        ?? supportStateForBounds.roots[kickstand.rootId]?.modelId;
-      chain(kickstand.id, kickstandModelId, [
-        supportStateForBounds.roots[kickstand.rootId]?.transform.pos,
-        ...jointPositions(kickstand.segments),
-        supportStateForBounds.knots[kickstand.hostKnotId]?.pos
-          ?? supportStateForBounds.knots[kickstand.hostKnotId]?.pos,
-      ]);
-    }
-
-    return shapes;
-  }, [supportStateForBounds]);
+  const supportMarqueeShapes = React.useMemo(
+    () => collectSupportMarqueeShapes(supportStateForBounds),
+    [supportStateForBounds],
+  );
 
   const supportMarqueeShapesByModelId = React.useMemo(() => {
     const map = new Map<string, typeof supportMarqueeShapes>();

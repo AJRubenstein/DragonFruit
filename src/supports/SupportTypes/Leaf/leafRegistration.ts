@@ -7,6 +7,7 @@ import { registerSettingsInference } from '../../supportTypeRegistry';
 import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
 import type { Leaf } from '../../types';
 import './leafProxyGeometry';
+import './leafMarqueeShape';
 
 function inferSettingsFromLeaf(leaf: Leaf, base?: SupportSettings): SupportSettings {
     const merged = mergeSettingsWithDefaults(base);
