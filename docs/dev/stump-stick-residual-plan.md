@@ -1,25 +1,25 @@
 # Clearing the last stump and stick references
 
-**Status: sections 1-4 and 6 are DONE. Section 5 is DONE. Section 7 is NOT
-STARTED and is its own plan.** Neither type is clean, and neither reaches zero:
-the floor is the proxy and marquee geometry, which names a type because that
-type is genuinely the subject.
+**Status: sections 1-7 are DONE.** Neither type is clean, and neither reaches
+zero: what remains is the type's own folder, the registry, the tests, and
+`supportMarqueeShapes` in SceneCanvas, which is the one per-type geometry left
+that has not been given a seam.
 
 `npm run scan:support-types` reports per type. Stump and stick are the two
 smallest, and they reduce to the same shapes, which is what makes them worth
 doing together.
 
-Current, after sections 1-3, 5 and 6 (4,193 total across 111 files):
+Current, after sections 1-7 (4,001 total across 110 files):
 
 ```
-    898  trunk        619  branch        199  twig
-    845  brace        614  kickstand     115  stick
-    840  leaf                              63  stump
+    874  trunk        596  branch        159  twig
+    822  brace        599  kickstand      93  stick
+    813  leaf                              45  stump
 ```
 
-Stump went 77 -> 63 and stick 145 -> 115 across those sections. Every reference
-count above measures how much code still SPELLS a type; none of it dispatches on
-one -- the literal budget stays at 0 dispatch / 0 declaration.
+Stump went 77 -> 45 and stick 145 -> 93 across the seven sections. Every
+reference count above measures how much code still SPELLS a type; none of it
+dispatches on one -- the literal budget stays at 0 dispatch / 0 declaration.
 
 Counts are identifiers outside the registry, `types.ts` and each type's own
 folder. Comments and strings are invisible to this scan -- use
@@ -317,16 +317,70 @@ One `ReturnType<typeof getSupportsForModel>` became the named `ModelSupportIds`
 the module exports, per the repo's rule against publishing a contract as
 `ReturnType<typeof fn>`.
 
-### 7. The proxy mesh layer's per-type emitters -- NOT ATTEMPTED, as instructed
+### 7. The proxy mesh layer's per-type emitters -- DONE, by a SEAM not a descriptor
 
-`SupportProxyMeshLayer` emits a different primitive recipe per type -- a stump's
-frustum has its own radii and height fields, a stick has two cones, a brace has a
-profile curve. The previous pass deliberately left these, and that verdict
-stands: deriving them needs the descriptor to declare a type's PROXY GEOMETRY,
-which is a larger declaration than this plan contemplates.
+`SupportProxyMeshLayer` emitted a different primitive recipe per type -- a stump's
+frustum with its own radii and height, a stick with two cones, a brace with a
+profile curve. This section's verdict was that deriving them "needs the descriptor
+to declare a type's PROXY GEOMETRY, which is a larger declaration than this plan
+contemplates". That was the wrong SHAPE, not the wrong instinct: the recipes stay
+per type, they just move to where a per-type fact belongs.
 
-**Do not attempt this as part of the above.** It is its own plan. Note it as the
-ceiling on how low these counts can go without one.
+**What was built.** A registration seam beside the layer,
+`src/supports/proxyGeometry/seam.ts`, modelled on `exportGeometry/seam.ts` --
+which already says the thing this section needed: *"each type's export geometry is
+a fact about that type, so it lives in that type's own folder and registers itself
+here. Nothing else names a type."* Each of the eight types now has
+`<Type>/<type>ProxyGeometry.ts`, imported for its side effect from that folder's
+existing `<type>Registration.ts`, so the generated barrel still loads everything.
+
+The layer's eight loops and its nine per-collection aliases are gone. In their
+place is one walk over `SUPPORT_TYPES` that asks each type for its recipe:
+
+```ts
+for (const descriptor of SUPPORT_TYPES) {
+  const registered = supportProxyGeometryOf(descriptor.id);
+  if (!registered) continue;
+  if (registered.registration.detailedOnly && !includeDetailedPrimitives) continue;
+  if (registered.registration.skipInInteriorView && interiorSupportIdSet) continue;
+  for (const entity of Object.values(state[descriptor.location.key] ?? {})) {
+    if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(entity))) continue;
+    registered.build(entity as never, context);
+  }
+}
+```
+
+**Doing this needed the layer to become testable first.** Nothing rendered this
+component in a test, so there was no way to tell a correct derivation from a
+plausible one. The emitter came out as an exported pure function,
+`collectProxyPrimitives(state, { includeDetailedPrimitives, interiorSupportIdSet })`
+-- the same move section 1 made for `interiorSupportIds`. That is what made the
+byte-for-byte check below possible at all.
+
+**The two per-type decisions are now declared, not inlined.** The interior filter
+was uniform for every type except brace, which is a connecting structure between
+supports rather than one facing the model; and leaf emits nothing at all unless
+detailed primitives are on. Both are facts about those types, so both are
+registration flags -- `skipInInteriorView` and `detailedOnly`.
+
+**Verified byte-for-byte, with the capture taken BEFORE the change.** Every
+primitive of every model, in four scenarios (detailed, coarse, interior with
+nothing inside, interior with everything inside): **identical, 585,221 bytes each
+time**. The baseline was captured while the code was still the old emitter, which
+is what makes the comparison meaningful rather than a re-read.
+
+**Measured, spanning this section and the previous ones:** stump 77 -> 45, stick
+145 -> 93. 4,316 -> 4,001 references. The floor this plan estimated was stump ~40
+and stick ~90, so the emitters were indeed most of what remained.
+
+**One thing deliberately NOT derived.** Trunk's proxy shaft falls back to a 5mm
+stub when a segment ends with no top joint and no contact, but trunk's descriptor
+declares `shaftFallback.stubLengthMm: 10`. Using the declaration as the recipes
+were being written would have CHANGED trunk's proxy geometry -- so the literal is
+kept verbatim and the discrepancy is recorded here rather than silently resolved
+in either direction. `resolveSegmentEndpoints` has the same 10-vs-5 question to
+answer for the export and slice paths, and the captured baseline is what would
+catch it.
 
 ### Carried over
 
@@ -337,21 +391,25 @@ ceiling on how low these counts can go without one.
   `updateStump` was deleted rather than moved -- the generic pass already did
   what it did.
 - **`supportMarqueeShapes` in `SceneCanvas`** builds a pickable polyline per
-  type. Same class as section 7, same verdict.
-- **`hostKnot` assembled from `lower.kind`** at `KNOT_PLACEMENT_BY_TYPE` in
-  `state.ts` and in `page.tsx` has the gap section 2 hit: a kickstand's knot is
-  at its UPPER end through `hostKnotId`, and `lower.kind === 'knot'` is false for
-  it, so it is handed no knot. Two named call sites, one shared fix. This is a
-  latent DEFECT, not tidying -- do it before anything else touches endpoints.
+  type. This was "same class as section 7, same verdict" -- and section 7's
+  verdict moved, so the same seam shape applies: a per-type recipe registered
+  from the type's own folder. Not done, and now the ONLY per-type geometry left
+  outside a type's folder.
+- **`hostKnot` assembled from `lower.kind`** -- **FIXED**. It was called a latent
+  defect here; it was live. Both call sites (`KNOT_PLACEMENT_BY_TYPE` in
+  `state.ts` and the context menu in `page.tsx`) handed a kickstand no knot,
+  because its knot is at its UPPER end through `hostKnotId`. A knot riding a
+  kickstand was left behind when the kickstand moved. Both now read the declared
+  edges through `resolveDeclaredHosts`; see section 5.
 
 ### The floor
 
-With 5 and 6 done and 7 left alone, the measured floor is stump 63 and stick
-115 -- the estimate here was 40 and 90, so it was low by roughly half. The
-remainder is the proxy/marquee geometry plus the type's own folder, the
-registry, and the tests, which are exempt or are the type's own subject. Neither
-type reaches zero, and should not: zero would mean the renderer had no per-type
-geometry at all.
+Measured, with sections 5-7 done: stump 45 and stick 93. The estimate here was
+40 and 90, so after the proxy emitters moved the two are within a few
+references of it. What is left is the marquee geometry, plus the type's own
+folder, the registry and the tests, which are exempt or are the type's own
+subject. Neither type reaches zero, and should not: zero would mean the renderer
+had no per-type geometry at all.
 
 
 ---

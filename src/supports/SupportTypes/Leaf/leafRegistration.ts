@@ -6,6 +6,7 @@ import { addModelMetadata, appendConeGeometry } from '../../exportGeometry/helpe
 import { registerSettingsInference } from '../../supportTypeRegistry';
 import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
 import type { Leaf } from '../../types';
+import './leafProxyGeometry';
 
 function inferSettingsFromLeaf(leaf: Leaf, base?: SupportSettings): SupportSettings {
     const merged = mergeSettingsWithDefaults(base);

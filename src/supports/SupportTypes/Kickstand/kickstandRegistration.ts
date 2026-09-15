@@ -6,6 +6,7 @@ import { registerLateralStabiliser, type LateralStabiliserRequest } from '../../
 import type { SupportState } from '../../types';
 import type { AutoBracingSettings } from '../../autoBracing/settings';
 import { generateRequiredKickstands } from './kickstandStabiliser';
+import './kickstandProxyGeometry';
 
 /**
  * A kickstand stabilises a shaft without needing a partner to brace against,

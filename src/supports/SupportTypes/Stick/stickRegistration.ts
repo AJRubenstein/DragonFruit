@@ -5,6 +5,7 @@ import type * as THREE from 'three';
 import { registerContactBridgeBuilder } from '../../supportTypeRegistry';
 import { buildStick } from './stickBuilder';
 import { isShaftVerticalEnough } from './stickVerticality';
+import './stickProxyGeometry';
 
 // A stick bridges two model contacts, so it can be built from the type id
 // alone once the registry has chosen it by contact span.

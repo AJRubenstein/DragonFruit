@@ -11,6 +11,7 @@ import type { Roots, Trunk } from '../../types';
 // attachments onto the promoted shaft. Registered here because those rules are
 // the trunk's; the grid engine only decides WHICH host yields.
 import './trunkHostPromotion';
+import './trunkProxyGeometry';
 
 // A trunk's export geometry is its plate root plus the shaft above it. The root
 // is looked up from the live store rather than carried on the entity, so a

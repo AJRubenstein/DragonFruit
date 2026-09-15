@@ -6,6 +6,7 @@ import { updateBrace } from '../../state';
 import { addModelMetadata, SupportGeometryGenerator } from '../../exportGeometry/helpers';
 import { bezierToLineSegments } from '../../Curves/BezierUtils';
 import type { Brace, Knot } from '../../types';
+import './braceProxyGeometry';
 
 // A brace spans two knots and touches neither model nor plate, so its export
 // geometry is one shaft between them -- curved when the entity says so. Its

@@ -4,6 +4,7 @@ import { addModelMetadata, SupportGeometryGenerator } from '../../exportGeometry
 import { registerSettingsInference } from '../../supportTypeRegistry';
 import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
 import type { Branch } from '../../types';
+import './branchProxyGeometry';
 
 function inferSettingsFromBranch(branch: Branch, base?: SupportSettings): SupportSettings {
     const merged = mergeSettingsWithDefaults(base);

@@ -25,8 +25,10 @@ exactly what a derived key would have made impossible.
 
 ## 1. `SupportProxyMeshLayer.tsx` -- the interior-id loops -- DONE
 
-**The shape.** Nine aliases (`supportTrunks` … `supportStumps`) feed five
-near-identical loops that differ only in which contact fields they test:
+**The shape.** Nine per-collection aliases fed five near-identical loops that
+differ only in which contact fields they test. (The aliases are gone: the layer
+reads the state itself now, and this section's later sibling -- the emitters
+below -- moved each type's recipe into its own folder.)
 
 ```ts
 for (const leaf of Object.values(supportLeaves)) {
@@ -70,7 +72,7 @@ silent change to what the cavity view hides.
 
 ## 2. `RaftProxyMeshLayer.tsx` -- two aliases -- DONE
 
-`supportRoots` and `supportStumps` only. Small, same treatment, and worth doing
+Two per-collection aliases only. Small, same treatment, and worth doing
 in the same pass so the two mesh layers stay the same shape.
 
 Check whether the raft footprint genuinely wants only these two collections or
