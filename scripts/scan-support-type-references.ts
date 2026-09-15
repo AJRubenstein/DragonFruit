@@ -1,14 +1,19 @@
 /**
- * Finds every support type name used outside the registry.
+ * Finds every support type name used outside the registry, split by type.
  *
  * The vocabulary comes from the registry, so a new type is scanned
- * automatically. Comments are blanked before matching; the only exempt paths
- * are listed in EXEMPT.
+ * automatically. Comments and string bodies are blanked first: this counts
+ * identifiers only. For literals use `scan-type-name-literals.ts`.
+ *
+ * Identifiers listed in NOT_THE_TYPE contain a stem but mean something else;
+ * `--duds` prints them.
  *
  * Usage (needs tsx, as the registry is TypeScript):
- *   npx tsx scripts/scan-support-type-references.ts             summary by file
+ *   npx tsx scripts/scan-support-type-references.ts             summary by type and file
  *   npx tsx scripts/scan-support-type-references.ts --lines      every match
  *   npx tsx scripts/scan-support-type-references.ts --file X     one file
+ *   npx tsx scripts/scan-support-type-references.ts --type stump one type
+ *   npx tsx scripts/scan-support-type-references.ts --duds       what NOT_THE_TYPE excluded
  *   npx tsx scripts/scan-support-type-references.ts --json       machine readable
  *   npx tsx scripts/scan-support-type-references.ts --check --budget N
  */
@@ -35,7 +40,14 @@ const REGISTRY = 'src/supports/supportTypeRegistry.ts';
  */
 const EXEMPT = [REGISTRY, 'src/supports/types.ts', 'src/supports/SupportTypes/'];
 
-interface Match { line: number; identifier: string; text: string }
+/** Identifiers holding a type's stem while meaning something else. Matched whole. */
+const NOT_THE_TYPE = new Set([
+    // Drag bias on the current segment, not the stick type.
+    'stickiness',
+    'CURRENT_SEGMENT_STICKINESS',
+]);
+
+interface Match { line: number; identifier: string; text: string; stem: string }
 interface Entry { path: string; refs: number; lines: number; matches: Match[] }
 
 /**
@@ -44,19 +56,32 @@ interface Entry { path: string; refs: number; lines: number; matches: Match[] }
  * `island`, `overhang` and `root` are also general geometry vocabulary, and
  * scanning them buries the real findings under thousands of false matches.
  */
-function vocabulary(): string[] {
-    const stems = new Set<string>();
-    for (const descriptor of SUPPORT_TYPES) stems.add(descriptor.id);
-    for (const key of SUPPORT_COLLECTION_KEYS) stems.add(key);
-    stems.delete('roots');
-    stems.delete('knots');
-    if (stems.size === 0) throw new Error('registry exported no type names');
-    return [...stems];
+function vocabulary(): Map<string, string> {
+    const byStem = new Map<string, string>();
+    for (const descriptor of SUPPORT_TYPES) {
+        byStem.set(descriptor.id, descriptor.id);
+        byStem.set(descriptor.location.key, descriptor.id);
+    }
+    // Shared primitives, not types.
+    byStem.delete('roots');
+    byStem.delete('knots');
+    if (byStem.size === 0) throw new Error('registry exported no type names');
+    return byStem;
+}
+
+/** The type a matched identifier belongs to: the longest stem it contains. */
+function stemOf(identifier: string, byStem: Map<string, string>): string {
+    const low = identifier.toLowerCase();
+    let best = '';
+    for (const stem of byStem.keys()) {
+        if (low.includes(stem) && stem.length > best.length) best = stem;
+    }
+    return best;
 }
 
 /** Matches a stem inside an identifier, so `getTrunkById` counts as well as `trunk`. */
-function buildPattern(stems: string[]): RegExp {
-    const alts = stems
+function buildPattern(stems: readonly string[]): RegExp {
+    const alts = [...stems]
         .flatMap((s) => [s, s[0].toUpperCase() + s.slice(1), s.toUpperCase()])
         .sort((a, b) => b.length - a.length)
         .join('|');
@@ -113,9 +138,12 @@ const value = (name: string) => {
     return i === -1 ? null : args[i + 1];
 };
 
-const pattern = buildPattern(vocabulary());
+const byStem = vocabulary();
+const pattern = buildPattern([...byStem.keys()]);
 const only = value('--file');
+const onlyType = value('--type');
 const files: Entry[] = [];
+const duds: { path: string; line: number; identifier: string; text: string }[] = [];
 
 for (const abs of walk(SRC)) {
     const path = relative(ROOT, abs).split(sep).join('/');
@@ -132,7 +160,15 @@ for (const abs of walk(SRC)) {
     const matches: Match[] = [];
     blankComments(raw).split('\n').forEach((text, index) => {
         for (const m of text.matchAll(pattern)) {
-            matches.push({ line: index + 1, identifier: m[0], text: rawLines[index]?.trim() ?? '' });
+            const line = rawLines[index]?.trim() ?? '';
+            if (NOT_THE_TYPE.has(m[0])) {
+                duds.push({ path, line: index + 1, identifier: m[0], text: line });
+                continue;
+            }
+            const stem = stemOf(m[0], byStem);
+            const type = byStem.get(stem) ?? stem;
+            if (onlyType && type !== onlyType) continue;
+            matches.push({ line: index + 1, identifier: m[0], text: line, stem: type });
         }
     });
     if (matches.length) files.push({ path, refs: matches.length, lines: rawLines.length, matches });
@@ -141,8 +177,25 @@ for (const abs of walk(SRC)) {
 files.sort((a, b) => b.refs - a.refs);
 const total = files.reduce((sum, f) => sum + f.refs, 0);
 
-if (flag('--json')) {
-    console.log(JSON.stringify({ total, files: files.length, entries: files }, null, 2));
+/** Reference count per type id, highest first. */
+function byType(): [string, number][] {
+    const counts = new Map<string, number>();
+    for (const f of files) {
+        for (const m of f.matches) counts.set(m.stem, (counts.get(m.stem) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+if (flag('--duds')) {
+    console.log(`${duds.length} identifiers excluded by NOT_THE_TYPE\n`);
+    for (const d of duds) {
+        console.log(`  ${d.path}:${d.line}  ${d.identifier.padEnd(28)} ${d.text.slice(0, 80)}`);
+    }
+} else if (flag('--json')) {
+    console.log(JSON.stringify({
+        total, files: files.length, byType: Object.fromEntries(byType()),
+        duds: duds.length, entries: files,
+    }, null, 2));
 } else if (flag('--lines')) {
     for (const f of files) {
         console.log(`\n${f.path}  (${f.refs})`);
@@ -151,7 +204,11 @@ if (flag('--json')) {
         }
     }
 } else {
-    console.log(`${total} references across ${files.length} files\n`);
+    console.log(`${total} references across ${files.length} files`
+        + (duds.length ? `  (${duds.length} excluded, see --duds)` : '') + '\n');
+    console.log('  by type:');
+    for (const [type, n] of byType()) console.log(`  ${String(n).padStart(5)}  ${type}`);
+    console.log('\n  by file:');
     for (const f of files.slice(0, 30)) console.log(`  ${String(f.refs).padStart(5)}  ${f.path}`);
     const rest = files.slice(30);
     if (rest.length) {
