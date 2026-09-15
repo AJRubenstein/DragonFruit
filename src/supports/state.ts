@@ -2197,10 +2197,8 @@ export function toggleSegmentCurve(segmentId: string) {
         return;
     }
 
-    // Which type owns this segment is a registry question, not a five-branch
-    // search: `findShaftOwnerOfSegment` walks the types that declare segments.
-    // The search this replaces listed five collections by hand and so never
-    // looked in `stumps` -- a stump segment was silently un-toggleable.
+    // `findShaftOwnerOfSegment` walks every type that declares segments, so a
+    // type is covered by its declaration rather than by being listed here.
     const owner = findShaftOwnerOfSegment(segmentId);
     if (!owner) return;
     const entity = getSupportEntity(owner.typeId, owner.id) as unknown as ShaftEntity | null;
@@ -2223,13 +2221,9 @@ export function toggleSegmentCurve(segmentId: string) {
         };
         next.segments[segmentIndex] = straight;
     } else {
-        // Where the shaft really starts and ends, resolved from the type's
-        // declared lower and upper endpoints -- the same resolution the export,
-        // split and joint-drag paths use. The arms this replaces re-derived it
-        // per type, casting the container to Trunk and reading `.contactCone`,
-        // which ended the curve at the contact point rather than at the socket
-        // the shaft actually reaches, and fell back to a stubbed direction for
-        // the types whose contacts are named otherwise.
+        // Where the shaft starts and ends, from the type's declared lower and
+        // upper endpoints -- the same resolution the export, split and
+        // joint-drag paths use, so the curve spans the shaft the app draws.
         const endpoints = resolveSegmentEndpoints(
             entity,
             segment,

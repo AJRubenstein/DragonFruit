@@ -54,6 +54,4 @@ registerSupportExportGroup<Stump>('stump', (stump) => {
 });
 
 // No bespoke updater: stump declares `hasEditableSettings: false` and no knot
-// rides its segment, so the generic pass that every other type takes already
-// does exactly what `replaceSupportEntity` did -- and the settings applier, the
-// only caller that needed that narrower write, still has it.
+// rides its segment, so the generic pass covers it.

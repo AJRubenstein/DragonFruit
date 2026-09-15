@@ -918,7 +918,7 @@ Therefore, for every stage:
   form reports real errors — it nearly let a file that does not compile be
   committed, and neither the suite nor the goldens catch it (they run through
   `tsx`).
-- Full suite (925 src, 82 plugins) + all 44 goldens (support 16, export 16,
+- Full suite (929 src, 82 plugins) + all 44 goldens (support 16, export 16,
   slice 12), **including untracked test files** — `git ls-files` skips them.
 - `npm run check:docs` clean.
 - Gated lint, `--max-warnings 0`.

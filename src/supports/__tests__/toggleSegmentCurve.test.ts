@@ -17,16 +17,13 @@ import type { BezierSegment, Joint, Segment, StraightSegment, Vec3 } from '../ty
 /**
  * `toggleSegmentCurve` converts a shaft segment between straight and curved.
  *
- * It used to find the owning segment by scanning five collections written out by
- * hand. That list did not include `stumps`, so a stump's segment was silently
- * un-toggleable. It also re-derived the curve's handles per type, casting the
- * container to Trunk and reading `.contactCone`, so a shaft ending at a contact
- * got handles aimed at the contact point rather than at the socket the shaft
- * actually reaches.
+ * These tests iterate `SUPPORT_TYPES` filtered by `hasSegments`, the same
+ * declaration the code walks, so every shafted type is covered by being
+ * declared. The failure to watch for is a walk that skips a type: that type's
+ * segment stays straight, silently.
  *
- * The walk is now over `SUPPORT_TYPES`, filtered by `hasSegments`, so these
- * tests iterate the same declaration the code does: the mutation to watch for is
- * a walk that skips a type, and the skipped type's segment simply stays straight.
+ * The handles come from the declared endpoints, so a shaft ending at a contact
+ * reaches the socket rather than the raw contact point.
  */
 
 const vec = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
@@ -230,9 +227,9 @@ test('the handles follow the shaft, not the contact point it ends against', () =
 });
 
 test('a shaft ending at a contact reaches the socket, past the contact point', () => {
-    // The trunk case the old per-type arms got wrong: no top joint, so the span
-    // comes from the declared endpoints. The contact sits on the surface; the
-    // socket is offset from it along the normal, and the handles must reach that.
+    // A trunk with no top joint: the span comes from the declared endpoints. The
+    // contact sits on the surface and the socket is offset from it along the
+    // normal, so the handles must reach the socket.
     const descriptor = SUPPORT_TYPES.find((candidate) => candidate.id === 'trunk')!;
     const segmentId = seed('trunk');
 

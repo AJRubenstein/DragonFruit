@@ -265,7 +265,7 @@ on a rename.
 than went away.
 
 **Gates:** delete `tsconfig.tsbuildinfo`, then `npx tsc --noEmit -p
-tsconfig.json`, the full suite (925 src, 82 plugins), all 44 goldens (support
+tsconfig.json`, the full suite (929 src, 82 plugins), all 44 goldens (support
 16, export 16, slice 12), `check:docs`, `check:lint`, and a real `next build`.
 
 **Running them on Windows**, where the obvious commands mislead:
