@@ -35,7 +35,7 @@ import type { IslandMarker } from '@/volumeAnalysis/IslandScan/islandOverlayLogi
 import type { ScanResults } from '@/volumeAnalysis/IslandScan/ScanOrchestrator';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, Segment, SupportMode, WarningCode } from '@/supports/types';
-import { getSupportTypeDescriptor, hostKnotFieldsFor, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
 import { collectRaftBaseCirclesByModel, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
 import type { ContactCone } from '@/supports/SupportPrimitives/ContactCone/types';
@@ -1582,66 +1582,76 @@ export function SceneCanvas({
       expandByRadius(knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2));
     }
 
-    for (const trunk of Object.values(supportStateForBounds.trunks)) {
-      if (trunk.modelId !== modelId) continue;
-      for (const seg of trunk.segments) {
-        if (seg.topJoint?.pos) expandByRadius(seg.topJoint.pos, Math.max(0.001, (seg.topJoint.diameter ?? seg.diameter) / 2));
-        if (seg.bottomJoint?.pos) expandByRadius(seg.bottomJoint.pos, Math.max(0.001, (seg.bottomJoint.diameter ?? seg.diameter) / 2));
-      }
-      if (trunk.contactCone) {
-        expandByRadius(trunk.contactCone.pos, Math.max(0.001, trunk.contactCone.profile.contactDiameterMm / 2));
-        const socket = getFinalSocketPosition(trunk.contactCone);
-        expandByRadius(socket, Math.max(0.001, trunk.contactCone.profile.bodyDiameterMm / 2));
-      }
-    }
-
-    for (const branch of Object.values(supportStateForBounds.branches)) {
-      if (branch.modelId !== modelId) continue;
-      for (const seg of branch.segments) {
-        if (seg.topJoint?.pos) expandByRadius(seg.topJoint.pos, Math.max(0.001, (seg.topJoint.diameter ?? seg.diameter) / 2));
-        if (seg.bottomJoint?.pos) expandByRadius(seg.bottomJoint.pos, Math.max(0.001, (seg.bottomJoint.diameter ?? seg.diameter) / 2));
-      }
-      if (branch.contactCone) {
-        expandByRadius(branch.contactCone.pos, Math.max(0.001, branch.contactCone.profile.contactDiameterMm / 2));
-        const socket = getFinalSocketPosition(branch.contactCone);
-        expandByRadius(socket, Math.max(0.001, branch.contactCone.profile.bodyDiameterMm / 2));
+    // Each type's base, for the types that carry one instead of a Roots entry:
+    // the frustum IS the root. Nothing else here is type-specific, so the rest
+    // of such a type is covered by the segment and contact passes below.
+    for (const placement of INLINE_ROOT_TYPES) {
+      const entities = supportStateForBounds[placement.collectionKey] as unknown as
+        | Record<string, Record<string, unknown>>
+        | undefined;
+      for (const entity of Object.values(entities ?? {})) {
+        if (entity.modelId !== modelId) continue;
+        const base = entity[placement.posField] as { x: number; y: number; z: number } | undefined;
+        const radius = entity[placement.radiusField];
+        if (!base) continue;
+        expandByRadius(base, Math.max(0.001, (typeof radius === 'number' ? radius : 0) / 2));
       }
     }
 
-    for (const leaf of Object.values(supportStateForBounds.leaves)) {
-      if (leaf.modelId !== modelId || !leaf.contactCone) continue;
-      expandByRadius(leaf.contactCone.pos, Math.max(0.001, leaf.contactCone.profile.contactDiameterMm / 2));
-      const socket = getFinalSocketPosition(leaf.contactCone);
-      expandByRadius(socket, Math.max(0.001, leaf.contactCone.profile.bodyDiameterMm / 2));
-    }
+    // One pass for every type that declares a segment. The joints are handled
+    // the same way for all of them; the contacts differ, and a contact is
+    // declared with its own kind and field. A cone reaches its socket through
+    // the primitive's thickness, so it contributes a circle at each end and at
+    // two radii; a disk's socket is the joint the segment pass already
+    // expanded, so it contributes one.
+    for (const descriptor of SUPPORT_TYPES) {
+      const entities = supportStateForBounds[descriptor.location.key] as unknown as
+        | Record<string, Record<string, unknown>>
+        | undefined;
+      // Read once per type, not once per entity: this allocates.
+      const contactEndpoints = contactEndpointsFor(descriptor.id);
 
-    for (const twig of Object.values(supportStateForBounds.twigs)) {
-      if (twig.modelId !== modelId) continue;
-      for (const seg of twig.segments) {
-        if (seg.topJoint?.pos) expandByRadius(seg.topJoint.pos, Math.max(0.001, (seg.topJoint.diameter ?? seg.diameter) / 2));
-        if (seg.bottomJoint?.pos) expandByRadius(seg.bottomJoint.pos, Math.max(0.001, (seg.bottomJoint.diameter ?? seg.diameter) / 2));
-      }
-      expandByRadius(twig.contactDiskA.pos, Math.max(0.001, twig.contactDiskA.contactDiameterMm / 2));
-      expandByRadius(twig.contactDiskB.pos, Math.max(0.001, twig.contactDiskB.contactDiameterMm / 2));
-    }
+      for (const entity of Object.values(entities ?? {})) {
+        if (entity.modelId !== modelId) continue;
 
-    for (const stick of Object.values(supportStateForBounds.sticks)) {
-      if (stick.modelId !== modelId) continue;
-      for (const seg of stick.segments) {
-        if (seg.topJoint?.pos) expandByRadius(seg.topJoint.pos, Math.max(0.001, (seg.topJoint.diameter ?? seg.diameter) / 2));
-        if (seg.bottomJoint?.pos) expandByRadius(seg.bottomJoint.pos, Math.max(0.001, (seg.bottomJoint.diameter ?? seg.diameter) / 2));
-      }
-      expandByRadius(stick.contactConeA.pos, Math.max(0.001, stick.contactConeA.profile.contactDiameterMm / 2));
-      expandByRadius(stick.contactConeB.pos, Math.max(0.001, stick.contactConeB.profile.contactDiameterMm / 2));
-      expandByRadius(getFinalSocketPosition(stick.contactConeA), Math.max(0.001, stick.contactConeA.profile.bodyDiameterMm / 2));
-      expandByRadius(getFinalSocketPosition(stick.contactConeB), Math.max(0.001, stick.contactConeB.profile.bodyDiameterMm / 2));
-    }
+        // The two passes are not the same set of types: a leaf declares a
+        // contact and no segments, so skipping a type for having no shaft would
+        // drop its tip from the bounds entirely.
+        for (const segment of (descriptor.hasSegments ? (entity.segments ?? []) : []) as {
+          diameter: number;
+          topJoint?: { pos: { x: number; y: number; z: number }; diameter?: number };
+          bottomJoint?: { pos: { x: number; y: number; z: number }; diameter?: number };
+        }[]) {
+          if (segment.topJoint?.pos) {
+            expandByRadius(segment.topJoint.pos, Math.max(0.001, (segment.topJoint.diameter ?? segment.diameter) / 2));
+          }
+          if (segment.bottomJoint?.pos) {
+            expandByRadius(segment.bottomJoint.pos, Math.max(0.001, (segment.bottomJoint.diameter ?? segment.diameter) / 2));
+          }
+        }
 
-    for (const kickstand of Object.values(supportStateForBounds.kickstands)) {
-      if (kickstand.modelId !== modelId) continue;
-      for (const seg of kickstand.segments) {
-        if (seg.topJoint?.pos) expandByRadius(seg.topJoint.pos, Math.max(0.001, (seg.topJoint.diameter ?? seg.diameter) / 2));
-        if (seg.bottomJoint?.pos) expandByRadius(seg.bottomJoint.pos, Math.max(0.001, (seg.bottomJoint.diameter ?? seg.diameter) / 2));
+        for (const endpoint of contactEndpoints) {
+          const contact = entity[endpoint.field] as {
+            pos?: { x: number; y: number; z: number };
+            profile?: { contactDiameterMm?: number; bodyDiameterMm?: number };
+            contactDiameterMm?: number;
+          } | undefined;
+          if (!contact?.pos) continue;
+
+          const contactDiameter = endpoint.kind === 'cone'
+            ? contact.profile?.contactDiameterMm
+            : contact.contactDiameterMm;
+          if (typeof contactDiameter === 'number') {
+            expandByRadius(contact.pos, Math.max(0.001, contactDiameter / 2));
+          }
+
+          if (endpoint.kind === 'cone' && typeof contact.profile?.bodyDiameterMm === 'number') {
+            expandByRadius(
+              getFinalSocketPosition(contact as never),
+              Math.max(0.001, contact.profile.bodyDiameterMm / 2),
+            );
+          }
+        }
       }
     }
 
