@@ -3062,17 +3062,14 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         // Re-apply clipping when committed support geometry collections change.
         // Without this, newly added meshes can miss clipping until some other
         // dependency (like slider movement) forces a re-run.
-        state.roots,
-        state.trunks,
-        state.branches,
-        state.leaves,
-        state.twigs,
-        state.sticks,
-        state.braces,
-        state.stumps,
-        state.knots,
+        //
+        // `state` is the whole store snapshot, so one identity covers every
+        // collection. This listed ten of them by hand, which is the same shape
+        // the snap-target memos had: what the effect READS was derived while what
+        // it DEPENDED ON was not, so a type added to the registry would re-clip
+        // only when something else happened to force a run.
+        state,
         kickstandRootsById,
-        state.kickstands,
         kickstandKnotsById,
     ]);
 

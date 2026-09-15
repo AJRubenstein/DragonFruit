@@ -6,7 +6,7 @@ import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { getSnapshot as getSupportSnapshot, subscribe as subscribeSupportState } from '@/supports/state';
 import { getSupportsForModel, modelIdOfParentShaft } from '@/supports/PlacementLogic/SupportModelLinker';
-import { getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_STATE_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_STATE_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
 type ModelSupportsModalProps = {
   isOpen: boolean;
