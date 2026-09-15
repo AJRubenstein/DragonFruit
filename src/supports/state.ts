@@ -2948,11 +2948,9 @@ for (const descriptor of SUPPORT_TYPES) {
     if (!descriptor.hasSegments) continue;
 
     KNOT_PLACEMENT_BY_TYPE.set(descriptor.id, (entity, knot, segment, segmentIndex) => {
-        // Both hosts come off the declared edges. Gating the knot on
-        // `lower.kind === 'knot'` and reading `parentKnotId` handed a KICKSTAND
-        // neither: its knot is at its UPPER end, through `hostKnotId`. Its last
-        // segment -- the one that ends AT that knot -- then resolved to nothing,
-        // so a knot riding it was left behind when the kickstand moved.
+        // Both hosts come off the declared edges. A kickstand's knot is at its
+        // UPPER end through `hostKnotId`, so reading `lower.kind` would hand it
+        // none and its last segment would resolve to nothing.
         const hosts = resolveDeclaredHosts(descriptor.id, entity as Record<string, unknown>);
 
         // A type declaring a host it was handed none of cannot place anything.

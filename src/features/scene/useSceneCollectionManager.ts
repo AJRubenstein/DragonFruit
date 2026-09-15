@@ -764,10 +764,8 @@ function remapModelIdsInPayload<T>(value: T, idMap: Map<string, string>): T {
 /**
  * Whether a serialized scene carries any support at all.
  *
- * Walked over the registry's collections rather than listed by hand. The list
- * this replaces named nine collections and omitted `stumps`, even though
- * `DragonfruitImportFormat` declares it -- so a scene whose only support was a
- * stump read as having no supports.
+ * Walks every collection the registry declares, so a type added later counts
+ * without an edit here.
  */
 function voxlSupportsContainData(document: VoxlDocumentV1): boolean {
   return payloadCollections(document.supports).some((entities) => entities.length > 0);
@@ -861,11 +859,9 @@ function asDragonfruitImportFormat(value: unknown): DragonfruitImportFormat | nu
     return null;
   }
 
-  // Every collection the registry declares, not just the three that happened to
-  // be listed: `stumps` is optional in the payload too, and an unchecked
-  // optional collection is one a malformed payload can smuggle a non-array
-  // through. The required ones were already checked above, so re-checking them
-  // as "absent or an array" costs nothing.
+  // Every optional collection the registry declares: an unchecked one is a
+  // non-array a malformed payload can smuggle through. The required ones are
+  // checked above, and re-checking them as "absent or an array" costs nothing.
   const collections = candidate as unknown as Record<string, unknown>;
   for (const key of SUPPORT_COLLECTION_KEYS) {
     const value = collections[key];

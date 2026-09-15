@@ -239,9 +239,9 @@ declared field, so it should not need this at all.
 
 ## Status: neither type is clean
 
-Sections 1-3 are done. **Stump is at 73 references and stick at 131**, and the
-work that remains is NOT the shapes this plan described -- it is three new ones,
-below, plus two carried-over items.
+Sections 1-6 are done. **Stump is at 63 references and stick at 115.** Section 7
+is the only one of this plan's sections left, and it is deliberately deferred to
+its own plan; the carried-over items below are also open.
 
 Neither type can be renamed by editing the registry alone today. Both are
 close: the literal budget is 0 dispatch / 0 declaration, so nothing BRANCHES on

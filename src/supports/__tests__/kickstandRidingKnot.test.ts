@@ -8,17 +8,12 @@ import type { Joint, Segment, Vec3 } from '../types';
 /**
  * A knot riding a kickstand's shaft follows the kickstand when it moves.
  *
- * The knot-placement rule is registered per type from `SUPPORT_TYPES`, and it
- * built its hosts as `lower.kind === 'knot' ? state.knots[entity.parentKnotId]
- * : undefined`. A KICKSTAND declares `lower.kind: 'plateRoot'` and
- * `upper.kind: 'knot'`, and the field holding its host is `hostKnotId` -- so
- * that expression handed it no knot. `resolveSegmentEndpoints` then returned
- * null for the LAST segment, the one with no top joint that ends AT the host
- * knot, and the rule returned null with it: the knot stayed put while the
- * kickstand moved away from under it.
+ * A kickstand declares `lower.kind: 'plateRoot'` and `upper.kind: 'knot'`, and
+ * holds its host in `hostKnotId`. Its hosts must therefore be read off the
+ * declared edges: gating on `lower.kind` hands it no knot, and its last segment
+ * -- the one with no top joint, ending at that knot -- then resolves to nothing.
  *
- * Reading both hosts off the declared edges fixes it. This pins the observable
- * result -- the knot ends up on the moved shaft -- not the mechanism.
+ * This pins the observable result: the knot ends up on the moved shaft.
  */
 
 const vec = (x: number, y: number, z: number): Vec3 => ({ x, y, z });

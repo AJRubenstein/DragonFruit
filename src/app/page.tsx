@@ -5763,8 +5763,8 @@ export default function Home() {
           const segment = entity.segments[segmentIndex];
           if (segment) {
             const descriptor = getSupportTypeDescriptor(owner.typeId);
-            // Read off the declared edges: `lower.kind` + `parentKnotId` gave a
-            // kickstand no knot, because its knot is at its UPPER end.
+            // Read off the declared edges: a kickstand's knot is at its upper
+            // end, so `lower.kind` would hand it none.
             const hosts = resolveDeclaredHosts(owner.typeId, entity as unknown as Record<string, unknown>);
             const endpoints = resolveSegmentEndpoints(entity, segment, segmentIndex, hosts);
 
