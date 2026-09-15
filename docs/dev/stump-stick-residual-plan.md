@@ -169,19 +169,47 @@ A hand-written union of type ids survives a rename with NO compile error --
 
 ## 3. Collection-named locals
 
-`for (const stick of …state.sticks)`, `for (const stump of …state.stumps)` in
-code that is not about that type: `SceneCanvas` bounds and marquee shapes,
-`SupportProxyMeshLayer` interior ids, `SupportRenderer` lookups.
+**DONE for the derivable ones, with two real bugs found and fixed.** The section
+was right that these loops are per-type loops inside functions that want every
+type; it was wrong that the fix is uniform. Measured verdicts:
 
-Each is a per-type loop inside a function that wants every type. The fix is the
-same collapse already made in `SupportRenderer` and `SupportProxyMeshLayer`:
-walk `SUPPORT_TYPES`, read `descriptor.location.key`, ask the registry the
-question the loop body asks by hand.
+**`SceneCanvas` bounds -- DERIVED, and it was broken twice over.**
+`computeSupportAndRaftWorldBounds` had six per-type loops plus a roots loop. It
+is now two passes: the types declaring segments (joints uniformly, contacts
+through each type's declared `kind` and `field`), and `INLINE_ROOT_TYPES` for
+the bases that are not Roots entries.
 
-**`supportMarqueeShapes` in `SceneCanvas` is the exception.** Its per-type
-geometry (which endpoints, whether sockets count, whether a contact cone is
-required) is genuinely per type. Renaming the local is the honest fix there --
-a local variable name cannot be derived.
+- **STUMP WAS NEVER IN THE BOX AT ALL.** There was no `stumps` loop and stump
+  has no Roots entry, so nothing in the function looked at one. A model whose
+  only support is a stump got `null` bounds -- no support bounds whatsoever --
+  and a stump away from a model's other supports sat outside the box. This is
+  section 3's own subject matter arriving as a bug rather than as untidiness.
+- **The contact set is not the `hasSegments` set.** Leaf declares a contact and
+  no segments. Hanging the contact pass off `hasSegments` drops leaf's tip from
+  the box; it did, by 0.13mm on the fixture, which is exactly the size of
+  mistake that survives a golden suite.
+
+Verified identical to a verbatim reproduction of the six old loops on the
+criosphinx fixture, and the stump cases measured separately since the fixture's
+stump sits inside the box the old loops produced.
+
+**`supportMarqueeShapes` -- PER-TYPE, confirmed rather than assumed.** Nine
+loops building pickable polylines, differing in which endpoints contribute,
+whether a socket counts and whether a contact cone is required. Deriving it
+needs the descriptor to declare a type's pickable geometry. The locals there are
+already honestly named for their type, so there is nothing to rename either.
+
+**`SupportProxyMeshLayer` interior ids -- already done** (see
+`per-type-alias-cleanup.md` §1). Its **proxy primitives are PER-TYPE**: each type
+emits a different recipe, a stump's frustum carrying its own base/top radius and
+height, a brace its profile curve. Same reason as the marquee.
+
+**`SupportRenderer` lookups -- the one exception is legitimate.**
+`supportIdByContactDiskId` adds the near-plate type's contact cones because the
+render lookup worker does not index them. It walks each type's declared contact
+fields to do it, and a type that stops declaring a cone drops out on its own.
+**The gap it works around is worth its own look**: the worker indexes contacts by
+declared field, so it should not need this at all.
 
 ---
 
@@ -191,6 +219,25 @@ a local variable name cannot be derived.
   `CURRENT_SEGMENT_STICKINESS`. `--duds` prints what it excluded.
 - The string "models stick out of the printer build volume" is prose in a
   comment field; the scan blanks strings, so it never counted.
+
+---
+
+## What is left, and why
+
+Sections 1-3 are done. What remains is not the shapes this plan described:
+
+- **`updateLeaf` and `updateBrace`** still live in `state.ts` and still name
+  their type. Not equivalent to the generic path (leaf's cone-host knot
+  recompute, brace's ordered span-host-first settle), so each needs its store
+  dependency exposed as a named seam before it can move. Section 1 explains.
+- **Per-type geometry in `supportMarqueeShapes` and the proxy mesh layer.** A
+  real refactor, needing pickable and proxy-anchor declarations on the
+  descriptor. Out of this plan's scope by its own test.
+- **`hostKnot` assembled from `lower.kind`** at `KNOT_PLACEMENT_BY_TYPE` in
+  `state.ts` and in `page.tsx` has the same gap that section 2 hit: a kickstand's
+  knot is at its UPPER end through `hostKnotId`, and `lower.kind === 'knot'` is
+  false for it, so it is handed no knot. Two named call sites, one shared fix.
+
 
 ---
 
