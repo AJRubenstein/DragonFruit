@@ -127,6 +127,7 @@ nav:
           - Per-Type Alias Cleanup: dev/per-type-alias-cleanup.md
           - Stump And Stick Residuals: dev/stump-stick-residual-plan.md
           - Support Hotspots: dev/support-hotspots-plan.md
+          - Rename Close-Out: dev/rename-closeout-plan.md
           - Support Pathfinding V3: dev/support-pathfinding-v3.md
           - Grid and Branching: dev/grid-and-branching.md
           - Raft Geometry: dev/raft-geometry.md
