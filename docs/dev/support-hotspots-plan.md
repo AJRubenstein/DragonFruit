@@ -1,7 +1,7 @@
 # The next phase: the five hotspot files
 
-**Status: sections 1-3 are DONE (1 and 3 converted, 2 measured and left).
-Sections 4 and 5 are not started.** Work them in order.
+**Status: sections 1-4 are DONE (1 and 3 converted, 2 and 4 measured and left).
+Section 5 is not started.** It is the file every other one depends on; do it last.
 
 The stump/stick plan is finished. It cleared the two smallest types to 36 and 84
 and, in doing so, built the pattern the rest of the work uses: a per-type fact
@@ -163,11 +163,52 @@ endpoint", and that is exactly right: a brace's endpoints are knots it does not
 own the way a member is hosted by one, so counting knot users needs the separate
 pass. Brace is the subject.
 
-### 4. `SupportRenderer.tsx` (457)
+### 4. `SupportRenderer.tsx` -- CLASSIFIED, ALREADY DERIVED
 
-Brace 137, leaf 130, kickstand 72, twig 42. Sections 7 and 8 already moved the
-proxy and marquee geometry out of the render path into type folders; this is what
-is left after that. Expect the same seam shape to apply again.
+Brace 137, leaf 130, kickstand 72, twig 42. The plan expected "the same seam shape
+to apply again"; the classification says the seam shape was already applied here,
+by sections 7 and 8 of the stump/stick plan, and what is left is the renderer
+being a renderer. Evidence, rather than an impression:
+
+**The type ids are derived.**
+
+```ts
+const LEAF_TYPE_ID  = coneKnotHostType();
+const BRACE_TYPE_ID = spanKnotHostType();
+```
+
+**The dispatch is derived.** `renderDetailFor(typeId)` and `selectedOf(typeId)`
+walk `SUPPORT_TYPES`; `renderListByType` is built by walking the registry. The
+per-type render passes are ordered deliberately, which is why the JSX calls
+`renderDetailFor` per type rather than looping in one place -- that is structure,
+not naming.
+
+**The geometry already moved.** Proxy primitives and marquee polylines are in
+`<Type>/<type>ProxyGeometry.ts` and `<Type>/<type>MarqueeShape.ts` behind their
+seams. `typeHasBatchedMarqueeOverlay` and `supportIsDrawnSelected` decide the two
+live-highlight routes from declared flags rather than names.
+
+**What remains is the subject.** The count is dominated by a type being what a
+block of code renders: brace 137 and leaf 130 are mostly `braceList`, `brace`,
+`braceDiameterMm`, the leaf's preview batch, and the renderer's own locals -- the
+class the plan's own test says to leave alone. A local named after the type it
+holds cannot be derived, and should not be.
+
+**One dead thing removed.** Of the eight per-type list locals
+(`trunkList` … `kickstandList`), one was assigned and never used:
+
+```
+568  'stickList' is assigned a value but never used.
+```
+
+Seven of the eight feed a render pass. `stickList` fed nothing -- it was the
+residue of a pass that had already moved -- so it is gone, and the lint finding
+with it. The other list locals stay: they read raw state where `renderListByType`
+reads state plus the drag overrides, so they are not redundant with it.
+
+**No conversion was possible here.** Deriving the remaining names would mean
+inventing a declaration for "this block renders braces", which is not a fact the
+registry can hold.
 
 ### 5. `state.ts` (532)
 

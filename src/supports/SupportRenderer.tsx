@@ -565,7 +565,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
         return map;
     }, [twigList, activeTwigDragPreview]);
-    const stickList = useMemo(() => Object.values(state.sticks), [state.sticks]);
     const braceList = useMemo(() => Object.values(state.braces), [state.braces]);
     const stumpList = useMemo(() => Object.values(state.stumps), [state.stumps]);
     const kickstandList = useMemo(() => Object.values(state.kickstands), [state.kickstands]);
