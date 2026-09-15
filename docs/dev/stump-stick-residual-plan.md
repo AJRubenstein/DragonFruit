@@ -60,29 +60,35 @@ not chased. Section 4.
 folder and imported back out of `state.ts`. The registration is derived; the
 body is not, and it is the body that names the type.
 
+**SECTION 1 IS DONE, and it needed no move.** The plan's own "Check first" is
+what settled it: `updateStump`'s whole body was `replaceSupportEntity(stump)`,
+which is what the generic pass does for every type that registers nothing, so
+the bespoke updater was DELETED rather than relocated and stump simply takes the
+generic path. `replaceSupportEntity` lost its one-argument overload with it,
+leaving the single `(typeId, entity)` form its one remaining caller (the
+settings applier) uses. `StumpRenderer` writes through
+`updateSupportEntity({ ...latest, contactCone })`, which reads the type off the
+entity.
+
+Two claims in the note below were wrong, and measuring beat reading:
+
+- The generic path does NOT "cache the settings hex" for a stump: stump declares
+  `hasEditableSettings: false`, so that whole branch is dead for it.
+- It DOES run a knot scan, and the scan is live rather than vacuous --
+  `getKnotPlacementOnShaft('stump')` returns a placement function, and probing it
+  with a knot on a stump segment moves the knot. What makes it harmless is that
+  no knot rides a stump in the store, not that the code declines to try.
+
+`updateLeaf` and `updateBrace` remain, and are NOT equivalent to the generic
+path: leaf's cone-host knot recompute and brace's ordered span-host-first settle
+are exactly what the generic pass does not do. Moving either still means
+exporting store internals as a named seam first.
+
 **Why they have not moved.** Each reads store internals that are module-private
 to `state.ts`: `state.leaves` / `state.braces` directly,
 `getCachedSupportSettingsHex`, `recomputeSpanHostKnotGeometry`, and
 `replaceSupportEntity` (private, overloaded). Moving a body today means
 exporting the store's internals, which trades one coupling for a worse one.
-
-**`updateStump` is the cheapest and should go first.** Its whole body is
-`replaceSupportEntity(stump)`. Exporting a single narrow write -- a
-`replaceSupportEntity` the registry owns, or a `writeSupportEntity(typeId,
-entity)` seam -- moves it into `SupportTypes/Stump/` with no other change, and
-removes the only reason `Stump` is imported into `state.ts` at all.
-
-**Then leaf and brace, which need more.** `updateLeaf` wants the settings-hex
-cache; `updateBrace` wants span-host knot recomputation and a deliberate
-ordering that `settleKnotDependentGeometry` does not provide. Each needs its
-dependency exposed as a named seam before the body can move. Do them one at a
-time, and only after stump proves the seam.
-
-**Check first:** whether the generic `applySupportEntityUpdate` now covers what
-`updateStump` does. If it does, the bespoke updater can be deleted rather than
-moved -- the descriptor stops registering one and the generic pass claims the
-slot. That is a behaviour change (the generic path also caches the settings hex
-and repositions riding knots), so it needs the goldens, not just the suite.
 
 ---
 

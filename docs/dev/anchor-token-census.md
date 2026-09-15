@@ -6,8 +6,11 @@
 > The prose keeps the old word deliberately: the census's whole subject is that
 > `anchor` is an ordinary English word this codebase uses for geometric
 > anchoring far more often than for the type, and that is still exactly true.
-> Code symbols that MOVED are cited at their current names (`updateStump`,
-> `stumpRegistration`, `STUMP_BELOW_ROOT`); the word in prose is history.
+Code symbols that MOVED are cited at their current names
+(`stumpRegistration`, `STUMP_BELOW_ROOT`); the word in prose is history.
+`updateStump` was classified here and has since been DELETED rather than moved:
+its whole body was `replaceSupportEntity(stump)`, and the generic updater every
+other type already takes does exactly that, so stump no longer registers one.
 
 A census of all 154 distinct tokens containing "anchor" in `src/`, outside the
 three exempt places. Companion to [anchor-rename-plan.md](anchor-rename-plan.md).
@@ -72,7 +75,7 @@ profiles for no gain. Leave it, and leave its user-facing strings.
 | --- | ---: | --- |
 | `anchor` / `anchors` / `Anchor` | the bulk | entity, collection, and type id -- read each site, the word is overloaded |
 | `'anchor'` / `'anchors'` | 40 | type and collection literals |
-| `updateStump` | 3 | `state.ts` |
+| `updateStump` | 0 | **gone** -- it was `replaceSupportEntity(stump)`, and the generic updater already did that, so stump registers none |
 | `AnchorRenderer` | 2 | `SupportRenderer`, `registerBuiltinDetailRenderers` |
 | `stumpRegistration` | 3 | the generated barrel -- **derived, leave it** |
 | the raft layer's collection aliases and their cache refs | 0 | **gone** -- it caches on the source the registry names, so an edit to an unrelated type no longer rebuilds the raft |

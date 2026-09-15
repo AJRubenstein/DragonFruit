@@ -3052,19 +3052,15 @@ export function updateLeaf(leaf: Leaf) {
  * Overwrite an existing entity in place, no-op if the id is unknown.
  *
  * Only for a plain write. A shafted type goes through `applySupportEntityUpdate`
- * instead, which also repositions the knots riding its segments.
+ * instead, which also repositions the knots riding its segments. The settings
+ * applier is the one caller that wants exactly this: it has already moved the
+ * root and cached the hex, and re-running the knot pass on top would settle
+ * geometry twice.
  */
-function replaceSupportEntity(entity: { id: string; typeId?: SupportTypeId }): boolean;
-function replaceSupportEntity(typeId: SupportTypeId, entity: { id: string }): boolean;
 function replaceSupportEntity(
-    typeIdOrEntity: SupportTypeId | { id: string; typeId?: SupportTypeId },
-    maybeEntity?: { id: string },
+    typeId: SupportTypeId,
+    entity: { id: string },
 ): boolean {
-    const typeId = typeof typeIdOrEntity === 'string'
-        ? typeIdOrEntity
-        : resolveSupportTypeIdOf(typeIdOrEntity);
-    const entity = (typeof typeIdOrEntity === 'string' ? maybeEntity : typeIdOrEntity)!;
-    if (!typeId) return false;
     const key = getSupportTypeDescriptor(typeId).location.key;
     if (!state[key][entity.id]) return false;
 
@@ -3074,17 +3070,6 @@ function replaceSupportEntity(
     });
     notify();
     return true;
-}
-
-/**
- * The stump's own updater, registered from `stumpRegistration.ts`.
- *
- * NOT the generic path: a stump carries no knots, so it does a plain write
- * where `applySupportEntityUpdate` would cache the settings hex and reposition
- * the knots riding its segments.
- */
-export function updateStump(stump: Stump) {
-    replaceSupportEntity(stump);
 }
 
 /**

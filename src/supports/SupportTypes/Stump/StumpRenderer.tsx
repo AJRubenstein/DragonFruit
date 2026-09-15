@@ -10,7 +10,8 @@ import { recomputeContactConeForMovedDisk } from '../../SupportPrimitives/Contac
 import { isPrimaryPointerPress, type ContactDiskDragHit } from '../../SupportPrimitives/ContactDisk/contactDiskDragController';
 import { handleSupportClick } from '../../interaction/clickHandlers';
 import { useHighlight } from '../../interaction/useHighlight';
-import { getSnapshot, updateStump } from '../../state';
+import { getSnapshot } from '../../state';
+import { updateSupportEntity } from '../../supportTypeRegistry';
 
 interface StumpRendererProps {
     stump: Stump;
@@ -77,7 +78,9 @@ export const StumpRenderer = React.memo(function StumpRenderer({
         },
         onCommit: (cone) => {
             const latest = getSnapshot().stumps[stump.id];
-            if (latest) updateStump({ ...latest, contactCone: cone });
+            // The one-argument form reads the type off the entity, so this
+            // does not name the type to write it.
+            if (latest) updateSupportEntity({ ...latest, contactCone: cone });
         },
     });
 
