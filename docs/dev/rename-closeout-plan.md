@@ -1,5 +1,8 @@
 # Closing out the rename goal
 
+**Status: section 1 is IN PROGRESS (production 30 -> 16, four defects
+found). Sections 2-4 not started.** The plugin and test halves are untouched.
+
 The hotspot plan is finished. This one answers the question the whole refactor
 exists to answer, and it is answered by measurement rather than by counting
 references: **can a type be renamed by editing the registry alone?**
@@ -23,27 +26,55 @@ Reference counts do NOT measure this. Stick sits at 81 references and stump at
 36, but a rename breaks 113 places: the counts measure how much code SPELLS a
 type, and the probe measures what a rename actually breaks. Run the probe.
 
-## 1. The 30 production sites
+## 1. The 30 production sites -- IN PROGRESS, 30 -> 16
 
-```
-7  src/supports/state.ts
-3  src/components/controls/AutoSupportPanel.tsx
-2  src/supports/interaction/useSupportRenderLookup.ts
-2  src/supports/PlacementLogic/supportClipboard.ts
-2  src/features/scene/voxl/codec.ts
-2  src/features/scene/useSceneCollectionManager.ts
-2  src/features/export/logic/supportExportReconstruction.ts
-2  scripts/dragonfruit-ts-cli.ts
-1  each: autoPlace, SupportRenderer, useKnotInteraction, useJointInteraction,
-       JointGizmo, BezierGizmoManager, ExportManager, ModelSupportsModal
-```
+**The probe is mechanised**: `local-only/rename-probe.ts <type>`. It renames both
+naming points, compiles, buckets the errors, and ALWAYS reverts. It reproduces
+this plan's numbers exactly -- 152 total, 13 exempt, 30 production -- once it
+edits the naming points competently. Four corrections were needed to get there,
+each of which had been manufacturing errors: indented property keys, the
+collection name as a KEY in `SupportEntityByCollection`, the optional
+wire-format key (`sticks?: Stick[]`), and the default reading of "rename both".
 
-Read each one before converting: a site that names a type because the type is
-genuinely its subject stays, and moves into that type's folder if it does not
-already live there. The pattern for moving one is the proxy and marquee seams
-(`proxyGeometry/seam.ts`, `marqueeGeometry/seam.ts`).
+### Done (30 -> 16), and four defects found on the way
 
-`state.ts` at 7 is the largest and the last one to touch.
+Every one of these was invisible to the suite and the goldens, which is the
+pattern this whole refactor keeps producing.
+
+| site | what it was | outcome |
+| --- | --- | --- |
+| `ModelSupportsModal` | a hand-written knot-parent chain | **DEFECT**: it tested `trunks[parent]`, `branches[parent]`, `twigs[parent]`, `sticks[parent]` -- every one asks for an ENTITY by a SEGMENT id, so none could match. Measured: it included **0 of 317** knots. The modal's Knots group has always been empty. Now `modelIdOfParentShaft`, which includes all 317. |
+| `useSupportRenderLookup` | eight collections applied by hand while `buildInputDelta` derives ten | **DEFECT**: `stumps` and `kickstands` deltas were built, posted to the worker, and dropped. The worker kept stale data. Now walked over `SUPPORT_COLLECTION_KEYS`. |
+| `ExportManager` | nine collections cleared by hand under `!includeSupports` | **DEFECT**: `stumps` was not among them, so an export asked to omit supports shipped every stump. Now walked. |
+| `supportExportReconstruction` | `ScopedSupportPayload` named nine collections while `trunks` was already derived | Derived as a mapped type over `SupportCollectionKey` -- the ten keys ARE that set. Fourteen imports became unused. |
+| `supportClipboard` | `extractSupportClipboardPayload` built `owned` by walking the registry, then re-extracted seven named locals and used none | Seven dead locals and five dead type imports removed. |
+| 5 files | `import { … Stick … }` with no use | **Dead imports, already flagged by ESLint.** None of the five is inside `lint-clean-dirs.json`, so the gate never saw them; a rename would have been the first thing to notice. |
+| `state.ts` | the merge's copy-on-write shell listed ten collections | Walked. A type added to the registry would have had its imported entities written into the PREVIOUS state in place. |
+| `state.ts` | the merge's debug readout listed ten counts | Walked. |
+| `SupportRenderer` | the clipping effect depended on ten collections by hand | `state` alone -- the same lesson already recorded for the snap-target memos. |
+
+### Remaining (16), and what each needs
+
+- **`state.ts` (4)** -- the import remap chain. Each type's body remaps DIFFERENT
+  fields (a twig its two disks, a stick its two cones, a trunk neither), so these
+  are per-type bodies rather than a list. The plan's own rule: not mechanical.
+- **`AutoSupportPanel` (3)** -- six per-type delete loops that are uniform
+  ("delete this model's entities") interleaved with per-type extras (trunks
+  delete their root, braces and kickstands have knot logic). Deriving the uniform
+  part needs a descriptor flag marking which types the regenerate pass clears,
+  because a `.filter` is a subtraction and the rules forbid one. **A flag is the
+  right answer; it is a decision, not a rename.**
+- **`voxl/codec.ts` (2), `supportExportReconstruction` (2)** -- the same
+  "materialise the wire format from a registry-keyed set" shape, twice. Wants one
+  shared builder, which the next pass should add rather than duplicating a third
+  time.
+- **`useSceneCollectionManager` (2)** -- the clipboard payload's collection keys.
+- **`autoPlace` (1)** -- `ForestReport`'s `stumpCount` / `leafCount` /
+  `branchCount` / `stickCount` / `twigCount` are NAMED fields of a typed report.
+  The type is the subject here; converting would change the report's shape and
+  every consumer. **Stays, by the plan's own test.**
+- **`scripts/dragonfruit-ts-cli.ts` (2)** -- the script is operating on a stick
+  (straightening its segments, adding one). The type is the subject. **Stays.**
 
 ## 2. The 83 test sites -- the bigger half, and the one with a rule
 
