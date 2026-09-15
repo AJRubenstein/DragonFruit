@@ -78,7 +78,7 @@ profiles for no gain. Leave it, and leave its user-facing strings.
 | the raft layer's collection aliases and their cache refs | 0 | **gone** -- it caches on the source the registry names, so an edit to an unrelated type no longer rebuilds the raft |
 | `stumpList` | 3 | `SupportRenderer` |
 | the footprint's per-type input alias | 0 | **gone** -- the inline-root walk is derived from the registry's declared inline roots |
-| `anchorCount`, `anchorClusters`, `anchorRegions` | 9 | `autoSupport/types.ts` -- report fields |
+| `stumpCount`, `anchorClusters`, `anchorRegions` | 9 | `autoSupport/types.ts` -- report fields. `stumpCount` carries the type; the other two name the anchor BAND, not the type |
 | `stabilizationAnchors`, `computeStabilizationAnchors`, `StabilizationAnchor`, `MAX_ANCHORS` | 21 | `stabilization.ts` -- these place anchors |
 | `ANCHOR_HEIGHT_THRESHOLD_MM` | 2 | the height at which a trunk becomes an anchor |
 | `ANCHOR_TOL`, `ANCHOR_FLOOR_MM2`, `ANCHOR_MIN_PRIMARY` | 6 | `orientationAdvisor.ts` |

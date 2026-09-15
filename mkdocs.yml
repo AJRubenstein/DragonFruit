@@ -125,6 +125,7 @@ nav:
           - Cleaning Up One Support Type: dev/anchor-rename-plan.md
           - Anchor Token Census: dev/anchor-token-census.md
           - Per-Type Alias Cleanup: dev/per-type-alias-cleanup.md
+          - Stump And Stick Residuals: dev/stump-stick-residual-plan.md
           - Support Pathfinding V3: dev/support-pathfinding-v3.md
           - Grid and Branching: dev/grid-and-branching.md
           - Raft Geometry: dev/raft-geometry.md
