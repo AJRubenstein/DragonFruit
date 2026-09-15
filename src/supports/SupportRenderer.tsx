@@ -150,20 +150,17 @@ const BULK_MULTI_SELECTED_COLOR = '#80fffd';
  * a type that declares `batchesShaft`, `batchesContactCones` or `ownsRoot`.
  *
  * A type with none of the three is drawn entirely by its own detail renderer --
- * brace and stump today -- so no overlay can reach it. Those types take the
- * preview through that renderer instead; see `sharedRenderProps`. Without the
- * second route a drag sweeps over them showing nothing at all.
+ * brace and stump today -- so no overlay can reach it, and it takes the preview
+ * through that renderer instead; see `sharedRenderProps`.
  */
 /**
  * Whether a support should be DRAWN as selected.
  *
  * Three routes mark one, and a detail renderer has to be told about all of them:
  * it dims any support it does not consider selected -- `dimNonSelected &&
- * !isSelected` in every type's renderer -- which OVERWRITES the colour it was
- * handed. A support marked only by the bulk colour was therefore dimmed instead
- * of highlighted, and a type whose only draw path is its detail renderer went
- * grey: the symptom brace and stump had, and the reason a marquee looked like it
- * had not registered while a click worked.
+ * !isSelected` in every type's renderer -- which overwrites the colour it was
+ * handed. A type drawn only by its detail renderer therefore goes grey unless
+ * this says otherwise.
  *
  * - `inSelectedSet`: this entity is in its type's selected set, which is how a
  *   selection at or under the detail threshold is expressed.
