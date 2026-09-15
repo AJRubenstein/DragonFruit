@@ -1,7 +1,7 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { subscribe, getSnapshot, getSupportEntity } from '../../state';
-import { Trunk, Branch, Twig, Stick, Brace, Segment, BezierSegment } from '../../types';
+import { Trunk, Branch, Twig, Brace, Segment, BezierSegment } from '../../types';
 import { BezierHandle } from './BezierHandle';
 import { buildGizmoContextIndex, type HandleContext } from './bezierContextIndex';
 import { calculateControlPoint } from './utils';

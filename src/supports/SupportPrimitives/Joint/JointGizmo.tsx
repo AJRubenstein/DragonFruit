@@ -7,7 +7,7 @@ import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
 import { useCurveInteractionState } from '../../Curves/curveInteractionState';
 import { calculateDiskThickness } from '../ContactDisk/contactDiskUtils';
-import { Trunk, Twig, Stick, Joint, Segment } from '../../types';
+import { Trunk, Twig, Joint, Segment } from '../../types';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { useJointDragPosition } from '../../interaction/jointDragPosition';
 import { clearSupportDragPreview, emitSupportDragPreview, setJointInteractionLock } from './jointDragRuntime';

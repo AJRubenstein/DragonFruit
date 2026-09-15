@@ -6,7 +6,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { findShaftOwnerOfJoint, getSupportEntity, jointPosIn, getSelectedId, resolveDeclaredHosts, setInteractionWarning } from '../../state';
 import { getSupportTypeDescriptor, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
-import { Vec3, Trunk, Branch, Roots, Segment, Twig, Stick, ContactDisk } from '../../types';
+import { Vec3, Trunk, Branch, Roots, Segment, Twig, ContactDisk } from '../../types';
 import type { Kickstand } from '../../SupportTypes/Kickstand/types';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';

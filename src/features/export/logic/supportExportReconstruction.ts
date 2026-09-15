@@ -1,42 +1,22 @@
 import * as THREE from 'three';
-import { bezierToLineSegments } from '@/supports/Curves/BezierUtils';
 import { getModelIdForSupportEntityId } from '@/supports/state';
+import type { KickstandBuildResult } from '@/supports/SupportTypes/Kickstand/types';
 import { buildSupportExportGroup, type SupportExportContext } from '@/supports/exportGeometry/seam';
 import { exportGroupName, getSupportTypeDescriptor, parseKnotHostId, parsePrefixedSegmentId, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
-import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone';
-import { calculateDiskThickness } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
-import { getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
-import type { Kickstand, KickstandBuildResult } from '@/supports/SupportTypes/Kickstand/types';
-import type {
-  Stump,
-  Brace,
-  Branch,
-  DragonfruitImportFormat,
-  Knot,
-  Leaf,
-  Roots,
-  Segment,
-  Stick,
-  SupportState,
-  Trunk,
-  Twig,
-  Vec3,
-} from '@/supports/types';
-import { getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
-import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
+import type { DragonfruitImportFormat, Segment, SupportState } from '@/supports/types';
+import type { SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
-export interface ScopedSupportPayload {
-  roots: Roots[];
-  trunks: SupportState['trunks'][string][];
-  branches: Branch[];
-  leaves: Leaf[];
-  twigs: Twig[];
-  sticks: Stick[];
-  braces: Brace[];
-  stumps: Stump[];
-  knots: Knot[];
-  kickstands: Kickstand[];
-}
+/**
+ * One model's supports, every collection.
+ *
+ * Derived from the registry rather than listed: the ten keys here ARE
+ * `SupportCollectionKey`, and each member is that collection's entity array read
+ * off `SupportState`. The `trunks` member was already written this way while the
+ * other nine were named, which is exactly the drift a hand-written list invites.
+ */
+export type ScopedSupportPayload = {
+  [K in SupportCollectionKey]: SupportState[K][string][];
+};
 
 function hasAllowedModelId(allowedModelIds: ReadonlySet<string>, modelId: string | null | undefined): boolean {
   return typeof modelId === 'string' && allowedModelIds.has(modelId);

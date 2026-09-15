@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getSnapshot, setSnapshot, transformSupportsForModel } from '@/supports/state';
-import type { Brace, Branch, Knot, Leaf, Roots, Segment, Stick, SupportState, Trunk, Twig, Vec3 } from '@/supports/types';
+import type { Knot, Roots, Segment, SupportState, Vec3 } from '@/supports/types';
 import type { Kickstand } from '@/supports/SupportTypes/Kickstand/types';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
 import { getRaftSettings } from '@/supports/Rafts/Crenelated/RaftState';
@@ -72,14 +72,6 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
       .filter((item) => item.modelId === modelId)
       .map(clonePlain);
   }
-  const roots = owned.roots;
-  const trunks = owned.trunks;
-  const branches = owned.branches;
-  const leaves = owned.leaves;
-  const twigs = owned.twigs;
-  const sticks = owned.sticks;
-  const braces = owned.braces;
-
   const kickstands = Object.values(snapshot.kickstands)
     .filter((item) => item.modelId === modelId)
     .map(clonePlain);
