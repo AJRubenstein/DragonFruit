@@ -577,8 +577,8 @@ function isHostAtAttachmentCapacity(
 // ---------------------------------------------------------------------------
 
 /** Find the closest existing host (shaft or tip) within merge radius.
- *  Stump-origin entities never host merges: anchors are load-bearing
- *  standalone pillars, leaves are not. */
+ *  Stump-origin entities never host merges: they are load-bearing standalone
+ *  pillars, leaves are not. */
 export function findMergeHost(
     tipPos: { x: number; y: number; z: number },
     modelId: string,
@@ -1405,8 +1405,8 @@ const MAX_FANNING_PASSES = 5;
  *
  * The pool is every collection whose type declares `canBeGridHost`, so a type
  * added to that set is offered as a host without a second edit here.
- * Stump-origin trunks are excluded: anchors are load-bearing standalone
- * pillars and never host fan leaves.
+ * Stump-origin trunks are excluded: they are load-bearing standalone pillars
+ * and never host fan leaves.
  *
  * The pool spans EVERY model in the snapshot, so host choosers must filter on
  * the host's `modelId`: unfiltered, this model's member attaches to a
@@ -2709,7 +2709,7 @@ export function computeAutoSupportPlan(
             // sub-threshold overhang singles — the overhang forest reads as
             // TREES: neighbouring pillars fan into each other so supports
             // release in chunks (one plate contact per chunk). Chunk size is
-            // bounded by the declared attachment cap; anchors (near-plate) and
+            // bounded by the declared attachment cap; stumps (near-plate) and
             // island hosts are never converted.
             const originKind = hostOriginById.get(hostId);
             const isConvertible = isOriginConvertibleToTree(entity.origin)

@@ -44,8 +44,7 @@ type RuntimeStats = {
 
 /**
  * Per-collection counts come from the registry, so a type added later is
- * reported without being listed here. Anchors were missing from the
- * hand-written list and always read zero.
+ * reported without being listed here.
  */
 type SupportDiagnosticsStats = Record<SupportCollectionKey, number> & {
   segmentCount: number;

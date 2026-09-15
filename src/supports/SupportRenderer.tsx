@@ -482,10 +482,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const marqueeHoveredSupportIdSet = useMemo(() => new Set(marqueeHoveredSupportIds), [marqueeHoveredSupportIds]);
     const activeKnotDragPreview = useActiveKnotDragPreview();
     const activeTwigDragPreview = useActiveTwigDragPreview();
-    // Collections picked by SUPPORT_COLLECTION_KEYS rather than listed: the old
-    // list omitted anchors, so nothing could resolve which support an anchor
-    // segment belonged to. `state` is the dependency because the picked object is
-    // rebuilt whenever any collection identity changes, which is what `state` does.
+    // Collections picked by SUPPORT_COLLECTION_KEYS rather than listed, so every
+    // declared type resolves which support a segment belongs to. `state` is the
+    // dependency because the picked object is rebuilt whenever any collection
+    // identity changes, which is what `state` does.
     const supportRenderLookupInput = useMemo(() => {
         const picked = {} as Record<string, unknown>;
         for (const key of SUPPORT_COLLECTION_KEYS) picked[key] = state[key];
@@ -1771,9 +1771,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     /**
      * Contact cones for the batched pass, keyed by support.
      *
-     * Which fields to read comes from the declared contact endpoints. Anchors
-     * are absent deliberately -- AnchorRenderer draws their cone itself, and
-     * only while selected; see the note in the plan.
+     * Which fields to read comes from the declared contact endpoints. The stump
+     * is absent deliberately: StumpRenderer draws its cone itself, and only
+     * while selected.
      */
     const contactConesBySupport = useMemo(() => {
         const result = new Map<string, { supportId: string; modelId?: string; cones: InstancedContactCone[] }>();

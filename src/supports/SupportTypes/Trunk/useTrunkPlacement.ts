@@ -553,7 +553,7 @@ export function useTrunkPlacementV2() {
             }
         }
 
-        // Rejections that already built geometry (anchor validation) preview
+        // Rejections that already built geometry (stump validation) preview
         // the invalid support as a red ghost; the `error` on the SupportData
         // drives the "Cannot Place Support" tooltip.
         if (decision.kind === 'reject' && decision.supportData) {

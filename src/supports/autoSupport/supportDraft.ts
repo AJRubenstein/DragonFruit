@@ -50,7 +50,7 @@ export function draftAddPrimitive<K extends 'roots' | 'knots'>(
  * are already declared on the descriptor — `location.key` is the collection the
  * entity joins, and each `edges` entry names a field holding a primitive's id
  * and the collection that primitive lives in. Trunk carries a root that way;
- * branch and leaf carry the knot they hang from; a type with no edges (anchor,
+ * branch and leaf carry the knot they hang from; a type with no edges (stump,
  * twig, stick) carries nothing and adds only itself.
  *
  * `supplied` is keyed by EDGE FIELD, so the caller passes what it built against

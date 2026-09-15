@@ -5,8 +5,8 @@ import type { SupportTypeId } from '../supportTypeRegistry';
 const EVENT_NAME = 'dragonfruit-part-drag-update';
 
 /**
- * Any support type can have a drag preview. This was a five-name union that
- * omitted anchors, so an anchor drag had no way to name its own preview.
+ * Any support type can have a drag preview, named from the registry rather
+ * than a union of type names.
  */
 export type PartDragPreviewKind = SupportTypeId;
 

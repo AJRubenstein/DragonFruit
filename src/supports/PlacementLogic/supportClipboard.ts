@@ -201,8 +201,8 @@ function mergeSupportClipboardPayload(
    * Everything the clone touches is declared: `hasSegments` says whether to
    * walk shafts, `contactFields` names the contact primitives, and `edges`
    * names each id-bearing field and the collection it points into. A type is
-   * copied by declaring it -- which is how anchors came to be dropped, being
-   * the one type with no edges and an inline root.
+   * copied by declaring it. The stump is the one type with no edges and an
+   * inline root, so it appears in no id-remapping list.
    */
   const cloneEntity = (descriptor: SupportTypeDescriptor, entity: Record<string, unknown>) => {
     const id = uuidv4();
@@ -223,7 +223,7 @@ function mergeSupportClipboardPayload(
       });
     }
 
-    // An anchor carries a bare `joint` outside its segments; nothing else does.
+    // A stump carries a bare `joint` outside its segments; nothing else does.
     const ownJoint = entity.joint as { id: string } | undefined;
     if (ownJoint) next.joint = remapSupportJoint(ownJoint as never, jointIdMap);
 
@@ -437,7 +437,7 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
       return hosts?.[parentShaftId.slice(prefix.length)]?.modelId === modelId;
     }
 
-    // Every shafted type, so a knot riding an anchor or kickstand resolves too.
+    // Every shafted type, so a knot riding a stump or kickstand resolves too.
     for (const descriptor of SUPPORT_TYPES) {
       if (!descriptor.hasSegments) continue;
       const collection = state[descriptor.location.key] as unknown as Record<string, { modelId: string; segments?: Segment[] }>;
