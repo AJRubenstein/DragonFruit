@@ -1,13 +1,19 @@
 # Clearing the last stump and stick references
 
+**Status: sections 1-4 are DONE. Sections 5-7 are not started. Neither type is
+clean** -- see "Status: neither type is clean" for what is left and in what
+order. Start at section 5.
+
 `npm run scan:support-types` reports per type. Stump and stick are the two
-smallest, and they reduce to the same four shapes, which is what makes them
-worth doing together.
+smallest, and they reduce to the same shapes, which is what makes them worth
+doing together.
+
+Current, after sections 1-3 (4,316 total across 111 files):
 
 ```
-    923  trunk        674  kickstand     225  twig
-    870  brace        642  branch        145  stick
-    859  leaf                             77  stump
+    906  trunk        656  kickstand     215  twig
+    857  brace        627  branch        131  stick
+    851  leaf                             73  stump
 ```
 
 Counts are identifiers outside the registry, `types.ts` and each type's own
@@ -222,21 +228,80 @@ declared field, so it should not need this at all.
 
 ---
 
-## What is left, and why
+## Status: neither type is clean
 
-Sections 1-3 are done. What remains is not the shapes this plan described:
+Sections 1-3 are done. **Stump is at 73 references and stick at 131**, and the
+work that remains is NOT the shapes this plan described -- it is three new ones,
+below, plus two carried-over items.
+
+Neither type can be renamed by editing the registry alone today. Both are
+close: the literal budget is 0 dispatch / 0 declaration, so nothing BRANCHES on
+either name. What is left spells the name rather than dispatching on it.
+
+### 5. The transform switch in `state.ts` (~1996-2072) -- do this first
+
+`transformAllSupportsForSingleModel` switches on the collection key with one arm
+per type: `trunks`/`branches` share an arm, then `leaves`, `twigs`, `sticks`,
+`braces`, `stumps`. Every arm says the same thing -- transform the segments if
+the type has them, transform each contact by its declared kind -- with two
+genuine exceptions: `roots` preserves Z, and `braces` transforms a curve.
+
+This is the bounds walk from section 3 again, and that one is the proof it
+works: `contactEndpointsFor` gives `{ end, kind, field }` per type, and
+`hasSegments` gates the segment pass. The two exceptions become declarations,
+not `if`s.
+
+Biggest single win for both types and the cheapest, because the shape is already
+solved once in this branch.
+
+**Verify:** transforms are covered by the goldens (moving a model rewrites every
+support it owns), so a mismatch shows there. Capture the transformed state for a
+scene with one of every type before and after, and compare byte-for-byte.
+
+### 6. Payload collection lists in `useSceneCollectionManager.ts` (15 stick refs)
+
+Hand-written collection lists in payload validation, counting and remapping:
+`supports.sticks?.length`, `candidate.sticks != null && !Array.isArray(...)`,
+`supportIds.sticks.length`, `payload.sticks.forEach(...)`. Each names every
+collection in sequence.
+
+`SUPPORT_COLLECTION_KEYS` answers all of them. This is the same fix the
+clipboard merge already took, and the same failure mode: a list that omits a
+collection drops those entities silently.
+
+### 7. The proxy mesh layer's per-type emitters (18 stump, 22 stick)
+
+`SupportProxyMeshLayer` emits a different primitive recipe per type -- a stump's
+frustum has its own radii and height fields, a stick has two cones, a brace has a
+profile curve. The previous pass deliberately left these, and that verdict
+stands: deriving them needs the descriptor to declare a type's PROXY GEOMETRY,
+which is a larger declaration than this plan contemplates.
+
+**Do not attempt this as part of the above.** It is its own plan. Note it as the
+ceiling on how low these counts can go without one.
+
+### Carried over
 
 - **`updateLeaf` and `updateBrace`** still live in `state.ts` and still name
   their type. Not equivalent to the generic path (leaf's cone-host knot
   recompute, brace's ordered span-host-first settle), so each needs its store
   dependency exposed as a named seam before it can move. Section 1 explains.
-- **Per-type geometry in `supportMarqueeShapes` and the proxy mesh layer.** A
-  real refactor, needing pickable and proxy-anchor declarations on the
-  descriptor. Out of this plan's scope by its own test.
+  `updateStump` was deleted rather than moved -- the generic pass already did
+  what it did.
+- **`supportMarqueeShapes` in `SceneCanvas`** builds a pickable polyline per
+  type. Same class as section 7, same verdict.
 - **`hostKnot` assembled from `lower.kind`** at `KNOT_PLACEMENT_BY_TYPE` in
-  `state.ts` and in `page.tsx` has the same gap that section 2 hit: a kickstand's
-  knot is at its UPPER end through `hostKnotId`, and `lower.kind === 'knot'` is
-  false for it, so it is handed no knot. Two named call sites, one shared fix.
+  `state.ts` and in `page.tsx` has the gap section 2 hit: a kickstand's knot is
+  at its UPPER end through `hostKnotId`, and `lower.kind === 'knot'` is false for
+  it, so it is handed no knot. Two named call sites, one shared fix. This is a
+  latent DEFECT, not tidying -- do it before anything else touches endpoints.
+
+### The floor
+
+With 5 and 6 done and 7 left alone, expect stump around 40 and stick around 90.
+The remainder is the proxy/marquee geometry plus the type's own folder and the
+registry, which are exempt by design. Neither type reaches zero, and should not:
+zero would mean the renderer had no per-type geometry at all.
 
 
 ---
