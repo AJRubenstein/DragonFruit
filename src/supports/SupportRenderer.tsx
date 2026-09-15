@@ -140,6 +140,24 @@ const BATCHED_JOINT_WIDTH_SEGMENTS = 12;
 const BATCHED_JOINT_HEIGHT_SEGMENTS = 10;
 const MULTI_SELECTION_DETAIL_THRESHOLD = 24;
 const BULK_MULTI_SELECTED_COLOR = '#80fffd';
+
+/**
+ * Whether a type's live marquee highlight can be drawn as a batched overlay.
+ *
+ * While a drag is in progress the caught supports are previewed in the selection
+ * colour, and that is done by re-drawing the ones on screen: a shaft source, a
+ * contact-cone source, a joint source and a root source. Between them they reach
+ * a type that declares `batchesShaft`, `batchesContactCones` or `ownsRoot`.
+ *
+ * A type with none of the three is drawn entirely by its own detail renderer --
+ * brace and stump today -- so no overlay can reach it. Those types take the
+ * preview through that renderer instead; see `sharedRenderProps`. Without the
+ * second route a drag sweeps over them showing nothing at all.
+ */
+export function typeHasBatchedMarqueeOverlay(typeId: SupportTypeId): boolean {
+    const descriptor = getSupportTypeDescriptor(typeId);
+    return descriptor.batchesShaft || descriptor.batchesContactCones || descriptor.ownsRoot;
+}
 /** Debug origin coloring (AutoSupport "Origin Colors" toggle): red = near-plate
  *  band, orange = overhang (grid infill / organic Poisson / fanned overhang),
  *  blue = island (voxel/minima), purple = standalone overhang trunks. */
@@ -2683,16 +2701,31 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         typeId: SupportTypeId,
         entity: { id: string; modelId?: string },
         isSelected: boolean,
-    ) => ({
-        isSelected,
-        selectedId: isSelected ? selectedId : null,
-        dimNonSelected,
-        isHovered: hoveredSupportIdForVisual === entity.id
-            || marqueeHoveredSupportIdSet.has(entity.id),
-        baseColor: resolveDetailSupportColor(typeId, entity.id, entity.modelId),
-        suppressHover,
-        isInteractable,
-    }), [
+    ) => {
+        // A support the marquee is currently over is previewed in the selection
+        // colour. Where a batched overlay can reach the type, that overlay draws
+        // the preview; where none can, the type's own detail renderer is the only
+        // thing that can, so the flag is handed to it as a selection.
+        //
+        // Without this, brace and stump -- the two types with no batched
+        // primitives -- are the only ones a drag sweeps over showing nothing.
+        const previewHighlight = !isSelected
+            && marqueeHoveredSupportIdSet.has(entity.id)
+            && !typeHasBatchedMarqueeOverlay(typeId);
+
+        return {
+            isSelected: isSelected || previewHighlight,
+            // Keyed on the REAL selection, not the preview: a preview must not
+            // expose what a selection exposes, such as the contact-disk HUD.
+            selectedId: isSelected ? selectedId : null,
+            dimNonSelected,
+            isHovered: hoveredSupportIdForVisual === entity.id
+                || marqueeHoveredSupportIdSet.has(entity.id),
+            baseColor: resolveDetailSupportColor(typeId, entity.id, entity.modelId),
+            suppressHover,
+            isInteractable,
+        };
+    }, [
         selectedId,
         dimNonSelected,
         hoveredSupportIdForVisual,
