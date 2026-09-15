@@ -394,7 +394,11 @@ catch it.
   type. This was "same class as section 7, same verdict" -- and section 7's
   verdict moved, so the same seam shape applies: a per-type recipe registered
   from the type's own folder. Not done, and now the ONLY per-type geometry left
-  outside a type's folder.
+  outside a type's folder. **This is the next piece.** Copy
+  `proxyGeometry/seam.ts`: extract the emitter as a pure exported function
+  first, capture its output for every type BEFORE changing anything, then move
+  each recipe. A pickable polyline decides what a drag selects, so a silent
+  change here is a selection bug with no test to catch it.
 - **`hostKnot` assembled from `lower.kind`** -- **FIXED**. It was called a latent
   defect here; it was live. Both call sites (`KNOT_PLACEMENT_BY_TYPE` in
   `state.ts` and the context menu in `page.tsx`) handed a kickstand no knot,

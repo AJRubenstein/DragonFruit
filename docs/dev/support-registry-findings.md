@@ -17,6 +17,7 @@ pass then skipped it deliberately.
 
 | bug | where | status |
 | --- | ----- | ------ |
+| The proxy layer's shaft fallback is a hardcoded 5mm for trunk, but trunk declares `shaftFallback.stubLengthMm: 10`. `resolveSegmentEndpoints` already reads the declaration, so the proxy view and the export/slice paths disagree for a trunk with no top joint and no contact | `SupportTypes/Trunk/trunkProxyGeometry.ts`, `segmentEndpoints.ts` | **open** — found while moving the recipes into type folders, and the literal was kept verbatim rather than derived, because deriving it would change trunk's proxy geometry unreviewed. Decide which number is right before changing either side |
 | Raft crenulation gap/spacing controls do nothing unless `wallEnabled` is on — the settings only reach the crenelated wall generators, so with the wall off they silently no-op. Pre-existing, unrelated to the registry work | `RaftRenderer:184` | **open** — UX, gate or disable the controls |
 | `TwigRenderer` omits `isInteractable` where the other three pass it | `TwigRenderer` | **open** — harmless while the default is true |
 | The import wire format still carries the `{kickstand, root, hostKnot}` bundle | `loadFromImportFormat` | **open** — ⚠️ wire format |
