@@ -405,6 +405,41 @@ export interface SupportTypeDescriptor {
         /** Entity paths holding the start and end diameters. */
         from: readonly [string, string];
     };
+    /**
+     * This type's relationship between a contact-cone BODY and the shaft it sits
+     * on, when it has one at all.
+     *
+     * The resize pass thickens shafts AFTER cones are built, so a cone body lags
+     * its thickened shaft and renders as a visible step. `syncContactConeDiameters`
+     * sets the body back to the shaft; the tip contact diameter is a peel-force
+     * choice and never moves.
+     *
+     * The pass has two roles, and a declaration says a type takes part in both:
+     *
+     * - WHO IS SYNCED. A type declaring a source has its own cone body set to the
+     *   shaft that source names.
+     * - WHICH SEGMENTS CAN BE A HOST. Only segments belonging to a type that
+     *   declares a source are readable as the shaft a cone body follows, which is
+     *   what a hosted type resolves through its knot.
+     *
+     * The sources, because the arms are genuinely different:
+     *
+     * - `ownLastSegment` -- the shaft climbs INTO the cone, so the terminal
+     *   segment is the one under it;
+     * - `ownFirstSegment` -- the shaft leaves the cone and hangs DOWN, so the
+     *   first segment is;
+     * - `hostKnotSegment` -- the cone sits on the model while the entity hangs off
+     *   a knot on someone else's shaft, so the host is read through that knot.
+     *   A type with no segments of its own contributes no host, which is why this
+     *   source names a knot rather than a segment.
+     *
+     * Absent means the type takes part in neither role: its own cone body is left
+     * as placed, and its segments are not offered as a host. Stick and stump are
+     * absent today. Adding either -- so that a stick's own cone follows its shaft,
+     * or so a cone hosted on a stick segment resolves -- is this one line, and it
+     * is a behaviour change to make deliberately rather than a rename.
+     */
+    coneBodyFollows?: 'ownFirstSegment' | 'ownLastSegment' | 'hostKnotSegment';
     /** What sits at the bottom of this type. */
     lower: SupportEndpoint;
     /** What sits at the top of this type. */
@@ -651,6 +686,9 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         },
         placementRule: { metric: 'tipHeight', minMm: ANCHOR_HEIGHT_THRESHOLD_MM, boundary: 'upper' },
         isAutoBraceable: true,
+        // The shaft climbs INTO the cone, so the terminal segment is the one
+        // under it.
+        coneBodyFollows: 'ownLastSegment',
         lower: { kind: 'plateRoot' },
         upper: { kind: 'cone', field: 'contactCone' },
         isAutoPlaced: true,
@@ -698,6 +736,9 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
             limitationFeedback: { rank: 1, onlyWhileActive: true },
         },
         isAutoBraceable: true,
+        // The shaft leaves the cone and hangs DOWN, so the first segment is
+        // the one under it.
+        coneBodyFollows: 'ownFirstSegment',
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         recomputesDiameterFromAttachments: false,
@@ -750,6 +791,9 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
             limitationFeedback: { rank: 0 },
         },
         isAutoBraceable: false,
+        // The cone sits on the model while the leaf hangs off a knot on someone
+        // else's shaft, so the host is read through that knot.
+        coneBodyFollows: 'hostKnotSegment',
         lower: { kind: 'knot' },
         upper: { kind: 'cone', field: 'contactCone' },
         recomputesDiameterFromAttachments: false,

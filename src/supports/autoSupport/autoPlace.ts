@@ -1613,18 +1613,23 @@ export function rehostLegacyKnots(draft: SupportState): SupportState {
  * stays exactly as placed.
  */
 export function syncContactConeDiameters(draft: SupportState): SupportState {
-    const segmentDiameter = new Map<string, number>();
-    for (const t of Object.values(draft.trunks)) {
-        for (const seg of t.segments) {
-            if (typeof seg.diameter === 'number' && seg.diameter > 0) {
-                segmentDiameter.set(seg.id, seg.diameter);
-            }
-        }
-    }
-    for (const b of Object.values(draft.branches)) {
-        for (const seg of b.segments) {
-            if (typeof seg.diameter === 'number' && seg.diameter > 0) {
-                segmentDiameter.set(seg.id, seg.diameter);
+    // Which types contribute their segment diameters, and none else: the loop
+    // this replaces listed trunks and branches by hand while leaf read a host
+    // shaft through its knot. A type whose cone body is deliberately left alone
+    // (stick, stump) declares no source at all rather than being filtered out.
+    const diameterBySegmentId = new Map<string, number>();
+    for (const descriptor of SUPPORT_TYPES) {
+        if (descriptor.coneBodyFollows !== 'ownFirstSegment'
+            && descriptor.coneBodyFollows !== 'ownLastSegment') continue;
+
+        const collection = draft[descriptor.location.key] as unknown as
+            | Record<string, { segments?: Segment[] }>
+            | undefined;
+        for (const entity of Object.values(collection ?? {})) {
+            for (const seg of entity.segments ?? []) {
+                if (typeof seg.diameter === 'number' && seg.diameter > 0) {
+                    diameterBySegmentId.set(seg.id, seg.diameter);
+                }
             }
         }
     }
@@ -1650,7 +1655,7 @@ export function syncContactConeDiameters(draft: SupportState): SupportState {
     for (const [lid, l] of Object.entries(draft.leaves)) {
         const knot = draft.knots[l.parentKnotId];
         if (!knot) continue;
-        const hostDia = segmentDiameter.get(knot.parentShaftId);
+        const hostDia = diameterBySegmentId.get(knot.parentShaftId);
         if (hostDia === undefined) continue;
         const cone = syncCone(l.contactCone, hostDia);
         if (cone && cone !== l.contactCone) nextLeaves[lid] = { ...l, contactCone: cone };
