@@ -1,20 +1,25 @@
 # Clearing the last stump and stick references
 
-**Status: sections 1-4 are DONE. Sections 5-7 are not started. Neither type is
-clean** -- see "Status: neither type is clean" for what is left and in what
-order. Start at section 5.
+**Status: sections 1-4 and 6 are DONE. Section 5 is DONE. Section 7 is NOT
+STARTED and is its own plan.** Neither type is clean, and neither reaches zero:
+the floor is the proxy and marquee geometry, which names a type because that
+type is genuinely the subject.
 
 `npm run scan:support-types` reports per type. Stump and stick are the two
 smallest, and they reduce to the same shapes, which is what makes them worth
 doing together.
 
-Current, after sections 1-3 (4,316 total across 111 files):
+Current, after sections 1-3, 5 and 6 (4,193 total across 111 files):
 
 ```
-    906  trunk        656  kickstand     215  twig
-    857  brace        627  branch        131  stick
-    851  leaf                             73  stump
+    898  trunk        619  branch        199  twig
+    845  brace        614  kickstand     115  stick
+    840  leaf                              63  stump
 ```
+
+Stump went 77 -> 63 and stick 145 -> 115 across those sections. Every reference
+count above measures how much code still SPELLS a type; none of it dispatches on
+one -- the literal budget stays at 0 dispatch / 0 declaration.
 
 Counts are identifiers outside the registry, `types.ts` and each type's own
 folder. Comments and strings are invisible to this scan -- use
@@ -133,12 +138,16 @@ convention used elsewhere in the tree is
 `descriptor.lower.kind === 'knot' ? state.knots[entity.parentKnotId]`. That hands
 a KICKSTAND no knot at all -- its knot is at its UPPER end and its field is
 `hostKnotId` -- so `resolveSegmentEndpoints` returns null for its last segment,
-which has no top joint. `supportEndpointHostsOf` reads the `owns` edge for the
-root and `hostKnotFieldsFor` for the knot, and assembling it the old way fails
-three tests by name. The other `lower.kind`-based call sites
-(`KNOT_PLACEMENT_BY_TYPE` in `state.ts`, `page.tsx`) have the same latent gap and
-were left alone: out of this section's scope, and noted here rather than fixed
-silently.
+which has no top joint. `resolveDeclaredHosts` reads the `owns` edge for the root
+and the `hostedBy` knot edges for the knot, and assembling it the old way fails
+three tests by name. It is the exported selector that was already there; the
+private helper this section first added for it was a duplicate and has been
+removed in favour of it.
+
+That gap was NOT only latent here: the same assembly at
+`KNOT_PLACEMENT_BY_TYPE` in `state.ts` and in `page.tsx`'s context menu left a
+knot riding a kickstand behind when the kickstand moved. Both now call
+`resolveDeclaredHosts`; see section 5.
 
 **Measured before and after**, over the criosphinx fixture:
 
@@ -238,38 +247,77 @@ Neither type can be renamed by editing the registry alone today. Both are
 close: the literal budget is 0 dispatch / 0 declaration, so nothing BRANCHES on
 either name. What is left spells the name rather than dispatching on it.
 
-### 5. The transform switch in `state.ts` (~1996-2072) -- do this first
+### 5. The transform switch in `state.ts` -- DONE, and it was hiding the kickstand bug
 
-`transformAllSupportsForSingleModel` switches on the collection key with one arm
-per type: `trunks`/`branches` share an arm, then `leaves`, `twigs`, `sticks`,
-`braces`, `stumps`. Every arm says the same thing -- transform the segments if
-the type has them, transform each contact by its declared kind -- with two
-genuine exceptions: `roots` preserves Z, and `braces` transforms a curve.
+**The switch is gone.** `transformAllSupportsForSingleModel` now walks
+`SUPPORT_ENTITY_COLLECTIONS` and asks the same declarations section 3's bounds
+walk uses: `hasSegments` for the segment pass, `contactEndpointsFor` for the
+contacts by kind and field, and `transformExtrasFor` for the per-type extras. The
+one arm that remains is `roots`, which is not a support type at all.
 
-This is the bounds walk from section 3 again, and that one is the proof it
-works: `contactEndpointsFor` gives `{ end, kind, field }` per type, and
-`hasSegments` gates the segment pass. The two exceptions become declarations,
-not `if`s.
+**Two of the three "exceptions" were already declared.** `SUPPORT_TRANSFORM_EXTRAS`
+already held `brace: ['curve']` and `stump: ['rootPos', 'joint']`, and
+`transformExtrasFor` was already the accessor -- a NEIGHBOURING function in the
+same file, `transformSupportsForModel`, already transformed this way. So this
+section was less "invent a declaration" and more "make the second copy match the
+first". Only `roots` preserving Z needed keeping.
 
-Biggest single win for both types and the cheapest, because the shape is already
-solved once in this branch.
+**STUMP'S ARM HAD MORE THAN THE SKETCH ABOVE.** It also moved `rootPos` and
+`joint.pos`, which the sketch's "transform the segments and contacts" does not
+cover. `transformExtrasFor` names both.
 
-**Verify:** transforms are covered by the goldens (moving a model rewrites every
-support it owns), so a mismatch shows there. Capture the transformed state for a
-scene with one of every type before and after, and compare byte-for-byte.
+**Kickstand was not in the switch at all** -- it fell to `default` and its
+segments were transformed afterwards by a separate pass,
+`transformAllKickstandsInState`, which the commit then reported through
+`kickstandsChanged`. That pass was purely generic, so it is folded in: the walk
+covers kickstands like every other type, and `kickstandsChanged` is now read off
+whether the walk minted a new collection for them. `kickstandStoreVersionRef` in
+`page.tsx` still advances once per transform, so the drag-sync handshake is
+unchanged.
 
-### 6. Payload collection lists in `useSceneCollectionManager.ts` (15 stick refs)
+**Verified byte-for-byte.** Captured every collection plus `roots` and `knots`
+for five scenarios -- translate with a Z delta (exercising `preserveRootZ`),
+rotate, scale, and two single-model transforms -- run against HEAD and against
+the working tree: **identical, 1,754,214 bytes each time, five times**. Then the
+suite, the goldens and `next build`.
 
-Hand-written collection lists in payload validation, counting and remapping:
-`supports.sticks?.length`, `candidate.sticks != null && !Array.isArray(...)`,
-`supportIds.sticks.length`, `payload.sticks.forEach(...)`. Each names every
-collection in sequence.
+**`Stick` and `Stump` are no longer imported into `state.ts` at all** as a
+result; `Twig` was already unused and went with them.
 
-`SUPPORT_COLLECTION_KEYS` answers all of them. This is the same fix the
-clipboard merge already took, and the same failure mode: a list that omits a
-collection drops those entities silently.
+### 6. Payload collection lists -- DONE, and one of the lists was dropping stumps
 
-### 7. The proxy mesh layer's per-type emitters (18 stump, 22 stick)
+Two functions, `voxlSupportsContainData` and `countSupportEntries`, listed nine
+collections each. **`stumps` was not among them**, even though
+`DragonfruitImportFormat` declares it -- so a document whose only supports were
+stumps read as having NO supports at all, and counted 0. Demonstrated directly:
+two stumps and nothing else gave `false` / `0` before, `true` / `2` after. On the
+criosphinx fixture the delta is zero only because that fixture carries no stumps,
+which is why nothing caught it.
+
+Both now walk `SUPPORT_COLLECTION_KEYS`, which is exactly the payload's key set:
+that list is `SUPPORT_PRIMITIVE_COLLECTIONS` (roots, knots) plus every type's
+collection, and it omits none of the payload's keys.
+
+The optional-collection check named `twigs`, `sticks` and `kickstands`
+individually -- `stumps` is optional too and went unchecked, so a malformed
+payload could smuggle a non-array through it. Now every declared collection is
+checked.
+
+**The four `getSupportsForModel` call sites are derived too.** That function
+already walks `MODEL_ID_COLLECTION_KEYS` and returns an array per collection; the
+callers were reading a hand-written subset of it, nine lines of `||` at a time,
+and asking `getSnapshot().kickstands` separately. They now reduce or `some` over
+the same key list the function fills. `kickstandCountByModel`, the hand-built
+map that duplicated what `supportIds.kickstands` already held, is gone.
+
+Three dead `kickstandStateBefore = getSnapshot()` locals went with it -- one
+orphaned by deriving its only reader, two that were already dead assignments.
+
+One `ReturnType<typeof getSupportsForModel>` became the named `ModelSupportIds`
+the module exports, per the repo's rule against publishing a contract as
+`ReturnType<typeof fn>`.
+
+### 7. The proxy mesh layer's per-type emitters -- NOT ATTEMPTED, as instructed
 
 `SupportProxyMeshLayer` emits a different primitive recipe per type -- a stump's
 frustum has its own radii and height fields, a stick has two cones, a brace has a
@@ -298,10 +346,12 @@ ceiling on how low these counts can go without one.
 
 ### The floor
 
-With 5 and 6 done and 7 left alone, expect stump around 40 and stick around 90.
-The remainder is the proxy/marquee geometry plus the type's own folder and the
-registry, which are exempt by design. Neither type reaches zero, and should not:
-zero would mean the renderer had no per-type geometry at all.
+With 5 and 6 done and 7 left alone, the measured floor is stump 63 and stick
+115 -- the estimate here was 40 and 90, so it was low by roughly half. The
+remainder is the proxy/marquee geometry plus the type's own folder, the
+registry, and the tests, which are exempt or are the type's own subject. Neither
+type reaches zero, and should not: zero would mean the renderer had no per-type
+geometry at all.
 
 
 ---

@@ -324,7 +324,7 @@ import {
   getSavedUvToolsSettings,
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
-import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
+import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, resolveDeclaredHosts, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitSupportShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
 import { resolveSegmentEndpoints, type ShaftEntity } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
@@ -5763,12 +5763,9 @@ export default function Home() {
           const segment = entity.segments[segmentIndex];
           if (segment) {
             const descriptor = getSupportTypeDescriptor(owner.typeId);
-            const hosts = {
-              root: descriptor.ownsRoot ? state.roots[(entity as { rootId?: string }).rootId ?? ''] : undefined,
-              hostKnot: descriptor.lower.kind === 'knot'
-                ? state.knots[(entity as { parentKnotId?: string }).parentKnotId ?? '']
-                : undefined,
-            };
+            // Read off the declared edges: `lower.kind` + `parentKnotId` gave a
+            // kickstand no knot, because its knot is at its UPPER end.
+            const hosts = resolveDeclaredHosts(owner.typeId, entity as unknown as Record<string, unknown>);
             const endpoints = resolveSegmentEndpoints(entity, segment, segmentIndex, hosts);
 
             if (endpoints) {

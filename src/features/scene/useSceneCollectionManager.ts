@@ -761,30 +761,27 @@ function remapModelIdsInPayload<T>(value: T, idMap: Map<string, string>): T {
   return visit(value) as T;
 }
 
+/**
+ * Whether a serialized scene carries any support at all.
+ *
+ * Walked over the registry's collections rather than listed by hand. The list
+ * this replaces named nine collections and omitted `stumps`, even though
+ * `DragonfruitImportFormat` declares it -- so a scene whose only support was a
+ * stump read as having no supports.
+ */
 function voxlSupportsContainData(document: VoxlDocumentV1): boolean {
-  const supports = document.supports;
-  return supports.roots.length > 0
-    || supports.trunks.length > 0
-    || supports.branches.length > 0
-    || supports.leaves.length > 0
-    || (supports.twigs?.length ?? 0) > 0
-    || (supports.sticks?.length ?? 0) > 0
-    || supports.braces.length > 0
-    || supports.knots.length > 0
-    || (supports.kickstands?.length ?? 0) > 0;
+  return payloadCollections(document.supports).some((entities) => entities.length > 0);
+}
+
+/** A payload's collections as arrays, keyed by the registry's collection names. */
+function payloadCollections(payload: DragonfruitImportFormat): unknown[][] {
+  const record = payload as unknown as Record<string, unknown[] | undefined>;
+  return SUPPORT_COLLECTION_KEYS.map((key) => record[key] ?? []);
 }
 
 function countSupportEntries(payload: DragonfruitImportFormat | null | undefined): number {
   if (!payload) return 0;
-  return payload.roots.length
-    + payload.trunks.length
-    + payload.branches.length
-    + payload.leaves.length
-    + (payload.twigs?.length ?? 0)
-    + (payload.sticks?.length ?? 0)
-    + payload.braces.length
-    + payload.knots.length
-    + (payload.kickstands?.length ?? 0);
+  return payloadCollections(payload).reduce((total, entities) => total + entities.length, 0);
 }
 
 function applyImportDefaultsToRaftState() {
@@ -864,9 +861,16 @@ function asDragonfruitImportFormat(value: unknown): DragonfruitImportFormat | nu
     return null;
   }
 
-  if (candidate.twigs != null && !Array.isArray(candidate.twigs)) return null;
-  if (candidate.sticks != null && !Array.isArray(candidate.sticks)) return null;
-  if (candidate.kickstands != null && !Array.isArray(candidate.kickstands)) return null;
+  // Every collection the registry declares, not just the three that happened to
+  // be listed: `stumps` is optional in the payload too, and an unchecked
+  // optional collection is one a malformed payload can smuggle a non-array
+  // through. The required ones were already checked above, so re-checking them
+  // as "absent or an array" costs nothing.
+  const collections = candidate as unknown as Record<string, unknown>;
+  for (const key of SUPPORT_COLLECTION_KEYS) {
+    const value = collections[key];
+    if (value != null && !Array.isArray(value)) return null;
+  }
 
   return candidate as DragonfruitImportFormat;
 }
@@ -959,7 +963,8 @@ type DebugPrimitiveType =
 
 type DebugPrimitiveSizePreset = 'small' | 'medium' | 'large';
 
-import { deleteSupportsForModel, getSupportsForModel } from '@/supports/PlacementLogic/SupportModelLinker';
+import { deleteSupportsForModel, getSupportsForModel, type ModelSupportIds } from '@/supports/PlacementLogic/SupportModelLinker';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
 import { beginSupportStateBatch, endSupportStateBatch } from '@/supports/state';
 import {
   captureModelSupportsToClipboard,
@@ -3829,30 +3834,18 @@ export function useSceneCollectionManager() {
       });
 
     const supportStateBeforeDelete = getSnapshot();
-    const kickstandSnapshotBefore = getSnapshot();
-
-    const kickstandCountByModel = new Map<string, number>();
-    for (const kickstand of Object.values(kickstandSnapshotBefore.kickstands)) {
-      const current = kickstandCountByModel.get(kickstand.modelId) ?? 0;
-      kickstandCountByModel.set(kickstand.modelId, current + 1);
-    }
-
-    const supportsByModel = new Map<string, ReturnType<typeof getSupportsForModel>>();
+    const supportsByModel = new Map<string, ModelSupportIds>();
     const supportPrimitiveCountByModel = new Map<string, number>();
 
     for (const model of existing) {
       const supportIds = getSupportsForModel(supportStateBeforeDelete, model.id);
       supportsByModel.set(model.id, supportIds);
 
-      const kickstandCount = kickstandCountByModel.get(model.id) ?? 0;
-      const supportPrimitiveCount = supportIds.roots.length
-        + supportIds.trunks.length
-        + supportIds.branches.length
-        + supportIds.braces.length
-        + supportIds.leaves.length
-        + supportIds.twigs.length
-        + supportIds.sticks.length
-        + kickstandCount;
+      // Every collection `getSupportsForModel` fills, which is every
+      // modelId-bearing one -- stumps included, and kickstands counted here
+      // rather than added separately.
+      const supportPrimitiveCount = MODEL_ID_COLLECTION_KEYS
+        .reduce((total, key) => total + supportIds[key].length, 0);
 
       supportPrimitiveCountByModel.set(model.id, supportPrimitiveCount);
     }
@@ -3870,17 +3863,7 @@ export function useSceneCollectionManager() {
         supportsByModel.set(modelId, supportIds);
       }
 
-      const hasMainSupports = supportIds.roots.length > 0
-        || supportIds.trunks.length > 0
-        || supportIds.branches.length > 0
-        || supportIds.braces.length > 0
-        || supportIds.leaves.length > 0
-        || supportIds.twigs.length > 0
-        || supportIds.sticks.length > 0;
-
-      if (hasMainSupports) return true;
-
-      return (kickstandCountByModel.get(modelId) ?? 0) > 0;
+      return MODEL_ID_COLLECTION_KEYS.some((key) => supportIds[key].length > 0);
     };
 
     const includeSupportHistory = existing.some((model) => modelHasSupports(model.id));
@@ -3934,18 +3917,10 @@ export function useSceneCollectionManager() {
       // Defensive pass: guarantee no orphaned supports survive model deletion.
       for (const modelId of ids) {
         const remaining = getSupportsForModel(getSnapshot(), modelId);
-        const hasRemainingMainSupports = remaining.roots.length > 0
-          || remaining.trunks.length > 0
-          || remaining.branches.length > 0
-          || remaining.braces.length > 0
-          || remaining.leaves.length > 0
-          || remaining.twigs.length > 0
-          || remaining.sticks.length > 0;
+        const hasRemainingSupports = MODEL_ID_COLLECTION_KEYS
+          .some((key) => remaining[key].length > 0);
 
-        const hasRemainingKickstands = Object.values(getSnapshot().kickstands)
-          .some((kickstand) => kickstand.modelId === modelId);
-
-        if (hasRemainingMainSupports || hasRemainingKickstands) {
+        if (hasRemainingSupports) {
           totalRemovedSupports += deleteSupportsForModel(getSnapshot(), modelId);
         }
       }
@@ -3975,22 +3950,9 @@ export function useSceneCollectionManager() {
     if (existingModelIds.length === 0) return 0;
 
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getSnapshot();
-
     const hasSupportsForModel = (modelId: string) => {
       const supportIds = getSupportsForModel(supportStateBefore, modelId);
-      const hasMainSupports = supportIds.roots.length > 0
-        || supportIds.trunks.length > 0
-        || supportIds.branches.length > 0
-        || supportIds.braces.length > 0
-        || supportIds.leaves.length > 0
-        || supportIds.twigs.length > 0
-        || supportIds.sticks.length > 0;
-
-      if (hasMainSupports) return true;
-
-      return Object.values(kickstandStateBefore.kickstands)
-        .some((kickstand) => kickstand.modelId === modelId);
+      return MODEL_ID_COLLECTION_KEYS.some((key) => supportIds[key].length > 0);
     };
 
     const targetIds = existingModelIds.filter((modelId) => hasSupportsForModel(modelId));
@@ -4090,8 +4052,6 @@ export function useSceneCollectionManager() {
     const beforeActiveModelId = activeModelId;
     const beforeSelectedModelIds = selectedModelIds;
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getSnapshot();
-
     const first = modelClipboard[0];
 
     const pastedGeometry = cloneGeometryWithBounds(first.geometry, { shared: true });
@@ -4155,8 +4115,6 @@ export function useSceneCollectionManager() {
     const beforeActiveModelId = activeModelId;
     const beforeSelectedModelIds = selectedModelIds;
     const supportStateBefore = getSnapshot();
-    const kickstandStateBefore = getSnapshot();
-
     const entries = modelClipboard;
 
     const centerX = defaultImportCenterXY.x;

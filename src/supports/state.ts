@@ -1,4 +1,4 @@
-import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Stump } from './types';
+import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
@@ -8,13 +8,13 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { hasSupportUpdater, hostKnotFieldsFor, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { hasSupportUpdater, hostKnotFieldsFor, typeIdForCollection, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import { migrateLegacySupportPayload } from './importMigrations';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
-import { resolveSegmentEndpoints, type EndpointHosts, type ShaftEntity } from './SupportPrimitives/Knot/segmentEndpoints';
+import { resolveSegmentEndpoints, type ShaftEntity } from './SupportPrimitives/Knot/segmentEndpoints';
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
 import { emitSupportInteractionReset } from './interaction/supportInteractionReset';
 import { getJointDiameter, JOINT_DIAMETER_OFFSET_MM } from './constants';
@@ -1550,26 +1550,6 @@ function transformKickstandsForModelInState(
     return true;
 }
 
-/** Shafts only; roots and host knots are covered by the whole-scene walk. */
-function transformAllKickstandsInState(deltaMatrix: THREE.Matrix4): boolean {
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
-
-    const kickstandEntries = Object.values(state.kickstands);
-    if (kickstandEntries.length === 0) return false;
-
-    const nextKickstands = { ...state.kickstands };
-    for (const kickstand of kickstandEntries) {
-        nextKickstands[kickstand.id] = {
-            ...kickstand,
-            segments: kickstand.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-        };
-    }
-
-    setState({ ...state, kickstands: nextKickstands });
-    notify();
-    return true;
-}
-
 function reassignAllKickstandModelIdsInState(modelId: string): boolean {
     if (!modelId) return false;
 
@@ -1989,87 +1969,65 @@ export function transformAllSupportsForSingleModel(
     const deltaMatrix = afterMatrix.clone().multiply(beforeMatrix.clone().invert());
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
-    // One walk over SUPPORT_ENTITY_COLLECTIONS; the per-type work still
-    // differs, so it dispatches on the collection key.
+    // One walk over SUPPORT_ENTITY_COLLECTIONS. What moves is declared: a shaft
+    // if the type has one, each contact by the kind and field it declares, and
+    // whatever `transformExtrasFor` names (a brace curve, a stump's own root
+    // and joint). The one arm that stays here is `roots`, which is not a
+    // support type at all -- and a pure translation keeps its Z.
     const { collections: transformed } = mapSupportEntities(state, (entity, collection) => {
-        switch (collection) {
-            case 'roots': {
-                const root = entity as unknown as Roots;
-                return {
-                    ...root,
-                    transform: {
-                        ...root.transform,
-                        pos: preserveRootZ
-                            ? transformVec3PreserveZ(root.transform.pos, deltaMatrix)
-                            : transformVec3(root.transform.pos, deltaMatrix),
-                    },
-                } as unknown as typeof entity;
-            }
-            case 'trunks':
-            case 'branches': {
-                const shafted = entity as unknown as Trunk | Branch;
-                return {
-                    ...shafted,
-                    segments: shafted.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-                    contactCone: shafted.contactCone ? transformContactCone(shafted.contactCone, deltaMatrix, normalMatrix) : shafted.contactCone,
-                } as unknown as typeof entity;
-            }
-            case 'leaves': {
-                const leaf = entity as unknown as Leaf;
-                return {
-                    ...leaf,
-                    contactCone: transformContactCone(leaf.contactCone, deltaMatrix, normalMatrix),
-                } as unknown as typeof entity;
-            }
-            case 'twigs': {
-                const twig = entity as unknown as Twig;
-                return {
-                    ...twig,
-                    segments: twig.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-                    contactDiskA: transformContactDisk(twig.contactDiskA, deltaMatrix, normalMatrix),
-                    contactDiskB: transformContactDisk(twig.contactDiskB, deltaMatrix, normalMatrix),
-                } as unknown as typeof entity;
-            }
-            case 'sticks': {
-                const stick = entity as unknown as Stick;
-                return {
-                    ...stick,
-                    segments: stick.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-                    contactConeA: transformContactCone(stick.contactConeA, deltaMatrix, normalMatrix),
-                    contactConeB: transformContactCone(stick.contactConeB, deltaMatrix, normalMatrix),
-                } as unknown as typeof entity;
-            }
-            case 'braces': {
-                const brace = entity as unknown as Brace;
-                return {
-                    ...brace,
-                    curve: brace.curve
-                        ? {
-                            ...brace.curve,
-                            controlPoint1: transformVec3(brace.curve.controlPoint1, deltaMatrix),
-                            controlPoint2: transformVec3(brace.curve.controlPoint2, deltaMatrix),
-                            startTangent: transformDirection(brace.curve.startTangent, normalMatrix),
-                            endTangent: transformDirection(brace.curve.endTangent, normalMatrix),
-                        }
-                        : brace.curve,
-                } as unknown as typeof entity;
-            }
-            case 'stumps': {
-                const stump = entity as unknown as Stump;
-                return {
-                    ...stump,
-                    rootPos: transformVec3(stump.rootPos, deltaMatrix),
-                    joint: {
-                        ...stump.joint,
-                        pos: transformVec3(stump.joint.pos, deltaMatrix),
-                    },
-                    segments: stump.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-                    contactCone: transformContactCone(stump.contactCone, deltaMatrix, normalMatrix),
-                } as unknown as typeof entity;
-            }
-            default:
-                return entity;
+        if (collection === 'roots') {
+            const root = entity as unknown as Roots;
+            return {
+                ...root,
+                transform: {
+                    ...root.transform,
+                    pos: preserveRootZ
+                        ? transformVec3PreserveZ(root.transform.pos, deltaMatrix)
+                        : transformVec3(root.transform.pos, deltaMatrix),
+                },
+            } as unknown as typeof entity;
         }
+
+        const typeId = typeIdForCollection(collection);
+        const descriptor = getSupportTypeDescriptor(typeId);
+        const record = entity as unknown as Record<string, unknown>;
+        let next: Record<string, unknown> | null = null;
+
+        if (descriptor.hasSegments) {
+            next = { ...record };
+            next.segments = ((record.segments ?? []) as Segment[])
+                .map((segment) => transformSegment(segment, deltaMatrix, normalMatrix));
+        }
+
+        for (const { kind, field } of contactEndpointsFor(typeId)) {
+            const contact = record[field];
+            if (!contact) continue;
+            if (!next) next = { ...record };
+            next[field] = kind === 'disk'
+                ? transformContactDisk(contact as never, deltaMatrix, normalMatrix)
+                : transformContactCone(contact as never, deltaMatrix, normalMatrix);
+        }
+
+        for (const field of transformExtrasFor(typeId)) {
+            const value = record[field];
+            if (!value) continue;
+            if (!next) next = { ...record };
+            next[field] = field === 'curve'
+                ? {
+                    ...(value as BraceCurve),
+                    controlPoint1: transformVec3((value as BraceCurve).controlPoint1, deltaMatrix),
+                    controlPoint2: transformVec3((value as BraceCurve).controlPoint2, deltaMatrix),
+                    startTangent: transformDirection((value as BraceCurve).startTangent, normalMatrix),
+                    endTangent: transformDirection((value as BraceCurve).endTangent, normalMatrix),
+                }
+                : field === 'joint'
+                    ? { ...(value as Joint), pos: transformVec3((value as Joint).pos, deltaMatrix) }
+                    : transformVec3(value as Vec3, deltaMatrix);
+        }
+
+        // An entity the declared fields do not reach is returned as-is, so the
+        // walk leaves its collection untouched rather than minting an equal copy.
+        return (next ?? record) as unknown as typeof entity;
     });
 
     const nextKnots: Record<string, Knot> = {};
@@ -2080,14 +2038,17 @@ export function transformAllSupportsForSingleModel(
         };
     }
 
+    // Read before `setState`, which replaces `state`. Kickstands are written by
+    // the walk above like every other type, so whether they moved is settled by
+    // whether it minted a new collection for them.
+    const kickstandsChanged = transformed.kickstands !== state.kickstands;
+
     setState({
         ...state,
         ...transformed,
         knots: nextKnots,
     });
     notify();
-
-    const kickstandsChanged = transformAllKickstandsInState(deltaMatrix);
 
     return {
         supportsChanged: true,
@@ -2120,35 +2081,6 @@ export function removeRootById(rootId: string): Roots | null {
 }
 
 // --- Actions ---
-
-/**
- * The root and host knot an entity hands to segment resolution, read through the
- * fields its descriptor declares.
- *
- * Both come off the edges rather than `lower.kind`: a kickstand's knot is at its
- * UPPER end and its field is `hostKnotId`, so assembling the host from
- * `lower.kind === 'knot' ? parentKnotId` hands a kickstand no knot at all and its
- * last segment resolves to nothing.
- */
-function supportEndpointHostsOf(typeId: SupportTypeId, entity: unknown): EndpointHosts {
-    const record = entity as Record<string, unknown>;
-    const rootField = getSupportTypeDescriptor(typeId).edges
-        .find((edge) => edge.to === 'roots' && edge.ownership === 'owns')?.field;
-
-    let hostKnot: Knot | undefined;
-    for (const field of hostKnotFieldsFor(typeId)) {
-        const knot = state.knots[record[field] as string];
-        if (knot) {
-            hostKnot = knot;
-            break;
-        }
-    }
-
-    return {
-        root: rootField ? state.roots[record[rootField] as string] : undefined,
-        hostKnot,
-    };
-}
 
 export function toggleSegmentCurve(segmentId: string) {
     // A knot hosted on a span has no segments of its own: its "segment" is the
@@ -2228,7 +2160,7 @@ export function toggleSegmentCurve(segmentId: string) {
             entity,
             segment,
             segmentIndex,
-            supportEndpointHostsOf(owner.typeId, entity),
+            resolveDeclaredHosts(owner.typeId, entity as unknown as Record<string, unknown>),
         );
         if (!endpoints) return;
 
@@ -3016,11 +2948,12 @@ for (const descriptor of SUPPORT_TYPES) {
     if (!descriptor.hasSegments) continue;
 
     KNOT_PLACEMENT_BY_TYPE.set(descriptor.id, (entity, knot, segment, segmentIndex) => {
-        const record = entity as unknown as { rootId?: string; parentKnotId?: string };
-        const hosts = {
-            root: descriptor.ownsRoot ? state.roots[record.rootId ?? ''] : undefined,
-            hostKnot: descriptor.lower.kind === 'knot' ? state.knots[record.parentKnotId ?? ''] : undefined,
-        };
+        // Both hosts come off the declared edges. Gating the knot on
+        // `lower.kind === 'knot'` and reading `parentKnotId` handed a KICKSTAND
+        // neither: its knot is at its UPPER end, through `hostKnotId`. Its last
+        // segment -- the one that ends AT that knot -- then resolved to nothing,
+        // so a knot riding it was left behind when the kickstand moved.
+        const hosts = resolveDeclaredHosts(descriptor.id, entity as Record<string, unknown>);
 
         // A type declaring a host it was handed none of cannot place anything.
         if (descriptor.lower.kind === 'plateRoot' && !hosts.root) return null;
