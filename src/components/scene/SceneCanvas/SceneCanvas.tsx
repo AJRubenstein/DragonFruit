@@ -2866,12 +2866,12 @@ export function SceneCanvas({
       ]);
     }
 
-    for (const anchor of Object.values(supportStateForBounds.stumps)) {
-      chain(anchor.id, anchor.modelId, [
-        anchor.rootPos,
-        anchor.joint?.pos,
-        ...jointPositions(anchor.segments),
-        ...(anchor.contactCone ? conePositions(anchor.contactCone) : []),
+    for (const stump of Object.values(supportStateForBounds.stumps)) {
+      chain(stump.id, stump.modelId, [
+        stump.rootPos,
+        stump.joint?.pos,
+        ...jointPositions(stump.segments),
+        ...(stump.contactCone ? conePositions(stump.contactCone) : []),
       ]);
     }
 

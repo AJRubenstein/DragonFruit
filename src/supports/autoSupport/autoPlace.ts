@@ -2250,7 +2250,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
 
     return {
         hostCount: collectHostEntities(draft).length,
-        anchorCount: Object.keys(draft.stumps).length,
+        stumpCount: Object.keys(draft.stumps).length,
         leafCount: Object.keys(draft.leaves).length,
         branchCount: Object.keys(draft.branches).length,
         stickCount: Object.keys(draft.sticks).length,

@@ -123,7 +123,7 @@ export interface ForestScanMetrics {
 export interface ForestReport {
     /** Hosts the forest is built from, one count per declared host type. */
     hostCount: number;
-    anchorCount: number;
+    stumpCount: number;
     leafCount: number;
     branchCount: number;
     stickCount: number;
