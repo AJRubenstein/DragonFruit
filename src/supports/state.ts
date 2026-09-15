@@ -1,7 +1,6 @@
 import { SupportState, SupportEntityAny, DragonfruitImportFormat, Trunk, Roots, Segment, BezierSegment, StraightSegment, Branch, BraceCurve, Joint, Knot, Vec3, Leaf, Brace, Twig, Stick, Stump } from './types';
 import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } from './Curves/BezierUtils';
 import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
-import { resolveSegmentEndpoints, type ShaftEntity } from './SupportPrimitives/Knot/segmentEndpoints';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import {
     typesDeclaringOwnHistoryEntryWithoutUpdate,
@@ -9,12 +8,13 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
-import { hasSupportUpdater, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { hasSupportUpdater, hostKnotFieldsFor, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import { migrateLegacySupportPayload } from './importMigrations';
 import type { SupportCollectionKey } from './supportTypeRegistry';
 import type { SupportTipProfile } from './SupportPrimitives/ContactCone/types';
 import { getFinalSocketPosition } from './SupportPrimitives/ContactCone/contactConeUtils';
+import { resolveSegmentEndpoints, type EndpointHosts, type ShaftEntity } from './SupportPrimitives/Knot/segmentEndpoints';
 import { calculateDiskThickness } from './SupportPrimitives/ContactDisk/contactDiskUtils';
 import { emitSupportInteractionReset } from './interaction/supportInteractionReset';
 import { getJointDiameter, JOINT_DIAMETER_OFFSET_MM } from './constants';
@@ -2121,20 +2121,54 @@ export function removeRootById(rootId: string): Roots | null {
 
 // --- Actions ---
 
+/**
+ * The root and host knot an entity hands to segment resolution, read through the
+ * fields its descriptor declares.
+ *
+ * Both come off the edges rather than `lower.kind`: a kickstand's knot is at its
+ * UPPER end and its field is `hostKnotId`, so assembling the host from
+ * `lower.kind === 'knot' ? parentKnotId` hands a kickstand no knot at all and its
+ * last segment resolves to nothing.
+ */
+function supportEndpointHostsOf(typeId: SupportTypeId, entity: unknown): EndpointHosts {
+    const record = entity as Record<string, unknown>;
+    const rootField = getSupportTypeDescriptor(typeId).edges
+        .find((edge) => edge.to === 'roots' && edge.ownership === 'owns')?.field;
+
+    let hostKnot: Knot | undefined;
+    for (const field of hostKnotFieldsFor(typeId)) {
+        const knot = state.knots[record[field] as string];
+        if (knot) {
+            hostKnot = knot;
+            break;
+        }
+    }
+
+    return {
+        root: rootField ? state.roots[record[rootField] as string] : undefined,
+        hostKnot,
+    };
+}
+
 export function toggleSegmentCurve(segmentId: string) {
+    // A knot hosted on a span has no segments of its own: its "segment" is the
+    // span, whose two ends are the knots the span type declares.
     const span = parsePrefixedSegmentId(segmentId);
     if (span) {
-        const braceId = span.entityId;
-        const brace = state.braces[braceId];
-        if (!brace) return;
+        const spanDescriptor = getSupportTypeDescriptor(span.typeId);
+        const spans = state[spanDescriptor.location.key] as unknown as
+            Record<string, Record<string, unknown> & { curve?: BraceCurve } | undefined>;
+        const spanEntity = spans[span.entityId];
+        if (!spanEntity) return;
 
-        const startKnot = state.knots[brace.startKnotId];
-        const endKnot = state.knots[brace.endKnotId];
+        const [startField, endField] = hostKnotFieldsFor(span.typeId);
+        const startKnot = state.knots[spanEntity[startField] as string];
+        const endKnot = state.knots[spanEntity[endField] as string];
         if (!startKnot || !endKnot) return;
 
-        const newBrace = deepClone(brace);
-        if (newBrace.curve?.type === 'bezier') {
-            delete (newBrace as any).curve;
+        const newSpan = deepClone(spanEntity);
+        if (newSpan.curve?.type === 'bezier') {
+            delete newSpan.curve;
         } else {
             const startPos = toVector3(startKnot.pos);
             const endPos = toVector3(endKnot.pos);
@@ -2147,7 +2181,7 @@ export function toggleSegmentCurve(segmentId: string) {
             const bias = 0.5;
             const [cp1, cp2] = calculateBezierControlPoints(startKnot.pos, endKnot.pos, startTangent, endTangent, tension, bias);
 
-            newBrace.curve = {
+            newSpan.curve = {
                 type: 'bezier',
                 controlPoint1: cp1,
                 controlPoint2: cp2,
@@ -2159,160 +2193,62 @@ export function toggleSegmentCurve(segmentId: string) {
             };
         }
 
-        updateBrace(newBrace);
+        updateSupportEntity(span.typeId, newSpan);
         return;
     }
 
-    // Find the segment in trunks/branches/twigs/sticks
-    let targetTrunkId: string | null = null;
-    let targetBranchId: string | null = null;
-    let targetKickstandId: string | null = null;
-    let targetSegmentIndex = -1;
-    let container: Trunk | Branch | Twig | Stick | Kickstand | null = null;
+    // Which type owns this segment is a registry question, not a five-branch
+    // search: `findShaftOwnerOfSegment` walks the types that declare segments.
+    // The search this replaces listed five collections by hand and so never
+    // looked in `stumps` -- a stump segment was silently un-toggleable.
+    const owner = findShaftOwnerOfSegment(segmentId);
+    if (!owner) return;
+    const entity = getSupportEntity(owner.typeId, owner.id) as unknown as ShaftEntity | null;
+    if (!entity?.segments) return;
 
-    // Search Trunks
-    for (const t of Object.values(state.trunks)) {
-        const idx = t.segments.findIndex(s => s.id === segmentId);
-        if (idx !== -1) {
-            targetTrunkId = t.id;
-            targetSegmentIndex = idx;
-            container = t;
-            break;
-        }
-    }
+    const segmentIndex = entity.segments.findIndex((candidate) => candidate.id === segmentId);
+    if (segmentIndex === -1) return;
 
-    // Search Branches if not found
-    if (!container) {
-        for (const b of Object.values(state.branches)) {
-            const idx = b.segments.findIndex(s => s.id === segmentId);
-            if (idx !== -1) {
-                targetBranchId = b.id;
-                targetSegmentIndex = idx;
-                container = b;
-                break;
-            }
-        }
-    }
-
-    // Search Twigs if not found
-    if (!container) {
-        for (const t of Object.values(state.twigs)) {
-            const idx = t.segments.findIndex(s => s.id === segmentId);
-            if (idx !== -1) {
-                targetSegmentIndex = idx;
-                container = t;
-                break;
-            }
-        }
-    }
-
-    // Search Sticks if not found
-    if (!container) {
-        for (const spt of Object.values(state.sticks)) {
-            const idx = spt.segments.findIndex(s => s.id === segmentId);
-            if (idx !== -1) {
-                targetSegmentIndex = idx;
-                container = spt;
-                break;
-            }
-        }
-    }
-
-    // Search Kickstands if not found
-    if (!container) {
-        const kickstands = Object.values(state.kickstands);
-        for (const kickstand of kickstands) {
-            const idx = kickstand.segments.findIndex(s => s.id === segmentId);
-            if (idx !== -1) {
-                targetKickstandId = kickstand.id;
-                targetSegmentIndex = idx;
-                container = kickstand;
-                break;
-            }
-        }
-    }
-
-    if (!container || targetSegmentIndex === -1) return;
-
-    // Create deep clone
-    const newContainer = deepClone(container);
-    const segment = newContainer.segments[targetSegmentIndex];
+    const next = deepClone(entity);
+    const segment = next.segments[segmentIndex];
 
     if (segment.type === 'bezier') {
-        // Convert to Straight
+        // Convert to straight: identical for every type.
         const straight: StraightSegment = {
             id: segment.id,
             diameter: segment.diameter,
             topJoint: segment.topJoint,
             bottomJoint: segment.bottomJoint,
-            type: 'straight'
+            type: 'straight',
         };
-        newContainer.segments[targetSegmentIndex] = straight;
+        next.segments[segmentIndex] = straight;
     } else {
-        // Convert to Bezier
+        // Where the shaft really starts and ends, resolved from the type's
+        // declared lower and upper endpoints -- the same resolution the export,
+        // split and joint-drag paths use. The arms this replaces re-derived it
+        // per type, casting the container to Trunk and reading `.contactCone`,
+        // which ended the curve at the contact point rather than at the socket
+        // the shaft actually reaches, and fell back to a stubbed direction for
+        // the types whose contacts are named otherwise.
+        const endpoints = resolveSegmentEndpoints(
+            entity,
+            segment,
+            segmentIndex,
+            supportEndpointHostsOf(owner.typeId, entity),
+        );
+        if (!endpoints) return;
 
-        // Get Start Position (Approximation for initialization)
-        let startPos: THREE.Vector3;
-        if (segment.bottomJoint) {
-            startPos = toVector3(segment.bottomJoint.pos);
-        } else if (targetSegmentIndex === 0) {
-            if (targetTrunkId) {
-                const root = state.roots[(newContainer as Trunk).rootId];
-                if (root) {
-                    const startZ = root.transform.pos.z + root.diskHeight + root.coneHeight;
-                    startPos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, startZ);
-                } else {
-                    startPos = new THREE.Vector3();
-                }
-            } else if (targetKickstandId) {
-                const root = state.roots[(newContainer as Kickstand).rootId];
-                if (root) {
-                    const startZ = root.transform.pos.z + root.diskHeight + root.coneHeight;
-                    startPos = new THREE.Vector3(root.transform.pos.x, root.transform.pos.y, startZ);
-                } else {
-                    startPos = new THREE.Vector3();
-                }
-            } else if (targetBranchId) {
-                const knot = state.knots[(newContainer as Branch).parentKnotId];
-                startPos = knot && knot.pos ? toVector3(knot.pos) : new THREE.Vector3();
-            } else {
-                startPos = new THREE.Vector3();
-            }
-        } else {
-            const prevSeg = newContainer.segments[targetSegmentIndex - 1];
-            if (prevSeg.topJoint) {
-                startPos = toVector3(prevSeg.topJoint.pos);
-            } else {
-                startPos = new THREE.Vector3(); // Fallback
-            }
-        }
-
-        // Get End Position (Approximation)
-        let endPos: THREE.Vector3;
-        if (segment.topJoint) {
-            endPos = toVector3(segment.topJoint.pos);
-        } else if (targetKickstandId) {
-            const hostKnot = state.knots[(newContainer as Kickstand).hostKnotId];
-            endPos = hostKnot ? toVector3(hostKnot.pos) : startPos.clone().add(new THREE.Vector3(0, 0, 10));
-        } else if ((newContainer as Trunk).contactCone) {
-            const cone = (newContainer as Trunk).contactCone!;
-            endPos = toVector3(cone.pos);
-        } else {
-            endPos = startPos.clone().add(new THREE.Vector3(0, 0, 10));
-        }
-
-        // Calculate Tangents (Straight line)
-        const dir = endPos.clone().sub(startPos).normalize();
-        // Handle zero length case
+        const dir = toVector3(endpoints.end).sub(toVector3(endpoints.start)).normalize();
         if (dir.lengthSq() === 0) dir.set(0, 0, 1);
 
-        // Calculate Control Points
+        const startTangent = toVec3(dir);
+        const endTangent = toVec3(dir);
         const [cp1, cp2] = calculateBezierControlPoints(
-            toVec3(startPos),
-            toVec3(endPos),
-            toVec3(dir),
-            toVec3(dir),
-            0.5
+            endpoints.start,
+            endpoints.end,
+            startTangent,
+            endTangent,
+            0.5,
         );
 
         const bezier: BezierSegment = {
@@ -2323,17 +2259,16 @@ export function toggleSegmentCurve(segmentId: string) {
             type: 'bezier',
             controlPoint1: cp1,
             controlPoint2: cp2,
-            startTangent: toVec3(dir),
-            endTangent: toVec3(dir),
+            startTangent,
+            endTangent,
             tension: 0.5,
             bias: 0.5,
-            resolution: 16
+            resolution: 16,
         };
-        newContainer.segments[targetSegmentIndex] = bezier;
+        next.segments[segmentIndex] = bezier;
     }
 
-    const containerTypeId = getSupportTypeOf(newContainer.id);
-    if (containerTypeId) applySupportEntityUpdate(containerTypeId, newContainer);
+    updateSupportEntity(owner.typeId, next);
 }
 
 export function resetStore() {

@@ -94,32 +94,76 @@ exporting the store's internals, which trades one coupling for a worse one.
 
 ## 2. `toggleSegmentCurve` -- the five-collection search
 
-**The shape.** Five near-identical blocks: search a collection for the segment,
-record which collection won, then branch on that at the end to write the result
-back. The type names appear in the union, in the five `Object.values(state.x)`
-calls, in three target-id locals and in the write-back arms.
+**DONE.** The section is replaced by the derived owner walk plus the shared
+endpoint resolution. What actually happened differs from the sketch below in
+three ways worth recording.
 
-**Why it matters more than its count.** A hand-written union of type ids
-survives a rename with NO compile error -- `state.ts` has already produced that
-failure once (`KickstandHostKind`). The union here is the same class. The
-`targetTrunkId` / `targetKickstandId` split then forces every caller-visible arm
-to know which types exist.
+**The owner walk already existed.** `findShaftOwnerOfSegment(segmentId)` was
+already exported and already used by six callers (the context menu, joint
+creation, the knot gizmo, knot interaction, the removal payload). It walks
+`getSupports()` and reads the type off each entity, so this section needed a
+MIGRATION to an existing seam, not a new walk over `SUPPORT_TYPES` filtered by
+`hasSegments`.
 
-**What replaces it.** The registry already declares `hasSegments` per type, and
-`SUPPORT_TYPES` is ordered. One walk over the types that declare segments finds
-the owner and returns `{ typeId, entity, segmentIndex }`; the write-back arms
-collapse to one that dispatches on the returned `typeId`.
+**It was never merely inelegant -- it was broken.** The five hand-written loops
+were `trunks`, `branches`, `twigs`, `sticks`, `kickstands`. Stump declares
+`hasSegments: true` and was not among them, so a stump's segment was silently
+un-toggleable. The fixture's stump has an empty `segments` array, which is why
+nothing caught it; a stump gains segments as soon as one is jointed. The new
+test iterates `SUPPORT_TYPES` for `hasSegments`, so stump is covered by
+construction, and removing it from the walk fails three tests by name.
 
-**Check before assuming it is uniform.** The kickstand arm reads from a
-different source than the other four (see the `kickstands` local above the
-loop), and the trunk and kickstand arms do extra work the others do not. If an
-arm is genuinely different, that difference becomes a declaration on the
-descriptor, not an `if`.
+**The endpoints have a shared implementation, and using it changes geometry.**
+The old write-back arms re-derived the curve's start and end per type: the last
+arm cast the container to Trunk and read `.contactCone`, so a shaft ending at a
+contact got a curve aimed at the CONTACT POINT, and the arms for twig and stick
+-- whose contacts are `contactDisk*` and `contactCone*`, not `contactCone` --
+fell through to a stub 10mm along +Z. The section now calls
+`resolveSegmentEndpoints`, which is what the export, split, joint-drag and
+raster-export paths already use, so the curve spans the shaft the app draws.
 
-**Verify.** `toggleSegmentCurve` is reachable from a hotkey. Capture the
-before/after state for a scene holding one of every shafted type, toggle a
-segment on each, and assert the result is identical. Mutation-test it: making
-the walk skip one type must fail.
+**`hostKnot` had to come off the declared edges, not `lower.kind`.** The
+convention used elsewhere in the tree is
+`descriptor.lower.kind === 'knot' ? state.knots[entity.parentKnotId]`. That hands
+a KICKSTAND no knot at all -- its knot is at its UPPER end and its field is
+`hostKnotId` -- so `resolveSegmentEndpoints` returns null for its last segment,
+which has no top joint. `supportEndpointHostsOf` reads the `owns` edge for the
+root and `hostKnotFieldsFor` for the knot, and assembling it the old way fails
+three tests by name. The other `lower.kind`-based call sites
+(`KNOT_PLACEMENT_BY_TYPE` in `state.ts`, `page.tsx`) have the same latent gap and
+were left alone: out of this section's scope, and noted here rather than fixed
+silently.
+
+**Measured before and after**, over the criosphinx fixture:
+
+- 249 real segments, all six shafted types: the derived start/end equals what
+  the old arms computed, 0 differing -- provided the hosts are assembled as
+  above.
+- The fixture's only segments without a top joint are three kickstand ones, all
+  of which agree.
+- 5 real segments (every type that has one; the fixture's stump has none) toggle
+  to bezier and round-trip back exactly.
+- The span arm (`brace`, reached through a prefixed id) toggles on and off, and
+  an unknown span id is a no-op rather than a throw.
+
+**Not identical, deliberately, on two arms the fixture cannot reach:** a trunk
+or stump segment ending at a contact now ends the curve at the socket rather
+than the contact point, and a twig/stick one no longer falls back to a stub
+10mm along +Z. Both are what `resolveSegmentEndpoints` does for the other ten
+call sites, and both are unreachable on real data today -- twig and stick
+declare `segmentsCarryBothJoints`, and no fixture trunk ends without a joint.
+
+**Original sketch, kept for the shape it described.**
+
+Five near-identical blocks: search a collection for the segment, record which
+collection won, then branch on that at the end to write the result back. The
+type names appear in the union, in the five `Object.values(state.x)` calls, in
+three target-id locals and in the write-back arms -- the split between the trunk
+and kickstand target ids then forced every caller-visible arm to know which
+types exist.
+
+A hand-written union of type ids survives a rename with NO compile error --
+`state.ts` has already produced that failure once (`KickstandHostKind`).
 
 ---
 
