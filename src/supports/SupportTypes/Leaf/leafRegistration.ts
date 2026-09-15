@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 import { registerSupportExportGroup } from '../../exportGeometry/seam';
-import { registerSupportUpdater } from '../../supportTypeRegistry';
-import { updateLeaf } from '../../state';
 import { addModelMetadata, appendConeGeometry } from '../../exportGeometry/helpers';
 import { registerSettingsInference } from '../../supportTypeRegistry';
 import { mergeSettingsWithDefaults, type SupportSettings } from '../../Settings/types';
@@ -42,4 +40,4 @@ registerSupportExportGroup<Leaf>('leaf', (leaf, context) => {
 });
 
 // Registered here rather than in the store's own list: a leaf reshapes its contact cone, which the generic path does not do.
-registerSupportUpdater<Leaf>('leaf', updateLeaf);
+import './leafSettle';

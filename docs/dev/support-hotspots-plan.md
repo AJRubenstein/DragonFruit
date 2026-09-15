@@ -1,7 +1,7 @@
 # The next phase: the five hotspot files
 
-**Status: sections 1-4 are DONE (1 and 3 converted, 2 and 4 measured and left).
-Section 5 is not started.** It is the file every other one depends on; do it last.
+**Status: sections 1-5 are DONE.** 1, 3 and 5 converted; 2 and 4 measured and
+left, both with the evidence recorded. The floor section below is measured.
 
 The stump/stick plan is finished. It cleared the two smallest types to 36 and 84
 and, in doing so, built the pattern the rest of the work uses: a per-type fact
@@ -210,14 +210,65 @@ reads state plus the drag overrides, so they are not redundant with it.
 inventing a declaration for "this block renders braces", which is not a fact the
 registry can hold.
 
-### 5. `state.ts` (532)
+### 5. `state.ts` -- DONE, and the gate found a live bug
 
-The store. Leaf 145, kickstand 114, brace 110. It carries `updateLeaf` and
-`updateBrace`, which the stump/stick plan left open because moving them needs a
-post-write settle seam designed first -- that decision is the gate on this file,
-not a detail of it.
+The store, and the gate this plan named: moving `updateLeaf` and `updateBrace`
+needs a post-write settle seam designed first. It is designed, both bodies are
+moved, and routing leaf through the generic path exposed a bug that had been
+latent for as long as leaf had an updater of its own.
 
-Do this one last. It is the file every other one depends on.
+**The plan's premise about the cost was wrong in the file's favour.** It said
+moving a body "means exporting the store's internals". The four helpers both
+bodies need -- `recomputeConeHostKnotGeometry`, `recomputeSpanHostKnotGeometry`,
+`recomputeKnotDependentGeometry`, `getChangedKnotPositions` -- take collections
+and return collections. They touch no store state, so exporting them is not
+exposing internals; it is publishing pure functions. What was actually needed was
+a way for a type's folder to say what to write BACK.
+
+**The seam.** `supports/settle/seam.ts`: a type registers
+`(context) => Partial<SupportState> | null`, handed the state the write produced
+-- its own collection already replaced, every other collection still as it was,
+which is exactly what the old bodies read from the store. `updateSupportEntity`
+asks for the hook after writing and merges what comes back. Only two types
+register one.
+
+**The order is the reason each is separate, and they are opposite.**
+
+- Leaf: cone-host knots, THEN span-host knots. The cone pass moves the knot, the
+  span pass moves what hangs off the knots that moved.
+- Brace: span-host knots first, the leaf cascade only if they changed, then a
+  SECOND span pass. It cannot use `settleKnotDependentGeometry`, which starts from
+  the leaf side.
+
+**The bug the seam reached: a write to `leaves` was thrown away.** The write path
+was:
+
+```ts
+setState({ ...state, [key]: nextCollection, knots: nextKnots, leaves: nextLeaves })
+```
+
+`leaves: nextLeaves` is the PRE-write collection, and for leaf `key` IS `leaves`
+-- so the later property won and `updateSupportEntity('leaf', entity)` kept the
+old entity and returned `true`. Verified directly: passing a cone at x = -0.728
+left x at -2.229. Latent because leaf never took this path while it had a bespoke
+updater. The settle defaults now come first and the entity's own collection last,
+which fixes it for leaf and for any future type whose collection collides.
+
+**Verified:** four leaf and brace write scenarios dumped the whole store before
+and after -- a moved cone, an identity write, an identity brace write, and a brace
+whose end knot moved -- **all four identical** (1.39 MB each). `updateLeaf` and
+`updateBrace` are gone from `src/` entirely; the three external callers write
+through `updateSupportEntity`, whose one-argument form reads the type off the
+entity.
+
+**The remaining walks are the subject.** Three hand-written collection walks
+survive -- two over kickstands, one over trunks -- and all three are the subject
+of their function (`transformKickstandsForModelInState`,
+`reassignAllKickstandModelIdsInState`, and the trunk pass of
+`transformSupportsForModel`). Nothing else in the file names a type to ask a
+question a declaration could answer.
+
+References: 3,899 -> 3,846.
 
 ## Rules carried forward
 

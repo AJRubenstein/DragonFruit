@@ -1,13 +1,12 @@
 import * as THREE from 'three';
 
 import { registerSupportExportGroup } from '../../exportGeometry/seam';
-import { registerSupportUpdater } from '../../supportTypeRegistry';
-import { updateBrace } from '../../state';
 import { addModelMetadata, SupportGeometryGenerator } from '../../exportGeometry/helpers';
 import { bezierToLineSegments } from '../../Curves/BezierUtils';
 import type { Brace, Knot } from '../../types';
 import './braceProxyGeometry';
 import './braceMarqueeShape';
+import './braceSettle';
 
 // A brace spans two knots and touches neither model nor plate, so its export
 // geometry is one shaft between them -- curved when the entity says so. Its
@@ -61,4 +60,4 @@ registerSupportExportGroup<Brace>('brace', (brace, context) => {
 });
 
 // Registered here rather than in the store's own list: a brace recomputes its curve and the knots riding it.
-registerSupportUpdater<Brace>('brace', updateBrace);
+

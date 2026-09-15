@@ -8,6 +8,7 @@ import {
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
+import { supportSettleFor } from './settle/seam';
 import { hasSupportUpdater, hostKnotFieldsFor, typeIdForCollection, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import { migrateLegacySupportPayload } from './importMigrations';
@@ -326,7 +327,7 @@ export function recomputeLeafContactConeAxisAndLength(
     };
 }
 
-function recomputeKnotDependentGeometry(
+export function recomputeKnotDependentGeometry(
     leaves: Record<string, Leaf>,
     updatedKnotPosById: Record<string, Vec3>
 ): Record<string, Leaf> {
@@ -381,7 +382,7 @@ function recomputeKnotDependentGeometry(
     return nextLeaves;
 }
 
-function recomputeConeHostKnotGeometry(
+export function recomputeConeHostKnotGeometry(
     leaves: Record<string, Leaf>,
     knots: Record<string, Knot>
 ): { knots: Record<string, Knot>; changed: boolean } {
@@ -916,7 +917,7 @@ function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, Support
     return { knots: finalKnots, leaves: nextLeaves };
 }
 
-function getChangedKnotPositions(prev: Record<string, Knot>, next: Record<string, Knot>): Record<string, Vec3> {
+export function getChangedKnotPositions(prev: Record<string, Knot>, next: Record<string, Knot>): Record<string, Vec3> {
     const changed: Record<string, Vec3> = {};
     for (const [id, nk] of Object.entries(next)) {
         const pk = prev[id];
@@ -928,7 +929,7 @@ function getChangedKnotPositions(prev: Record<string, Knot>, next: Record<string
     return changed;
 }
 
-function recomputeSpanHostKnotGeometry(
+export function recomputeSpanHostKnotGeometry(
     braces: Record<string, Brace>,
     knots: Record<string, Knot>
 ): { knots: Record<string, Knot>; changed: boolean } {
@@ -2865,46 +2866,26 @@ function applySupportEntityUpdate(
         }
     }
 
+    // What else this type touches, in the order IT needs. A type whose cascade
+    // differs from the generic one -- leaf and brace -- declares it in its own
+    // folder; the rest settle to nothing and are written exactly as before.
+    const settle = supportSettleFor(typeId);
+    const settled = settle ? settle({
+        next: { ...state, [key]: nextCollection, knots: nextKnots, leaves: nextLeaves },
+    }) : null;
+
     setState({
         ...state,
-        [key]: nextCollection,
+        // The settle defaults FIRST, then the entity's own collection, so a write
+        // to a collection named `leaves` cannot be overwritten by the generic
+        // leaf default below it. The collision is real: leaf's own collection IS
+        // `leaves`, so with the order the other way round `updateSupportEntity`
+        // silently kept the pre-write leaves and returned true. It was latent for
+        // as long as leaf had a bespoke updater that never took this path.
         knots: nextKnots,
         leaves: nextLeaves,
-    });
-    notify();
-}
-
-/**
- * @deprecated for removal -- prefer `updateSupportEntity('leaf', entity)`.
- * Kept for `SupportTypes/Leaf/`, which may name its own type, and for tests.
- */
-export function updateLeaf(leaf: Leaf) {
-    if (!state.leaves[leaf.id]) return;
-
-    // The kind comes off the leaf rather than being named here. The check above
-    // puts the entity in the store, which is what the resolver falls back to, so
-    // it finds a type; a leaf that resolved to none has no cache slot to read,
-    // and reading the wrong one would be worse than not reading at all.
-    const leafTypeId = resolveSupportTypeIdOf(leaf) ?? leaf.typeId;
-    if (!leafTypeId) return;
-
-    const cachedHex = getCachedSupportSettingsHex(leafTypeId, leaf.id, leaf.settingsCodeHex ?? undefined);
-    const nextLeaf = !leaf.settingsCodeHex && cachedHex
-        ? { ...leaf, settingsCodeHex: cachedHex }
-        : leaf;
-
-    if (nextLeaf.settingsCodeHex) {
-        setCachedSupportSettingsHex(leafTypeId, nextLeaf.id, nextLeaf.settingsCodeHex);
-    }
-
-    const nextLeaves = { ...state.leaves, [nextLeaf.id]: { ...nextLeaf, typeId: resolveSupportTypeIdOf(nextLeaf) ?? nextLeaf.typeId } };
-    const coneHost = recomputeConeHostKnotGeometry(nextLeaves, state.knots);
-    const spanHost = recomputeSpanHostKnotGeometry(state.braces, coneHost.knots);
-
-    setState({
-        ...state,
-        leaves: nextLeaves,
-        knots: spanHost.knots,
+        [key]: nextCollection,
+        ...(settled ?? {}),
     });
     notify();
 }
@@ -2974,42 +2955,6 @@ for (const descriptor of SUPPORT_TYPES) {
         const pos = calculateKnotPositionOnSegmentFromT(endpoints.start, endpoints.end, segment, t);
         return diameter === undefined ? { pos } : { pos, diameter };
     });
-}
-
-/**
- * @deprecated for removal -- prefer `updateSupportEntity('brace', entity)`.
- * Kept for `SupportTypes/Brace/`, which may name its own type, and for tests.
- */
-export function updateBrace(brace: Brace) {
-    if (!state.braces[brace.id]) return;
-    // The type comes off the entity the caller handed back, so a renamed brace
-    // type reaches this stamp instead of writing the old id into the store. The
-    // guard above means the entity is in the store, so the lookup cannot miss.
-    const nextBraces = { ...state.braces, [brace.id]: { ...brace, typeId: resolveSupportTypeIdOf(brace) ?? brace.typeId } };
-
-    // The brace's own knots move first -- that is what changed -- and the leaf
-    // pass runs only if they did. Ordering matters here, so this does not use
-    // `settleKnotDependentGeometry`, which starts from the leaf side.
-    const spanHost1 = recomputeSpanHostKnotGeometry(nextBraces, state.knots);
-    const changedByBrace1 = getChangedKnotPositions(state.knots, spanHost1.knots);
-
-    let nextLeaves = state.leaves;
-    let nextKnots = spanHost1.knots;
-
-    if (Object.keys(changedByBrace1).length > 0) {
-        nextLeaves = recomputeKnotDependentGeometry(nextLeaves, changedByBrace1);
-        const coneHost = recomputeConeHostKnotGeometry(nextLeaves, nextKnots);
-        const spanHost2 = recomputeSpanHostKnotGeometry(nextBraces, coneHost.knots);
-        nextKnots = spanHost2.knots;
-    }
-
-    setState({
-        ...state,
-        braces: nextBraces,
-        knots: nextKnots,
-        leaves: nextLeaves,
-    });
-    notify();
 }
 
 
