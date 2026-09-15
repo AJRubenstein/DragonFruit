@@ -18,12 +18,18 @@ folder. Comments and strings are invisible to this scan -- use
 
 ## What the references actually are
 
-Every stump and stick reference falls into one of four groups. Only groups 2
-and 3 are work.
+This scan already excludes the registry, `types.ts` and each type's own folder,
+so every reference it reports is somewhere a type should NOT be named. None of
+them are "fine because the type is the subject" -- if the type is the subject,
+the code belongs in that type's folder.
 
-**1. The type genuinely is the subject.** `StumpRenderer` drawing a stump,
-`stumpBuilder` building one. These are correct and stay. Most of the stump
-count is this.
+They fall into four groups.
+
+**1. A body that belongs in the type's folder but cannot move yet.**
+`updateStump`, `updateLeaf` and `updateBrace` live in `state.ts` while being
+registered from their own folders -- `stumpRegistration.ts` does
+`registerSupportUpdater<Stump>('stump', updateStump)` and imports the body back
+out of `state.ts`. See section 4.
 
 **2. A hand-written per-type search.** `toggleSegmentCurve` in `state.ts`
 (~2124-2338) searches five collections in sequence for the one holding a
@@ -96,6 +102,38 @@ a local variable name cannot be derived.
   `CURRENT_SEGMENT_STICKINESS`. `--duds` prints what it excluded.
 - The string "models stick out of the printer build volume" is prose in a
   comment field; the scan blanks strings, so it never counted.
+
+---
+
+## 4. The three bespoke updaters in `state.ts`
+
+`updateStump`, `updateLeaf` and `updateBrace` are each registered from their own
+folder and imported back out of `state.ts`. The registration is derived; the
+body is not, and it is the body that names the type.
+
+**Why they have not moved.** Each reads store internals that are module-private
+to `state.ts`: `state.leaves` / `state.braces` directly,
+`getCachedSupportSettingsHex`, `recomputeSpanHostKnotGeometry`, and
+`replaceSupportEntity` (private, overloaded). Moving a body today means
+exporting the store's internals, which trades one coupling for a worse one.
+
+**`updateStump` is the cheapest and should go first.** Its whole body is
+`replaceSupportEntity(stump)`. Exporting a single narrow write -- a
+`replaceSupportEntity` the registry owns, or a `writeSupportEntity(typeId,
+entity)` seam -- moves it into `SupportTypes/Stump/` with no other change, and
+removes the only reason `Stump` is imported into `state.ts` at all.
+
+**Then leaf and brace, which need more.** `updateLeaf` wants the settings-hex
+cache; `updateBrace` wants span-host knot recomputation and a deliberate
+ordering that `settleKnotDependentGeometry` does not provide. Each needs its
+dependency exposed as a named seam before the body can move. Do them one at a
+time, and only after stump proves the seam.
+
+**Check first:** whether the generic `applySupportEntityUpdate` now covers what
+`updateStump` does. If it does, the bespoke updater can be deleted rather than
+moved -- the descriptor stops registering one and the generic pass claims the
+slot. That is a behaviour change (the generic path also caches the settings hex
+and repositions riding knots), so it needs the goldens, not just the suite.
 
 ---
 
