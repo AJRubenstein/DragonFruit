@@ -9,7 +9,7 @@
 import { computeJointDragPreviewKnots } from '../src/supports/interaction/jointDragPreviewMath';
 import {
   buildBranchCandidateKnotIdsByBranchId,
-  buildBranchesByParentKnotId,
+  buildEntitiesByHostKnot,
   computeCascadedPreviewKnotOverrides,
 } from '../src/supports/interaction/supportPreviewOverlay';
 import { getSupportTypeDescriptor, isJointDragPreviewType, SHAFT_HOSTED_MEMBER_TYPES } from '../src/supports/supportTypeRegistry';
@@ -106,6 +106,10 @@ function createTrunk(root: Roots): Trunk {
 function createBranch(id: number, parentKnotId: string, x: number, zBase: number): Branch {
   return {
     id: `branch-${id}`,
+    // Stamped from the derived member type, as the store stamps a real entity:
+    // the index reads the type off the entity, so an unstamped fixture would
+    // index nothing and the benchmark would measure an empty walk.
+    typeId: SIMULATED_MEMBER_TYPE_ID,
     modelId: 'model-0',
     parentKnotId,
     segments: [
@@ -165,7 +169,7 @@ function buildScenario(branchCount = 320) {
     else knotIdsByParentShaftId.set(knot.parentShaftId, [knot.id]);
   }
 
-  const branchesByParentKnotId = buildBranchesByParentKnotId(branches);
+  const branchesByParentKnotId = buildEntitiesByHostKnot(branches, (branch) => branch);
   const branchCandidateKnotIdsByBranchId = buildBranchCandidateKnotIdsByBranchId(branches, knotIdsByParentShaftId);
 
   const branchesById: Record<string, Branch> = {};

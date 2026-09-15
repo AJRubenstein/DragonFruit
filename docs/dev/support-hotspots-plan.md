@@ -1,5 +1,7 @@
 # The next phase: the five hotspot files
 
+**Status: section 1 is DONE. Sections 2-5 are not started.** Work them in order.
+
 The stump/stick plan is finished. It cleared the two smallest types to 36 and 84
 and, in doing so, built the pattern the rest of the work uses: a per-type fact
 lives in that type's own folder and registers itself through a seam.
@@ -29,18 +31,49 @@ than by type.
 Smallest first, because each one proves the shape for the next and the last two
 are the ones that can break geometry.
 
-### 1. `supportPreviewOverlay.ts` (152) -- start here
+### 1. `supportPreviewOverlay.ts` -- DONE
 
-The visible shape is a function written twice:
-`buildBranchesByParentKnotId` and `buildLeafIdsByParentKnotId` are the same
-index, over the same declared `hostedBy` knot edge, differing only in which type
-they walk and whether they keep the entity or its id.
+**Three builders became one, and the survey found more than the sample did.**
 
-`hostKnotFieldsFor` already answers "which field holds this type's host knot",
-and `SceneCanvas` already uses it for exactly this. One index, keyed by type.
+The plan caught two of them (`buildBranchesByParentKnotId` and
+`buildLeafIdsByParentKnotId`, the same index written twice). Reading the whole
+file as instructed found a THIRD in the same shape: `buildBraceIdsByKnotId`,
+which differs only in indexing BOTH of a brace's knot edges rather than one --
+so it is the one that proves the rule has to be "every declared host knot", not
+"the one host knot field". All three now go through
+`buildEntitiesByHostKnot(entities, project)`.
 
-Read the whole file before assuming the rest is the same shape -- this is a
-sample, not a survey.
+**The type is read off the entity, not passed in.** `hostKnotFieldsFor(typeId)`
+is what answers "which fields hold this type's host knots", and the *type* came
+from `resolveSupportTypeIdOf(entity)` rather than a parameter. That matters for
+the literal budget: a type parameter means every call site spells a type name,
+and the ratchet caught exactly that -- passing `'branch'`, `'leaf'` and `'brace'`
+took `value` from 3 to 6 and failed `check:support-literals`. Deriving the type
+from the data removed all three, and the budget is back at its baseline of 3.
+
+Unstamped entities are skipped rather than indexed under an assumed type, which
+is pinned by a test.
+
+**A consumer outside `src/` had to be migrated:**
+`scripts/support-drag-perf.ts` imported one of the builders and now uses the
+derived one. Its synthetic branch fixture had to be stamped with a `typeId`,
+because the index reads the type off the entity -- unstamped, the benchmark would
+have measured an empty walk. It is stamped from `SIMULATED_MEMBER_TYPE_ID`, the
+derived constant the script already had, so no new literal.
+
+**Verified:** all three indexes are byte-identical to the builders they replace
+over the criosphinx fixture (2103, 3208 and 10083 bytes), each checked against an
+inline copy of the ORIGINAL builder rather than against a reading of it. Seven new
+tests cover the rule -- a two-edge type indexed under both, a no-edge type
+indexed at all, empty and missing knot ids, an unresolvable type, the projector,
+and a per-type round trip over every type declaring a host knot. Mutation-tested:
+indexing only the first declared edge fails two of them by name.
+
+The rest of the file (the cascade walk, the leaf collection, the brace ghosting)
+is generic map logic with no per-type knowledge in it, so there was nothing else
+to derive.
+
+References: 3,936 -> 3,904.
 
 ### 2. `autoBracing/autoBrace.ts` (232)
 

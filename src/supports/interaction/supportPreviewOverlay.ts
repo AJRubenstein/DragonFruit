@@ -1,39 +1,50 @@
 import { recomputeLeafPreviewContactCone } from '../SupportTypes/Leaf/leafPreviewCone';
 import type { Branch, Brace, Knot, Leaf, Twig } from '../types';
-import { isJointDragPreviewType, resolveSupportTypeIdOf } from '../supportTypeRegistry';
+import { hostKnotFieldsFor, isJointDragPreviewType, resolveSupportTypeIdOf, type SupportTypeId } from '../supportTypeRegistry';
 import { computeJointDragPreviewKnots, type JointDragPreviewSnapshot } from './jointDragPreviewMath';
 
-export function buildBranchesByParentKnotId(branches: Branch[]) {
-  const map = new Map<string, Branch[]>();
-  for (const branch of branches) {
-    const list = map.get(branch.parentKnotId);
-    if (list) list.push(branch);
-    else map.set(branch.parentKnotId, [branch]);
-  }
-  return map;
-}
+/**
+ * Entities of one type, indexed by each host knot they name.
+ *
+ * The fields come off the type's declared `hostedBy` knot edges rather than
+ * being named here. Branch and leaf name one (`parentKnotId`); brace names two
+ * (`startKnotId` and `endKnotId`), so a brace is indexed under BOTH knots it
+ * spans -- which is why one derived rule replaces the three near-identical
+ * builders this used to be, one per type.
+ *
+ * `project` is what the caller wants back -- the entity, or its id -- so a caller
+ * that only needs ids does not allocate an entity list to throw away.
+ */
+export function buildEntitiesByHostKnot<T extends { id: string; typeId?: SupportTypeId }, R>(
+  entities: readonly T[],
+  project: (entity: T) => R,
+): Map<string, R[]> {
+  const map = new Map<string, R[]>();
+  const fieldsByType = new Map<SupportTypeId, readonly string[]>();
 
-export function buildLeafIdsByParentKnotId(leaves: Leaf[]) {
-  const map = new Map<string, string[]>();
-  for (const leaf of leaves) {
-    const list = map.get(leaf.parentKnotId);
-    if (list) list.push(leaf.id);
-    else map.set(leaf.parentKnotId, [leaf.id]);
-  }
-  return map;
-}
+  for (const entity of entities) {
+    // The type comes off the entity, so a caller does not name one -- and a list
+    // that ever held two types would index each by its own fields.
+    const typeId = resolveSupportTypeIdOf(entity);
+    if (!typeId) continue;
 
-export function buildBraceIdsByKnotId(braces: Brace[]) {
-  const map = new Map<string, string[]>();
-  for (const brace of braces) {
-    const startList = map.get(brace.startKnotId);
-    if (startList) startList.push(brace.id);
-    else map.set(brace.startKnotId, [brace.id]);
+    let fields = fieldsByType.get(typeId);
+    if (!fields) {
+      fields = hostKnotFieldsFor(typeId);
+      fieldsByType.set(typeId, fields);
+    }
+    if (fields.length === 0) continue;
 
-    const endList = map.get(brace.endKnotId);
-    if (endList) endList.push(brace.id);
-    else map.set(brace.endKnotId, [brace.id]);
+    const record = entity as unknown as Record<string, unknown>;
+    for (const field of fields) {
+      const knotId = record[field];
+      if (typeof knotId !== 'string' || knotId.length === 0) continue;
+      const list = map.get(knotId);
+      if (list) list.push(project(entity));
+      else map.set(knotId, [project(entity)]);
+    }
   }
+
   return map;
 }
 

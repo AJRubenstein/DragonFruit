@@ -52,7 +52,7 @@ import { useKnotInteraction } from './SupportPrimitives/Knot/useKnotInteraction'
 import { useActiveJointDragPreview, useJointDragPreviewOverrides } from './interaction/jointDragPreview';
 import { useActiveKnotDragPreview } from './interaction/knotDragPreview';
 import { useActiveTwigDragPreview } from './SupportTypes/Twig/twigDragPreview';
-import { buildBranchCandidateKnotIdsByBranchId, buildBranchesByParentKnotId, buildBraceIdsByKnotId, buildLeafIdsByParentKnotId, collectPreviewLeavesById, computeCascadedPreviewKnotOverrides } from './interaction/supportPreviewOverlay';
+import { buildBranchCandidateKnotIdsByBranchId, buildEntitiesByHostKnot, collectPreviewLeavesById, computeCascadedPreviewKnotOverrides } from './interaction/supportPreviewOverlay';
 import { JointCreationManager } from './SupportPrimitives/Joint/JointCreationManager';
 import { JointGizmo } from './SupportPrimitives/Joint/JointGizmo';
 import { KnotGizmo } from './SupportPrimitives/Knot/KnotGizmo';
@@ -1363,9 +1363,22 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         candidateKnots: previewCandidateKnots,
     });
 
-    const branchesByParentKnotId = useMemo(() => buildBranchesByParentKnotId(branchList), [branchList]);
-    const leafIdsByParentKnotId = useMemo(() => buildLeafIdsByParentKnotId(leafList), [leafList]);
-    const braceIdsByKnotId = useMemo(() => buildBraceIdsByKnotId(braceList), [braceList]);
+    // One derived index. Each builder this replaces named its type and that
+    // type's host-knot field by hand; this reads both off the entities and their
+    // declared edges, so a renamed field, a new host knot, or a list that ever
+    // held another type is covered.
+    const branchesByParentKnotId = useMemo(
+        () => buildEntitiesByHostKnot(branchList, (branch) => branch),
+        [branchList],
+    );
+    const leafIdsByParentKnotId = useMemo(
+        () => buildEntitiesByHostKnot(leafList, (leaf) => leaf.id),
+        [leafList],
+    );
+    const braceIdsByKnotId = useMemo(
+        () => buildEntitiesByHostKnot(braceList, (brace) => brace.id),
+        [braceList],
+    );
     const branchCandidateKnotIdsByBranchId = useMemo(
         () => buildBranchCandidateKnotIdsByBranchId(branchList, knotIdsByParentShaftId),
         [branchList, knotIdsByParentShaftId],
