@@ -105,14 +105,20 @@ function buildInputDelta(
 
 function applyDeltaToWorkerCollectionsRef(target: WorkerCollectionsRef, delta: SupportLookupInputDelta) {
   if (delta.state) {
-    applyRecordDeltaInPlace(target.state.roots, delta.state.roots);
-    applyRecordDeltaInPlace(target.state.trunks, delta.state.trunks);
-    applyRecordDeltaInPlace(target.state.branches, delta.state.branches);
-    applyRecordDeltaInPlace(target.state.leaves, delta.state.leaves);
-    applyRecordDeltaInPlace(target.state.twigs, delta.state.twigs);
-    applyRecordDeltaInPlace(target.state.sticks, delta.state.sticks);
-    applyRecordDeltaInPlace(target.state.braces, delta.state.braces);
-    applyRecordDeltaInPlace(target.state.knots, delta.state.knots);
+    // Every collection the delta can carry, which is every one the builder
+    // walked. This listed eight of them by hand while `buildInputDelta` derives
+    // its set from SUPPORT_COLLECTION_KEYS, so a `stumps` or `kickstands` delta
+    // was built, sent, and then dropped here -- the worker kept stale stub and
+    // kickstand data and the render lookup disagreed with the store.
+    for (const key of SUPPORT_COLLECTION_KEYS) {
+      // Both sides are registry-keyed, so this needs no per-collection shape.
+      const diff = delta.state[key as keyof typeof delta.state];
+      if (!diff) continue;
+      applyRecordDeltaInPlace(
+        (target.state as unknown as Record<string, MutableRecord<unknown>>)[key],
+        diff as RecordDelta<unknown>,
+      );
+    }
   }
 
 
