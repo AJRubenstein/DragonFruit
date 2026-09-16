@@ -8,6 +8,8 @@ import {
   type SupportClipboardPayload,
 } from '../PlacementLogic/supportClipboard';
 import { readKickstands, seedKickstands } from './helpers/kickstandFixture';
+import { collectionEntries, emptyPayload, entitiesIn, keyOf, owningTypeId, setCollection } from './helpers/typeCollections';
+import { contactEndpointsFor, type SupportEntityFor, type SupportTypeId } from '../supportTypeRegistry';
 
 const SOURCE_MODEL_ID = 'model-source';
 const TARGET_MODEL_ID = 'model-target';
@@ -38,200 +40,204 @@ function makePayload(): SupportClipboardPayload {
   const sourceEndKnotId = 'knot-end-source';
   const sourceBraceId = 'brace-source';
 
-  return {
-    roots: [
-      {
-        id: sourceRootId,
-        modelId: SOURCE_MODEL_ID,
-        transform: {
-          pos: makeVec3(0, 0, 0),
-          rot: { x: 0, y: 0, z: 0, w: 1 },
-        },
-        diameter: 3,
-        diskHeight: 0.8,
-        coneHeight: 1.2,
+  // Each row is filled through the registry, keyed by the TYPE that declares the
+  // collection -- so a rename reaches this fixture instead of breaking it, and the
+  // entity is still checked against the type that id names.
+  const payload = emptyPayload();
+  payload.roots = [
+    {
+      id: sourceRootId,
+      modelId: SOURCE_MODEL_ID,
+      transform: {
+        pos: makeVec3(0, 0, 0),
+        rot: { x: 0, y: 0, z: 0, w: 1 },
       },
-    ],
-    trunks: [
-      {
-        id: 'trunk-source',
-        modelId: SOURCE_MODEL_ID,
-        rootId: sourceRootId,
-        segments: [
-          {
-            id: sourceSegmentId,
-            type: 'straight',
-            diameter: 1,
-            bottomJoint: {
-              id: sourceJointBottomId,
-              pos: makeVec3(0, 0, 1),
-              diameter: 1.1,
-            },
-            topJoint: {
-              id: sourceJointTopId,
-              pos: makeVec3(0, 0, 8),
-              diameter: 1.1,
-            },
+      diameter: 3,
+      diskHeight: 0.8,
+      coneHeight: 1.2,
+    },
+  ];
+  setCollection(payload, 'trunk', [
+    {
+      id: 'trunk-source',
+      modelId: SOURCE_MODEL_ID,
+      rootId: sourceRootId,
+      segments: [
+        {
+          id: sourceSegmentId,
+          type: 'straight',
+          diameter: 1,
+          bottomJoint: {
+            id: sourceJointBottomId,
+            pos: makeVec3(0, 0, 1),
+            diameter: 1.1,
           },
-        ],
-        contactCone: {
-          id: 'cone-trunk-source',
-          pos: makeVec3(0, 0, 10),
-          normal: makeVec3(0, 0, 1),
-          profile: makeDiskProfile(),
-          socketJointId: sourceJointTopId,
+          topJoint: {
+            id: sourceJointTopId,
+            pos: makeVec3(0, 0, 8),
+            diameter: 1.1,
+          },
         },
+      ],
+      contactCone: {
+        id: 'cone-trunk-source',
+        pos: makeVec3(0, 0, 10),
+        normal: makeVec3(0, 0, 1),
+        profile: makeDiskProfile(),
+        socketJointId: sourceJointTopId,
       },
-    ],
-    branches: [
-      {
-        id: 'branch-source',
-        modelId: SOURCE_MODEL_ID,
-        parentKnotId: sourceParentKnotId,
-        segments: [
-          {
-            id: 'branch-seg-source',
-            type: 'straight',
+    },
+  ]);
+  setCollection(payload, 'branch', [
+    {
+      id: 'branch-source',
+      modelId: SOURCE_MODEL_ID,
+      parentKnotId: sourceParentKnotId,
+      segments: [
+        {
+          id: 'branch-seg-source',
+          type: 'straight',
+          diameter: 0.8,
+        },
+      ],
+    },
+  ]);
+  setCollection(payload, 'leaf', [
+    {
+      id: 'leaf-source',
+      modelId: SOURCE_MODEL_ID,
+      parentKnotId: sourceParentKnotId,
+      contactCone: {
+        id: 'cone-leaf-source',
+        pos: makeVec3(1, 0, 9),
+        normal: makeVec3(0, 0, 1),
+        profile: makeDiskProfile(),
+        socketJointId: sourceJointTopId,
+      },
+    },
+  ]);
+  setCollection(payload, 'twig', []);
+  setCollection(payload, 'stick', [
+    {
+      id: 'stick-source',
+      modelId: SOURCE_MODEL_ID,
+      segments: [
+        {
+          id: 'stick-seg-source',
+          type: 'straight',
+          diameter: 0.7,
+          bottomJoint: {
+            id: 'stick-j0-source',
+            pos: makeVec3(0, 0, 2),
             diameter: 0.8,
           },
-        ],
-      },
-    ],
-    leaves: [
-      {
-        id: 'leaf-source',
-        modelId: SOURCE_MODEL_ID,
-        parentKnotId: sourceParentKnotId,
-        contactCone: {
-          id: 'cone-leaf-source',
-          pos: makeVec3(1, 0, 9),
-          normal: makeVec3(0, 0, 1),
-          profile: makeDiskProfile(),
-          socketJointId: sourceJointTopId,
-        },
-      },
-    ],
-    twigs: [],
-    sticks: [
-      {
-        id: 'stick-source',
-        modelId: SOURCE_MODEL_ID,
-        segments: [
-          {
-            id: 'stick-seg-source',
-            type: 'straight',
-            diameter: 0.7,
-            bottomJoint: {
-              id: 'stick-j0-source',
-              pos: makeVec3(0, 0, 2),
-              diameter: 0.8,
-            },
-            topJoint: {
-              id: 'stick-j1-source',
-              pos: makeVec3(0, 0, 6),
-              diameter: 0.8,
-            },
+          topJoint: {
+            id: 'stick-j1-source',
+            pos: makeVec3(0, 0, 6),
+            diameter: 0.8,
           },
-        ],
-        contactConeA: {
-          id: 'stick-cone-a-source',
-          pos: makeVec3(0, 0, 1),
-          normal: makeVec3(0, 0, 1),
-          profile: makeDiskProfile(),
-          socketJointId: sourceJointBottomId,
         },
-        contactConeB: {
-          id: 'stick-cone-b-source',
-          pos: makeVec3(0, 0, 7),
-          normal: makeVec3(0, 0, 1),
-          profile: makeDiskProfile(),
-          socketJointId: sourceJointTopId,
-        },
+      ],
+      contactConeA: {
+        id: 'stick-cone-a-source',
+        pos: makeVec3(0, 0, 1),
+        normal: makeVec3(0, 0, 1),
+        profile: makeDiskProfile(),
+        socketJointId: sourceJointBottomId,
       },
-    ],
-    braces: [
-      {
-        id: sourceBraceId,
-        modelId: SOURCE_MODEL_ID,
-        startKnotId: sourceParentKnotId,
-        endKnotId: sourceEndKnotId,
-        profile: {
-          diameter: 0.6,
-        },
+      contactConeB: {
+        id: 'stick-cone-b-source',
+        pos: makeVec3(0, 0, 7),
+        normal: makeVec3(0, 0, 1),
+        profile: makeDiskProfile(),
+        socketJointId: sourceJointTopId,
       },
-    ],
-    knots: [
-      {
-        id: sourceParentKnotId,
-        parentShaftId: sourceSegmentId,
-        t: 0.2,
-        pos: makeVec3(0, 0, 3),
-        diameter: 0.9,
+    },
+  ]);
+  setCollection(payload, 'brace', [
+    {
+      id: sourceBraceId,
+      modelId: SOURCE_MODEL_ID,
+      startKnotId: sourceParentKnotId,
+      endKnotId: sourceEndKnotId,
+      profile: {
+        diameter: 0.6,
       },
-      {
-        id: sourceEndKnotId,
-        parentShaftId: `braceSegment:${sourceBraceId}`,
-        t: 0.8,
-        pos: makeVec3(0, 0, 5),
-        diameter: 0.9,
+    },
+  ]);
+  payload.knots = [
+    {
+      id: sourceParentKnotId,
+      parentShaftId: sourceSegmentId,
+      t: 0.2,
+      pos: makeVec3(0, 0, 3),
+      diameter: 0.9,
+    },
+    {
+      id: sourceEndKnotId,
+      parentShaftId: `braceSegment:${sourceBraceId}`,
+      t: 0.8,
+      pos: makeVec3(0, 0, 5),
+      diameter: 0.9,
+    },
+  ];
+  payload.kickstandRoots = [
+    {
+      id: 'support-brace-root-source',
+      modelId: SOURCE_MODEL_ID,
+      transform: {
+        pos: makeVec3(0, 0, 0),
+        rot: { x: 0, y: 0, z: 0, w: 1 },
       },
-    ],
-    kickstandRoots: [
-      {
-        id: 'support-brace-root-source',
-        modelId: SOURCE_MODEL_ID,
-        transform: {
-          pos: makeVec3(0, 0, 0),
-          rot: { x: 0, y: 0, z: 0, w: 1 },
-        },
-        diameter: 2,
-        diskHeight: 0.5,
-        coneHeight: 0.8,
-      },
-    ],
-    kickstandKnots: [
-      {
-        id: 'support-brace-knot-source',
-        parentShaftId: 'support-brace-seg-source',
-        t: 0.5,
-        pos: makeVec3(0, 0, 4),
-        diameter: 0.7,
-      },
-    ],
-    stumps: [],
-    kickstands: [
-      {
-        id: 'support-brace-source',
-        modelId: SOURCE_MODEL_ID,
-        rootId: 'support-brace-root-source',
-        hostKnotId: 'support-brace-knot-source',
-        hostSegmentId: sourceSegmentId,
-        hostMinT: 0,
-        segments: [
-          {
-            id: 'support-brace-seg-source',
-            type: 'straight',
-            diameter: 0.7,
-            bottomJoint: {
-              id: 'support-brace-j0-source',
-              pos: makeVec3(0, 0, 2),
-              diameter: 0.8,
-            },
-            topJoint: {
-              id: 'support-brace-j1-source',
-              pos: makeVec3(0, 0, 6),
-              diameter: 0.8,
-            },
+      diameter: 2,
+      diskHeight: 0.5,
+      coneHeight: 0.8,
+    },
+  ];
+  payload.kickstandKnots = [
+    {
+      id: 'support-brace-knot-source',
+      parentShaftId: 'support-brace-seg-source',
+      t: 0.5,
+      pos: makeVec3(0, 0, 4),
+      diameter: 0.7,
+    },
+  ];
+  setCollection(payload, 'stump', []);
+  setCollection(payload, 'kickstand', [
+    {
+      id: 'support-brace-source',
+      modelId: SOURCE_MODEL_ID,
+      rootId: 'support-brace-root-source',
+      hostKnotId: 'support-brace-knot-source',
+      hostSegmentId: sourceSegmentId,
+      hostMinT: 0,
+      segments: [
+        {
+          id: 'support-brace-seg-source',
+          type: 'straight',
+          diameter: 0.7,
+          bottomJoint: {
+            id: 'support-brace-j0-source',
+            pos: makeVec3(0, 0, 2),
+            diameter: 0.8,
           },
-        ],
-        profile: {
-          bodyDiameterMm: 0.7,
-          terminalStartDiameterMm: 0.7,
-          terminalEndDiameterMm: 0.9,
+          topJoint: {
+            id: 'support-brace-j1-source',
+            pos: makeVec3(0, 0, 6),
+            diameter: 0.8,
+          },
         },
+      ],
+      profile: {
+        bodyDiameterMm: 0.7,
+        terminalStartDiameterMm: 0.7,
+        terminalEndDiameterMm: 0.9,
       },
-    ],
-  };
+    },
+  ]);
+
+  return payload;
 }
 
 describe('support clipboard remap isolation', () => {
@@ -266,43 +272,45 @@ describe('support clipboard remap isolation', () => {
     const state = getSnapshot();
     const kickstandState = readKickstands();
 
-    const sourceIds = new Set<string>([
-      ...payload.roots.map((item) => item.id),
-      ...payload.trunks.map((item) => item.id),
-      ...payload.branches.map((item) => item.id),
-      ...payload.leaves.map((item) => item.id),
-      ...payload.twigs.map((item) => item.id),
-      ...payload.sticks.map((item) => item.id),
-      ...payload.braces.map((item) => item.id),
-      ...payload.knots.map((item) => item.id),
-      ...payload.trunks.flatMap((item) => item.segments.map((segment) => segment.id)),
-      ...payload.branches.flatMap((item) => item.segments.map((segment) => segment.id)),
-      ...payload.twigs.flatMap((item) => item.segments.map((segment) => segment.id)),
-      ...payload.sticks.flatMap((item) => item.segments.map((segment) => segment.id)),
-      ...payload.kickstandRoots.map((item) => item.id),
-      ...payload.kickstandKnots.map((item) => item.id),
-      ...payload.kickstands.map((item) => item.id),
-      ...payload.kickstands.flatMap((item) => item.segments.map((segment) => segment.id)),
-    ]);
+    // Walked, not listed. The list this replaces named fifteen collections by
+    // hand and MISSED `stumps`, so a source stump id could collide with a pasted
+    // one unnoticed; it also had to be edited whenever a type was added.
+    const sourceIds = new Set<string>();
+    const sourceJointIds = new Set<string>();
+    for (const [key, entities] of collectionEntries(payload)) {
+      for (const item of entities) {
+        sourceIds.add(item.id);
+        for (const segment of item.segments ?? []) {
+          sourceIds.add(segment.id);
+          if (segment.bottomJoint?.id) sourceJointIds.add(segment.bottomJoint.id);
+          if (segment.topJoint?.id) sourceJointIds.add(segment.topJoint.id);
+        }
+      }
+      // A type's contact endpoints are what it declares. Only the cone contacts
+      // carry a joint, and the registry says which fields those are.
+      const typeId = owningTypeId(key);
+      if (!typeId) continue;
+      for (const { kind, field } of contactEndpointsFor(typeId)) {
+        if (kind !== 'cone') continue;
+        for (const item of entities) {
+          const contact = item[field] as { socketJointId?: string } | undefined;
+          if (contact?.socketJointId) sourceJointIds.add(contact.socketJointId);
+        }
+      }
+    }
+    for (const item of payload.kickstandRoots) sourceIds.add(item.id);
+    for (const item of payload.kickstandKnots) sourceIds.add(item.id);
 
-    const sourceJointIds = new Set<string>([
-      ...payload.trunks.flatMap((item) => item.segments.flatMap((segment) => [segment.bottomJoint?.id, segment.topJoint?.id]).filter(Boolean) as string[]),
-      ...payload.branches.flatMap((item) => item.segments.flatMap((segment) => [segment.bottomJoint?.id, segment.topJoint?.id]).filter(Boolean) as string[]),
-      ...payload.twigs.flatMap((item) => item.segments.flatMap((segment) => [segment.bottomJoint?.id, segment.topJoint?.id]).filter(Boolean) as string[]),
-      ...payload.sticks.flatMap((item) => item.segments.flatMap((segment) => [segment.bottomJoint?.id, segment.topJoint?.id]).filter(Boolean) as string[]),
-      ...payload.kickstands.flatMap((item) => item.segments.flatMap((segment) => [segment.bottomJoint?.id, segment.topJoint?.id]).filter(Boolean) as string[]),
-      ...payload.trunks.map((item) => item.contactCone?.socketJointId).filter(Boolean) as string[],
-      ...payload.branches.map((item) => item.contactCone?.socketJointId).filter(Boolean) as string[],
-      ...payload.leaves.map((item) => item.contactCone?.socketJointId).filter(Boolean) as string[],
-      ...payload.sticks.flatMap((item) => [item.contactConeA?.socketJointId, item.contactConeB?.socketJointId]).filter(Boolean) as string[],
-    ]);
-
-    const targetTrunks = Object.values(state.trunks).filter((item) => item.modelId === TARGET_MODEL_ID);
-    const targetBranches = Object.values(state.branches).filter((item) => item.modelId === TARGET_MODEL_ID);
-    const targetLeaves = Object.values(state.leaves).filter((item) => item.modelId === TARGET_MODEL_ID);
-    const targetSticks = Object.values(state.sticks).filter((item) => item.modelId === TARGET_MODEL_ID);
-    const targetBraces = Object.values(state.braces).filter((item) => item.modelId === TARGET_MODEL_ID);
-    const targetKickstands = Object.values(kickstandState.kickstands).filter((item) => item.modelId === TARGET_MODEL_ID);
+    // The entity's own type comes from the type id, so this row never names a
+    // shape a second time -- and a rename reaches it.
+    const ofTarget = <T extends SupportTypeId>(typeId: T, source: object = state) =>
+      entitiesIn<SupportEntityFor<T>>(source, keyOf(typeId)).filter((item) => item.modelId === TARGET_MODEL_ID);
+    const targetTrunks = ofTarget('trunk');
+    const targetBranches = ofTarget('branch');
+    const targetLeaves = ofTarget('leaf');
+    const targetSticks = ofTarget('stick');
+    const targetBraces = ofTarget('brace');
+    const targetKickstands = ofTarget('kickstand', kickstandState);
 
     assert.ok(targetTrunks.length > 0);
     assert.ok(targetBranches.length > 0);
@@ -338,11 +346,9 @@ describe('support clipboard remap isolation', () => {
     }
 
     for (const stick of targetSticks) {
-      if (stick.contactConeA?.socketJointId) {
-        assert.ok(!sourceJointIds.has(stick.contactConeA.socketJointId));
-      }
-      if (stick.contactConeB?.socketJointId) {
-        assert.ok(!sourceJointIds.has(stick.contactConeB.socketJointId));
+      const cones = [stick.contactConeA, stick.contactConeB] as Array<{ socketJointId?: string } | undefined>;
+      for (const cone of cones) {
+        if (cone?.socketJointId) assert.ok(!sourceJointIds.has(cone.socketJointId));
       }
       for (const segment of stick.segments) {
         assert.ok(!sourceIds.has(segment.id));
