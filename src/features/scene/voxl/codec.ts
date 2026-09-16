@@ -14,6 +14,7 @@ import {
 } from './types';
 import { isVoxlBinaryV2, parseVoxlBinaryV2 } from './codec-v2';
 import { migrateLegacySupportPayload } from '@/supports/importMigrations';
+import { importPayloadCollections } from '@/supports/supportCollections';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -242,15 +243,10 @@ export function buildSupportExportFromStores(
       objectCenter: emptyVec3(),
       updatedAt: Date.now(),
     },
-    roots: Object.values(supportState.roots),
-    trunks: Object.values(supportState.trunks),
-    branches: Object.values(supportState.branches),
-    leaves: Object.values(supportState.leaves),
-    twigs: Object.values(supportState.twigs),
-    sticks: Object.values(supportState.sticks),
-    braces: Object.values(supportState.braces),
-    stumps: Object.values(supportState.stumps),
-    knots: Object.values(supportState.knots),
+    // Every collection the format carries, walked rather than listed, so a type
+    // added to the registry is saved too. `kickstands` is rebuilt above from the
+    // root and host knot each one owns, so it is written after the walk.
+    ...importPayloadCollections(supportState),
     kickstands,
   };
 }

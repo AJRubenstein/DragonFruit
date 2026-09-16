@@ -13,6 +13,7 @@ import {
     type TrunkBuildInput,
     type TrunkBuildResult,
 } from '../SupportTypes/Trunk/trunkBuilder';
+import { createEmptySupportCollections } from '../supportTypeRegistry';
 
 const GRID_SPACING_MM = 4;
 const GRID_RING_RADIUS = 4;
@@ -34,16 +35,7 @@ function makeSettings() {
 
 function makeEmptySnapshot(): SupportState {
     return {
-        roots: {},
-        trunks: {},
-        branches: {},
-        leaves: {},
-        twigs: {},
-        sticks: {},
-        braces: {},
-        stumps: {},
-        kickstands: {},
-        knots: {},
+        ...createEmptySupportCollections(),
         selectedId: null,
         hoveredId: null,
     };

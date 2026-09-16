@@ -1,5 +1,5 @@
-import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from './supportTypeRegistry';
-import type { SupportState } from './types';
+import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from './supportTypeRegistry';
+import type { DragonfruitImportFormat, SupportState } from './types';
 
 /**
  * Keys of `SupportState` holding modelId-bearing support entities. Excludes
@@ -77,4 +77,52 @@ export function mapImportPayloadEntities<T extends Partial<Record<SupportEntityC
         (next as Record<string, unknown>)[key] = list.map((entity) => mapEntity(entity, key));
     }
     return next;
+}
+
+/** The payload's collection part: every `DragonfruitImportFormat` key but `version` and `meta`. */
+export type ImportPayloadCollections = Pick<DragonfruitImportFormat, SupportCollectionKey>;
+
+/**
+ * The payload's collections in the order `DragonfruitImportFormat` declares them.
+ *
+ * Written out rather than walked, because the ORDER is part of the wire format:
+ * serialised exports are compared byte-for-byte by the export goldens, and the
+ * export manager hashes them. `SUPPORT_COLLECTION_KEYS` is a different order --
+ * primitives first, then the types -- so walking it would silently reorder every
+ * export.
+ *
+ * This is the one place a payload key is named. `types.ts` may name them for the
+ * same reason: a wire contract is not a walk. Membership is still guarded --
+ * `registryIsSingleSourceOfTruth.test.ts` fails if this list and the registry
+ * disagree, so a ninth type cannot be dropped from an export unnoticed.
+ */
+export const IMPORT_PAYLOAD_COLLECTION_ORDER: readonly SupportCollectionKey[] = [
+    'roots',
+    'trunks',
+    'branches',
+    'leaves',
+    'twigs',
+    'sticks',
+    'braces',
+    'stumps',
+    'knots',
+    'kickstands',
+];
+
+/**
+ * The wire format's collections, read out of any registry-keyed source as arrays.
+ *
+ * `DragonfruitImportFormat` stores every collection as an array, while the store
+ * and the scoped payloads hold them as id-keyed records. Both builders that
+ * materialise the format listed the ten keys by hand -- the same shape that has
+ * already dropped a collection once, when an export asked to omit supports kept
+ * its stumps -- and neither would have carried a type added to the registry.
+ */
+export function importPayloadCollections(source: Partial<Record<SupportCollectionKey, unknown>>): ImportPayloadCollections {
+    const collections = {} as Record<SupportCollectionKey, unknown[]>;
+    for (const key of IMPORT_PAYLOAD_COLLECTION_ORDER) {
+        const value = (source as Record<string, unknown>)[key];
+        collections[key] = Array.isArray(value) ? value : Object.values((value ?? {}) as Record<string, unknown>);
+    }
+    return collections as ImportPayloadCollections;
 }

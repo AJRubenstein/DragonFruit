@@ -15,7 +15,14 @@ import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { getSettings, setSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
-import { defaultPlacementToolTypeId, selectTypeForPlacement } from '../supportTypeRegistry';
+import {
+    contactBridgeTypes,
+    defaultPlacementToolTypeId,
+    getSupportTypeDescriptor,
+    selectTypeForPlacement,
+} from '../supportTypeRegistry';
+import { entitiesIn, keyOf } from './helpers/typeCollections';
+import type { SupportEntityAny } from '../types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -261,7 +268,14 @@ function elevatedJawScenario(gridEnabled: boolean): () => void {
     assert.ok(jawTrunk, 'jaw tip is carried by a plate-rooted trunk');
     assert.equal(result.rejectedCandidates, 0,
         `nothing rejected (${result.rejectedCandidates})`);
-    assert.equal(result.placed.stick, 0,
+    // The long-span bridge is the BRIDGING type whose contact-span rule is
+    // unbounded above -- the registry's own way of saying it serves the spans
+    // past the twig cutoff. Asked of the registry rather than named.
+    const longBridgeTypeId = contactBridgeTypes().find(
+        (typeId) => getSupportTypeDescriptor(typeId).placementRule?.maxMm === undefined,
+    );
+    assert.ok(longBridgeTypeId, 'a bridging type serves the long spans');
+    assert.equal(result.placed[longBridgeTypeId], 0,
         'no cavity stick — the routed trunk made the bridge unnecessary');
     // The routed shaft must actually clear the body: every segment passes
     // the same post-thickening check the orphan cull applies.
@@ -700,6 +714,10 @@ test('runAutoPlace with no viable candidates returns changed=false and pushes no
  * steps a small disc around the tip before falling back.
  */
 test('a punched hole above a cavity ceiling does not delete its support', () => {
+    // The types that bridge model-to-model, in registry order; each keeps its
+    // entities in its own collection.
+    const bridgeTypeIds = contactBridgeTypes();
+
     const buildShell = (ceilingHoleMm: number | null): THREE.Mesh => {
         const box = (w: number, h: number, d: number, x: number, y: number, z: number) => {
             const g = new THREE.BoxGeometry(w, h, d);
@@ -741,10 +759,11 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
             stabilizationEnabled: false,
         });
         const snapshot = getSnapshot();
-        const bridges = [
-            ...Object.values(snapshot.sticks),
-            ...Object.values(snapshot.twigs),
-        ];
+        // Every bridging type's own collection, walked from the registry: a
+        // third bridge added later is picked up without touching this test.
+        const bridges = bridgeTypeIds.flatMap(
+            (typeId) => entitiesIn<SupportEntityAny>(snapshot, keyOf(typeId)),
+        );
         const contacts = bridges.flatMap((b) => [
             'contactConeA' in b ? b.contactConeA?.pos : undefined,
             'contactConeB' in b ? b.contactConeB?.pos : undefined,
@@ -761,9 +780,14 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
     assert.equal(sealed.contacts.length, 2, 'sealed cavity: one bridge between ceiling and floor');
     // Counted under its own type, whichever the builder chose for the span:
     // a placed twig used to increment nothing, so a run that bridged only with
-    // twigs reported changed=false and committed nothing.
+    // twigs reported changed=false and committed nothing. Summed over every
+    // bridging type the registry declares, so a third bridge counts too.
+    const bridgePlacements = bridgeTypeIds.reduce(
+        (total, typeId) => total + (sealed.result.placed[typeId] ?? 0),
+        0,
+    );
     assert.equal(
-        sealed.result.placed.stick + sealed.result.placed.twig,
+        bridgePlacements,
         sealed.bridges.length,
         `every bridge is counted (${sealed.bridges.map((b) => b.id).join(', ')})`,
     );

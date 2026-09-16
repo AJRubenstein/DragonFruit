@@ -6,10 +6,11 @@ import type { SupportState } from '@/supports/types';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
 import { SupportGeometryGenerator } from '@/supports/exportGeometry/SupportGeometryGenerator';
 import { buildScopedSupportExportDocument, buildScopedSupportGeometryGroup } from '../supportExportReconstruction';
-import { exportGroupName, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
+import { createEmptySupportCollections, exportGroupName, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 
 function makeSupportState(): SupportState {
   return {
+    ...createEmptySupportCollections(),
     roots: {
       'root-a': {
         id: 'root-a',
@@ -110,7 +111,6 @@ function makeSupportState(): SupportState {
         },
       },
     },
-    sticks: {},
     braces: {
       'brace-a': {
         id: 'brace-a',
@@ -145,7 +145,6 @@ function makeSupportState(): SupportState {
         },
       },
     },
-    kickstands: {},
     knots: {
       'knot-a': { id: 'knot-a', parentShaftId: 'trunk-a-seg', pos: { x: 0, y: 0, z: 4 }, diameter: 1.1 },
       'knot-b': { id: 'knot-b', parentShaftId: 'trunk-b-seg', pos: { x: 20, y: 0, z: 4 }, diameter: 1.1 },

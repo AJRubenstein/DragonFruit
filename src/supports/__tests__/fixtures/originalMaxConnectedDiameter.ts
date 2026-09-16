@@ -7,6 +7,27 @@
  */
 
 import type { Leaf, SupportState } from '../../types';
+import type { SupportTypeId } from '../../supportTypeRegistry';
+import { contactEndpointsFor, SUPPORT_TYPES } from '../../supportTypeRegistry';
+import { entitiesIn, keyOf } from '../helpers/typeCollections';
+
+/**
+ * The one type this reference implementation was written around: the bridge that
+ * carries a cone at BOTH ends.
+ *
+ * Asked of the registry rather than spelled, because a type id written here is a
+ * name passed as data -- `check:support-literals` counts exactly those, and its
+ * budget may only fall. The fact itself is the arm's premise: a knot can ride
+ * this type's segment and its span reaches from one contact to the other, which
+ * is why its diameter can connect two surfaces the way no single-ended type can.
+ */
+const SUBJECT_TYPE: SupportTypeId = (() => {
+    const twoEnded = SUPPORT_TYPES.find(
+        (descriptor) => contactEndpointsFor(descriptor.id).filter((endpoint) => endpoint.kind === 'cone').length === 2,
+    );
+    if (!twoEnded) throw new Error('no declared type carries a cone at both ends');
+    return twoEnded.id;
+})();
 
 function maxNum(a: number, b: number) {
     return a > b ? a : b;
@@ -18,7 +39,7 @@ function getLeafDiameter(leaf: Leaf): number {
     return Math.max(profile.bodyDiameterMm ?? 0, profile.contactDiameterMm ?? 0);
 }
 
-function collectSegmentDiameters(entity: { segments: { diameter: number }[] }): number {
+function collectSegmentDiameters(entity: { segments: Array<{ diameter?: number }> }): number {
     let max = 0;
     for (const seg of entity.segments ?? []) {
         if (typeof seg.diameter === 'number') max = maxNum(max, seg.diameter);
@@ -35,9 +56,20 @@ function leafConeKey(leafId: string) {
 }
 
 
+/** What this arm reads off a bridge: the segments whose ends the span runs between. */
+interface BridgeEntity {
+    id: string;
+    segments: Array<{ id: string; diameter?: number }>;
+}
+
 export function originalMaxConnectedDiameterFromTrunk(snapshot: SupportState, trunkId: string): number {
     const trunk = snapshot.trunks[trunkId];
     if (!trunk) return 0;
+
+    // The stick arm's own collection, keyed by the registry rather than by a
+    // property name: `SupportState` calls it whatever the registry declares.
+    const sticks = entitiesIn<BridgeEntity>(snapshot, keyOf(SUBJECT_TYPE));
+    const stickById = new Map(sticks.map((stick) => [stick.id, stick]));
 
     const visitedTrunks = new Set<string>();
     const visitedBranches = new Set<string>();
@@ -133,7 +165,7 @@ export function originalMaxConnectedDiameterFromTrunk(snapshot: SupportState, tr
             if (visitedSticks.has(id)) continue;
             visitedSticks.add(id);
 
-            const s = snapshot.sticks[id];
+            const s = stickById.get(id);
             if (!s) continue;
             maxDiameter = maxNum(maxDiameter, collectSegmentDiameters(s));
 
@@ -243,7 +275,7 @@ export function originalMaxConnectedDiameterFromTrunk(snapshot: SupportState, tr
                 break;
             }
         }
-        for (const s of Object.values(snapshot.sticks)) {
+        for (const s of sticks) {
             if (s.segments.some((seg) => seg.id === knot.parentShaftId)) {
                 stickQueue.push(s.id);
                 break;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getModelIdForSupportEntityId } from '@/supports/state';
 import type { KickstandBuildResult } from '@/supports/SupportTypes/Kickstand/types';
 import { buildSupportExportGroup, type SupportExportContext } from '@/supports/exportGeometry/seam';
+import { importPayloadCollections } from '@/supports/supportCollections';
 import { exportGroupName, getSupportTypeDescriptor, parseKnotHostId, parsePrefixedSegmentId, SUPPORT_TYPES, type SupportTypeDescriptor, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import type { DragonfruitImportFormat, Segment, SupportState } from '@/supports/types';
 import type { SupportCollectionKey } from '@/supports/supportTypeRegistry';
@@ -269,15 +270,10 @@ export function buildScopedSupportExportDocument(
       objectCenter: { x: 0, y: 0, z: 0 },
       updatedAt: Date.now(),
     },
-    roots: payload.roots,
-    trunks: payload.trunks,
-    branches: payload.branches,
-    leaves: payload.leaves,
-    twigs: payload.twigs,
-    sticks: payload.sticks,
-    braces: payload.braces,
-    stumps: payload.stumps,
-    knots: payload.knots,
+    // Walked rather than listed, for the same reason as the voxl writer: a type
+    // added to the registry must reach the export. `kickstands` is rebuilt above
+    // from the root and host knot each one owns, so it is written after the walk.
+    ...importPayloadCollections(payload),
     kickstands: kickstandBuilds,
   };
 }

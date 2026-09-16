@@ -7,12 +7,34 @@ import {
   pasteModelSupportsFromClipboard,
   type SupportClipboardPayload,
 } from '../PlacementLogic/supportClipboard';
-import { readKickstands, seedKickstands } from './helpers/kickstandFixture';
 import { collectionEntries, emptyPayload, entitiesIn, keyOf, owningTypeId, setCollection } from './helpers/typeCollections';
-import { contactEndpointsFor, type SupportEntityFor, type SupportTypeId } from '../supportTypeRegistry';
+import {
+  SUPPORT_COLLECTION_KEYS,
+  SUPPORT_TYPES,
+  contactEndpointsFor,
+  defaultPlacementToolTypeId,
+  getSupportTypeDescriptor,
+  type SupportCollectionKey,
+  type SupportEdge,
+  type SupportTypeDescriptor,
+} from '../supportTypeRegistry';
+import type { Knot, Roots } from '../types';
 
 const SOURCE_MODEL_ID = 'model-source';
 const TARGET_MODEL_ID = 'model-target';
+
+/**
+ * The payload is built from what each type DECLARES, not from a hand-picked
+ * one.
+ *
+ * The subject of this file is the remap, not any particular type: a fixture
+ * that spells one type by hand also only ever checks that one, and this file's
+ * own hand-written collection list had already fallen behind the registry -- it
+ * named no stump, so a source stump id could have survived a paste unnoticed.
+ * Everything below is keyed by a descriptor, or by the collection a descriptor
+ * declares, so a rename in the registry reaches the fixture instead of breaking
+ * it, and a type added to the registry is covered the day it is declared.
+ */
 
 function makeVec3(x: number, y: number, z: number) {
   return { x, y, z };
@@ -31,211 +53,173 @@ function makeDiskProfile() {
   };
 }
 
-function makePayload(): SupportClipboardPayload {
-  const sourceRootId = 'root-source';
-  const sourceSegmentId = 'seg-source';
-  const sourceJointBottomId = 'joint-bottom-source';
-  const sourceJointTopId = 'joint-top-source';
-  const sourceParentKnotId = 'knot-parent-source';
-  const sourceEndKnotId = 'knot-end-source';
-  const sourceBraceId = 'brace-source';
+/** The parts of a pasted entity the assertions below read. */
+interface PastedSegment {
+  id: string;
+  bottomJoint?: { id?: string };
+  topJoint?: { id?: string };
+}
 
-  // Each row is filled through the registry, keyed by the TYPE that declares the
-  // collection -- so a rename reaches this fixture instead of breaking it, and the
-  // entity is still checked against the type that id names.
+/** The id a type's own entity carries in the payload. */
+const sourceIdFor = (descriptor: SupportTypeDescriptor) => `${descriptor.id}-source`;
+
+/** The id of the one segment a shafted type's entity carries. */
+const sourceSegmentIdFor = (descriptor: SupportTypeDescriptor) => `${sourceIdFor(descriptor)}-s`;
+
+/** The root a type's edge into `roots` claims. */
+const sourceRootIdFor = (descriptor: SupportTypeDescriptor) => `${descriptor.id}-root-source`;
+
+/** The knot a type's edge into `knots` hangs from. */
+const sourceKnotIdFor = (descriptor: SupportTypeDescriptor, edge: SupportEdge) =>
+  `${descriptor.id}-${edge.field}-knot-source`;
+
+/**
+ * The shaft every knot rides: the default placement tool's own segment. An edge
+ * to `segment` names another type's shaft, and this is the one every scene has.
+ */
+const HOST_DESCRIPTOR = getSupportTypeDescriptor(defaultPlacementToolTypeId());
+const HOST_SEGMENT_ID = sourceSegmentIdFor(HOST_DESCRIPTOR);
+
+/** Which id a knot's `parentShaftId` names, past whatever prefix declares it. */
+function knotHostOwnerId(parentShaftId: string): string {
+  for (const descriptor of SUPPORT_TYPES) {
+    if (descriptor.knotHostPrefix && parentShaftId.startsWith(descriptor.knotHostPrefix)) {
+      return parentShaftId.slice(descriptor.knotHostPrefix.length);
+    }
+  }
+  return parentShaftId;
+}
+
+const sourceSegment = (id: string) => ({
+  id,
+  type: 'straight' as const,
+  diameter: 1,
+  bottomJoint: { id: `${id}-bottom-joint`, pos: makeVec3(0, 0, 1), diameter: 1.1 },
+  topJoint: { id: `${id}-top-joint`, pos: makeVec3(0, 0, 6), diameter: 1.1 },
+});
+
+/**
+ * A contact of the kind the type declares: a cone sits on a joint, a disk is
+ * its own surface. `contactEndpointsFor` is what says which field is which.
+ */
+const sourceContact = (ownerId: string, field: string, isDisk: boolean) => (isDisk
+  ? {
+    id: `${ownerId}-${field}`,
+    pos: makeVec3(0, 0, 8),
+    surfaceNormal: makeVec3(0, 0, 1),
+    coneAxis: makeVec3(0, 0, 1),
+    contactDiameterMm: 0.4,
+    profile: makeDiskProfile(),
+  }
+  : {
+    id: `${ownerId}-${field}`,
+    pos: makeVec3(0, 0, 8),
+    normal: makeVec3(0, 0, 1),
+    surfaceNormal: makeVec3(0, 0, 1),
+    socketJointId: `${ownerId}-${field}-joint`,
+    profile: {
+      type: 'cone' as const,
+      contactDiameterMm: 0.4,
+      bodyDiameterMm: 0.8,
+      lengthMm: 3,
+      penetrationMm: 0.05,
+    },
+  });
+
+const sourceRoot = (id: string, x: number): Roots => ({
+  id,
+  modelId: SOURCE_MODEL_ID,
+  transform: {
+    pos: makeVec3(x, 0, 0),
+    rot: { x: 0, y: 0, z: 0, w: 1 },
+  },
+  diameter: 3,
+  diskHeight: 0.8,
+  coneHeight: 1.2,
+});
+
+const sourceKnot = (id: string, parentShaftId: string, t: number): Knot => ({
+  id,
+  parentShaftId,
+  t,
+  pos: makeVec3(0, 0, t * 8),
+  diameter: 0.9,
+});
+
+/**
+ * One type's source entity: its shaft, its declared contacts, and an id for each
+ * declared edge. Nothing here is keyed by a type's spelling.
+ */
+function sourceEntityFor(descriptor: SupportTypeDescriptor): Record<string, unknown> {
+  const id = sourceIdFor(descriptor);
+  const entity: Record<string, unknown> = { id, modelId: SOURCE_MODEL_ID };
+
+  if (descriptor.hasSegments) entity.segments = [sourceSegment(sourceSegmentIdFor(descriptor))];
+
+  const kindByField = new Map(contactEndpointsFor(descriptor.id).map(({ field, kind }) => [field, kind]));
+  for (const field of descriptor.contactFields) {
+    entity[field] = sourceContact(id, field, kindByField.get(field) === 'disk');
+  }
+
+  for (const edge of descriptor.edges) {
+    entity[edge.field] = edge.to === 'roots'
+      ? sourceRootIdFor(descriptor)
+      : edge.to === 'knots'
+        ? sourceKnotIdFor(descriptor, edge)
+        : HOST_SEGMENT_ID;
+  }
+
+  return entity;
+}
+
+function makePayload(): SupportClipboardPayload {
   const payload = emptyPayload();
-  payload.roots = [
-    {
-      id: sourceRootId,
-      modelId: SOURCE_MODEL_ID,
-      transform: {
-        pos: makeVec3(0, 0, 0),
-        rot: { x: 0, y: 0, z: 0, w: 1 },
-      },
-      diameter: 3,
-      diskHeight: 0.8,
-      coneHeight: 1.2,
-    },
-  ];
-  setCollection(payload, 'trunk', [
-    {
-      id: 'trunk-source',
-      modelId: SOURCE_MODEL_ID,
-      rootId: sourceRootId,
-      segments: [
-        {
-          id: sourceSegmentId,
-          type: 'straight',
-          diameter: 1,
-          bottomJoint: {
-            id: sourceJointBottomId,
-            pos: makeVec3(0, 0, 1),
-            diameter: 1.1,
-          },
-          topJoint: {
-            id: sourceJointTopId,
-            pos: makeVec3(0, 0, 8),
-            diameter: 1.1,
-          },
-        },
-      ],
-      contactCone: {
-        id: 'cone-trunk-source',
-        pos: makeVec3(0, 0, 10),
-        normal: makeVec3(0, 0, 1),
-        profile: makeDiskProfile(),
-        socketJointId: sourceJointTopId,
-      },
-    },
-  ]);
-  setCollection(payload, 'branch', [
-    {
-      id: 'branch-source',
-      modelId: SOURCE_MODEL_ID,
-      parentKnotId: sourceParentKnotId,
-      segments: [
-        {
-          id: 'branch-seg-source',
-          type: 'straight',
-          diameter: 0.8,
-        },
-      ],
-    },
-  ]);
-  setCollection(payload, 'leaf', [
-    {
-      id: 'leaf-source',
-      modelId: SOURCE_MODEL_ID,
-      parentKnotId: sourceParentKnotId,
-      contactCone: {
-        id: 'cone-leaf-source',
-        pos: makeVec3(1, 0, 9),
-        normal: makeVec3(0, 0, 1),
-        profile: makeDiskProfile(),
-        socketJointId: sourceJointTopId,
-      },
-    },
-  ]);
-  setCollection(payload, 'twig', []);
-  setCollection(payload, 'stick', [
-    {
-      id: 'stick-source',
-      modelId: SOURCE_MODEL_ID,
-      segments: [
-        {
-          id: 'stick-seg-source',
-          type: 'straight',
-          diameter: 0.7,
-          bottomJoint: {
-            id: 'stick-j0-source',
-            pos: makeVec3(0, 0, 2),
-            diameter: 0.8,
-          },
-          topJoint: {
-            id: 'stick-j1-source',
-            pos: makeVec3(0, 0, 6),
-            diameter: 0.8,
-          },
-        },
-      ],
-      contactConeA: {
-        id: 'stick-cone-a-source',
-        pos: makeVec3(0, 0, 1),
-        normal: makeVec3(0, 0, 1),
-        profile: makeDiskProfile(),
-        socketJointId: sourceJointBottomId,
-      },
-      contactConeB: {
-        id: 'stick-cone-b-source',
-        pos: makeVec3(0, 0, 7),
-        normal: makeVec3(0, 0, 1),
-        profile: makeDiskProfile(),
-        socketJointId: sourceJointTopId,
-      },
-    },
-  ]);
-  setCollection(payload, 'brace', [
-    {
-      id: sourceBraceId,
-      modelId: SOURCE_MODEL_ID,
-      startKnotId: sourceParentKnotId,
-      endKnotId: sourceEndKnotId,
-      profile: {
-        diameter: 0.6,
-      },
-    },
-  ]);
-  payload.knots = [
-    {
-      id: sourceParentKnotId,
-      parentShaftId: sourceSegmentId,
-      t: 0.2,
-      pos: makeVec3(0, 0, 3),
-      diameter: 0.9,
-    },
-    {
-      id: sourceEndKnotId,
-      parentShaftId: `braceSegment:${sourceBraceId}`,
-      t: 0.8,
-      pos: makeVec3(0, 0, 5),
-      diameter: 0.9,
-    },
-  ];
-  payload.kickstandRoots = [
-    {
-      id: 'support-brace-root-source',
-      modelId: SOURCE_MODEL_ID,
-      transform: {
-        pos: makeVec3(0, 0, 0),
-        rot: { x: 0, y: 0, z: 0, w: 1 },
-      },
-      diameter: 2,
-      diskHeight: 0.5,
-      coneHeight: 0.8,
-    },
-  ];
-  payload.kickstandKnots = [
-    {
-      id: 'support-brace-knot-source',
-      parentShaftId: 'support-brace-seg-source',
-      t: 0.5,
-      pos: makeVec3(0, 0, 4),
-      diameter: 0.7,
-    },
-  ];
-  setCollection(payload, 'stump', []);
-  setCollection(payload, 'kickstand', [
-    {
-      id: 'support-brace-source',
-      modelId: SOURCE_MODEL_ID,
-      rootId: 'support-brace-root-source',
-      hostKnotId: 'support-brace-knot-source',
-      hostSegmentId: sourceSegmentId,
-      hostMinT: 0,
-      segments: [
-        {
-          id: 'support-brace-seg-source',
-          type: 'straight',
-          diameter: 0.7,
-          bottomJoint: {
-            id: 'support-brace-j0-source',
-            pos: makeVec3(0, 0, 2),
-            diameter: 0.8,
-          },
-          topJoint: {
-            id: 'support-brace-j1-source',
-            pos: makeVec3(0, 0, 6),
-            diameter: 0.8,
-          },
-        },
-      ],
-      profile: {
-        bodyDiameterMm: 0.7,
-        terminalStartDiameterMm: 0.7,
-        terminalEndDiameterMm: 0.9,
-      },
-    },
-  ]);
+  const roots: Roots[] = [];
+  const knots: Knot[] = [];
+  const kickstandRoots: Roots[] = [];
+  const kickstandKnots: Knot[] = [];
+
+  let rootX = 0;
+
+  for (const descriptor of SUPPORT_TYPES) {
+    // Rows are filled through the registry, keyed by the TYPE that declares the
+    // collection -- so a rename reaches this fixture instead of breaking it, and
+    // the entity is still checked against the type that id names.
+    setCollection(payload, descriptor.id, [sourceEntityFor(descriptor) as never]);
+
+    // A type that rides another type's shaft brings its own root and host knot,
+    // which travel in the payload's dedicated channels as well as the shared
+    // ones -- the split `extractSupportClipboardPayload` makes.
+    const ridesHostShaft = descriptor.edges.some((edge) => edge.to === 'segment');
+
+    for (const edge of descriptor.edges) {
+      if (edge.to === 'roots') {
+        const root = sourceRoot(sourceRootIdFor(descriptor), (rootX += 3));
+        roots.push(root);
+        if (ridesHostShaft) kickstandRoots.push(root);
+      } else if (edge.to === 'knots') {
+        const knot = sourceKnot(sourceKnotIdFor(descriptor, edge), HOST_SEGMENT_ID, 0.2);
+        knots.push(knot);
+        if (ridesHostShaft) kickstandKnots.push(knot);
+      }
+    }
+
+    // A type that addresses its own contact by a prefix puts a knot on that
+    // pseudo-shaft rather than on a real segment.
+    if (descriptor.knotHostPrefix) {
+      const prefix = descriptor.knotHostPrefix;
+      knots.push(sourceKnot(
+        `${descriptor.id}-pseudo-knot-source`,
+        `${prefix}${sourceIdFor(descriptor)}`,
+        0.8,
+      ));
+    }
+  }
+
+  payload.roots = roots;
+  payload.knots = knots;
+  payload.kickstandRoots = kickstandRoots;
+  payload.kickstandKnots = kickstandKnots;
 
   return payload;
 }
@@ -243,12 +227,6 @@ function makePayload(): SupportClipboardPayload {
 describe('support clipboard remap isolation', () => {
   beforeEach(() => {
     resetStore();
-    seedKickstands({
-      kickstands: {},
-      roots: {},
-      knots: {},
-      selectedId: null,
-    });
   });
 
   it('never keeps source graph IDs in pasted references', () => {
@@ -270,7 +248,6 @@ describe('support clipboard remap isolation', () => {
     assert.ok(pastedCount > 0);
 
     const state = getSnapshot();
-    const kickstandState = readKickstands();
 
     // Walked, not listed. The list this replaces named fifteen collections by
     // hand and MISSED `stumps`, so a source stump id could collide with a pasted
@@ -301,94 +278,87 @@ describe('support clipboard remap isolation', () => {
     for (const item of payload.kickstandRoots) sourceIds.add(item.id);
     for (const item of payload.kickstandKnots) sourceIds.add(item.id);
 
-    // The entity's own type comes from the type id, so this row never names a
-    // shape a second time -- and a rename reaches it.
-    const ofTarget = <T extends SupportTypeId>(typeId: T, source: object = state) =>
-      entitiesIn<SupportEntityFor<T>>(source, keyOf(typeId)).filter((item) => item.modelId === TARGET_MODEL_ID);
-    const targetTrunks = ofTarget('trunk');
-    const targetBranches = ofTarget('branch');
-    const targetLeaves = ofTarget('leaf');
-    const targetSticks = ofTarget('stick');
-    const targetBraces = ofTarget('brace');
-    const targetKickstands = ofTarget('kickstand', kickstandState);
+    /** A pasted id must be one the paste minted, never one the source handed over. */
+    const freshId = (id: unknown, what: string) => {
+      assert.equal(typeof id, 'string', `${what}: expected an id, found ${String(id)}`);
+      assert.ok(!sourceIds.has(id as string), `${what}: kept the source id ${String(id)}`);
+    };
 
-    assert.ok(targetTrunks.length > 0);
-    assert.ok(targetBranches.length > 0);
-    assert.ok(targetLeaves.length > 0);
-    assert.ok(targetSticks.length > 0);
-    assert.ok(targetBraces.length > 0);
-    assert.ok(targetKickstands.length > 0);
+    /** A pasted joint must be one the paste minted, never one the source handed over. */
+    const freshJoint = (id: string, what: string) => {
+      assert.ok(!sourceJointIds.has(id), `${what}: kept the source joint ${id}`);
+    };
 
-    for (const trunk of targetTrunks) {
-      assert.ok(!sourceIds.has(trunk.rootId));
-      if (trunk.contactCone?.socketJointId) {
-        assert.ok(!sourceJointIds.has(trunk.contactCone.socketJointId));
-      }
-      for (const segment of trunk.segments) {
-        assert.ok(!sourceIds.has(segment.id));
-        if (segment.bottomJoint?.id) assert.ok(!sourceJointIds.has(segment.bottomJoint.id));
-        if (segment.topJoint?.id) assert.ok(!sourceJointIds.has(segment.topJoint.id));
-      }
+    // What a pasted reference may legally point at, read back out of the state:
+    // one member set per collection, plus every stored segment id.
+    const storedIds = new Map<SupportCollectionKey | 'segment', Set<string>>();
+    for (const key of SUPPORT_COLLECTION_KEYS) {
+      const members = (state as unknown as Record<string, Record<string, unknown>>)[key] ?? {};
+      storedIds.set(key, new Set(Object.keys(members)));
     }
 
-    for (const branch of targetBranches) {
-      assert.ok(!sourceIds.has(branch.parentKnotId));
-      if (branch.contactCone?.socketJointId) {
-        assert.ok(!sourceJointIds.has(branch.contactCone.socketJointId));
+    const storedSegmentIds = new Set<string>();
+    for (const descriptor of SUPPORT_TYPES) {
+      if (!descriptor.hasSegments) continue;
+      for (const entity of entitiesIn<{ segments?: PastedSegment[] }>(state, descriptor.location.key)) {
+        for (const segment of entity.segments ?? []) storedSegmentIds.add(segment.id);
       }
     }
+    storedIds.set('segment', storedSegmentIds);
 
-    for (const leaf of targetLeaves) {
-      assert.ok(!sourceIds.has(leaf.parentKnotId));
-      if (leaf.contactCone?.socketJointId) {
-        assert.ok(!sourceJointIds.has(leaf.contactCone.socketJointId));
+    // Every declared type, not the ones a hand-written fixture happened to
+    // fill: a collection nobody checks is a collection whose source ids can
+    // survive a paste unnoticed.
+    let checked = 0;
+    for (const descriptor of SUPPORT_TYPES) {
+      const kindByField = new Map(contactEndpointsFor(descriptor.id).map(({ field, kind }) => [field, kind]));
+      const pasted = entitiesIn<Record<string, unknown>>(state, descriptor.location.key)
+        .filter((entity) => entity.modelId === TARGET_MODEL_ID);
+      assert.ok(pasted.length > 0, `${descriptor.id}: the paste wrote nothing to ${descriptor.location.key}`);
+
+      for (const entity of pasted) {
+        checked += 1;
+        freshId(entity.id, `${descriptor.id} id`);
+
+        for (const segment of (entity.segments ?? []) as PastedSegment[]) {
+          freshId(segment.id, `${descriptor.id} segment`);
+          if (segment.bottomJoint?.id) freshJoint(segment.bottomJoint.id, `${descriptor.id} bottom joint`);
+          if (segment.topJoint?.id) freshJoint(segment.topJoint.id, `${descriptor.id} top joint`);
+        }
+
+        for (const field of descriptor.contactFields) {
+          // Only a cone names a joint it sits on; a disk's contact IS its
+          // surface.
+          const contact = entity[field] as { socketJointId?: string } | undefined;
+          if (kindByField.get(field) === 'cone' && contact?.socketJointId) {
+            freshJoint(contact.socketJointId, `${descriptor.id}.${field}`);
+          }
+        }
+
+        // Every id-bearing field the type declares, and the collection it points
+        // into: a fresh id that lands outside the collection it names is still a
+        // broken graph.
+        for (const edge of descriptor.edges) {
+          const value = entity[edge.field];
+          freshId(value, `${descriptor.id}.${edge.field}`);
+          assert.ok(
+            storedIds.get(edge.to)?.has(value as string),
+            `${descriptor.id}.${edge.field}: points at nothing pasted`,
+          );
+        }
       }
     }
+    assert.ok(checked >= SUPPORT_TYPES.length, `only ${checked} pasted entities were checked`);
 
-    for (const stick of targetSticks) {
-      const cones = [stick.contactConeA, stick.contactConeB] as Array<{ socketJointId?: string } | undefined>;
-      for (const cone of cones) {
-        if (cone?.socketJointId) assert.ok(!sourceJointIds.has(cone.socketJointId));
-      }
-      for (const segment of stick.segments) {
-        assert.ok(!sourceIds.has(segment.id));
-      }
+    for (const root of Object.values(state.roots)) {
+      assert.ok(!sourceIds.has(root.id), `root ${root.id} kept a source id`);
     }
 
-    for (const brace of targetBraces) {
-      assert.ok(!sourceIds.has(brace.startKnotId));
-      assert.ok(!sourceIds.has(brace.endKnotId));
-    }
-
+    // A knot rides a real segment, or a pseudo-shaft its owner addresses by a
+    // declared prefix. Both prefixes come from the registry.
     for (const knot of Object.values(state.knots)) {
-      assert.ok(!sourceIds.has(knot.id));
-      if (knot.parentShaftId.startsWith('leafCone:')) {
-        const leafId = knot.parentShaftId.slice('leafCone:'.length);
-        assert.ok(!sourceIds.has(leafId));
-      } else if (knot.parentShaftId.startsWith('braceSegment:')) {
-        const braceId = knot.parentShaftId.slice('braceSegment:'.length);
-        assert.ok(!sourceIds.has(braceId));
-      } else {
-        assert.ok(!sourceIds.has(knot.parentShaftId));
-      }
-    }
-
-    for (const kickstand of targetKickstands) {
-      assert.ok(!sourceIds.has(kickstand.rootId));
-      assert.ok(!sourceIds.has(kickstand.hostKnotId));
-      assert.ok(!sourceIds.has(kickstand.hostSegmentId));
-      for (const segment of kickstand.segments) {
-        assert.ok(!sourceIds.has(segment.id));
-      }
-    }
-
-    for (const root of Object.values(kickstandState.roots)) {
-      assert.ok(!sourceIds.has(root.id));
-    }
-
-    for (const knot of Object.values(kickstandState.knots)) {
-      assert.ok(!sourceIds.has(knot.id));
-      assert.ok(!sourceIds.has(knot.parentShaftId));
+      assert.ok(!sourceIds.has(knot.id), `knot ${knot.id} kept a source id`);
+      freshId(knotHostOwnerId(knot.parentShaftId), `host of knot ${knot.id}`);
     }
   });
 
@@ -411,7 +381,15 @@ describe('support clipboard remap isolation', () => {
     const captured = captureModelSupportsToClipboard(SOURCE_MODEL_ID);
 
     assert.ok(captured);
+    // Every declared type, not just the two a hand-written assertion named: a
+    // type the capture drops is a type that vanishes on a copy.
+    for (const descriptor of SUPPORT_TYPES) {
+      assert.ok(
+        entitiesIn(captured!, keyOf(descriptor.id)).length > 0,
+        `${descriptor.id}: nothing captured for ${descriptor.location.key}`,
+      );
+    }
     assert.ok((captured?.roots.length ?? 0) > 0);
-    assert.ok((captured?.trunks.length ?? 0) > 0);
+    assert.ok((captured?.knots.length ?? 0) > 0);
   });
 });

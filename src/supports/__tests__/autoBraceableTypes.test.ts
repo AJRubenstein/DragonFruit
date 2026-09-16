@@ -5,6 +5,7 @@ import { buildAutoBracedSnapshot } from '../autoBracing/autoBrace';
 import { createDefaultAutoBracingSettings } from '../autoBracing/settings';
 import {
     autoBraceableShaftTypes,
+    createEmptySupportCollections,
     isAutoBraceableShaftType,
     lateralStabiliserTypes,
     SUPPORT_TYPES,
@@ -67,8 +68,7 @@ function branch(id: string, modelId: string, parentKnotId: string, x: number, y:
 
 function emptySnapshot(): SupportState {
     return {
-        roots: {}, trunks: {}, branches: {}, leaves: {}, twigs: {}, sticks: {},
-        braces: {}, stumps: {}, kickstands: {}, knots: {},
+        ...createEmptySupportCollections(),
         selectedId: null, selectedCategory: null, hoveredId: null,
         hoveredCategory: 'none', interactionWarning: null,
     };

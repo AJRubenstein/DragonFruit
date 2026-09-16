@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import '../state';
 import { getSnapshot, resetStore } from '../state';
-import { getSupportTypeDescriptor, knotHostId, updateSupportEntity } from '../supportTypeRegistry';
+import { getSupportTypeDescriptor, knotHostId, SUPPORT_TYPES, updateSupportEntity } from '../supportTypeRegistry';
 import { supportSettleFor, typesWithSettleHook } from '../settle/seam';
 import { addKnot, addRoot, addSupportEntity } from '../state';
 import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
@@ -97,8 +97,14 @@ test('the settle hooks that exist are the two types that need a different order'
 });
 
 test('a type with no settle hook is written by the generic path alone', () => {
-    for (const typeId of ['trunk', 'stump', 'twig', 'stick', 'branch', 'kickstand'] as const) {
-        assert.equal(supportSettleFor(typeId), null, `${typeId} should settle to nothing`);
+    // The complement of the hooked types, walked off the registry rather than
+    // listed: the two types that declare a hook are pinned above, so every OTHER
+    // declared type has to settle to nothing. A type added later is covered by
+    // being declared, not by being remembered here.
+    const hooked = new Set(typesWithSettleHook());
+    for (const descriptor of SUPPORT_TYPES) {
+        if (hooked.has(descriptor.id)) continue;
+        assert.equal(supportSettleFor(descriptor.id), null, `${descriptor.id} should settle to nothing`);
     }
 });
 

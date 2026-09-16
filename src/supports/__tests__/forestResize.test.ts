@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { computeForestDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { syncContactConeDiameters } from '../autoSupport/autoPlace';
+import { createEmptySupportCollections } from '../supportTypeRegistry';
 import type { Branch, Knot, Roots, SupportState, Trunk } from '../types';
 
 function createRoot(id: string, modelId: string, x: number, y = 0): Roots {
@@ -45,16 +46,7 @@ function createBranch(id: string, modelId: string, parentKnotId: string, diamete
 
 function createEmptySnapshot(): SupportState {
     return {
-        roots: {},
-        trunks: {},
-        branches: {},
-        leaves: {},
-        twigs: {},
-        sticks: {},
-        braces: {},
-        stumps: {},
-        kickstands: {},
-        knots: {},
+        ...createEmptySupportCollections(),
         selectedId: null,
         selectedCategory: null,
         hoveredId: null,

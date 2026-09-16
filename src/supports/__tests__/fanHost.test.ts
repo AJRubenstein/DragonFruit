@@ -3,12 +3,11 @@ import test from 'node:test';
 
 import { pickFanHost, leafPathCrossesSupports, collectFanShaftPoints, fanLeafToHost, findMergeHost, buildConsolidationBranch, type FanShaftPoint } from '../autoSupport/autoPlace';
 import type { SupportState } from '../types';
-import { NEAR_PLATE_ORIGIN } from '../supportTypeRegistry';
+import { createEmptySupportCollections, NEAR_PLATE_ORIGIN } from '../supportTypeRegistry';
 
 function emptySnapshot(): SupportState {
     return {
-        roots: {}, trunks: {}, branches: {}, leaves: {}, twigs: {}, sticks: {},
-        braces: {}, stumps: {}, kickstands: {}, knots: {},
+        ...createEmptySupportCollections(),
         selectedId: null, selectedCategory: null,
         hoveredId: null, hoveredCategory: 'none', interactionWarning: null,
     };

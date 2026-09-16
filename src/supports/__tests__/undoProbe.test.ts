@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { updateSupportEntity } from '../supportTypeRegistry';
+import { createEmptySupportCollections, updateSupportEntity } from '../supportTypeRegistry';
 import test from 'node:test';
 
 import { clearHistory, undo } from '../../history/historyStore';
@@ -12,8 +12,7 @@ import type { SupportState, Trunk, Roots, Segment, Branch } from '../types';
 
 function emptySnapshot(): SupportState {
     return {
-        roots: {}, trunks: {}, branches: {}, leaves: {}, twigs: {}, sticks: {},
-        braces: {}, stumps: {}, kickstands: {}, knots: {},
+        ...createEmptySupportCollections(),
         selectedId: null, selectedCategory: null, hoveredId: null, hoveredCategory: 'none', interactionWarning: null,
     };
 }

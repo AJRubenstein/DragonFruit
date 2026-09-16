@@ -960,7 +960,7 @@ type DebugPrimitiveType =
 type DebugPrimitiveSizePreset = 'small' | 'medium' | 'large';
 
 import { deleteSupportsForModel, getSupportsForModel, type ModelSupportIds } from '@/supports/PlacementLogic/SupportModelLinker';
-import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
+import { contactEndpointsFor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import { beginSupportStateBatch, endSupportStateBatch } from '@/supports/state';
 import {
   captureModelSupportsToClipboard,
@@ -4212,40 +4212,31 @@ export function useSceneCollectionManager() {
         });
       };
 
-      payload.trunks.forEach((trunk) => {
-        expandSegments(trunk.segments as any[]);
-        if (trunk.contactCone) {
-          expand(trunk.contactCone.pos, Math.max(0.001, trunk.contactCone.profile.contactDiameterMm / 2));
+      // Walked over the registry. The per-type list this replaces covered trunks,
+      // branches, leaves, twigs, sticks and kickstands -- and MISSED STUMPS, whose
+      // segments and contact cone therefore never widened the rectangle, so a
+      // payload carrying one under-reported its extent. Braces are absent for a
+      // good reason: they carry no segments and no contact, and the knots they
+      // span are expanded above.
+      //
+      // Each type declares whether it has segments, and where its contacts sit.
+      // The radius field differs by contact kind -- a cone keeps it inside its
+      // profile, a disk on the contact itself.
+      for (const descriptor of SUPPORT_TYPES) {
+        const entities = payload[descriptor.location.key] as unknown as Array<Record<string, any>> | undefined;
+        if (!entities) continue;
+        for (const entity of entities) {
+          if (descriptor.hasSegments) expandSegments(entity.segments as any[]);
+          for (const { kind, field } of contactEndpointsFor(descriptor.id)) {
+            const contact = entity[field];
+            if (!contact?.pos) continue;
+            const diameter = kind === 'cone'
+              ? contact.profile?.contactDiameterMm
+              : contact.contactDiameterMm;
+            expand(contact.pos, Math.max(0.001, (diameter ?? 0) / 2));
+          }
         }
-      });
-
-      payload.branches.forEach((branch) => {
-        expandSegments(branch.segments as any[]);
-        if (branch.contactCone) {
-          expand(branch.contactCone.pos, Math.max(0.001, branch.contactCone.profile.contactDiameterMm / 2));
-        }
-      });
-
-      payload.leaves.forEach((leaf) => {
-        if (!leaf.contactCone) return;
-        expand(leaf.contactCone.pos, Math.max(0.001, leaf.contactCone.profile.contactDiameterMm / 2));
-      });
-
-      payload.twigs.forEach((twig) => {
-        expandSegments(twig.segments as any[]);
-        expand(twig.contactDiskA.pos, Math.max(0.001, twig.contactDiskA.contactDiameterMm / 2));
-        expand(twig.contactDiskB.pos, Math.max(0.001, twig.contactDiskB.contactDiameterMm / 2));
-      });
-
-      payload.sticks.forEach((stick) => {
-        expandSegments(stick.segments as any[]);
-        expand(stick.contactConeA.pos, Math.max(0.001, stick.contactConeA.profile.contactDiameterMm / 2));
-        expand(stick.contactConeB.pos, Math.max(0.001, stick.contactConeB.profile.contactDiameterMm / 2));
-      });
-
-      payload.kickstands.forEach((kickstand) => {
-        expandSegments(kickstand.segments as any[]);
-      });
+      }
 
       return hasAny ? { minX, maxX, minY, maxY } : null;
     };
