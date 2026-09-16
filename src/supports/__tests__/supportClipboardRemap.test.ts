@@ -249,9 +249,8 @@ describe('support clipboard remap isolation', () => {
 
     const state = getSnapshot();
 
-    // Walked, not listed. The list this replaces named fifteen collections by
-    // hand and MISSED `stumps`, so a source stump id could collide with a pasted
-    // one unnoticed; it also had to be edited whenever a type was added.
+    // Walked, not listed, so every declared collection's ids are compared and a
+    // source id cannot collide with a pasted one unnoticed.
     const sourceIds = new Set<string>();
     const sourceJointIds = new Set<string>();
     for (const [key, entities] of collectionEntries(payload)) {

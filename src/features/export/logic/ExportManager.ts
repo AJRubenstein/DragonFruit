@@ -1189,9 +1189,8 @@ export class ExportManager {
         );
 
     if (!options.includeSupports) {
-      // Every collection the document carries, walked rather than listed. The
-      // list this replaces named nine and omitted `stumps`, which the format
-      // declares -- so an export asked to leave supports out kept the stumps.
+      // Every collection the format declares, walked rather than listed, so an
+      // export asked to leave supports out leaves out all of them.
       const emptyDocument = supports as unknown as Record<string, unknown>;
       for (const key of SUPPORT_COLLECTION_KEYS) emptyDocument[key] = [];
     }

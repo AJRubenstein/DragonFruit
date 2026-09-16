@@ -2601,9 +2601,8 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     const effectiveData = applyImportDefaultsToSupportPayload(migrateLegacySupportPayload(reconciled), importDefaults);
     const isolated = isolateImportedSupportPayload(effectiveData);
 
-    // A copy-on-write shell of every collection, walked rather than listed: the
-    // list this replaces named ten and would silently miss a type added to the
-    // registry, whose import would then mutate the previous state in place.
+    // A copy-on-write shell of every declared collection, so an import cannot
+    // mutate the previous state in place for a type nobody listed here.
     const merged: SupportState = {
         ...state,
         ...Object.fromEntries(SUPPORT_COLLECTION_KEYS.map((key) => [key, { ...state[key] }])),

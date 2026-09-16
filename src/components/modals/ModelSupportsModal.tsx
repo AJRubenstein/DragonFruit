@@ -41,16 +41,9 @@ export function ModelSupportsModal({ isOpen, onClose, model }: ModelSupportsModa
     const grouped = {} as ModelSupportGroups;
     for (const key of MODEL_ID_COLLECTION_KEYS) grouped[key] = sortIds(byModel[key]);
 
-    // Which model a knot belongs to is which model its parent shaft belongs to,
-    // and that is one derived question with one answer.
-    //
-    // This replaces a hand-written chain that tested `trunks[parent]`, then
-    // branches, twigs and sticks, and fell through to the declared knot-host
-    // prefix. Every one of those first four lookups asks for an ENTITY by a
-    // SEGMENT id, so none of them could match -- a knot's `parentShaftId` is a
-    // segment -- and the prefix only covers the types that have one. Measured on
-    // the fixture: the chain included 0 of 317 knots, so this modal's Knots group
-    // has always been empty.
+    // Which model a knot belongs to is which model its parent shaft belongs to.
+    // `parentShaftId` is a SEGMENT id, so the owner is resolved through the
+    // segment rather than by looking the id up in a collection of entities.
     const knots = sortIds(Object.values(supportSnapshot.knots)
       .filter((item) => modelIdOfParentShaft(supportSnapshot, item.parentShaftId) === modelId)
       .map((item) => item.id));

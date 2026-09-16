@@ -4212,12 +4212,9 @@ export function useSceneCollectionManager() {
         });
       };
 
-      // Walked over the registry. The per-type list this replaces covered trunks,
-      // branches, leaves, twigs, sticks and kickstands -- and MISSED STUMPS, whose
-      // segments and contact cone therefore never widened the rectangle, so a
-      // payload carrying one under-reported its extent. Braces are absent for a
-      // good reason: they carry no segments and no contact, and the knots they
-      // span are expanded above.
+      // Walked over the registry, so every declared type widens the rectangle.
+      // A brace contributes nothing of its own: it carries no segments and no
+      // contact, and the knots it spans are expanded above.
       //
       // Each type declares whether it has segments, and where its contacts sit.
       // The radius field differs by contact kind -- a cone keeps it inside its
