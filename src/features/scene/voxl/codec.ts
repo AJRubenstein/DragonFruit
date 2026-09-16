@@ -212,6 +212,7 @@ function mapModelToVoxl(model: VoxlModelRuntimeLike): VoxlModelEntry {
     },
     isSupportGeometry: model.isSupportGeometry,
     linkGroupId: model.linkGroupId,
+    classification: model.classification,
   };
 }
 
