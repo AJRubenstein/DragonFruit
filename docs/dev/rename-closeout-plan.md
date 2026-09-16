@@ -1,7 +1,10 @@
 # Closing out the rename goal
 
-**Status: section 1 is IN PROGRESS (production 30 -> 16, four defects
-found). Sections 2-4 not started.** The plugin and test halves are untouched.
+**Status: sections 1 and 2 are DONE. 152 -> 70, production 30 -> 11, tests
+75 -> 12. Nine defects found, every one invisible to the suite and the goldens.**
+Section 3 (plugins) is recorded and deliberately untouched; section 4 stays open.
+
+The probes' own numbers are the record: `npm run scan:rename stick`.
 
 The hotspot plan is finished. This one answers the question the whole refactor
 exists to answer, and it is answered by measurement rather than by counting
@@ -12,23 +15,30 @@ references: **can a type be renamed by editing the registry alone?**
 Renaming `stick` -> `stickz` at both naming points (`supportTypeRegistry.ts` and
 `types.ts`) and compiling: **152 errors.** They are not one problem:
 
-| where | errors | verdict |
-| --- | ---: | --- |
-| tests, fixtures and goldens | 83 | **the real remaining work** |
-| plugins (`lys-import`, `chitubox-import`) | 26 | submodules, their own PRs |
-| production `src/` and `scripts/` | 30 | **the real remaining work** |
-| `SupportTypes/Stick/` | 13 | exempt by design -- a type may name itself |
+| where | at the start | now | verdict |
+| --- | ---: | ---: | --- |
+| tests, fixtures and goldens | 83 | 12 | **done** -- the rest are type-subject sites |
+| production `src/` and `scripts/` | 30 | 11 | **done** -- the rest are type-subject sites |
+| plugins (`lys-import`, `chitubox-import`) | 26 | 34 | submodules, their own PRs |
+| `SupportTypes/Stick/` | 13 | 13 | exempt by design -- a type may name itself |
 
-So the honest headline is **113 sites, not 152**, and the two that matter are
-83 in test scaffolding and 30 in production.
+So the honest headline was **113 sites, not 152**. Ninety-one of them are gone.
+The 23 left are the plugins, which are not this repo's to edit, the type's own
+folder, and sites where the type is genuinely the subject.
+
+**The plugin count reads 34 rather than 26 because the probe got better**: an
+optional wire-format key (`sticks?: Stick[]`) was not being renamed, so plugin
+errors were undercounted. 34+75 = 26+83 = 110 either way -- a counting boundary,
+not a discrepancy.
 
 Reference counts do NOT measure this. Stick sits at 81 references and stump at
 36, but a rename breaks 113 places: the counts measure how much code SPELLS a
 type, and the probe measures what a rename actually breaks. Run the probe.
 
-## 1. The 30 production sites -- IN PROGRESS, 30 -> 16
+## 1. The production sites -- DONE, 30 -> 11
 
-**The probe is mechanised**: `local-only/rename-probe.ts <type>`. It renames both
+**The probe is mechanised**: `npm run scan:rename <type>` (`scripts/rename-probe.ts`),
+beside the other two scans, so it travels with the branch. It renames both
 naming points, compiles, buckets the errors, and ALWAYS reverts. It reproduces
 this plan's numbers exactly -- 152 total, 13 exempt, 30 production -- once it
 edits the naming points competently. Four corrections were needed to get there,
@@ -36,7 +46,7 @@ each of which had been manufacturing errors: indented property keys, the
 collection name as a KEY in `SupportEntityByCollection`, the optional
 wire-format key (`sticks?: Stick[]`), and the default reading of "rename both".
 
-### Done (30 -> 16), and four defects found on the way
+### Done (30 -> 11), and the defects found on the way
 
 Every one of these was invisible to the suite and the goldens, which is the
 pattern this whole refactor keeps producing.
@@ -53,30 +63,42 @@ pattern this whole refactor keeps producing.
 | `state.ts` | the merge's debug readout listed ten counts | Walked. |
 | `SupportRenderer` | the clipping effect depended on ten collections by hand | `state` alone -- the same lesson already recorded for the snap-target memos. |
 
-### Remaining (16), and what each needs
+### Remaining (11), and what each needs
 
+Resolved since, each with what it took:
+
+- **`voxl/codec.ts` and `supportExportReconstruction` (4)** -- the same
+  "materialise the wire format" shape, twice. Now one shared builder,
+  `importPayloadCollections`. It walks `IMPORT_PAYLOAD_COLLECTION_ORDER`, written
+  out because **the key ORDER is part of the wire format**: the export goldens
+  compare serialised bytes and the manager hashes them, so walking the registry's
+  order (`SUPPORT_COLLECTION_KEYS`, primitives first) would silently reorder every
+  export. A new test holds that list against the registry and fails when a
+  collection is removed from it -- which is how the walk stays safe.
+- **`useSceneCollectionManager` (2)** -- resolved, and it was a DEFECT. The
+  clipboard-bounds walk missed stumps (see section 2). Now derived from
+  `hasSegments` and `contactEndpointsFor`, with the radius field chosen by contact
+  kind, since a cone keeps it in `profile` and a disk on the contact itself.
+- **`AutoSupportPanel` (3)** -- **stays, and now precisely why.** The descriptor
+  already carries `ownsRoot` (true for trunk and kickstand only), so the trunk
+  exception IS derivable. What is not: the brace block finds braces through their
+  KNOTS rather than their `modelId`, and the kickstand block deletes its root and
+  host knot. Both are knot-graph logic, not per-type lists, and both are
+  order-dependent inside a single React effect with no test. Deriving them is a
+  change to which entities get cleared on regenerate -- a behaviour decision, not
+  a rename. **The earlier note that a new descriptor flag is needed was wrong**;
+  `ownsRoot` exists. The blocker is the knot logic.
 - **`state.ts` (4)** -- the import remap chain. Each type's body remaps DIFFERENT
   fields (a twig its two disks, a stick its two cones, a trunk neither), so these
   are per-type bodies rather than a list. The plan's own rule: not mechanical.
-- **`AutoSupportPanel` (3)** -- six per-type delete loops that are uniform
-  ("delete this model's entities") interleaved with per-type extras (trunks
-  delete their root, braces and kickstands have knot logic). Deriving the uniform
-  part needs a descriptor flag marking which types the regenerate pass clears,
-  because a `.filter` is a subtraction and the rules forbid one. **A flag is the
-  right answer; it is a decision, not a rename.**
-- **`voxl/codec.ts` (2), `supportExportReconstruction` (2)** -- the same
-  "materialise the wire format from a registry-keyed set" shape, twice. Wants one
-  shared builder, which the next pass should add rather than duplicating a third
-  time.
-- **`useSceneCollectionManager` (2)** -- the clipboard payload's collection keys.
-- **`autoPlace` (1)** -- `ForestReport`'s `stumpCount` / `leafCount` /
-  `branchCount` / `stickCount` / `twigCount` are NAMED fields of a typed report.
-  The type is the subject here; converting would change the report's shape and
-  every consumer. **Stays, by the plan's own test.**
-- **`scripts/dragonfruit-ts-cli.ts` (2)** -- the script is operating on a stick
-  (straightening its segments, adding one). The type is the subject. **Stays.**
+- **`autoPlace` (1)**, **`scripts/dragonfruit-ts-cli.ts` (2)** -- the report's
+  named count fields, and a script operating on a stick. **Stays**: the type is
+  the subject.
+- **`supportCollections.ts` (1)** -- its own `IMPORT_PAYLOAD_COLLECTION_ORDER`,
+  which is the one deliberate place a payload key is named. Guarded by the test
+  above.
 
-## 2. The 83 test sites -- the bigger half, and the one with a rule
+## 2. The test sites -- DONE, 83 -> 12
 
 Concentrated in `supportClipboardRemap.test.ts` (18), `autoPlace.test.ts` (12),
 `originalMaxConnectedDiameter.ts` (6), `autoBracingHotkey.test.ts` (5),
@@ -89,16 +111,70 @@ defects invisible: the stump with an empty `segments` array hid an
 un-toggleable stump, the fixture with no stumps hid a payload that read as empty,
 and the stump sitting inside the model hid it being absent from the bounds.
 
-The rule the converted tests already follow: build the fixture from what the type
-DECLARES, and key rows on a collection rather than a type id. See
-`entityTypeId.test.ts` and `removalRoundTrip.test.ts`, which are already derived
-this way and produce no rename errors.
+The rule: build the fixture from what the type DECLARES, and key rows on a
+collection rather than a type id. See `entityTypeId.test.ts`, and
+`src/supports/__tests__/helpers/typeCollections.ts` for the shared pieces.
 
-## 3. The 26 plugin sites -- not this repo's to fix
+### Done (75 -> 12)
 
-`lys-import` (17) and `chitubox-import` (9). Both are submodules; a change there
-is its own PR and its own pointer bump. `lys-import`'s `HostEntry` union
-hand-writes the type names and is the known one.
+**One more defect fell out of it: a payload's bounds rectangle missed stumps.**
+`supportRectForPayload` expanded each contact and every segment joint for trunks,
+branches, leaves, twigs, sticks and kickstands -- listed by hand, stumps absent.
+A payload carrying one under-reported its extent. Measured against the old walk:
+17 expansions, now 20, the three new ones exactly the stump's three, every
+existing radius unchanged.
+
+Converted:
+
+- Twelve `SupportState` literals across nine files now spread
+  `createEmptySupportCollections()`, which is what `initialState` itself does.
+  Each listed nine keys by hand. `registryIsSingleSourceOfTruth.test.ts` already
+  forbids new ones; it did not cover existing ones.
+- Four `DragonfruitImportFormat` fixtures (`loadFromImportFormatNormalization`
+  alone had five) spread a walked key set and fill rows through a type id -- so no
+  key is spelled, and rows stay checked against the type that id names. A derived
+  key written directly in the literal collapses the object to an index signature,
+  losing that check, which is why the shared helper assigns by key instead.
+- `supportSettleSeam`'s six-type list is the registry's settle-hook set;
+  `cascadeEquivalence` derives a type with no edges rather than hand-picking one;
+  `autoBracingHotkey` derives both panels from `hasAutoBracingHotkey`;
+  `autoPlace`'s bridge counts come from `contactBridgeTypes()`.
+- `supportClipboardRemap` and `originalMaxConnectedDiameter` now cover EVERY
+  declared type rather than one hand-picked one. The first of these mattered: its
+  source-id set named fifteen collections and missed `stumps` entirely, and its
+  fixture carried `setCollection(payload, 'stump', [])`, so no stump row was ever
+  checked.
+
+### Remaining (12) -- all type-subject, the plan's stated exception
+
+Nine are in the gitignored goldens, three in `src/`. Every one is a test whose
+SUBJECT is a single named type, where the type id is the data the assertion is
+about -- `coneBodyFollows` ("a leaf hosted on a STICK's segment"), `toggleSegmentCurve`
+(a switch building one entity per shafted type from that type's own fields),
+`removalRoundTrip`'s cascade cases. The plan's own test decides these: *is this
+the type, or is this every type?* Converting them would assert the registry
+against itself.
+
+`originalMaxConnectedDiameter` shows the line. It is a verbatim per-type
+reference implementation, so its subject was derived from a real registry fact --
+the one type declaring a cone at BOTH ends -- rather than spelled, because a type
+id passed as data is exactly what `check:support-literals` counts. Its remaining
+per-type arms reach their collections through properties whose names are those
+arms' own types; only the subject arm could not, because property access is a
+name.
+
+## 3. The 34 plugin sites -- not this repo's to fix
+
+`lys-import` (25) and `chitubox-import` (9). Both are submodules; a change there
+is its own PR and its own pointer bump.
+
+**The whole of it is the wire format.** Every one of the 34 is either
+`DragonfruitImportFormat`'s renamed key (`sticks` -> `sticksz`) or the renamed
+exported entity type (`Stick`). Nothing else about the plugins breaks, so the
+change any PR needs is mechanical and the same in both: read the collection
+through `IMPORT_PAYLOAD_COLLECTION_ORDER`/`importPayloadCollections` from
+`@/supports/supportCollections` and the entity through `SupportEntityFor<'stick'>`
+from `@/supports/supportTypeRegistry`, rather than naming either.
 
 **Do not edit them from the parent.** Record them and leave them.
 
@@ -133,8 +209,12 @@ to `unknown` and manufactures errors far from any real site. Renaming only
 
 ## Done is
 
-The probe reports only `SupportTypes/<Type>/` and the plugins. Every other error
-is a place the rename still has to reach by hand.
+The probe reports only `SupportTypes/<Type>/`, the plugins, and type-subject
+sites. **It does now**: 70, being 13 + 34 + 12, plus the 11 production sites
+`npm run scan:rename` still lists as the per-type residue described in section 1.
+
+The plugin half is the only part of that which is real remaining work, and it is
+work in two other repositories.
 
 ## Gates
 
