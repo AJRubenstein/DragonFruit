@@ -4,9 +4,7 @@ import test from 'node:test';
 import '../state';
 import {
     collectionsMissingRestore,
-    inferSupportSettings,
     promoteAwayHost,
-    resolveKnotDiameter,
     SUPPORT_TYPES,
     placementOf,
     typesMissingHostPromotion,

@@ -12,7 +12,6 @@ import {
     PLACEMENT_MODE_TYPE_IDS,
     resolveActivePlacementTypeId,
     resolveSupportPlacementRouting,
-    routeModelPlacementHit,
 } from '../interaction/shared/placement/hotkeys/supportPlacementRouting';
 import { BRANCH_FAMILY_MEMBER_TYPES, getSupportTypeDescriptor, KICKSTAND_HOST_TYPES, MODEL_SURFACE_GESTURE_TYPES, PLACEMENT_MODE_OWNER_TYPES, placementModeOwnerDrift, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { SupportPlacementActive, SupportPlacementPreviews } from '../rendering';

@@ -1,4 +1,4 @@
-import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, type SupportCollectionKey } from './supportTypeRegistry';
+import { MODEL_ID_COLLECTION_KEYS, type SupportCollectionKey } from './supportTypeRegistry';
 import type { DragonfruitImportFormat, SupportState } from './types';
 
 /**
