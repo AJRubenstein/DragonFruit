@@ -24,16 +24,8 @@ const SOURCE_MODEL_ID = 'model-source';
 const TARGET_MODEL_ID = 'model-target';
 
 /**
- * The payload is built from what each type DECLARES, not from a hand-picked
- * one.
- *
- * The subject of this file is the remap, not any particular type: a fixture
- * that spells one type by hand also only ever checks that one, and this file's
- * own hand-written collection list had already fallen behind the registry -- it
- * named no stump, so a source stump id could have survived a paste unnoticed.
- * Everything below is keyed by a descriptor, or by the collection a descriptor
- * declares, so a rename in the registry reaches the fixture instead of breaking
- * it, and a type added to the registry is covered the day it is declared.
+ * The payload is built from what each type declares, so every declared type is
+ * covered rather than a hand-picked one.
  */
 
 function makeVec3(x: number, y: number, z: number) {
@@ -73,10 +65,7 @@ const sourceRootIdFor = (descriptor: SupportTypeDescriptor) => `${descriptor.id}
 const sourceKnotIdFor = (descriptor: SupportTypeDescriptor, edge: SupportEdge) =>
   `${descriptor.id}-${edge.field}-knot-source`;
 
-/**
- * The shaft every knot rides: the default placement tool's own segment. An edge
- * to `segment` names another type's shaft, and this is the one every scene has.
- */
+/** The shaft every knot rides: the default placement tool's own segment. */
 const HOST_DESCRIPTOR = getSupportTypeDescriptor(defaultPlacementToolTypeId());
 const HOST_SEGMENT_ID = sourceSegmentIdFor(HOST_DESCRIPTOR);
 
@@ -98,10 +87,7 @@ const sourceSegment = (id: string) => ({
   topJoint: { id: `${id}-top-joint`, pos: makeVec3(0, 0, 6), diameter: 1.1 },
 });
 
-/**
- * A contact of the kind the type declares: a cone sits on a joint, a disk is
- * its own surface. `contactEndpointsFor` is what says which field is which.
- */
+/** A contact of the kind the type declares: a cone sits on a joint, a disk does not. */
 const sourceContact = (ownerId: string, field: string, isDisk: boolean) => (isDisk
   ? {
     id: `${ownerId}-${field}`,
@@ -146,10 +132,7 @@ const sourceKnot = (id: string, parentShaftId: string, t: number): Knot => ({
   diameter: 0.9,
 });
 
-/**
- * One type's source entity: its shaft, its declared contacts, and an id for each
- * declared edge. Nothing here is keyed by a type's spelling.
- */
+/** One type's source entity: its shaft, declared contacts, and one id per edge. */
 function sourceEntityFor(descriptor: SupportTypeDescriptor): Record<string, unknown> {
   const id = sourceIdFor(descriptor);
   const entity: Record<string, unknown> = { id, modelId: SOURCE_MODEL_ID };
@@ -182,14 +165,10 @@ function makePayload(): SupportClipboardPayload {
   let rootX = 0;
 
   for (const descriptor of SUPPORT_TYPES) {
-    // Rows are filled through the registry, keyed by the TYPE that declares the
-    // collection -- so a rename reaches this fixture instead of breaking it, and
-    // the entity is still checked against the type that id names.
     setCollection(payload, descriptor.id, [sourceEntityFor(descriptor) as never]);
 
-    // A type that rides another type's shaft brings its own root and host knot,
-    // which travel in the payload's dedicated channels as well as the shared
-    // ones -- the split `extractSupportClipboardPayload` makes.
+    // A type riding another's shaft brings its root and host knot through the
+    // payload's dedicated channels as well as the shared ones.
     const ridesHostShaft = descriptor.edges.some((edge) => edge.to === 'segment');
 
     for (const edge of descriptor.edges) {

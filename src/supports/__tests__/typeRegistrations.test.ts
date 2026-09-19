@@ -32,20 +32,15 @@ test('every collection registers a restore', () => {
 });
 
 /**
- * The same class of check as the two above, for the type overrides auto-placement
- * asks the registry for.
- *
- * `state.ts` already throws when these are empty, so this pins the THROW rather
- * than re-deriving it: the value is that deleting a registration fails a named
- * test instead of only failing whatever loads first.
+ * The auto-placement overrides the registry is asked for. `state.ts` throws when
+ * these are empty; this pins that throw to a named test.
  */
 test('every type declaring replacedByHigherContact registers a promotion', () => {
     assert.deepEqual(typesMissingHostPromotion(), []);
 });
 
 test('a promotion that was never registered reports "could not", not a silent success', () => {
-    // Branch declares the flag false, so nothing registered for it -- which is
-    // exactly the shape a forgotten registration takes.
+    // Branch declares the flag false, so nothing registers for it.
     const result = promoteAwayHost('branch', {
         draft: {} as never,
         hostId: 'nope',

@@ -50,11 +50,8 @@ test('every type folder provides a renderer', () => {
 });
 
 test('every type folder provides the registration the generator looks for', () => {
-    // `scripts/generate-support-registrations.mjs` builds the module that loads
-    // each type's registrations, and it finds them by this file name. A type
-    // with no such file loads nothing: its seams are never filled, and the
-    // load-time completeness checks in `state.ts` are the only thing that would
-    // notice. This is the earlier, clearer failure.
+    // The generator finds each type's registrations by this file name; a type
+    // with no such file fills no seam.
     for (const descriptor of SUPPORT_TYPES) {
         const name = folderFor(descriptor.id);
         const registration = `${name[0].toLowerCase()}${name.slice(1)}Registration.ts`;
@@ -68,21 +65,15 @@ test('every type folder provides the registration the generator looks for', () =
 });
 
 test('every type renderer takes its entity under the name the renderer feeds it', () => {
-    // `SupportRenderer.renderDetailFor` hands each detail renderer its entity
-    // under a computed key -- `getSupportTypeDescriptor(typeId).singular` -- so
-    // TypeScript cannot check that the component destructures the same name. A
-    // mismatch delivers an undefined prop and crashes at draw time.
-    //
-    // Same shape as the two tests above: a convention the compiler cannot see.
+    // The renderer is handed its entity under a computed key, so TypeScript
+    // cannot check the component destructures the same name.
     for (const descriptor of SUPPORT_TYPES) {
         const name = folderFor(descriptor.id);
         const renderer = path.join(TYPES_DIR, name, `${name}Renderer.tsx`);
         if (!existsSync(renderer)) continue;
         const source = readFileSync(renderer, 'utf8');
-        // An interface field (`trunk: Trunk;`) or a destructured binding
-        // (`branch,`, or aliased `branch: baseBranch,`): the component must take
-        // the prop under the descriptor's name, whatever it renames it to
-        // locally. All three forms appear across the eight renderers.
+        // An interface field, a destructured binding, or an aliased one: the
+        // prop must arrive under the descriptor's name.
         const destructured = new RegExp(`^\\s*${descriptor.singular}\\s*[:,]`, 'm');
         assert.ok(
             destructured.test(source),

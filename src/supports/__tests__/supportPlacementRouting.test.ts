@@ -85,19 +85,12 @@ test('the derived owner list covers exactly the flagged types', () => {
     );
 });
 
-/**
- * The registry's placement-owner table is held to its own descriptor flags at
- * load, so this is what says the table a rename has to move has moved.
- */
+/** The registry's placement-owner table is held to its descriptor flags at load. */
 test('the registry placement-owner table agrees with the descriptor flags', () => {
     assert.deepEqual(placementModeOwnerDrift(), []);
 });
 
-/**
- * Every placement mode has exactly ONE owner constant, and the router's four
- * constants are the registry's owners. A mode losing its owner, or two owners
- * naming one type, would otherwise leave each individual arm compiling.
- */
+/** Every placement mode has exactly one owner, and they are the registry's. */
 test('the router owner constants are the registry placement modes', () => {
     const owners: readonly PlacementOwnerTypeId[] = [
         BRANCH_FAMILY_PLACEMENT_OWNER,
@@ -108,12 +101,7 @@ test('the router owner constants are the registry placement modes', () => {
     assert.deepEqual([...owners].sort(), [...PLACEMENT_MODE_OWNER_TYPES].sort());
 });
 
-/**
- * The two type-named family values cover every owner NOT in the shared branch
- * family, so the family table and the member list move together: a renamed
- * member the family values did not follow -- or a third own-named family
- * arriving -- shows up here rather than silently folding into the family.
- */
+/** The two type-named families cover every owner outside the shared branch family. */
 test('the branch family members are the owners no own-named family covers', () => {
     const ownNamedFamilyNames = [PLACEMENT_FAMILY_BY_BINDING.leaf, PLACEMENT_FAMILY_BY_BINDING.kickstand];
     const branchFamilyMembers = PLACEMENT_MODE_OWNER_TYPES.filter(
@@ -122,12 +110,7 @@ test('the branch family members are the owners no own-named family covers', () =
     assert.deepEqual([...branchFamilyMembers].sort(), [...BRANCH_FAMILY_MEMBER_TYPES].sort());
 });
 
-/**
- * Every state and modifier combination the router can be handed, so the owners
- * it answers with are checked against the registry-derived sets rather than
- * against a handful of examples. A type dropped from a flag would surface here
- * as an owner the registry no longer declares.
- */
+/** Every state and modifier combination, checked against the registry's sets. */
 test('every owner the router answers with is a registry-declared one', () => {
     const booleans = [false, true];
     const states: SupportPlacementRoutingState[] = [];
@@ -180,14 +163,8 @@ test('every owner the router answers with is a registry-declared one', () => {
 });
 
 /**
- * The host set leaf sprouting walks is the kickstand-host set.
- *
- * `LeafPlacementController` hangs a sprout knot off a host's SEGMENT, so a host
- * with no segments would silently sprout nothing. That flag half of the
- * relation -- the set IS exactly the types declaring `hostsKickstand` -- is held
- * in `derivedTypeSubsets.test.ts`; what is pinned here is the structural
- * requirement the walk itself places on every member, so a host that stops
- * being a shaft fails loudly instead of quietly dropping out of the search.
+ * The host set leaf sprouting walks is the kickstand-host set. Sprouting hangs a
+ * knot off a host's SEGMENT, so every member must be a shaft.
  */
 test('every host leaf sprouting may hang a knot on has segments', () => {
     assert.ok(KICKSTAND_HOST_TYPES.length > 0, 'a leaf sprout needs at least one host');

@@ -7,12 +7,8 @@ import { getSnapshot, loadFromImportFormat, removeSupportEntity, resetStore } fr
 import type { DragonfruitImportFormat, SupportState } from '../types';
 
 /**
- * What a type's removal records, and whether it also repaired its host.
- *
- * This is the half a golden could not see: the interaction manager holds the
- * delete, and a React hook cannot be exercised here, so both decisions were
- * extracted into `history/removalPayload.ts`. Before that, unloading a type's
- * reshape changed nothing any test could observe.
+ * What a type's removal records, and whether it also repaired its host. Both
+ * decisions live in `history/removalPayload.ts`, outside the React hook.
  */
 
 const MODEL = 'model-a';

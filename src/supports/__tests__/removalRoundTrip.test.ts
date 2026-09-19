@@ -16,15 +16,9 @@ import { DEFAULT_TIP_PROFILE } from '../SupportPrimitives/ContactCone/types';
 import type { DragonfruitImportFormat } from '../types';
 
 /**
- * Every removal must return enough to rebuild what it deleted.
- *
- * The goldens pin what a cascade REMOVES; they say nothing about whether the
- * returned snapshot can put it back. Converting the removers to one generic
- * walk dropped the seed branch from `removeBranch`'s list, and every golden
- * still passed -- undo would simply have restored one branch fewer.
- *
- * These replay each remover's snapshot the way its history handler does and
- * check the store returns to where it started.
+ * Every removal must return enough to rebuild what it deleted. The goldens pin
+ * what a cascade removes, not whether the snapshot can put it back; these
+ * replay each snapshot the way its history handler does.
  */
 
 /** Entity counts per collection, for comparing before and after. */
@@ -62,15 +56,7 @@ const knotOn = (id: string, shaftId: string, z: number) => ({
     id, parentShaftId: shaftId, t: 0.5, pos: { x: 0, y: 0, z }, diameter: 1,
 });
 
-/**
- * The collections this file builds and puts back, each asked of the registry
- * through the type that owns it.
- *
- * A type's name reaches this file exactly once, here: the import document's keys
- * and the store's are the one name, so a derived key serves the fixture, the
- * snapshot lists and `restoreToCollection` alike. Renaming a type in the registry
- * alone still reaches every one of them.
- */
+/** The collections this file builds and puts back, asked of the registry. */
 const TRUNKS = keyOf('trunk');
 const BRANCHES = keyOf('branch');
 const LEAVES = keyOf('leaf');
@@ -85,8 +71,7 @@ const KICKSTANDS = keyOf('kickstand');
  * on a twig and on a stick, a brace spanning two models, a nested branch, and
  * a kickstand grafted from another model.
  *
- * Deliberately self-contained rather than shared with the golden fixture, which
- * is local-only scaffolding and not present in a clean checkout.
+ * Self-contained: the golden fixture is local-only scaffolding.
  */
 function fixture(): DragonfruitImportFormat {
     return {
@@ -142,27 +127,18 @@ function load() {
 }
 
 /**
- * The types whose own entity rides nothing: segments, and no knot host of their
- * own. Read off the registry, because the restore order below depends on it --
- * a hosted entity cannot come back before the thing it rides.
+ * The types whose entity rides nothing. The restore order depends on it: a
+ * hosted entity cannot come back before the thing it rides.
  */
 const SHAFTS_RIDING_NOTHING = SUPPORT_TYPES.filter(
     (descriptor) => descriptor.hasSegments && hostKnotFieldsFor(descriptor.id).length === 0,
 );
 
-/**
- * Replays a snapshot the way the history handlers do.
- *
- * The handlers put every entity back through `restoreToCollection` -- the
- * registered per-collection restore -- so this does too. Using the per-type
- * adders instead would test a parallel path, and the two could drift.
- */
+/** Replays a snapshot the way the history handlers do, through `restoreToCollection`. */
 function restore(snapshot: Record<string, unknown>) {
     const list = (field: string) => (snapshot[field] as unknown[] | undefined) ?? [];
     const one = (field: string) => snapshot[field] as never;
-    // The field a type's entity arrives under is its declared shape's `self`,
-    // and the collection it goes back into is the one that same shape's type
-    // declares -- neither is spelled here.
+    // The field an entity arrives under is its declared shape's `self`.
     const seed = (collection: SupportCollectionKey) =>
         one(removalShapeFor(typeIdForCollection(collection)).self);
     const putBack = (collection: SupportCollectionKey, entity: unknown) => {

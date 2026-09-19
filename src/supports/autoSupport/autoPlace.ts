@@ -125,15 +125,9 @@ function logPlacement(message: string): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Allocate a knot id that is free in the draft.
- *
- * Auto knot ids are built from candidate/island ids, and those repeat:
- * island indices restart at `v0`/`m0`/`o0` in every model's scan, and the
- * gap-fill passes re-emit the same candidate ids. `draftAddPrimitive`
- * REPLACES a knot on an id collision rather than failing, so a reused id
- * silently re-parents the member that already owned the knot onto this run's
- * host shaft — the "knot from another model" tear, which renders as a long
- * member reaching across from the other model's forest.
+ * Allocate a knot id that is free in the draft. Auto knot ids are built from
+ * candidate ids, which repeat across scans, and `draftAddPrimitive` replaces a
+ * knot on collision rather than failing.
  */
 function freeKnotId(draft: SupportState, baseId: string): string {
     if (!draft.knots[baseId]) return baseId;
@@ -176,26 +170,14 @@ function computeMeshVolumeMm3(mesh: THREE.Mesh): number {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * The registry's walk entry per shaft-hosted member type.
- *
- * Built once from the registry's own walk. A `Record` is not available here:
- * its keys would be the member type names, which is the second naming point
- * this file exists to avoid. The key set comes from the registry at load.
- */
+/** The registry's walk entry per shaft-hosted member type. */
 const SHAFT_HOSTED_MEMBER_TYPE_BY_ID: ReadonlyMap<SupportTypeId, ShaftHostedMemberType> = new Map(
     SHAFT_HOSTED_MEMBER_TYPES.map((memberType) => [memberType.typeId as SupportTypeId, memberType]),
 );
 
 /**
- * The type a member this file just built belongs to.
- *
- * `buildLeafData` and `buildBranchData` stamp `typeId` on the entity they
- * return, so the member's type crosses with its geometry and no placement site
- * here writes it out. Read back through the registry's shaft-hosted member walk
- * -- the same walk the orphan cull and the forest report read those members
- * through -- so a member the walk does not visit is refused here rather than
- * placed into a collection nothing walks.
+ * The type a member this file just built belongs to, read off the `typeId` its
+ * builder stamped. A member the shaft-hosted walk does not visit is refused.
  */
 function builtMemberTypeId(member: { id: string; typeId?: SupportTypeId }): ShaftHostedMemberTypeId {
     const typeId = resolveSupportTypeIdOf(member);
@@ -213,12 +195,7 @@ function emptyPlacedCounts(): Record<SupportTypeId, number> {
     return counts;
 }
 
-/**
- * A type's shafted entity, as far as host resolution reads it.
- *
- * A fan host is whatever type declares `canBeGridHost`, so every host is
- * looked up through its own descriptor rather than read off `draft.trunks`.
- */
+/** A type's shafted entity, as far as host resolution reads it. */
 interface HostEntity {
     id: string;
     modelId?: string;
@@ -548,10 +525,7 @@ function maxMemberSpanMm(
     }
     if (knotById.size === 0) return 0;
     let longest = 0;
-    // The members come off `SHAFT_HOSTED_MEMBER_TYPES`, the way every other walk
-    // in this file reaches them. This one hand-wrote `leaves` and `branches`,
-    // which is the member set the registry declares -- so a member type added or
-    // removed would have been missed here while the rest of the file followed it.
+    // The members come off `SHAFT_HOSTED_MEMBER_TYPES`, as elsewhere in this file.
     for (const { collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
         const collection = draft[collectionKey] as unknown as
             | Record<string, { parentKnotId?: string; contactCone?: { pos: { x: number; y: number; z: number } } }>
@@ -1168,15 +1142,12 @@ function placeOneCandidate(
 
     switch (decision.kind) {
         case 'place': {
-            // ONE arm for every type. Which collection the entity joins and
-            // which primitives travel with it are both DECLARED on the
-            // descriptor, so nothing here names a type.
+            // One arm for every type: the collection and the primitives that
+            // travel with it are declared on the descriptor.
             const placed = decision.placed;
             const { typeId, supplied, hostedBy } = placed;
 
-            // A hosted support is limited by what its host may carry. Checked
-            // here rather than in the engine because the rejection is accounted
-            // with the rest of the ladder's.
+            // A hosted support is limited by what its host may carry.
             if (hostedBy) {
                 const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
                 if (isHostAtAttachmentCapacity(hostedBy.typeId, hostedBy.id, cap, draft)) {
@@ -1186,8 +1157,7 @@ function placeOneCandidate(
                 }
             }
 
-            // Whether this type records an origin is declared, so no arm has to
-            // know which types stamp one.
+            // Whether this type records an origin is declared.
             const entity = { ...placed.entity } as typeof placed.entity & { origin?: SupportOrigin };
             if (getSupportTypeDescriptor(typeId).hasOrigin) {
                 entity.origin = candidate.gridPoint
@@ -1212,10 +1182,8 @@ function placeOneCandidate(
         }
 
         case 'promote': {
-            // The host type's OWN registered promotion. The engine says which
-            // host yields and hands over the placed support in the generic
-            // shape; rehosting that host's attachments onto the new shaft is
-            // that type's business, so the type does it in its own folder.
+            // The host type's own registered promotion: the engine says which
+            // host yields, the type rehosts its attachments.
             const promoted = promoteAwayHost(decision.hostTypeId, {
                 draft: d,
                 placed: decision.placed,
@@ -1411,14 +1379,10 @@ const MAX_FANNING_PASSES = 5;
 /**
  * Collect shaft sample points from a snapshot — the fanning host pool.
  *
- * The pool is every collection whose type declares `canBeGridHost`, so a type
- * added to that set is offered as a host without a second edit here.
- * Stump-origin trunks are excluded: they are load-bearing standalone pillars
- * and never host fan leaves.
+ * The pool is every collection whose type declares `canBeGridHost`.
+ * Stump-origin trunks are excluded: they never host fan leaves.
  *
- * The pool spans EVERY model in the snapshot, so host choosers must filter on
- * the host's `modelId`: unfiltered, this model's member attaches to a
- * neighbouring model's shaft and its knot lands on that model's segment.
+ * The pool spans EVERY model, so host choosers must filter on `modelId`.
  */
 export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
     const shaftPoints: FanShaftPoint[] = [];
@@ -1454,8 +1418,7 @@ export function collectFanShaftPoints(draft: SupportState): FanShaftPoint[] {
 /**
  * Where a fan attempt attached, and the id of the entity it built there.
  *
- * `entityId` names the place, not the type: the caller indexes the collection
- * by `kind`, so the id needs no per-kind field to keep in step with it.
+ * `entityId` names the place, not the type; the caller indexes by `kind`.
  */
 export type FanLeafResult =
     | { ok: true; kind: AttachmentKind; draft: SupportState; hostTypeId: SupportTypeId; hostId: string; entityId: string; distMm: number; angleDeg: number }
