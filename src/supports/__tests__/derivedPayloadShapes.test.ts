@@ -47,17 +47,7 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
  * The declared types whose derived payloads no longer match the shape they
- * declare; empty when every one agrees.
- *
- * The mutual check on `SupportEntityPayload` is what pins the entity: the
- * payload reaches its collection through `SUPPORT_TYPE_COLLECTION` and reports
- * it through `SupportRemovedEntityByCollection`, while the expectation above
- * uses the registry's entity mapping -- so a collection that grows a nested
- * removal form stops matching here. `SupportRemovalResult` must still carry
- * that field, and report exactly the declared field names.
- *
- * Mapped rather than a conditional over the whole union, so every check below
- * is evaluated for one declared type at a time.
+ * declare; empty when every one agrees. Mapped so each type is checked alone.
  */
 type PayloadShapeDrift = {
     [T in SupportTypeId]:
@@ -68,28 +58,16 @@ type PayloadShapeDrift = {
             : T;
 }[SupportTypeId];
 
-/**
- * The compile-time net, over every declared type: `never` when nothing drifts,
- * and the failing type ids otherwise -- which is what this initialiser then
- * fails to satisfy.
- */
+/** The compile-time net: `never` when nothing drifts, the failing ids otherwise. */
 const _payloadShapeDrift: Record<PayloadShapeDrift, true> = true;
 void _payloadShapeDrift;
 
 test('the derived payloads carry the fields their shape declares', () => {
-    // The runtime half: the declaration those types read from names, for every
-    // declared type, the field its payload is keyed on and the slots its
-    // removal reports.
     for (const descriptor of SUPPORT_TYPES) {
         const shape = removalShapeFor(descriptor.id);
-        // The payload is keyed on the type's own name, which is what lets the
-        // compile-time expectation above and the derived type move together.
         assert.equal(shape.self, descriptor.id, `${descriptor.id}: payload keyed on its own name`);
 
-        // Every collection a removal drains, and the field each one reports
-        // under. Every type takes knots with it -- a shaft it hosts them on, a
-        // knot it rides, or a leaf's contact cone -- so a shape that dropped
-        // them would leave undo with orphans.
+        // Every collection a removal drains, and the field each reports under.
         const drained = Object.keys(shape.cascade);
         assert.ok(drained.length > 0, `${descriptor.id} declares a cascade`);
         assert.ok(drained.includes('knots'), `${descriptor.id} cascades its knots`);

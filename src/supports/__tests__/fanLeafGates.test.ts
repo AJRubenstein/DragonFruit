@@ -9,15 +9,7 @@ import { createDefaultSettings } from '../Settings/types';
 import { initializeBVH } from '@/utils/bvh';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 
-/**
- * The four gates a fanning leaf passes through, tested at the function that
- * enforces them rather than end to end.
- *
- * The post-placement loop cannot place a leaf in a scene built here: it runs
- * only for islands the coverage pass calls uncovered, and coverage compares X
- * and Y within ~4mm, while the fan's horizontal reach at the default 30° cap is
- * `8 · sin30 = 4mm`. The two leave no band to work in.
- */
+/** The four gates a fanning leaf passes through, tested at the function itself. */
 
 const MODEL = 'model-a';
 

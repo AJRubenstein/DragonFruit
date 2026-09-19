@@ -16,14 +16,7 @@ import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 
 /**
  * A whole-run signature for auto-placement: one scene run end to end, with the
- * per-type outcome pinned. Movement here is a behaviour change to explain, not
- * a fixture to update.
- *
- * What it does NOT guard, measured by mutation: branch promotion
- * (`MAX_LEAF_SPAN_BEFORE_BRANCH_MM`, unreachable here -- the gridless merge finds
- * no host), the post-placement fanning loop (its reach is tighter than the
- * ladder's, so it never places), the fan angle gate (distance refuses first) and
- * `ALREADY_SUPPORTED_RADIUS_MM`. Each wants its own targeted test.
+ * per-type outcome pinned.
  */
 
 const MODEL = 'model-a';

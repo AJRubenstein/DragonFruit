@@ -778,10 +778,7 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
 
     const sealed = run(null);
     assert.equal(sealed.contacts.length, 2, 'sealed cavity: one bridge between ceiling and floor');
-    // Counted under its own type, whichever the builder chose for the span:
-    // a placed twig used to increment nothing, so a run that bridged only with
-    // twigs reported changed=false and committed nothing. Summed over every
-    // bridging type the registry declares, so a third bridge counts too.
+    // Summed over every bridging type the registry declares.
     const bridgePlacements = bridgeTypeIds.reduce(
         (total, typeId) => total + (sealed.result.placed[typeId] ?? 0),
         0,
@@ -804,9 +801,7 @@ test('a punched hole above a cavity ceiling does not delete its support', () => 
 /**
  * A sealed cavity whose floor is within the stick/twig cutoff: the trunk cannot
  * reach the plate, so the contact is bridged to the cavity floor just below it.
- * A bridge that short is a TWIG, and a placed twig used to increment no counter
- * at all — the run reported changed=false and committed nothing, then failed to
- * push the undo entry that goes with the commit.
+ * A bridge that short is a twig.
  */
 test('a short cavity bridge is built as a twig and counted', () => {
     resetStore();

@@ -10,18 +10,10 @@ import type { ContactCone } from '../SupportPrimitives/ContactCone/types';
 import type { Vec3 } from '../types';
 
 /**
- * Where each type's proxy primitives come from.
- *
- * The layer walks `SUPPORT_TYPES` and asks each type what it emits, so a type
- * contributes its geometry by registering a recipe in its own folder.
- *
- * Two failures are possible and neither is covered by a golden:
- *
- * - a type that registers nothing draws NOTHING, which looks like an empty view
- *   rather than a broken registration;
- * - the two declared flags are the only per-type decisions the layer makes now,
- *   so a flag that stops being honoured silently brings back geometry the view
- *   was hiding.
+ * Where each type's proxy primitives come from: a recipe registered in its own
+ * folder. A type that registers none draws nothing, and a declared flag that
+ * stops being honoured brings back geometry the view was hiding -- neither is
+ * covered by a golden.
  */
 
 const vec = (x: number, y: number, z: number): Vec3 => ({ x, y, z });

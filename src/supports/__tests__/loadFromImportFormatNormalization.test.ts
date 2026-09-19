@@ -10,16 +10,7 @@ import {
 } from '../supportTypeRegistry';
 import type { DragonfruitImportFormat, SupportCollectionByType } from '../types';
 
-/**
- * A payload keys a support collection by its NAME, and that name is the
- * registry's to declare: spelling `twigs`/`sticks` here would make renaming a
- * type edit these fixtures too. Laying the empty keys down from
- * `SUPPORT_COLLECTION_KEYS`, and filling the rest through the type that declares
- * them, keeps a rename a registry-only edit.
- *
- * `roots` and `knots` are primitives -- no type declares them and no rename
- * reaches them -- so the literals name those two keys directly.
- */
+/** Collection keys come from the registry; `roots` and `knots` are primitives. */
 function emptyWireCollections(): Pick<DragonfruitImportFormat, SupportCollectionKey> {
     const collections = {} as Record<string, unknown[]>;
     for (const key of SUPPORT_COLLECTION_KEYS) collections[key] = [];
@@ -30,10 +21,7 @@ function emptyWireCollections(): Pick<DragonfruitImportFormat, SupportCollection
 type WireEntities<K extends SupportTypeId> =
     DragonfruitImportFormat[SupportCollectionByType[K] & keyof DragonfruitImportFormat];
 
-/**
- * Fill one collection, keyed by the TYPE that declares it. The key comes from
- * the registry, and the rows are still checked against what that key carries.
- */
+/** Fill one collection, keyed by the type that declares it. */
 function setCollection<K extends SupportTypeId>(
     payload: DragonfruitImportFormat,
     typeId: K,

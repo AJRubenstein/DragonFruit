@@ -41,11 +41,7 @@ export function entitiesIn<T = WalkedEntity>(source: object, key: SupportCollect
     return Object.values((value ?? {}) as Record<string, T>);
 }
 
-/**
- * Every collection in `source` as `[key, entities]`, so a fixture or an assertion
- * can walk all of them without naming each one -- and so it cannot silently skip
- * one, which is how a hand-written list falls behind the registry.
- */
+/** Every collection in `source` as `[key, entities]`. */
 export function collectionEntries(source: object): Array<[SupportCollectionKey, WalkedEntity[]]> {
     return ALL_COLLECTION_KEYS.map((key) => [key, entitiesIn(source, key)] as [SupportCollectionKey, WalkedEntity[]]);
 }
@@ -53,12 +49,6 @@ export function collectionEntries(source: object): Array<[SupportCollectionKey, 
 /**
  * A clipboard payload with every collection present and empty, to be filled with
  * `setCollection`.
- *
- * A literal cannot express these fixtures any more. Spelling the keys breaks on a
- * rename, and deriving them with `[keyOf('trunk')]` collapses the object to an
- * index signature -- which loses the check that a trunk's rows really are trunks.
- * Assigning through a type id keeps both: the key comes from the registry, and the
- * value is checked against the entity type that same id names.
  */
 export function emptyPayload(): SupportClipboardPayload {
     const payload = { kickstandRoots: [], kickstandKnots: [] } as unknown as SupportClipboardPayload;

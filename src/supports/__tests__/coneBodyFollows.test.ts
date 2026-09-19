@@ -95,14 +95,8 @@ test('a declared source survives a round trip through the real sync', () => {
 });
 
 test('a cone HOSTED on a type that declares nothing stays where it was placed', () => {
-    // The role that makes the declaration load-bearing, and the one a naive
-    // derivation would get wrong: the pass resolves a hosted cone's shaft from the
-    // map of segment diameters, and only types that DECLARE a source put their
-    // segments in it. Broadening the map to every type -- which is what "just walk
-    // SUPPORT_TYPES" does -- would start resolving hosts that are excluded today.
-    //
-    // A leaf hangs off a knot, so this is a leaf on a stick's segment: the leaf's
-    // own cone is the one being placed, and the stick is the host.
+    // Only types declaring a source put their segments in the diameter map, so
+    // a leaf hosted on a stick's segment resolves no shaft.
     const stickSegmentId = 'stick-seg-1';
     resetStore();
     addSupportEntity('stick', {

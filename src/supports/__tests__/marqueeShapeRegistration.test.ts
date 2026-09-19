@@ -12,12 +12,9 @@ import type { Vec3 } from '../types';
 /**
  * Every type's marquee polyline comes from a recipe registered in its own folder.
  *
- * This decides what a drag SELECTS, and nothing else covers it: a type whose
- * recipe never registers draws nothing to hit-test against, so it becomes
- * unselectable by the marquee while every golden still passes. The layer used to
- * hold one hand-written loop per type; the walk over `SUPPORT_TYPES` means a type
- * contributes its polyline by registering one, and a forgotten registration is a
- * MISSING slot rather than a silently unselectable support.
+ * This decides what a drag selects, and nothing else covers it: a type whose
+ * recipe never registers has nothing to hit-test against, so it is unselectable
+ * by the marquee while every golden still passes.
  */
 
 const vec = (x: number, y: number, z: number): Vec3 => ({ x, y, z });

@@ -8,21 +8,15 @@ import { SUPPORT_TYPES } from '../supportTypeRegistry';
 import { supportIsDrawnSelected, typeHasBatchedMarqueeOverlay } from '../SupportRenderer';
 
 /**
- * A support marked selected by ANY route is drawn as selected.
+ * A support marked selected by any route is drawn as selected.
  *
- * `supportIsDrawnSelected` is the single place that decides this, because every
- * type's detail renderer dims a support it does not consider selected --
- * `dimNonSelected && !isSelected` -- which OVERWRITES whatever colour it was
- * handed. A support marked only by the bulk colour was therefore dimmed instead
- * of highlighted, and a type whose only draw path is its detail renderer went
- * grey: brace and stump, whose marquee selection looked like it had not
- * registered while a click worked (a click selects one, under the threshold).
+ * `supportIsDrawnSelected` decides this alone, because a detail renderer dims
+ * anything it does not consider selected, overwriting the colour it was handed.
  */
 
 test('a bulk-selected support is drawn as selected', () => {
-    // The regression: past MULTI_SELECTION_DETAIL_THRESHOLD the per-type sets are
-    // empty by design, so the set is what CANNOT say. Miss this and the bulk
-    // colour is overwritten by the dim in every renderer.
+    // Past MULTI_SELECTION_DETAIL_THRESHOLD the per-type sets are empty by
+    // design, so the set cannot be what says a support is selected.
     assert.equal(
         supportIsDrawnSelected({ inSelectedSet: false, bulkSelected: true, marqueePreview: false }),
         true,
@@ -51,22 +45,10 @@ test('each route on its own is enough to be drawn as selected', () => {
 });
 
 /**
- * Every type can show that a marquee drag has caught it.
- *
- * While a drag is in progress the caught supports are previewed in the selection
- * colour, and there are two routes that can draw it:
- *
- * - a batched instanced overlay, which between its four sources (shafts, cones,
- *   joints, roots) reaches any type declaring `batchesShaft`,
- *   `batchesContactCones` or `ownsRoot`;
- * - the type's own detail renderer, which `sharedRenderProps` flags as selected
- *   for a caught entity, and which is the ONLY route a type without any of those
- *   three has.
- *
- * A type with neither route is invisible to the user while a drag sweeps over
- * it, while still being caught and selected -- which is what brace and stump did
- * before the second route existed. Neither route is a name, so a type added to
- * the registry cannot quietly miss both.
+ * Every type can show that a marquee drag has caught it, by one of two routes:
+ * the batched instanced overlay (any type declaring `batchesShaft`,
+ * `batchesContactCones` or `ownsRoot`), or its own detail renderer. A type with
+ * neither is caught and selected while showing nothing.
  */
 
 const EMPTY_CONTEXT = {

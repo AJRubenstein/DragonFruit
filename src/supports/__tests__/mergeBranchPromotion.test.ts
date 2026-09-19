@@ -12,32 +12,12 @@ import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 
 /**
- * The gridless merge's BRANCH promotion.
+ * The gridless merge's BRANCH promotion: a merged candidate whose knot-to-tip
+ * span exceeds `MAX_LEAF_SPAN_BEFORE_BRANCH_MM` becomes a branch, not a leaf.
  *
- * When a candidate merges into a host but the knot→tip span exceeds
- * `MAX_LEAF_SPAN_BEFORE_BRANCH_MM`, the member should become a BRANCH instead of
- * a leaf. Nothing covered that arm: it needs a specific host geometry and, as
- * this test records, a specific non-default setting.
- *
- * ## What it takes to reach the arm at all
- *
- * Three constraints have to hold simultaneously, and they fight each other:
- *
- *  1. `findMergeHost` must find the host — within 4mm of the host's contact cone
- *     OR of a segment joint. A single-segment trunk exposes only its tip and its
- *     bottom joint, so the MIDDLE of a shaft is invisible to it.
- *  2. The knot must sit at least 45° above horizontal from the tip, which caps
- *     the span at `h·√2` when the knot lands on that 45° line. Exceeding 6mm
- *     therefore needs either a wide horizontal offset or a knot pushed below the
- *     line by the sample grid.
- *  3. The finished branch must LEAVE the host at no more than
- *     `90 − grid.minBranchAngleDeg` from vertical — and
- *     `branchDepartureAngleDeg` measures the branch's first joint, not the chord
- *     from knot to tip, so it is flatter than the chord.
- *
- * Here the host is a real built trunk (so its joint layout is the production
- * one) and the candidate sits beside a MID-SHAFT joint, which is what gets the
- * host found in the first place.
+ * Reaching the arm needs a real built trunk and a candidate beside a MID-SHAFT
+ * joint: `findMergeHost` only sees a host's tip and segment joints, so the
+ * middle of a shaft is otherwise invisible to it.
  */
 
 const MODEL = 'model-a';
