@@ -267,28 +267,7 @@ function branchCollidesWithMesh(
     return isShaftBlocked(knot.pos, socketApprox, radius, mesh);
 }
 
-/**
- * What labels the members this module emits.
- *
- * This module chooses the BUILDER (leaf-or-branch by span) and the builder's
- * own folder names the type: `buildLeafData` and `buildBranchData` stamp
- * `typeId` on the entity they return. So each member's type is read back off
- * the entity it built rather than restated here, and a renamed member type
- * reaches the placement through its own builder.
- *
- * What remains is the CHOICE: the engine picks leaf-or-branch by span without
- * asking the registry. A `hostedSpan` placement rule would settle that, the way
- * `tipHeight` already settles anchor-vs-trunk. See the inventory's next stage.
- */
-
-/**
- * The type of a member this module just built.
- *
- * One lookup for every site that emits a member, so the "which type is this"
- * question is answered the same way at each. A builder that returned an entity
- * with no type would be a bug in that builder's own folder, and it says so
- * rather than shipping a member the store cannot file.
- */
+/** The type a just-built member carries, stamped on it by its own builder. */
 function builtMemberTypeId(member: { id: string; typeId?: SupportTypeId }): SupportTypeId {
     const typeId = resolveSupportTypeIdOf(member);
     if (!typeId) throw new Error(`built member ${member.id} carries no typeId`);
@@ -340,11 +319,8 @@ function tryBuildAutoLeafDecision(args: {
         kind: 'place',
         nodeKey,
         placed: placementOfResolved(
-            // This function IS the leaf's builder -- it called `buildLeafData`
-            // just above -- so the entity carries the type it was built as.
             builtMemberTypeId(leaf),
             leaf,
-            // The knot it hangs from, under the same field name `edges` declares.
             { parentKnotId: knot },
             { typeId: hostTypeId, id: hostId },
         ),
@@ -352,12 +328,7 @@ function tryBuildAutoLeafDecision(args: {
     };
 }
 
-/**
- * A host entity, as the grid engine reads it.
- *
- * The pool is every type declaring `canBeGridHost` that owns a root, so the
- * entity is read through that shape rather than assumed to be a Trunk.
- */
+/** A host entity as the grid reads it: any `canBeGridHost` type owning a root. */
 interface HostEntity {
     id: string;
     modelId?: string;
@@ -368,14 +339,9 @@ interface HostEntity {
 }
 
 /**
- * The host as the grid's root-stack resolver sees it.
- *
- * `getTrunkSegmentEndpointsWithSettings` reads the plate stack (disk + flare)
- * from the GRID SETTINGS the host's root was built with, not from the root
- * entity -- that is the contract a grid host is built under, and it is why
- * this resolver is not `resolveSegmentEndpoints`. A grid host type that roots
- * some other way needs its own resolution here; this throws rather than
- * silently resolving its geometry from the wrong stack.
+ * The host as the grid's root-stack resolver sees it: the plate stack comes
+ * from the grid settings the root was built with. A host rooting another way
+ * throws rather than resolving off the wrong stack.
  */
 function settingsRootedHost(hostTypeId: SupportTypeId, entity: HostEntity): Trunk {
     if (getSupportTypeDescriptor(hostTypeId).lower.kind !== 'plateRoot') {
@@ -561,9 +527,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
 
     const spacingMm = settings.grid?.spacingMm ?? 4;
     
-    // Build O(1) grid hash map of hosts. A grid node is occupied by whatever
-    // host type roots there, so the pool is the declared host types -- a host
-    // needs a root, which is what puts it on a node.
+    // Build O(1) grid hash map of hosts, over every declared host type with a root.
     const hostGridMap = new Map<string, { hostTypeId: SupportTypeId; hostId: string; entity: HostEntity; root: Roots }>();
     for (const descriptor of GRID_HOST_TYPES) {
         if (!descriptor.ownsRoot) continue;
@@ -578,29 +542,22 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
         }
     }
 
-    // Which type a tip height calls for is declared, and a type that registers a
-    // builder OVERRIDES the default for the band it claims. The anchor owns the
-    // near-plate band this way; nothing that registers nothing changes anything.
-    // The type this tip height calls for. A type that registers a build
-    // override takes the branch below; otherwise this is the DEFAULT type, and
-    // the trunk fallback emits its id rather than naming it.
+    // The type this tip height calls for. One registering a build override takes
+    // the branch below; otherwise this is the default type.
     const claimedTypeId = selectTypeForPlacement('tipHeight', tipPos.z);
     const override = claimedTypeId ? buildContactOverride(claimedTypeId) : undefined;
     if (claimedTypeId && override) {
         const built = override({ tipPos, tipNormal, modelId, mesh });
         if (!built) {
-            // A registered builder that cannot build this contact rejects HERE.
-            // It must not fall through to the trunk default: a type claiming the
-            // band has already said this height is not a trunk's to serve.
+            // A claimed band that cannot build rejects here rather than falling
+            // through to the default.
             return { kind: 'reject', nodeKey: '', reason: 'NO_VALID_ATTACHMENT' };
         }
         if (built.refusal) {
             return {
                 kind: 'reject',
                 nodeKey: '',
-                // The type's own reason, in the engine's vocabulary. The cast is
-                // the registry/renderer boundary: this module owns the reject
-                // codes while the type owns the reason it refuses for.
+                // The type's own reason, cast into this module's reject codes.
                 reason: built.refusal as GridPlacementRejectReason,
                 supportData: built.supportData as SupportData,
             };
@@ -613,10 +570,8 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
         };
     }
 
-    // Everything below stands the built trunk on the contact. The registry has
-    // always resolved a type for a tip height (trunk claims everything the
-    // anchor band does not), so a null here means the rules themselves are
-    // wrong -- surface that rather than building a support nothing named.
+    // Everything below stands the built trunk on the contact. No claimed type
+    // means the placement rules leave this height unclaimed.
     if (!claimedTypeId) {
         throw new Error(`No support type claims a tipHeight of ${tipPos.z}`);
     }
@@ -632,7 +587,6 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
             kind: 'place',
             nodeKey: 'disabled',
             placed: placementOfResolved(placedTypeId, trunkBuild.trunk, {
-                // The root it stands on, under the field name `edges` declares.
                 rootId: trunkBuild.root,
             }),
             supportData: trunkBuild.supportData,
@@ -787,9 +741,7 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
 
     const hostContactZ = host.entity.contactCone?.pos.z ?? Number.NEGATIVE_INFINITY;
     const candidateContactZ = tipPos.z;
-    // Whether a higher candidate replaces this host is the HOST TYPE's
-    // declaration, not a property of the node: a type that cannot be promoted
-    // away simply takes the branch/leaf path below.
+    // Whether a higher candidate replaces the host is the host type's declaration.
     if (getSupportTypeDescriptor(host.hostTypeId).replacedByHigherContact
         && candidateContactZ > hostContactZ + 0.000001) {
         const promoteBuild = withResolvedSnappedRoute(snappedCandidate, {
@@ -826,8 +778,6 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
         kind: 'place',
         nodeKey,
         placed: placementOfResolved(
-            // This function IS the branch's builder -- it called `buildBranchData`
-            // just above -- so the entity carries the type it was built as.
             builtMemberTypeId(branch),
             branch,
             { parentKnotId: selectedKnot },

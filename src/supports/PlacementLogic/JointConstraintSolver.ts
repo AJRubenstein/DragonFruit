@@ -127,10 +127,8 @@ export function solveKnotConstraint(
 ): Vec3 {
     let clampedPos = { ...candidatePos };
 
-    // Find all branches attached to this knot. Which types flex off a host
-    // knot, and the edge field naming that knot, are both declared: ask the
-    // registry rather than naming one type's collection and one field, so a
-    // second flexing type is constrained here too instead of being dropped.
+    // Find all branches attached to this knot, over every type declaring a
+    // flexing host-knot edge.
     const attachedBranches: Branch[] = [];
     for (const { typeId, knotFields } of FLEXING_KNOT_HOST_TYPES) {
         for (const branch of getSupportEntities<Branch>(typeId)) {

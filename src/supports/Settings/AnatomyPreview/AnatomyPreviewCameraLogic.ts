@@ -38,15 +38,8 @@ type CameraEntry = {
 };
 
 /**
- * The framing for one type's panel, chosen by the preview SHAPE its descriptor
- * declares -- what sits at each end, and whether a shaft joins them -- because
- * that is what the camera is framing. Both ends a model contact is a span
- * propped between two contacts; a knot below is a member hanging off a host; a
- * plate root below is the standard diagram.
- *
- * No type is named, so renaming one moves its panel and its framing together. A
- * type declaring a shape nothing here knows gets no entry, and its panel keeps
- * the shared support framing it has today.
+ * The framing for one type's panel, chosen by the preview shape its descriptor
+ * declares. A shape with no entry keeps the shared support framing.
  */
 function cameraEntryFor(descriptor: SupportTypeDescriptor): CameraEntry | undefined {
     const { lower, upper } = descriptor;
@@ -55,14 +48,12 @@ function cameraEntryFor(descriptor: SupportTypeDescriptor): CameraEntry | undefi
         && (upper.kind === 'cone' || upper.kind === 'disk');
 
     if (spansTwoContacts) {
-        // The bracing tool's span carries cones; a twig's carries disks.
         return lower.kind === 'cone'
             ? { target: getBraceTargetFocusState }
             : { target: getTwigTargetFocusState };
     }
 
     if (lower.kind === 'knot') {
-        // A shaft hanging off a knot, or a bare contact hanging off one.
         return descriptor.hasSegments
             ? { target: getBranchTargetFocusState, home: BRANCH_HOME_FOCUS_STATE }
             : { target: getLeafTargetFocusState, home: LEAF_HOME_FOCUS_STATE };
@@ -75,7 +66,7 @@ function cameraEntryFor(descriptor: SupportTypeDescriptor): CameraEntry | undefi
     return undefined;
 }
 
-/** The type panels, framed by their own preview's shape. Tools declare their own. */
+/** The type panels, framed by their own preview's shape. */
 const TYPE_CAMERA_ENTRIES: Partial<Record<SidebarPanel, CameraEntry>> = Object.fromEntries(
     SIDEBAR_PANEL_TYPE_IDS.flatMap((typeId) => {
         const entry = cameraEntryFor(getSupportTypeDescriptor(typeId));

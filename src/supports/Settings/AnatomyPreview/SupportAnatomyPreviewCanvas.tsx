@@ -285,12 +285,9 @@ function DebugOverlay({
 }
 
 /**
- * The panels whose type is a span propped between two model contacts -- cones for
- * the bracing tool, disks for a twig. Read from the registry by what each type
- * declares at its ends, so no panel is named here and a rename reaches the set.
- *
- * A span's contacts sit either side of what the camera frames, so zooming in on
- * one of them needs a wider band than a support with a single contact.
+ * The panels whose type is a span propped between two model contacts. A span's
+ * contacts sit either side of the frame, so zooming needs a wider band than a
+ * support with a single contact.
  */
 const CONTACT_SPAN_PANEL_IDS: readonly SidebarPanel[] = SIDEBAR_PANEL_TYPE_IDS.filter((typeId) => {
     const { lower, upper } = getSupportTypeDescriptor(typeId);

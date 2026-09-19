@@ -294,9 +294,5 @@ export function BracePreview({
     );
 }
 
-// Serves the panel the BRACING tab opens: "Bracing" is that panel's sidebar
-// page, and this renders the bracing pattern its tool produces. Read off the
-// panel vocabulary rather than spelled, so a rename moves the registration with
-// the tab. Registered under the panel it draws, not the folder it happens to
-// live in.
+// Registered under the panel it draws: the one the bracing tab opens.
 registerAnatomyPreview(panelForTab('bracing'), BracePreview);

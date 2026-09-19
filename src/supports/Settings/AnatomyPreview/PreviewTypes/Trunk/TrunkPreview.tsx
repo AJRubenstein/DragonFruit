@@ -46,7 +46,7 @@ interface PreviewContext {
 
 type PreviewDataBuilder = (context: PreviewContext) => SupportData;
 
-/** The standard support diagram: the trunk, and what the raft page draws. */
+/** The standard support diagram, also used by the raft page. */
 const buildStandardDiagramData: PreviewDataBuilder = ({ liveConfig, tipPos, tipNormal }) =>
     buildTrunkData({
         tipPos,
@@ -92,7 +92,7 @@ const buildKnotContactDiagramData: PreviewDataBuilder = ({ settings, liveConfig,
         hostDiameterMm: settings.shaft.diameterMm,
     }).supportData;
 
-/** A span propped between two model contacts: the twig's disks. */
+/** A span propped between two model contacts, on disks. */
 const buildDiskSpanDiagramData: PreviewDataBuilder = () => {
     const aPos = { x: -2.8, y: 0, z: 10.5 };
     const bPos = { x: 2.8, y: 0, z: 7.5 };
@@ -109,7 +109,7 @@ const buildDiskSpanDiagramData: PreviewDataBuilder = () => {
     };
 };
 
-/** The same span, drawn with the cones the bracing tool carries. */
+/** The same span, drawn with cones. */
 const buildConeSpanDiagramData: PreviewDataBuilder = () => {
     const aPos = { x: -2.8, y: 0, z: 10.5 };
     const bPos = { x: 2.8, y: 0, z: 7.5 };
@@ -126,13 +126,7 @@ const buildConeSpanDiagramData: PreviewDataBuilder = () => {
     };
 };
 
-/**
- * The preview shape a type declares: what sits at each end of it, and whether a
- * shaft joins them. That is what the diagram draws -- a shaft standing on the
- * plate, a shaft or a bare contact hanging off a knot, or a span between two
- * model contacts -- so the panel is chosen by what its type DECLARES rather than
- * by name, and a rename moves the diagram with the panel.
- */
+/** The preview shape a type declares: what sits at each end, and what joins them. */
 type PreviewShape = 'plateShaft' | 'knotShaft' | 'knotContact' | 'coneSpan' | 'diskSpan';
 
 function previewShapeOf(descriptor: SupportTypeDescriptor): PreviewShape | null {
@@ -144,7 +138,7 @@ function previewShapeOf(descriptor: SupportTypeDescriptor): PreviewShape | null 
     return null;
 }
 
-/** How each preview shape is drawn. Keyed by the shape, never by a type. */
+/** How each preview shape is drawn. */
 const PREVIEW_DATA_BY_SHAPE: Record<PreviewShape, PreviewDataBuilder> = {
     plateShaft: buildStandardDiagramData,
     knotShaft: buildKnotShaftDiagramData,
@@ -154,10 +148,8 @@ const PREVIEW_DATA_BY_SHAPE: Record<PreviewShape, PreviewDataBuilder> = {
 };
 
 /**
- * What draws each panel the sidebar offers. The raft page shows the standard
- * support diagram; every type panel is decided by the shape its descriptor
- * declares. A panel this map does not know falls through to the disk-span
- * diagram, which is the generic renderer's own shape.
+ * What draws each panel. A panel with no entry falls through to the disk-span
+ * diagram.
  */
 const PREVIEW_DATA_BY_PANEL: Partial<Record<SidebarPanel, PreviewDataBuilder>> = {
     raft: buildStandardDiagramData,

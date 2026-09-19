@@ -4,15 +4,8 @@ import { hostKnotFieldsFor, isJointDragPreviewType, resolveSupportTypeIdOf, type
 import { computeJointDragPreviewKnots, type JointDragPreviewSnapshot } from './jointDragPreviewMath';
 
 /**
- * Entities of one type, indexed by each host knot they name.
- *
- * The fields come off the type's declared `hostedBy` knot edges rather than
- * being named here. Branch and leaf name one (`parentKnotId`); brace names two
- * (`startKnotId` and `endKnotId`), so a brace is indexed under BOTH knots it
- * spans.
- *
- * `project` is what the caller wants back -- the entity, or its id -- so a caller
- * that only needs ids does not allocate an entity list to throw away.
+ * Entities indexed by each host knot they name, from the type's declared
+ * `hostedBy` knot fields. An entity naming two knots is indexed under both.
  */
 export function buildEntitiesByHostKnot<T extends { id: string; typeId?: SupportTypeId }, R>(
   entities: readonly T[],
@@ -22,8 +15,6 @@ export function buildEntitiesByHostKnot<T extends { id: string; typeId?: Support
   const fieldsByType = new Map<SupportTypeId, readonly string[]>();
 
   for (const entity of entities) {
-    // The type comes off the entity, so a caller does not name one -- and a list
-    // that ever held two types would index each by its own fields.
     const typeId = resolveSupportTypeIdOf(entity);
     if (!typeId) continue;
 
@@ -121,11 +112,6 @@ export function computeCascadedPreviewKnotOverrides({
     const branch = branchesById[branchId];
     if (!branch) continue;
 
-    // The preview's kind is the type the entity itself declares: the maths
-    // reads it back for the entity's own descriptor, so restating the name
-    // here would be a second naming point. An entity that resolves to no type
-    // -- or to one that publishes no joint-drag preview -- has none to
-    // compute, the same way the guards below treat a missing branch.
     const branchKind = resolveSupportTypeIdOf(branch);
     if (!branchKind || !isJointDragPreviewType(branchKind)) {
       processedBranchIds.add(branchId);

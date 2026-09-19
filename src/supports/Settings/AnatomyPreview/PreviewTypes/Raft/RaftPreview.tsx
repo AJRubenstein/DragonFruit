@@ -133,6 +133,5 @@ export function RaftPreview({
     );
 }
 
-// The raft's own anatomy preview, registered where it lives so the sidebar
-// mounts whatever panels have registered rather than holding a table.
+// The raft's own anatomy preview, registered where it lives.
 registerAnatomyPreview('raft', RaftPreview);

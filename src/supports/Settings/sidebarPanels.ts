@@ -8,23 +8,9 @@ import {
 import { hasOwnAnatomyPreview } from './anatomyPreviewRegistry';
 
 /**
- * The support sidebar's panels.
- *
- * A panel is a section of the sidebar: it shows a subset of the support settings
- * and an anatomy preview. Two kinds of thing are panels -- support TYPES (the
- * ones the sidebar offers) and TOOLS (raft, grid, auto) which have settings but
- * are not entity types.
- *
- * A type's panel facts are DERIVED, from the registry or from whether a preview
- * registered itself. Only the tool panels are declared here, because there is no
- * registry to ask: they are not support types.
- *
- * Which types the sidebar actually offers is a UI decision, so each type DECLARES
- * it (`offersSidebarPanel`) and the registry exports the offered ones in the
- * order the sidebar shows them -- `SIDEBAR_PANEL_TYPE_IDS`, held to the flags by
- * a module-load check. Every type COULD be a panel (see `typePanelFacts`, which
- * answers for all of them), but showing one needs settings the sidebar has no
- * fields for yet.
+ * The support sidebar's panels: a subset of the settings plus an anatomy
+ * preview. Support types and tools (raft, grid, auto) are both panels. A type's
+ * facts are derived from the registry; only the tool panels are declared here.
  */
 
 /** Re-exported so a panel consumer has one import site for the sidebar's vocab. */
@@ -65,21 +51,9 @@ export interface PanelFacts {
 }
 
 /**
- * A type's panel facts, answered for EVERY type.
- *
- * `hasEditableSettings` gates all of it: a type with no editable settings offers
- * no fields whatever its geometry looks like (stick, brace). Beyond that:
- *
- * - `tip` -- the type's contacts are CONES, so the tip profile applies. A twig's
- *   contacts are disks and its tip profile is not what shapes it.
- * - `shaft` -- a shaft whose diameter is directly editable. A tapered shaft's
- *   diameter comes from its ends, so the field would be a lie (twig).
- * - `roots` -- the type stands on a plate root.
- *
- * Note what these are NOT: `shaft` is not `hasSegments` (twig and stick have
- * segments and no editable shaft), and `roots` is not "has a root" (an anchor
- * has its own, with its own fields). Geometry and editability are different
- * questions, which is why the sidebar flags could not simply be read off.
+ * A type's panel facts, answered for every type. `tip` needs cone contacts,
+ * `shaft` a directly editable (untapered) shaft, `roots` a plate root; all
+ * three are gated on `hasEditableSettings`.
  */
 export function typePanelFacts(typeId: SupportTypeId): PanelFacts {
     const d = getSupportTypeDescriptor(typeId);
@@ -95,13 +69,9 @@ export function typePanelFacts(typeId: SupportTypeId): PanelFacts {
 }
 
 /**
- * The types the sidebar currently offers a panel for.
- *
- * A UI list rather than a fact, so it is declared on the descriptors: each type
- * says whether it is offered (`offersSidebarPanel`), and the registry exports
- * them in the ORDER the sidebar offers them -- which is observable, because
- * `panelForTab` opens the first panel declaring a tab. Registry order is not
- * that order (it declares branch before leaf; the sidebar offers leaf first).
+ * The types the sidebar offers a panel for, from `offersSidebarPanel`, in the
+ * order the sidebar shows them. The order is observable: `panelForTab` opens
+ * the first panel declaring a tab.
  */
 const TYPE_PANELS: readonly SupportTypeId[] = SIDEBAR_PANEL_TYPE_IDS;
 
@@ -122,8 +92,7 @@ export function isSidebarPanel(value: string): value is SidebarPanel {
 
 /** The facts for any panel, whichever kind it is. */
 export function panelFacts(panel: SidebarPanel): PanelFacts {
-    // A tool panel declares only its tab and groups; `drawsOwnPreview` is derived
-    // for every panel alike, so the cast cannot smuggle an absent field through.
+    // A tool panel declares only its tab and groups; `drawsOwnPreview` is derived.
     if (panel in TOOL_PANELS) {
         return {
             ...TOOL_PANELS[panel as ToolPanel],
@@ -141,11 +110,7 @@ export function tabPanelFor(panel: SidebarPanel): SidebarTab | 'auto' {
     return panelFacts(panel).tab;
 }
 
-/**
- * The panel a tab opens, the first that declares it. Derived, so the two cannot
- * drift: the support-info tab opens trunk's panel because trunk is offered
- * first, and 'bracing' opens stick's because stick alone declares it.
- */
+/** The panel a tab opens: the first that declares it. */
 export function panelForTab(tab: SidebarTab): SidebarPanel {
     const panel = SIDEBAR_PANELS.find((candidate) => panelFacts(candidate).tab === tab);
     if (!panel) throw new Error(`no panel declares the "${tab}" tab`);
@@ -165,23 +130,10 @@ export function panelDrawsOwnPreview(panel: SidebarPanel): boolean {
     return panelFacts(panel).drawsOwnPreview;
 }
 
-/**
- * The panel the sidebar returns to when an edit session ends.
- *
- * The support-info tab's panel, which is the trunk panel: `panelForTab` answers
- * with the first panel declaring a tab, and trunk leads `SIDEBAR_PANEL_TYPE_IDS`.
- * Derived rather than spelled, so a rename reaches it; `panelForTab` throwing
- * for a tab no panel declares is the load-time check that this stayed true.
- */
+/** The panel the sidebar returns to when an edit session ends. */
 export const DEFAULT_SIDEBAR_PANEL: SidebarPanel = panelForTab('supportInfo');
 
-/**
- * Tabs other than the generic support-info one.
- *
- * Each opens a panel that draws its own anatomy preview, so this is what the
- * preview registration barrel checks against -- derived rather than a list, so
- * no type name is written out to say "stick draws its own".
- */
+/** Tabs other than the generic one: each opens a panel drawing its own preview. */
 export const TOOL_PANEL_TABS: readonly SidebarTab[] = [
     ...new Set(
         SIDEBAR_PANELS

@@ -5,19 +5,10 @@ import { resolveTwigDiameterAtSegmentT } from '../Twig/twigTaper';
 import type { Knot, Leaf, Twig } from '../../types';
 
 /**
- * A leaf's contact cone, re-derived against a knot that has moved.
- *
- * While a knot slides along its host shaft, the leaf hanging off it has to
- * follow: the cone re-aims at the knot, its length becomes the knot-to-tip
- * distance, and its wide end tracks the host's diameter where the knot now sits.
- *
- * Leaf geometry, so it lives in leaf's folder. It was in the shared
- * `supportPlacementPreviewMath.ts` and threaded down to its caller as an
- * injected option -- a leaf-shaped function passed by name through two layers to
- * avoid one import.
- *
- * Returns the SAME leaf when nothing moved, so a still frame does not churn the
- * render list.
+ * A leaf's contact cone, re-derived against a knot that has moved: the cone
+ * re-aims at the knot, its length becomes the knot-to-tip distance, and its
+ * wide end tracks the host's diameter there. Returns the same leaf when nothing
+ * moved, so a still frame does not churn the render list.
  */
 export function recomputeLeafPreviewContactCone(
     leaf: Leaf,
@@ -55,10 +46,8 @@ export function recomputeLeafPreviewContactCone(
         }
     }
 
-    // If the parent knot sits on a tapered twig, the leaf's wide-end diameter
-    // (bodyDiameterMm) must live-track the twig's local diameter at the knot's
-    // current slide T. Otherwise the cone "neck" stays frozen at the placement
-    // diameter while the knot visibly grows/shrinks.
+    // On a tapered host, the wide end tracks the host's local diameter at the
+    // knot's slide T, or the neck stays frozen while the knot visibly changes size.
     let nextBodyDiameterMm = cone.profile.bodyDiameterMm;
     const hostTwig = previewKnot.parentShaftId ? twigBySegmentId.get(previewKnot.parentShaftId) : undefined;
     if (hostTwig && previewKnot.t !== undefined) {

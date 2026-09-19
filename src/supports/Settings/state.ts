@@ -276,12 +276,8 @@ export function getSettingsSnapshot(): SupportSettings {
 const STORAGE_KEY = 'support-settings';
 
 /**
- * Whether this context has the storage the settings persist to.
- *
- * The registry imports this module for `getSettings`, so anything importing the
- * registry loads it -- including the render-lookup worker, which has no
- * `localStorage`. Tested directly rather than through `window`: a test
- * environment can have one without the other.
+ * Whether this context has the storage the settings persist to. The worker
+ * loads this module and has none; tested directly rather than through `window`.
  */
 function hasLocalStorage(): boolean {
     return typeof localStorage !== 'undefined';

@@ -5,18 +5,7 @@ import type { InstancedRoot } from '../SupportPrimitives/Roots/InstancedRootsGro
 import type { InstancedJoint } from '../SupportPrimitives/Joint/InstancedJointGroup';
 import type { InstancedContactCone } from '../SupportPrimitives/ContactCone/InstancedContactConeGroup';
 
-/**
- * How a support type contributes its primitives to the proxy view.
- *
- * The primitives a type is drawn from are a fact about that type -- a stump is
- * a frustum with its own radii, a stick is two cones, a twig is two disks -- so
- * each recipe lives in that type's own folder and registers itself here.
- * `collectProxyPrimitives` walks `SUPPORT_TYPES` and asks each one what it
- * emits, naming no type itself. Mirrors `exportGeometry/seam.ts`.
- *
- * Lives beside the proxy layer rather than in the registry, which declares what
- * a type is rather than how it draws.
- */
+/** Where each type registers the primitives it contributes to the proxy view. */
 
 /** Where a recipe puts the primitives it builds. */
 export interface ProxyPrimitiveSink {
@@ -34,26 +23,13 @@ export interface ProxyPrimitiveSink {
     pushCone(cone: InstancedContactCone, dedupeKey?: string): void;
 }
 
-/**
- * What a recipe is handed.
- *
- * `state` is the live store, for the roots and host knots a recipe reaches
- * through the ids its entity carries. The two flags are the layer's, passed
- * through so a recipe can gate its own parts the way each one already did.
- */
+/** What a recipe is handed: the live store, plus the layer's detail flag. */
 export interface ProxyGeometryContext extends ProxyPrimitiveSink {
     state: SupportState;
     includeDetailedPrimitives: boolean;
 }
 
-/**
- * What a type's recipe declares about WHEN it runs, as opposed to what it
- * builds.
- *
- * Both are per type: a brace connects supports rather than facing the model, so
- * the interior view hides it; a leaf is a cone and a rod, so the coarse view has
- * nothing to show.
- */
+/** When a type's recipe runs, as opposed to what it builds. */
 export interface ProxyGeometryRegistration {
     /** Skipped entirely in the interior view. */
     skipInInteriorView?: boolean;
@@ -66,12 +42,7 @@ type SupportProxyGeometryBuilder = (entity: never, context: ProxyGeometryContext
 const PROXY_GEOMETRY_BUILDERS = new Map<SupportTypeId, SupportProxyGeometryBuilder>();
 const PROXY_GEOMETRY_REGISTRATIONS = new Map<SupportTypeId, ProxyGeometryRegistration>();
 
-/**
- * Called once per type from its own folder's registration module.
- *
- * The entity parameter is annotated by the implementer (`(stick: Stick) => …`),
- * which is what keeps each recipe's body typed without the caller casting.
- */
+/** Called once per type from its own folder's registration module. */
 export function registerSupportProxyGeometry<T>(
     typeId: SupportTypeId,
     build: (entity: T, context: ProxyGeometryContext) => void,

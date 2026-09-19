@@ -141,12 +141,7 @@ export function calculateKnotPositionOnSegmentFromT(
     return calculateKnotPositionFromT(start, end, clampedT);
 }
 
-/**
- * What a knot rides: always the type that owns the host.
- *
- * A cone belongs to the type declaring it (`knotHostPrefix`), so the type id
- * answers for it; whether a host is a cone is asked with `isConeKnotHost`.
- */
+/** What a knot rides: the type owning the host. See `isConeKnotHost`. */
 export type KnotHostType = SupportTypeId;
 
 /**

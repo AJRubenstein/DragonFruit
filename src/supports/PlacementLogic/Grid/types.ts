@@ -17,14 +17,7 @@ export type GridPlacementRejectReason =
 
 export type GridPlacementDecision =
     | {
-        /**
-         * A support is placed on this contact.
-         *
-         * ONE arm for every type. The placed support travels in the registry's
-         * generic shape — `location.key` says which collection it joins and
-         * `edges` says which primitives come with it — so the engine never names
-         * the type it placed and there is no arm per type.
-         */
+        /** A support is placed on this contact, in the registry's generic shape. */
         kind: 'place';
         /** The grid node it landed on, for logging. Empty when the build never
          * consults the grid (a type's own override). */
@@ -34,27 +27,14 @@ export type GridPlacementDecision =
         supportData?: SupportData;
     }
     | {
-        /**
-         * The placed support replaces the host occupying its grid node.
-         *
-         * Reports WHICH host yields, by declared type and id. The code that
-         * removes it lives in that host type's own folder, reached through the
-         * registry, because rehosting its attachments is that type's business.
-         */
+        /** The placed support replaces the host occupying its grid node. */
         kind: 'promote';
         hostTypeId: SupportTypeId;
         hostId: string;
         nodeKey: GridNodeKey;
         /** The support taking the node, in the same generic shape. */
         placed: PlacedSupport;
-        /**
-         * The member the host's own contact is preserved as.
-         *
-         * A promotion produces two things: the support now standing on the
-         * node, and a member hanging off it that carries the ORIGINAL host's
-         * contact — otherwise the surface the old host was holding is dropped.
-         * Both travel in the same generic shape.
-         */
+        /** The member preserving the displaced host's own contact. */
         promotedMember?: PlacedSupport;
         /** Preview state for what is being placed. */
         supportData?: SupportData;

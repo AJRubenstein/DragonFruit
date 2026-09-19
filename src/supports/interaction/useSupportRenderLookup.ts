@@ -105,13 +105,7 @@ function buildInputDelta(
 
 function applyDeltaToWorkerCollectionsRef(target: WorkerCollectionsRef, delta: SupportLookupInputDelta) {
   if (delta.state) {
-    // Every collection the delta can carry, which is every one the builder
-    // walked. This listed eight of them by hand while `buildInputDelta` derives
-    // its set from SUPPORT_COLLECTION_KEYS, so a `stumps` or `kickstands` delta
-    // was built, sent, and then dropped here -- the worker kept stale stub and
-    // kickstand data and the render lookup disagreed with the store.
     for (const key of SUPPORT_COLLECTION_KEYS) {
-      // Both sides are registry-keyed, so this needs no per-collection shape.
       const diff = delta.state[key as keyof typeof delta.state];
       if (!diff) continue;
       applyRecordDeltaInPlace(
@@ -363,9 +357,7 @@ export function useSupportRenderLookup(options: UseSupportRenderLookupOptions): 
     if (postLatestRequestRef.current) {
       postLatestRequestRef.current();
     }
-    // `options.state` rather than each collection: the caller rebuilds that object
-    // whenever any collection identity changes, so it is the same signal without a
-    // list to keep in step with the registry.
+    // `options.state` is rebuilt whenever any collection identity changes.
   }, [options.state, options.activePreviewSupport]);
 
   React.useEffect(() => {

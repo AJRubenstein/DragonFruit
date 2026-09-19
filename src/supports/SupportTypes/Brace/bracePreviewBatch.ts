@@ -10,17 +10,8 @@ import type { InstancedJoint } from '../../SupportPrimitives/Joint/InstancedJoin
 import type { InstancedShaft } from '../../SupportPrimitives/Shaft/InstancedShaftGroup';
 
 /**
- * The batch a brace's placement preview draws.
- *
- * A brace previews a bare span between two snapped points, not a provisional
- * support: no plate root, no contact cone, just the shaft and a knot at each
- * end. That is the `previewShape: 'segment'` case the registry declares, and
- * this is its implementation -- in brace's own folder, beside the preview data
- * it consumes.
- *
- * A pure function of the preview state and the diameter cap, which is what makes
- * it testable without a scene: the store holds WHAT to preview, the caller
- * supplies the limit, and this turns them into primitives.
+ * The batch a brace's placement preview draws: a bare span between two snapped
+ * points -- the shaft and a knot at each end, no root and no contact cone.
  */
 export function buildBracePlacementPreviewBatch(
     id: string,

@@ -26,11 +26,7 @@ import { shouldCommitJointDrag } from '../Joint/jointDragController';
 import { knotMoveDescription, type KnotHostType } from './knotUtils';
 
 
-/**
- * The type whose knots ride a contact cone rather than a span -- the leaf. Read
- * off the registry, so the sites below that hold only a knot id ask for it
- * instead of spelling it, and a rename reaches no line here.
- */
+/** The type whose knots ride a contact cone rather than a span. */
 const CONE_HOSTED_TYPE_ID = coneKnotHostType();
 
 
@@ -44,11 +40,7 @@ function hostsRealSegments(host: ActiveHost): boolean {
     return !getSupportTypeDescriptor(host.containerType).knotHostPrefix;
 }
 
-/**
- * Whether the host is a span between two knots rather than a segmented shaft.
- * A span type declares no real segments but selects its span as a segment, so
- * the descriptor answers without naming the type.
- */
+/** Whether the host is a span between two knots rather than a segmented shaft. */
 function hostsCurveSpan(host: ActiveHost): boolean {
     if (host.ridesCone) return false;
     const descriptor = getSupportTypeDescriptor(host.containerType);
@@ -430,10 +422,8 @@ export function useKnotInteraction(enabled: boolean = true) {
     const findHost = (knot: Knot): ActiveHost | null => {
         let host: ActiveHost | null = null;
 
-        // A leaf's contact cone is a knot host but not the leaf's own entity --
-        // it names a cone primitive. Its prefix is the leaf's declared
-        // `knotHostPrefix`, but the host it resolves to differs, so it is
-        // handled before the generic pseudo-shaft path below.
+        // A cone host names a cone primitive, not its owner's entity, so it
+        // resolves before the generic pseudo-shaft path below.
         const coneHost = parseKnotHostId(knot.parentShaftId);
         if (coneHost && isConeKnotHost(coneHost.typeId)) {
             const leafId = coneHost.entityId;
@@ -453,9 +443,7 @@ export function useKnotInteraction(enabled: boolean = true) {
             return host;
         }
 
-        // A type whose knots ride a pseudo-shaft (a brace's span) declares its
-        // prefix in the registry; ask it rather than spelling one out, so a
-        // rename moves the string with it.
+        // A type whose knots ride a pseudo-shaft declares its prefix in the registry.
         const pseudoHost = parseKnotHostId(knot.parentShaftId);
         if (pseudoHost) {
             const entity = getSupportEntity(pseudoHost.typeId, pseudoHost.entityId) as ActiveHost['entity'] | null;
@@ -484,7 +472,7 @@ export function useKnotInteraction(enabled: boolean = true) {
         }
 
         if (host) {
-            // Determine Initial Topology, for every shaft that flexes off this knot.
+            // Initial topology of every shaft that flexes off this knot.
             for (const b of flexingShaftsOn(knot.id)) {
                 if (b.segments.length > 0) {
                     let jointZ = 0;
@@ -758,8 +746,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                 for (const shaftId in elasticState.current) {
                     const res = elasticResults[shaftId];
                     if (!res) continue;
-                    // On release a shaft back at its committed geometry drops its
-                    // override outright, so no sync entry is kept.
+                    // On release, a shaft back at its committed geometry drops its override.
                     collectSolvedShaft(previewShaftSegmentsByIdAtEnd, shaftId, res);
                 }
 
@@ -1152,7 +1139,7 @@ export function useKnotInteraction(enabled: boolean = true) {
                 const res = elasticResults[shaftId];
                 if (!res) continue;
                 // A shaft back at its committed geometry keeps an entry only if it
-                // already had a preview override, so the prune below can see it.
+                // already had a preview override, so the prune below sees it.
                 collectSolvedShaft(shaftSegmentsById, shaftId, res, (id) =>
                     Object.prototype.hasOwnProperty.call(previewShaftSegmentsByIdRef.current, id));
             }
