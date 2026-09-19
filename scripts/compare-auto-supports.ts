@@ -42,16 +42,7 @@ function load(path: string): DragonfruitImportFormat {
     return supports;
 }
 
-/**
- * Every tip and plate footprint in a payload, labelled by the type it came from.
- *
- * Driven by `SUPPORT_TYPES` rather than one loop per type: the label IS the
- * registry's id, and a type added to the registry is reported without editing
- * this. Each type's shapes come from its declared endpoints -- a cone contact
- * contributes a tip at its position, an `inlineRoot` lower end contributes a
- * footprint at the entity's own root -- so nothing here knows what the types
- * are called.
- */
+/** Every tip and plate footprint in a payload, labelled by the type it came from. */
 function extract(s: DragonfruitImportFormat): { tips: Tip[]; rootXY: XY[] } {
     const tips: Tip[] = [];
     const rootXY: XY[] = [...(s.roots ?? []).map((r) => ({ x: r.transform.pos.x, y: r.transform.pos.y }))];
