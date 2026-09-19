@@ -172,15 +172,9 @@ Still the heaviest step.
 - `transformSupportsForModel` / `setSnapshot` — walk gadgets if they must move
   with a model transform.
 
-## 6. Export — *(registry-driven, one registration in your folder)*
+## 6. Export — `SupportTypes/Gadget/gadgetRegistration.ts` *(registry-driven)*
 
-Nothing to add in `supportExportReconstruction.ts`. The payload is filled by
-walking `SUPPORT_TYPES` (its field names ARE the collection keys, from
-`location.key`), the document and the geometry group are built the same way, and
-the group is named `Gadget_<id>` from `exportGroupName`.
-
-What you add is the geometry, in **your** folder — one call in
-`SupportTypes/Gadget/gadgetRegistration.ts`:
+- Register how your type exports, in your own folder:
 
 ```ts
 registerSupportExportGroup<Gadget>('gadget', (gadget, context) => {
@@ -193,18 +187,18 @@ registerSupportExportGroup<Gadget>('gadget', (gadget, context) => {
 
 - Return `null` to drop ONE entity (a broken host link) rather than failing the
   export.
-- `context.supportState` is the live store, for a type that resolves an owned
-  root or host knot; `context.modelIdOf(id)` follows an entity's declared links
-  to its model.
-- `supports/exportGeometry/helpers.ts` carries the shared pieces
-  (`addModelMetadata`, `appendShafts`, `appendConeGeometry`, `raftSettingsFor`,
-  `globalPenetrationMm`, the `SupportGeometryGenerator`).
-- Do **not** name the returned group: the walk names it from the registry.
+- Use `context.supportState` to resolve an owned root or host knot, and
+  `context.modelIdOf(id)` to follow an entity's declared links to its model.
+- Take the shared pieces from `supports/exportGeometry/helpers.ts`:
+  `addModelMetadata`, `appendShafts`, `appendConeGeometry`, `raftSettingsFor`,
+  `globalPenetrationMm`, `SupportGeometryGenerator`.
+- Do **not** name the returned group: the walk names it `Gadget_<id>` from
+  `exportGroupName`.
 
-The generator that loads your registration module discovers it from the folder,
-so there is no list to update — `state.ts` throws at load if a type never
-registered a builder, and `supportTypeFolders.test.ts` fails if the file is
-missing.
+`supportExportReconstruction.ts` needs **nothing**: the payload, the document and
+the geometry group are all filled by walking `SUPPORT_TYPES`. `state.ts` throws at
+load if a declared type registered no builder, and `supportTypeFolders.test.ts`
+fails if the registration file is missing.
 
 ## 7. Interaction — only for user-placeable types *(hand-wired)*
 

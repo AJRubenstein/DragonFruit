@@ -768,12 +768,7 @@ function remapModelIdsInPayload<T>(value: T, idMap: Map<string, string>): T {
   return visit(value) as T;
 }
 
-/**
- * Whether a serialized scene carries any support at all.
- *
- * Walks every collection the registry declares, so a type added later counts
- * without an edit here.
- */
+/** Whether a serialized scene carries any support at all. */
 function voxlSupportsContainData(document: VoxlDocumentV1): boolean {
   return payloadCollections(document.supports).some((entities) => entities.length > 0);
 }
@@ -866,9 +861,8 @@ function asDragonfruitImportFormat(value: unknown): DragonfruitImportFormat | nu
     return null;
   }
 
-  // Every optional collection the registry declares: an unchecked one is a
-  // non-array a malformed payload can smuggle through. The required ones are
-  // checked above, and re-checking them as "absent or an array" costs nothing.
+  // Every optional collection the registry declares; the required ones are
+  // checked above.
   const collections = candidate as unknown as Record<string, unknown>;
   for (const key of SUPPORT_COLLECTION_KEYS) {
     const value = collections[key];
@@ -3880,9 +3874,7 @@ export function useSceneCollectionManager() {
       const supportIds = getSupportsForModel(supportStateBeforeDelete, model.id);
       supportsByModel.set(model.id, supportIds);
 
-      // Every collection `getSupportsForModel` fills, which is every
-      // modelId-bearing one -- stumps included, and kickstands counted here
-      // rather than added separately.
+      // Every modelId-bearing collection `getSupportsForModel` fills.
       const supportPrimitiveCount = MODEL_ID_COLLECTION_KEYS
         .reduce((total, key) => total + supportIds[key].length, 0);
 
@@ -4255,13 +4247,10 @@ export function useSceneCollectionManager() {
         });
       };
 
-      // Walked over the registry, so every declared type widens the rectangle.
-      // A brace contributes nothing of its own: it carries no segments and no
-      // contact, and the knots it spans are expanded above.
-      //
-      // Each type declares whether it has segments, and where its contacts sit.
-      // The radius field differs by contact kind -- a cone keeps it inside its
-      // profile, a disk on the contact itself.
+      // Every declared type widens the rectangle. A brace contributes nothing
+      // of its own: the knots it spans are expanded above. The radius field
+      // differs by contact kind -- a cone's is in its profile, a disk's is on
+      // the contact.
       for (const descriptor of SUPPORT_TYPES) {
         const entities = payload[descriptor.location.key] as unknown as Array<Record<string, any>> | undefined;
         if (!entities) continue;

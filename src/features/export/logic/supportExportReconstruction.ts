@@ -7,14 +7,7 @@ import { exportGroupName, getSupportTypeDescriptor, parseKnotHostId, parsePrefix
 import type { DragonfruitImportFormat, Segment, SupportState } from '@/supports/types';
 import type { SupportCollectionKey } from '@/supports/supportTypeRegistry';
 
-/**
- * One model's supports, every collection.
- *
- * Derived from the registry rather than listed: the ten keys here ARE
- * `SupportCollectionKey`, and each member is that collection's entity array read
- * off `SupportState`. The `trunks` member was already written this way while the
- * other nine were named, which is exactly the drift a hand-written list invites.
- */
+/** One model's supports, one member per declared collection. */
 export type ScopedSupportPayload = {
   [K in SupportCollectionKey]: SupportState[K][string][];
 };
@@ -165,13 +158,7 @@ export function extractScopedSupportPayload(
 
   const roots = Object.values(supportState.roots)
     .filter((item) => hasAllowedModelId(allowedModelIds, item.modelId));
-  /**
-   * The scoped lists, by type id.
-   *
-   * Nothing names a type here: the registry says which types exist, and
-   * `location.key` is the collection / payload field name that is the wire
-   * contract, so one walk fills both.
-   */
+  /** The scoped lists, by type id. */
   const scopedEntities: Record<SupportTypeId, unknown[]> = {} as Record<SupportTypeId, unknown[]>;
   for (const descriptor of SUPPORT_TYPES) scopedEntities[descriptor.id] = scoped(descriptor.id);
 
@@ -228,12 +215,8 @@ export function extractScopedSupportPayload(
       return hasAllowedModelId(allowedModelIds, resolveModelId(item.id));
     });
 
-  // The payload's field names ARE the collection keys -- one per declared type,
-  // plus the two primitives -- so it is filled by walking the registry rather
-  // than restated. Field ORDER follows the registry: the primitives bracket the
-  // types because that is the order they are assigned in. Order is incidental
-  // to every reader (they all index by name), but the payload golden records
-  // it, so it is pinned deliberately rather than left to fall out.
+  // Field names are the collection keys; field order follows the registry,
+  // which the payload golden records.
   const payload = { roots } as ScopedSupportPayload;
   const byField = payload as unknown as Record<string, unknown>;
   for (const descriptor of SUPPORT_TYPES) {
@@ -270,9 +253,8 @@ export function buildScopedSupportExportDocument(
       objectCenter: { x: 0, y: 0, z: 0 },
       updatedAt: Date.now(),
     },
-    // Walked rather than listed, for the same reason as the voxl writer: a type
-    // added to the registry must reach the export. `kickstands` is rebuilt above
-    // from the root and host knot each one owns, so it is written after the walk.
+    // `kickstands` is rebuilt above from each one's root and host knot, so it
+    // is written after the walk.
     ...importPayloadCollections(payload),
     kickstands: kickstandBuilds,
   };
@@ -291,10 +273,8 @@ export function buildScopedSupportGeometryGroup(
     modelIdOf: getModelIdForSupportEntityId,
   };
 
-  // Every type's own folder registers how it exports (see
-  // supports/exportGeometry/seam.ts). Walking the registry is what keeps this
-  // free of type names: a type that never registered would otherwise export
-  // nothing, silently, so it throws instead.
+  // Each type registers how it exports in its own folder; a type that
+  // registered none throws rather than exporting nothing.
   for (const descriptor of SUPPORT_TYPES) {
     const rows = (payload as unknown as Record<string, readonly { id: string }[]>)[descriptor.location.key] ?? [];
     for (const entity of rows) {

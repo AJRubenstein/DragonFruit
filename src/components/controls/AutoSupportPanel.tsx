@@ -52,12 +52,6 @@ interface AutoSupportPanelProps {
   onBeforeRun?: () => Promise<boolean>;
 }
 
-/**
- * Settings that hold a NUMBER, derived from `AutoSupportSettings` itself rather
- * than listed — a numeric setting cannot be added without becoming available to
- * the panel. (The named sizing tier is excluded by this, correctly: it is not a
- * number, and it has no business owning a range.)
- */
 type KnobDef = {
   key: NumericAutoSupportSettingKey;
   label: MessageDescriptor;
