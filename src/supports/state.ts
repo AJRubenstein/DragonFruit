@@ -174,12 +174,9 @@ function deepClone<T>(value: T): T {
  * The return type derives from SUPPORT_REMOVAL_SHAPES, so a field renamed in
  * the registry is a compile error at every consumer.
  *
- * Two forms, told apart by the argument count:
- *   - `removeSupportEntity(id)` -- the type comes off the entity, so the caller
- *     holding only an id names nothing. Returns the WIDE removal union, because
- *     which shape it is depends on a runtime lookup.
- *   - `removeSupportEntity(typeId, id)` -- the explicit form, which keeps the
- *     result NARROW (`SupportRemovalResult<T>`).
+ * Two forms, told apart by the argument count: `removeSupportEntity(id)` reads
+ * the type off the entity and returns the wide union; `(typeId, id)` keeps the
+ * result narrow.
  */
 export function removeSupportEntity(id: string): SupportRemovalResult<SupportTypeId> | null;
 export function removeSupportEntity<T extends SupportTypeId>(
@@ -1030,12 +1027,7 @@ function settleKnotDependentGeometry(
 }
 
 
-/**
- * Remove one joint from a shafted entity, merging the segments it split.
- *
- * One body for every shafted type; the lower end each reads is declared in its
- * edges.
- */
+/** Remove one joint from a shafted entity, merging the segments it split. */
 function removeShaftJoint<T extends SupportTypeId>(
     typeId: T,
     entityId: string,
@@ -1074,8 +1066,7 @@ function removeShaftJoint<T extends SupportTypeId>(
     // If we removed a segment, any knots attached to that removed segment must be rebound
     // to the merged segment so they stay connected.
     if (removedSegmentId) {
-        // The lower end is whichever the type declares: a root it owns, or the
-        // knot it hangs from.
+        // The lower end the type declares: its own root, or a host knot.
         const hosts = resolveDeclaredHosts(typeId, entity as unknown as Record<string, unknown>);
         const anchored = hosts.root ?? hosts.hostKnot;
         const mergedSegmentId = after.segments[lowerIndex]?.id;
@@ -1137,8 +1128,7 @@ function removeShaftJoint<T extends SupportTypeId>(
 /**
  * Which support lost a joint, and its before/after for the undo payload.
  *
- * One variant per type in `JOINT_REMOVAL_BY_TYPE`, so a rename moves the union.
- * Callers push the type's declared `historyUpdate` and select `id`.
+ * One variant per type in `JOINT_REMOVAL_BY_TYPE`.
  */
 export type RemoveJointByIdResult = {
     [T in JointRemovalTypeId]: {
@@ -1150,8 +1140,7 @@ export type RemoveJointByIdResult = {
 }[JointRemovalTypeId];
 
 export function removeJointById(jointId: string): RemoveJointByIdResult | null {
-    // Every type declaring joint removal, in registry order. The cone guard and
-    // the knot rebind below each skip a type that has neither.
+    // Every type declaring joint removal, in registry order.
     for (const typeId of JOINT_REMOVAL_TYPES) {
         const collection = state[getSupportTypeDescriptor(typeId).location.key] as unknown as
             Record<string, { segments: Segment[] }>;
@@ -1626,9 +1615,7 @@ export function transformSupportsForModel(
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
     let changed = false;
-    // Only the three collections this function computes for itself. Every other
-    // type's collection comes from `nextByCollection` below, which the transform
-    // loop fills by walking `SUPPORT_TYPES`.
+    // Only the three collections computed here; the rest come from `nextByCollection`.
     let nextRoots = state.roots;
     let nextTrunks = state.trunks;
     let nextKnots = state.knots;
@@ -1654,9 +1641,8 @@ export function transformSupportsForModel(
     }
 
     const resolveModelIdFromParentShaft = (parentShaftId: string, visitedBraceIds?: Set<string>): string | undefined => {
-        // The two host kinds reach their model differently -- a cone through its
-        // own host knot, a span through either end -- so they stay separate arms.
-        // Which prefix names which is declared, not spelled out here.
+        // A cone reaches its model through its host knot, a span through either
+        // end, so the two kinds stay separate arms.
         const host = parseKnotHostId(parentShaftId);
 
         if (host && isConeKnotHost(host.typeId)) {
@@ -1910,8 +1896,7 @@ export function transformSupportsForModel(
     }
 
     if (changed) {
-        // The transform loop fills one entry per collection it touched; every
-        // other collection carries through unchanged.
+        // One entry per collection the loop touched; the rest carry through.
         const nextCollections: Record<string, unknown> = {};
         for (const descriptor of SUPPORT_TYPES) {
             const key = descriptor.location.key;
@@ -1970,11 +1955,9 @@ export function transformAllSupportsForSingleModel(
     const deltaMatrix = afterMatrix.clone().multiply(beforeMatrix.clone().invert());
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
-    // One walk over SUPPORT_ENTITY_COLLECTIONS. What moves is declared: a shaft
-    // if the type has one, each contact by the kind and field it declares, and
-    // whatever `transformExtrasFor` names (a brace curve, a stump's own root
-    // and joint). The one arm that stays here is `roots`, which is not a
-    // support type at all -- and a pure translation keeps its Z.
+    // One walk over SUPPORT_ENTITY_COLLECTIONS: a shaft if the type has one,
+    // each declared contact, plus whatever `transformExtrasFor` names. `roots`
+    // stays its own arm, being no support type, and keeps its Z on a translation.
     const { collections: transformed } = mapSupportEntities(state, (entity, collection) => {
         if (collection === 'roots') {
             const root = entity as unknown as Roots;
@@ -2026,8 +2009,7 @@ export function transformAllSupportsForSingleModel(
                     : transformVec3(value as Vec3, deltaMatrix);
         }
 
-        // An entity the declared fields do not reach is returned as-is, so the
-        // walk leaves its collection untouched rather than minting an equal copy.
+        // An entity no declared field reaches is returned as-is, minting no copy.
         return (next ?? record) as unknown as typeof entity;
     });
 
@@ -2039,9 +2021,7 @@ export function transformAllSupportsForSingleModel(
         };
     }
 
-    // Read before `setState`, which replaces `state`. Kickstands are written by
-    // the walk above like every other type, so whether they moved is settled by
-    // whether it minted a new collection for them.
+    // Read before `setState` replaces `state`.
     const kickstandsChanged = transformed.kickstands !== state.kickstands;
 
     setState({
@@ -2084,8 +2064,7 @@ export function removeRootById(rootId: string): Roots | null {
 // --- Actions ---
 
 export function toggleSegmentCurve(segmentId: string) {
-    // A knot hosted on a span has no segments of its own: its "segment" is the
-    // span, whose two ends are the knots the span type declares.
+    // A span-hosted knot has no segments: its span's ends are the declared knots.
     const span = parsePrefixedSegmentId(segmentId);
     if (span) {
         const spanDescriptor = getSupportTypeDescriptor(span.typeId);
@@ -2130,8 +2109,7 @@ export function toggleSegmentCurve(segmentId: string) {
         return;
     }
 
-    // `findShaftOwnerOfSegment` walks every type that declares segments, so a
-    // type is covered by its declaration rather than by being listed here.
+    // `findShaftOwnerOfSegment` walks every type declaring segments.
     const owner = findShaftOwnerOfSegment(segmentId);
     if (!owner) return;
     const entity = getSupportEntity(owner.typeId, owner.id) as unknown as ShaftEntity | null;
@@ -2154,9 +2132,7 @@ export function toggleSegmentCurve(segmentId: string) {
         };
         next.segments[segmentIndex] = straight;
     } else {
-        // Where the shaft starts and ends, from the type's declared lower and
-        // upper endpoints -- the same resolution the export, split and
-        // joint-drag paths use, so the curve spans the shaft the app draws.
+        // The shaft's ends, from the type's declared lower and upper endpoints.
         const endpoints = resolveSegmentEndpoints(
             entity,
             segment,
@@ -2311,9 +2287,8 @@ function isolateImportedSupportPayload(data: DragonfruitImportFormat): Dragonfru
     const segmentIdMap = new Map<string, string>();
     const jointIdMap = new Map<string, string>();
 
-    // A knot's parentShaftId either names a pseudo-shaft (prefix + entity id) or
-    // a real segment. The prefix and the id map both follow from the host type,
-    // so neither is spelled out at the two call sites below.
+    // A knot's parentShaftId names either a pseudo-shaft (prefix + entity id)
+    // or a real segment; both follow from the host type.
     const hostIdMapByType = new Map<SupportTypeId, Map<string, string>>();
     for (const typeId of CONE_KNOT_HOST_TYPES) hostIdMapByType.set(typeId, leafIdMap);
     for (const typeId of SPAN_KNOT_HOST_TYPES) hostIdMapByType.set(typeId, braceIdMap);
@@ -2601,8 +2576,7 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     const effectiveData = applyImportDefaultsToSupportPayload(migrateLegacySupportPayload(reconciled), importDefaults);
     const isolated = isolateImportedSupportPayload(effectiveData);
 
-    // A copy-on-write shell of every declared collection, so an import cannot
-    // mutate the previous state in place for a type nobody listed here.
+    // A copy-on-write shell of every declared collection.
     const merged: SupportState = {
         ...state,
         ...Object.fromEntries(SUPPORT_COLLECTION_KEYS.map((key) => [key, { ...state[key] }])),
@@ -2611,17 +2585,14 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     isolated.roots.forEach(r => { merged.roots[r.id] = r; });
     if (isolated.knots) { isolated.knots.forEach(k => { merged.knots[k.id] = k; }); }
 
-    // Every declared type, from the array its collection is named after, stamped
-    // with `typeId` exactly as loadFromImportFormat does: a bundled type is
-    // unwrapped here too. The geometry pass below reads these arrays directly,
-    // before the derived views would stamp them on read.
+    // Every declared type, stamped with `typeId` as loadFromImportFormat does.
+    // The geometry pass below reads these arrays before the derived views stamp them.
     for (const descriptor of SUPPORT_TYPES) {
         const key = descriptor.location.key;
         const collection = merged[key] as unknown as Record<string, unknown>;
 
         if (descriptor.serialisedAsBundle) {
-            // Into `merged` directly, for the same reason loadFromImportFormat
-            // does: `state = merged` below would discard anything addKickstand wrote.
+            // Into `merged` directly: `state = merged` below would discard other writes.
             const bundles = (isolated[key] ?? []) as unknown as KickstandBuildResult[];
             for (const build of bundles) {
                 collection[build.kickstand.id] = { ...migrateLegacyGeneratedBy(build.kickstand), typeId: descriptor.id };
@@ -2692,15 +2663,9 @@ export function addRoot(root: Roots) {
 /**
  * Add one entity to the collection its type declares.
  *
- * Two forms, told apart by the first argument, as `updateSupportEntity` is:
- *   - `addSupportEntity(entity)` -- reads the type off the entity. PREFER THIS:
- *     the entity already carries `typeId`, so passing the type again restates
- *     information the caller has, and restating it is where a literal comes from.
- *   - `addSupportEntity(typeId, entity)` -- the explicit form, for a caller
- *     holding a type with no entity yet (a fresh build that did not stamp).
- *
- * A type owning a root or hanging off a knot adds those as ordinary entities
- * too -- there is no bundled form.
+ * Two forms: `addSupportEntity(entity)` reads the type off the entity and is
+ * preferred; `(typeId, entity)` is for a caller with no stamped entity yet.
+ * Roots and host knots are added as ordinary entities, not bundled.
  */
 export function addSupportEntity<E extends { typeId?: SupportTypeId; id: string; settingsCodeHex?: string }>(entity: E): void;
 export function addSupportEntity<E extends { id: string; settingsCodeHex?: string }>(typeId: SupportTypeId, entity: E): void;
@@ -2850,9 +2815,8 @@ function applySupportEntityUpdate(
         }
     }
 
-    // What else this type touches, in the order IT needs. A type whose cascade
-    // differs from the generic one -- leaf and brace -- declares it in its own
-    // folder; the rest settle to nothing and are written exactly as before.
+    // What else this type touches, in the order it needs. A type with no
+    // registered cascade settles to nothing.
     const settle = supportSettleFor(typeId);
     const settled = settle ? settle({
         next: { ...state, [key]: nextCollection, knots: nextKnots, leaves: nextLeaves },
@@ -2860,9 +2824,8 @@ function applySupportEntityUpdate(
 
     setState({
         ...state,
-        // The generic defaults first, then the entity's own collection, so a type
-        // whose collection IS one of the defaults -- leaf and `leaves` -- writes
-        // the post-write collection rather than the pre-write one below it.
+        // Defaults first, then the entity's own collection, so a type whose
+        // collection is one of the defaults writes the post-write one.
         knots: nextKnots,
         leaves: nextLeaves,
         [key]: nextCollection,
@@ -2876,9 +2839,8 @@ function applySupportEntityUpdate(
  *
  * Only for a plain write. A shafted type goes through `applySupportEntityUpdate`
  * instead, which also repositions the knots riding its segments. The settings
- * applier is the one caller that wants exactly this: it has already moved the
- * root and cached the hex, and re-running the knot pass on top would settle
- * geometry twice.
+ * applier wants exactly this: it has moved the root already, and the knot pass
+ * would settle the geometry twice.
  */
 function replaceSupportEntity(
     typeId: SupportTypeId,
@@ -2910,9 +2872,8 @@ for (const descriptor of SUPPORT_TYPES) {
     if (!descriptor.hasSegments) continue;
 
     KNOT_PLACEMENT_BY_TYPE.set(descriptor.id, (entity, knot, segment, segmentIndex) => {
-        // Both hosts come off the declared edges. A kickstand's knot is at its
-        // UPPER end through `hostKnotId`, so reading `lower.kind` would hand it
-        // none and its last segment would resolve to nothing.
+        // Both hosts come off the declared edges: a kickstand's knot is at its
+        // upper end, so `lower.kind` would find none.
         const hosts = resolveDeclaredHosts(descriptor.id, entity as Record<string, unknown>);
 
         // A type declaring a host it was handed none of cannot place anything.
@@ -3007,12 +2968,8 @@ export function updateKnot(knot: Knot, options?: { skipDependentGeometry?: boole
 
 
 /**
- * The root and host knot an entity's declared endpoints resolve from.
- *
- * Read off the descriptor's declared edges rather than by testing the type's
- * name or naming a field: a type that renames the field it stores its root in
- * keeps working. Absent when the entity has no edge of that kind, or the id it
- * names is not in the store.
+ * The root and host knot an entity's declared endpoints resolve from. Absent
+ * when it has no edge of that kind, or the id it names is not in the store.
  */
 export function resolveDeclaredHosts(
     typeId: SupportTypeId,
@@ -3168,29 +3125,14 @@ export function getModelIdForSupportEntityId(id: string | null | undefined): str
 }
 
 /**
- * One entity by id.
- *
- * Two forms, told apart by arity:
- *   - `getSupportEntity(id)` -- resolves the type from the store. PREFER THIS
- *     where the caller does not otherwise need to know the type: passing it is
- *     a literal the caller has to restate, and the store already holds the
- *     answer.
- *   - `getSupportEntity(typeId, id)` -- the direct form, for a caller that has
- *     the type in hand (from a descriptor, off an entity).
- *
- * The explicit form is GENERIC on the type id, so `getSupportEntity('branch', id)`
- * comes back a `Branch`, with no cast at the call site.
- *
- * Returns null for an unknown id, and for an id whose type cannot be resolved.
- * A single argument that is a TYPE id rather than an entity id resolves to null
- * (nothing is named `trunk`), which fails visibly rather than returning the
- * wrong entity.
+ * One entity by id. `getSupportEntity(id)` resolves the type from the store and
+ * is preferred; `(typeId, id)` is generic on the id, so it comes back narrowed
+ * with no cast. Null for an unknown id, or one whose type cannot be resolved.
  */
 export function getSupportEntity(id: string): SupportEntityAny | null;
 export function getSupportEntity<T extends SupportTypeId>(typeId: T, id: string): SupportEntityFor<T> | null;
 export function getSupportEntity(
-    // `string`, not `SupportTypeId`: the implementation has to accept every
-    // overload's parameters, and the one-argument form takes any entity id.
+    // `string`, not `SupportTypeId`: the one-argument form takes any entity id.
     typeIdOrId: string,
     maybeId?: string,
 ): SupportEntityAny | null {
@@ -3201,8 +3143,7 @@ export function getSupportEntity(
         return getSupportEntity(resolved, typeIdOrId);
     }
     const { key } = getSupportTypeDescriptor(typeIdOrId as SupportTypeId).location;
-    // The store is keyed by collection, so its value type there is the union of
-    // every entity; the overloads above narrow it per caller.
+    // The store's value type is the union of every entity; the overloads narrow it.
     return (state[key] as Record<string, SupportEntityAny>)[maybeId] ?? null;
 }
 

@@ -142,32 +142,16 @@ const MULTI_SELECTION_DETAIL_THRESHOLD = 24;
 const BULK_MULTI_SELECTED_COLOR = '#80fffd';
 
 /**
- * Whether a type's live marquee highlight can be drawn as a batched overlay.
- *
- * While a drag is in progress the caught supports are previewed in the selection
- * colour, and that is done by re-drawing the ones on screen: a shaft source, a
- * contact-cone source, a joint source and a root source. Between them they reach
- * a type that declares `batchesShaft`, `batchesContactCones` or `ownsRoot`.
- *
- * A type with none of the three is drawn entirely by its own detail renderer --
- * brace and stump today -- so no overlay can reach it, and it takes the preview
- * through that renderer instead; see `sharedRenderProps`.
+ * Whether a type's live marquee highlight can be drawn as a batched overlay:
+ * the overlay reaches a type declaring `batchesShaft`, `batchesContactCones`
+ * or `ownsRoot`. A type with none takes the preview through its own detail
+ * renderer instead; see `sharedRenderProps`.
  */
 /**
- * Whether a support should be DRAWN as selected.
- *
- * Three routes mark one, and a detail renderer has to be told about all of them:
- * it dims any support it does not consider selected -- `dimNonSelected &&
- * !isSelected` in every type's renderer -- which overwrites the colour it was
- * handed. A type drawn only by its detail renderer therefore goes grey unless
- * this says otherwise.
- *
- * - `inSelectedSet`: this entity is in its type's selected set, which is how a
- *   selection at or under the detail threshold is expressed.
- * - `bulkSelected`: past that threshold the per-type sets are left EMPTY on
- *   purpose -- one colour stands in for all of them -- so the set cannot say.
- * - `marqueePreview`: a drag is currently over it. Not a selection, but it is
- *   drawn the same way so the drag reads as catching it.
+ * Whether a support should be drawn as selected, by any of three routes: it is
+ * in its type's selected set, the bulk marquee colour stands in for the sets
+ * past the detail threshold, or a drag is currently over it. A detail renderer
+ * dims anything it is not told is selected, overwriting its colour.
  */
 export function supportIsDrawnSelected(input: {
     inSelectedSet: boolean;
@@ -185,9 +169,7 @@ export function typeHasBatchedMarqueeOverlay(typeId: SupportTypeId): boolean {
  *  band, orange = overhang (grid infill / organic Poisson / fanned overhang),
  *  blue = island (voxel/minima), purple = standalone overhang trunks. */
 const ORIGIN_COLORS: Record<SupportOrigin, string> = {
-    // Spelled after the type claiming the near-plate band, so renaming that type
-    // breaks this line at compile time. A computed key would stop the Record
-    // checking that every origin has a colour.
+    // Spelled so the Record keeps checking that every origin has a colour.
     stump: '#ff3b30',
     overhang: '#ff9f0a',
     island: '#0a84ff',
@@ -211,13 +193,9 @@ const EMPTY_KNOT_DRAG_SHAFT_SEGMENTS_BY_ID: Record<string, never> = Object.freez
 const FREEZE_DEPENDENT_PREVIEW_DURING_JOINT_DRAG = true;
 
 /**
- * The two types this layer batches by hand, taken from the registry's own
- * groupings rather than written here.
- *
- * The leaf's knots ride its contact cone, so its "joint" is the host knot it
- * hangs from rather than a shaft joint the per-type pass collects; the brace's
- * shaft is its selectable span, so it batches its own curve between two knots.
- * A rename moves both ids with their descriptors.
+ * The two types this layer batches by hand: the leaf, whose joint is the host
+ * knot it hangs from rather than a shaft joint, and the brace, whose shaft is
+ * its own span between two knots.
  */
 const LEAF_TYPE_ID = coneKnotHostType();
 const BRACE_TYPE_ID = spanKnotHostType();
@@ -273,17 +251,13 @@ function buildPlacementPreviewBatches(
 
         const id = `placement-preview:${descriptor.id}`;
 
-        // A segment-shaped preview (brace's bare span) comes from the type's own
-        // registered builder; everything else shares the generic provisional-
-        // support batch. Which is which is `previewShape`; WHERE it lives is the
-        // type's folder, reached by id.
+        // A segment-shaped preview comes from the type's own registered builder;
+        // everything else shares the generic provisional-support batch.
         if (descriptor.previewShape === 'segment') {
             const segmentBatch = buildSegmentPreviewBatch(
                 descriptor.id,
                 id,
-                // The builder takes the preview as `unknown`: its shape is the
-                // type's own, and casting to one here would pin it to a
-                // particular segment type's shape.
+                // The builder takes the preview as `unknown`: the shape is the type's own.
                 preview,
                 { maxShaftDiameterMm: getAutoBracingSettings().braceDiameterMm },
             );
@@ -523,10 +497,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const marqueeHoveredSupportIdSet = useMemo(() => new Set(marqueeHoveredSupportIds), [marqueeHoveredSupportIds]);
     const activeKnotDragPreview = useActiveKnotDragPreview();
     const activeTwigDragPreview = useActiveTwigDragPreview();
-    // Collections picked by SUPPORT_COLLECTION_KEYS rather than listed, so every
-    // declared type resolves which support a segment belongs to. `state` is the
-    // dependency because the picked object is rebuilt whenever any collection
-    // identity changes, which is what `state` does.
+    // Collections picked by SUPPORT_COLLECTION_KEYS. `state` is the dependency
+    // because the picked object rebuilds whenever any collection identity changes.
     const supportRenderLookupInput = useMemo(() => {
         const picked = {} as Record<string, unknown>;
         for (const key of SUPPORT_COLLECTION_KEYS) picked[key] = state[key];
@@ -654,8 +626,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         if (modelId) return modelId;
         if (!supportId) return undefined;
 
-        // Every type, from the registry: its own modelId, then the root it
-        // owns, then the knots it declares a `hostedBy` edge onto.
+        // Every type: its own modelId, the root it owns, then its `hostedBy` knots.
         for (const descriptor of SUPPORT_TYPES) {
             const collection = (state as unknown as Record<string, Record<string, { modelId?: string }>>)[descriptor.location.key];
             const entity = collection?.[supportId] as Record<string, unknown> | undefined;
@@ -663,8 +634,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
             if (typeof entity.modelId === 'string' && entity.modelId) return entity.modelId;
 
-            // A type that owns a root resolves its model from that root. A
-            // kickstand braces a shaft and can carry no model of its own.
+            // A root-owning type resolves its model from that root.
             if (descriptor.ownsRoot) {
                 const rootId = entity.rootId as string | undefined;
                 const rootModelId = rootId ? state.roots[rootId]?.modelId : undefined;
@@ -1362,8 +1332,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         candidateKnots: previewCandidateKnots,
     });
 
-    // One derived index, reading each entity's type and its declared host-knot
-    // edges, so a renamed field or a new host knot is covered.
+    // One derived index over each entity's type and its declared host-knot edges.
     const branchesByParentKnotId = useMemo(
         () => buildEntitiesByHostKnot(branchList, (branch) => branch),
         [branchList],
@@ -1491,12 +1460,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [branchList, knotDragPreviewShaftSegmentsById, knotDragPreviewShaftIds]);
 
     /**
-     * Entities a knot drag has reflowed, by entity id.
-     *
-     * A knot drag moves whatever hangs from the knot, so several entities of a
-     * type can change at once -- unlike a joint drag, which reflows the one
-     * support being dragged. Both producers key by entity id, so the render
-     * pass substitutes by id without asking which type it is looking at.
+     * Entities a knot drag has reflowed, by entity id. A knot drag can change
+     * several at once, unlike a joint drag; both producers key by entity id.
      */
     const knotDragOverridesById = useMemo(() => {
         const overrides = new Map<string, SupportEntityAny>();
@@ -1512,12 +1477,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [previewLeavesById, branchListWithKnotDragPreview, state.branches]);
 
     /**
-     * What each type renders: its stored entities, with any live preview
-     * substituted, filtered for interior view by the rule it declares.
-     *
-     * Eight memos differing only in those two steps. The substitution source is
-     * the one active joint-drag preview, plus the leaf and branch knot-drag
-     * previews that reflow a whole list rather than one entity.
+     * What each type renders: its stored entities with any live preview
+     * substituted, filtered for interior view by the rule it declares. The
+     * source is the active joint-drag preview plus the list-reflowing knot ones.
      */
     const renderListByType = useMemo(() => {
         const lists = {} as Record<SupportTypeId, readonly SupportEntityAny[]>;
@@ -1565,11 +1527,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [state, knotDragOverridesById, activePreviewEntity, interiorView, matchesInteriorContact, matchesInteriorBrace]);
 
     /*
-     * Thin typed reads of `renderListByType`. DEBT, not API: they exist because
-     * the call sites below still name a list, and each binds one of the two
-     * derived type ids and nothing else. They go as those sites move to the map
-     * -- `leaf` and `brace` each have one surviving per-type consumer (leaf
-     * joints, brace shafts).
+     * Thin typed reads of `renderListByType`, for the call sites below that
+     * still name a list. They go as those sites move to the map.
      */
     const renderLeafList = renderListByType[LEAF_TYPE_ID] as unknown as Leaf[];
     const renderBraceList = renderListByType[BRACE_TYPE_ID] as unknown as Brace[];
@@ -1734,12 +1693,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     }, [renderBraceList, braceRenderKnotsById, isModelVisible]);
 
     /**
-     * Plain shaft sets per type, keyed by type id then by support.
-     *
-     * What a shaft needs beyond the entity is declared: `ownsRoot` means it
-     * leaves a root, a `hostedBy` knot edge means it hangs from a knot. Only
-     * WHERE those live still differs -- kickstands keep their roots and knots
-     * in their own store.
+     * Plain shaft sets per type, keyed by type id then by support. `ownsRoot`
+     * means it leaves a root, a `hostedBy` knot edge that it hangs from one;
+     * only where those live still differs.
      */
     const plainShaftsByType = useMemo(() => {
         const byType = {} as Record<SupportTypeId, Map<string, SupportShaftSet>>;
@@ -1798,8 +1754,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const modelIdByKnotId = useMemo(() => {
         const map = new Map<string, string | undefined>();
 
-        // A knot either rides a declared pseudo-shaft or a real segment; which
-        // host kind reads which collection follows from the registry.
+        // A knot rides either a declared pseudo-shaft or a real segment.
         const modelIdOfParentShaft = (parentShaftId: string): string | undefined => {
             const host = parseKnotHostId(parentShaftId);
             if (host && isSpanKnotHost(host.typeId)) return renderBracesById[host.entityId]?.modelId;
@@ -1826,8 +1781,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
      * Contact cones for the batched pass, keyed by support.
      *
      * Which fields to read comes from the declared contact endpoints. The stump
-     * is absent deliberately: StumpRenderer draws its cone itself, and only
-     * while selected.
+     * is absent: StumpRenderer draws its own cone, and only while selected.
      */
     const contactConesBySupport = useMemo(() => {
         const result = new Map<string, { supportId: string; modelId?: string; cones: InstancedContactCone[] }>();
@@ -2187,9 +2141,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ]);
 
     /**
-     * Plate roots for the batched pass, keyed by type. The root-owning types
-     * build these identically; only the shaft-diameter fallback differs, and it
-     * is declared per type (`shaftFallback.fallbackDiameterMm`).
+     * Plate roots for the batched pass, keyed by type. Only the shaft-diameter
+     * fallback differs, declared as `shaftFallback.fallbackDiameterMm`.
      */
     const sceneBatchedRootGroupsByType = useMemo(() => {
         const byType = {} as Record<SupportTypeId, Array<{ color: string; roots: InstancedRoot[] }>>;
@@ -2236,10 +2189,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             }
         };
 
-        // The types whose contact cones the shared pass draws, in registry
-        // order. `collect` skips an entity with no cone set, so the set only
-        // has to be right about who CAN batch one -- which is what the flag
-        // declares.
+        // The types whose contact cones the shared pass draws, in registry order.
+        // `collect` skips an entity with no cone set.
         for (const descriptor of SUPPORT_TYPES) {
             if (!descriptor.batchesContactCones) continue;
             collect(
@@ -2699,9 +2650,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ) => {
         // Past MULTI_SELECTION_DETAIL_THRESHOLD the per-type selected sets are
         // left empty, so the bulk colour is the only thing marking a selection.
-        // Handing the colour back is not enough on its own: the renderer's dim
-        // gate overwrites it unless it is also told the support is selected --
-        // see `supportIsDrawnSelected`.
+        // The renderer's dim gate overwrites the colour unless it is also told
+        // the support is selected -- see `supportIsDrawnSelected`.
         if (isBulkSelected(supportId)) return BULK_MULTI_SELECTED_COLOR;
 
         if (!debugOriginColors) return resolveBaseColor(modelId);
@@ -2727,11 +2677,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         entity: { id: string; modelId?: string },
         isSelected: boolean,
     ) => {
-        // Two routes besides the per-type selected set can mark this support
-        // selected, and the renderer has to be told about both: the bulk marquee
-        // colour (past the detail threshold the sets are deliberately empty), and
-        // a drag currently over it. Otherwise the renderer's dim gate overwrites
-        // the colour it was handed -- see `supportIsDrawnSelected`.
+        // The bulk marquee colour and an in-progress drag both mark a support
+        // selected without the per-type set -- see `supportIsDrawnSelected`.
         const bulkSelected = isBulkSelected(entity.id);
         const marqueePreview = marqueeHoveredSupportIdSet.has(entity.id)
             && !typeHasBatchedMarqueeOverlay(typeId);
@@ -2743,9 +2690,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
         return {
             isSelected: drawnSelected,
-            // Keyed on the REAL selection, not on the bulk or preview marking: a
-            // support merely previewed or bulk-marked must not expose what a
-            // selection exposes, such as the contact-disk HUD.
+            // Keyed on the real selection: a previewed or bulk-marked support
+            // must not expose what a selection does, such as the contact-disk HUD.
             selectedId: isSelected ? selectedId : null,
             dimNonSelected,
             isHovered: hoveredSupportIdForVisual === entity.id
@@ -2772,11 +2718,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         options?: { detailedOnly?: boolean },
     ) => {
         if (options?.detailedOnly && simpleRender) return null;
-        // One instanced group per COLOUR, never per model: the per-model drop
-        // offset is baked into each instance, so models sharing a colour share a
-        // draw. Keying by colour alone (not `model:color`, and not the instance
-        // count) also keeps the mesh mounted when supports are edited: a count in
-        // the key remounts the mesh and reallocates its buffers.
+        // One instanced group per colour, never per model: the drop offset is
+        // baked into each instance. An instance count in the key would remount
+        // the mesh and reallocate its buffers on every edit.
         return groups.map((group) => (
             <group key={`scene-${typeId}-batch:${group.color}`}>
                 {simpleRender ? (
@@ -3057,10 +3001,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         // dependency (like slider movement) forces a re-run.
         //
         // `state` is the whole store snapshot, so one identity covers every
-        // collection. This listed ten of them by hand, which is the same shape
-        // the snap-target memos had: what the effect READS was derived while what
-        // it DEPENDED ON was not, so a type added to the registry would re-clip
-        // only when something else happened to force a run.
+        // collection the effect reads.
         state,
         kickstandRootsById,
         kickstandKnotsById,
@@ -3113,8 +3054,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const renderDetailFor = useCallback((typeId: SupportTypeId) => {
         const entry = detailRenderers[typeId];
         if (!entry) return null;
-        // The prop a renderer takes its entity under is this type's own
-        // singular name, declared once in the registry.
+        // A renderer takes its entity under the type's declared singular name.
         const entityProp = getSupportTypeDescriptor(typeId).singular;
 
         const Component = entry.component;

@@ -190,44 +190,27 @@ export interface SupportTypeDescriptor {
      */
     historyUpdate?: SupportHistoryActionType;
     /**
-     * The sidebar tab this type is edited under.
-     *
-     * A sidebar grouping, so the UI can ask rather than hold a second table:
-     * stick has its own tab (it is the bracing tool's page), everything else
-     * shares the support-info one. Declared for every type, including ones the
-     * sidebar has no panel for yet, so offering one is a UI change, not a gap.
+     * The sidebar tab this type is edited under. Declared for every type, even
+     * one the sidebar has no panel for yet.
      */
     sidebarTab: SidebarTab;
     /**
-     * Whether this type's diameter is re-solved from what it carries.
-     *
-     * Trunk alone today: its shaft is a stepwise profile derived from the
-     * branches hanging off it, so a change to those attachments leaves it sized
-     * for something that is gone. A removal that changes them re-solves the host
-     * through `computeAndApplySupportDiameterProfile` when this is set.
+     * Whether this type's diameter is re-solved from the members it carries. A
+     * removal that changes them re-solves the host through
+     * `computeAndApplySupportDiameterProfile`.
      */
     recomputesDiameterFromAttachments: boolean;
     /**
-     * Whether a candidate landing on this instance's grid node with a HIGHER
-     * contact replaces it — the candidate is promoted and this host is removed.
-     *
-     * Trunk alone today. Declared so the grid engine asks rather than testing
-     * the host for being a trunk, and because replacing a host is not generic:
-     * the caller has to rebuild the removed host's attachments onto the
-     * promoted one, which only the host type knows how to do. A type that sets
-     * this must register a promotion (see `registerHostPromotion`); a type that
-     * sets it and registers nothing is a load-time error.
+     * Whether a candidate landing on this instance's grid node with a higher
+     * contact replaces it. A type setting this must register a promotion (see
+     * `registerHostPromotion`), which rebuilds the removed host's attachments
+     * onto the promoted one; setting it and registering none is a load error.
      */
     replacedByHigherContact: boolean;
     /**
-     * Whether ADDING one of these re-solves the diameter of the host it hangs
-     * from.
-     *
-     * Branch alone today. The pair matters: the host declares
-     * `recomputesDiameterFromAttachments` (it CAN be re-solved) while the member
-     * declares this (adding one CHANGES what the host carries). Reading only the
-     * host's flag would re-solve on every leaf too, which is not what the
-     * placement path does today.
+     * Whether adding one of these re-solves the diameter of the host it hangs
+     * from. The host declares `recomputesDiameterFromAttachments` (it can be
+     * re-solved); this says adding one changes what it carries.
      */
     repairsHostDiameterOnAdd: boolean;
     /**
@@ -239,13 +222,9 @@ export interface SupportTypeDescriptor {
      */
     mayReachSideways: boolean;
     /**
-     * Whether instances can host a fan link off their shaft.
-     *
-     * Trunk alone today. Declared because two things read it and must agree:
-     * `collectFanShaftPoints` builds the fan host pool from these types'
-     * collections, and auto-placement records a grid-placed instance so later
-     * candidates fan to it only up close. A type with no hostable shaft
-     * declares false rather than being tested for by name at either site.
+     * Whether instances can host a fan link off their shaft. Read by
+     * `collectFanShaftPoints`, which builds the fan host pool, and by
+     * auto-placement, which records a grid-placed instance as a near-only host.
      */
     canBeGridHost: boolean;
     /**
@@ -256,11 +235,8 @@ export interface SupportTypeDescriptor {
      */
     hostsKickstand: boolean;
     /**
-     * Whether the auto-support pass places this type, and the ledger reports it.
-     *
-     * Trunk, anchor, leaf, branch, stick and twig: the pass picks them and counts
-     * them. Brace and kickstand are absent because they are added by hand or by
-     * their own placement tools, never by that pass. Read through
+     * Whether the auto-support pass places this type and the ledger reports it.
+     * A type added by hand or by its own tool declares false. Read through
      * `AUTO_PLACED_TYPE_IDS`, or `AUTO_PLACED_BY_TYPE` for the narrowed union.
      */
     isAutoPlaced: boolean;
@@ -311,14 +287,9 @@ export interface SupportTypeDescriptor {
      */
     previewShape?: 'support' | 'segment';
     /**
-     * Whether auto-bracing may brace this type's shafts.
-     *
-     * Trunk and branch. A brace ties two shafts laterally to stop them swaying,
-     * and both of these are shafts that stand in the print and can sway.
-     *
-     * Read through `autoBraceableShaftTypes()`, which also requires a shaft and
-     * excludes lateral stabilisers: those are generated BY the pass and offered
-     * beside a group rather than braced as a member of one.
+     * Whether auto-bracing may brace this type's shafts. Read through
+     * `autoBraceableShaftTypes()`, which also requires a shaft and excludes
+     * lateral stabilisers, those being generated by the pass itself.
      */
     isAutoBraceable: boolean;
     /**
@@ -376,18 +347,10 @@ export interface SupportTypeDescriptor {
      */
     placementModeDisplacesDefault?: boolean;
     /**
-     * Where this type sits when several live previews answer the same
-     * question, per purpose. Lower ranks are consulted first.
-     *
-     * A type omitted from a purpose is never consulted for it: brace appears
-     * in neither, because its preview is a bare segment with no contacts to
-     * measure and no error to report.
-     *
-     * `whileActive` is a second, earlier rank used only while this type's own
-     * placement mode is active; `onlyWhileActive` drops the type from the
-     * order entirely unless its mode is active. The two purposes produce
-     * different orders, and deliberately -- see
-     * `__tests__/placementPreviewPriority.test.ts`.
+     * Where this type sits when several live previews answer the same question,
+     * per purpose; lower ranks first, and a type omitted is never consulted.
+     * `whileActive` is an earlier rank used only while this type's placement
+     * mode is active; `onlyWhileActive` drops it from the order otherwise.
      */
     previewPriority?: Partial<Record<SupportPreviewPurpose, {
         rank: number;
@@ -406,38 +369,19 @@ export interface SupportTypeDescriptor {
         from: readonly [string, string];
     };
     /**
-     * This type's relationship between a contact-cone BODY and the shaft it sits
-     * on, when it has one at all.
+     * Which shaft this type's contact-cone body follows. The resize pass
+     * thickens shafts after cones are built, so `syncContactConeDiameters` sets
+     * the body back to the shaft; the tip diameter never moves. Declaring a
+     * source also makes this type's segments readable as a host for a cone
+     * hosted through a knot.
      *
-     * The resize pass thickens shafts AFTER cones are built, so a cone body lags
-     * its thickened shaft and renders as a visible step. `syncContactConeDiameters`
-     * sets the body back to the shaft; the tip contact diameter is a peel-force
-     * choice and never moves.
+     * - `ownLastSegment` -- the shaft climbs into the cone;
+     * - `ownFirstSegment` -- the shaft leaves the cone and hangs down;
+     * - `hostKnotSegment` -- the cone sits on the model, and the host shaft is
+     *   read through the knot this entity hangs from.
      *
-     * The pass has two roles, and a declaration says a type takes part in both:
-     *
-     * - WHO IS SYNCED. A type declaring a source has its own cone body set to the
-     *   shaft that source names.
-     * - WHICH SEGMENTS CAN BE A HOST. Only segments belonging to a type that
-     *   declares a source are readable as the shaft a cone body follows, which is
-     *   what a hosted type resolves through its knot.
-     *
-     * The sources, because the arms are genuinely different:
-     *
-     * - `ownLastSegment` -- the shaft climbs INTO the cone, so the terminal
-     *   segment is the one under it;
-     * - `ownFirstSegment` -- the shaft leaves the cone and hangs DOWN, so the
-     *   first segment is;
-     * - `hostKnotSegment` -- the cone sits on the model while the entity hangs off
-     *   a knot on someone else's shaft, so the host is read through that knot.
-     *   A type with no segments of its own contributes no host, which is why this
-     *   source names a knot rather than a segment.
-     *
-     * Absent means the type takes part in neither role: its own cone body is left
-     * as placed, and its segments are not offered as a host. Stick and stump are
-     * absent today. Adding either -- so that a stick's own cone follows its shaft,
-     * or so a cone hosted on a stick segment resolves -- is this one line, and it
-     * is a behaviour change to make deliberately rather than a rename.
+     * Absent means neither role: the cone body is left as placed and the
+     * segments are offered as no host.
      */
     coneBodyFollows?: 'ownFirstSegment' | 'ownLastSegment' | 'hostKnotSegment';
     /** What sits at the bottom of this type. */
@@ -564,13 +508,8 @@ export interface SupportTypeDescriptor {
     batchesContactCones: boolean;
     /**
      * Whether the shared batched passes draw this type's shaft: its straight
-     * segments and the joints they carry.
-     *
-     * One flag, because "the batch builds that support" is one fact the two
-     * passes ask about the same set of types. Brace opts out -- its shaft is a
-     * curve between two knots and it builds its own set. Stump declares a
-     * shaft but builds none: its renderer draws the single joint directly, so
-     * there is nothing per-segment for either pass to collect.
+     * segments and the joints they carry. A type whose shaft is a curve, or
+     * whose renderer draws its joints directly, opts out.
      */
     batchesShaft: boolean;
     /**
@@ -625,12 +564,8 @@ export interface SupportTypeDescriptor {
      */
     hasEditableSettings: boolean;
     /**
-     * Whether the settings sidebar offers a panel for this type.
-     *
-     * NOT the same question as `hasEditableSettings`: kickstand is editable but
-     * has no panel of its own, while twig and stick have panels without being
-     * editable. Declared, because the two sets genuinely differ and no
-     * combination of the other flags selects this one.
+     * Whether the settings sidebar offers a panel for this type. Not the same
+     * question as `hasEditableSettings`: the two sets genuinely differ.
      */
     offersSidebarPanel: boolean;
 }
@@ -1088,15 +1023,9 @@ export function hasSupportUpdater(typeId: SupportTypeId): boolean {
 }
 
 /**
- * Resolves an id to its type by looking in the store.
- *
- * A slot for the same reason the updaters above are one: the answer lives in
- * `state.ts` (it reads the collections), and `state.ts` calls into this module
- * while building its initial state, so importing it back is an initialisation
- * cycle. Registered at load, so it is present by the time anything calls it.
- *
- * Only consulted for an entity that has LOST its `typeId` -- a whole-store
- * payload restored through `setSnapshot` bypasses the writers that stamp it.
+ * Resolves an id to its type by looking in the store. A slot, because importing
+ * `state.ts` back would be an initialisation cycle. Consulted only for an
+ * entity that lost its `typeId`.
  */
 let resolveSupportTypeOfId: ((id: string) => SupportTypeId | null) | null = null;
 
@@ -1118,17 +1047,9 @@ export function resolveSupportTypeIdOf(entity: { typeId?: SupportTypeId; id: str
 /**
  * Apply an entity back to the store.
  *
- * Two forms, told apart by the first argument:
- *   - `updateSupportEntity(entity)` -- reads the type off the entity. PREFER
- *     THIS: the entity already carries `typeId`, so passing the type again is
- *     information the caller has to restate, and restating it is where a
- *     literal type name comes from.
- *   - `updateSupportEntity(typeId, entity)` -- the explicit form. Still needed
- *     where the type is not on the entity yet (a fresh build) or where the
- *     caller is the registry itself.
- *
- * Returns false when nothing is registered for the id, so a caller can tell
- * "no updater" from "updated".
+ * Two forms: `updateSupportEntity(entity)` reads the type off the entity and
+ * is preferred; `(typeId, entity)` is for a fresh build that carries none yet.
+ * Returns false when nothing is registered for the id.
  */
 export function updateSupportEntity<E extends { typeId?: SupportTypeId; id: string }>(entity: E): boolean;
 export function updateSupportEntity(typeId: SupportTypeId, entity: unknown): boolean;
@@ -1207,12 +1128,9 @@ export const SUPPORT_REMOVAL_SHAPES = {
 } as const satisfies Record<SupportTypeId, { self: string; cascade: Record<string, string | readonly string[]> }>;
 
 /**
- * The shape a value-level type id maps to.
- *
- * The map above is `as const` so the result TYPES can be derived from its
- * literals; that also means it is typed as the literal object, which a
- * `SupportTypeId` value cannot index. Reading it through here keeps the
- * derivation above and still lets a caller walk a type id it holds as data.
+ * The shape a value-level type id maps to. The map above is `as const` so the
+ * result types derive from its literals, which a `SupportTypeId` value cannot
+ * index; this reads it without giving that up.
  */
 export function removalShapeFor(typeId: SupportTypeId): { self: string; cascade: Record<string, string | readonly string[]> } {
     return (SUPPORT_REMOVAL_SHAPES as Record<SupportTypeId, { self: string; cascade: Record<string, string | readonly string[]> }>)[typeId];
@@ -1404,12 +1322,9 @@ function thresholdMm(
  * answer is unambiguous.
  */
 /**
- * Whether a bridge of `typeId` may land where the search ended up.
- *
- * The bridge search runs near radii first; when that misses, a type declaring
- * `mayReachSideways` searches wider to prop the contact off a neighbouring
- * surface. Landing beyond the near cutoff that way is a lateral prop, so a type
- * that may not reach sideways stops here rather than building one.
+ * Whether a bridge of `typeId` may land where the search ended up. The search
+ * runs near radii first; a type declaring `mayReachSideways` searches wider,
+ * and landing beyond the near cutoff is a lateral prop.
  *
  * A plain function so the rule is testable: its caller is a React hook.
  */
@@ -1547,22 +1462,12 @@ export function braceSnapConeType(): SupportTypeId | null {
 }
 
 /**
- * Types whose shafts auto-bracing may brace to each other.
+ * Types whose shafts auto-bracing may brace to each other: `isAutoBraceable`
+ * plus `hasSegments`, less the lateral stabilisers, which the pass offers
+ * beside a group rather than bracing as members of one.
  *
- * Derived from two declarations rather than named: `isAutoBraceable` says the
- * type's shafts are brace endpoints at all, `hasSegments` that it has a shaft to
- * brace, and the lateral-stabiliser registration that it is already accounted
- * for as an EXTRA beside a group rather than as a member of one. Today that
- * resolves to trunk and branch.
- *
- * The set is declared here rather than in `autoBrace.ts` because that module
- * filtered on the literal `'trunk'` at every use, so branch -- which declares
- * `isAutoBraceable: true` -- was built into the sample pool and then discarded.
- * A flag that selects nothing is indistinguishable from a flag that is false,
- * which is how that went unnoticed.
- *
- * The stabiliser half needs the type registrations to have loaded (they add the
- * kickstand). The pass runs long after load, so that holds; a test pins it.
+ * The stabiliser half needs the type registrations loaded; the pass runs long
+ * after load, and a test pins it.
  */
 export function autoBraceableShaftTypes(): readonly SupportTypeId[] {
     const stabilisers = new Set(lateralStabiliserTypes());
@@ -1719,17 +1624,10 @@ export interface ContactOverrideResult {
 type ContactOverride = (request: ContactOverrideRequest) => ContactOverrideResult | null;
 
 /**
- * Pair a type id with the entity built for it.
- *
- * Checked: the entity type comes from the registry for that id, so
- * `placementOf('trunk', leaf)` is a compile error.
- *
- * There is deliberately no union-typed sibling under the same name. An overload
- * taking `(SupportTypeId, SupportEntityAny)` was tried first and defeated this
- * entirely — TypeScript falls through to the looser overload, so
- * `placementOf('trunk', leaf)` compiled clean. The unchecked path is therefore a
- * differently NAMED function ({@link placementOfResolved}) that a literal call
- * site cannot reach by accident.
+ * Pair a type id with the entity built for it. Checked against the registry, so
+ * `placementOf('trunk', leaf)` is a compile error. The unchecked path is a
+ * differently named function ({@link placementOfResolved}) rather than an
+ * overload, which TypeScript would fall through to.
  */
 export function placementOf<T extends SupportTypeId>(
     typeId: T,
@@ -1779,14 +1677,9 @@ export function buildContactOverride(typeId: SupportTypeId): ContactOverride | u
 }
 
 /**
- * Types that claim a `tipHeight` band — the ones auto-placement consults before
- * falling back to a trunk — but registered no override.
- *
- * The default tool is excluded deliberately: it IS the default the fallback
- * builds, so claiming the band above the anchor needs no builder. Every other
- * claimant must provide one, or the engine would select a type it cannot
- * construct. Which type that is comes off the declaration rather than being
- * subtracted by name.
+ * Types that claim a `tipHeight` band but registered no override. The default
+ * tool is excluded, being what the fallback already builds; every other
+ * claimant needs one, or the engine selects a type it cannot construct.
  */
 export function typesMissingContactOverride(): readonly SupportTypeId[] {
     const defaultToolId = defaultPlacementToolTypeId();
@@ -1867,15 +1760,10 @@ export const EDITABLE_SUPPORT_TYPES: readonly SupportTypeDescriptor[] =
     SUPPORT_TYPES.filter((descriptor) => descriptor.hasEditableSettings);
 
 /**
- * The order the sidebar offers a type's own panel in.
- *
- * Declared, because it IS observable: `panelForTab` opens the FIRST panel
- * declaring a tab, so the support-info tab opens trunk's panel because trunk
- * leads this list. Registry order is not it -- the registry declares branch
- * before leaf, and the sidebar offers leaf first.
- *
- * WHICH types are offered is not declared here: `offersSidebarPanel` on each
- * type is the fact, and `sidebarPanelOrderDrift` holds this list to it.
+ * The order the sidebar offers a type's own panel in. Observable, and not
+ * registry order: `panelForTab` opens the first panel declaring a tab. Which
+ * types are offered is `offersSidebarPanel`, held to this list by
+ * `sidebarPanelOrderDrift`.
  */
 export const SIDEBAR_PANEL_TYPE_ORDER = ['trunk', 'leaf', 'branch', 'twig', 'stick'] as const satisfies readonly SupportTypeId[];
 
@@ -2225,16 +2113,10 @@ export const KNOT_HOST_PRECEDENCE: readonly SupportTypeId[] = [
 ];
 
 /**
- * The order to walk the types that hang off a host shaft by a knot.
- *
- * Declared, because the order is observable and registry order is not it: the
- * cull reports leaf orphans before branch ones, and the forest report lists a
- * host's leaves before its branches.
- *
- * Which types those ARE is not declared here -- `shaftHostedMemberOrderDrift`
- * reads it off the edge declarations and holds this list to that rule, so a type
- * that qualifies by its edges cannot be left out of the walk, and a type named
- * here that stops qualifying cannot stay in it.
+ * The order to walk the types that hang off a host shaft by a knot. Observable,
+ * and not registry order: the cull and the forest report both list leaves
+ * before branches. Membership is held to the edge declarations by
+ * `shaftHostedMemberOrderDrift`.
  */
 export const SHAFT_HOSTED_MEMBER_TYPE_ORDER = ['leaf', 'branch'] as const satisfies readonly SupportTypeId[];
 
@@ -2292,14 +2174,9 @@ export interface ShaftHostedMemberType {
 }
 
 /**
- * Mirrors which types own a placement mode of their own, with the literals kept
- * so the owner union narrows instead of widening to every type.
- *
- * A type owns a mode when it previews a placement that is not the default tool.
- * Keyed by type id, and the mapped types below read their union off these keys,
- * so a renamed type moves the union with it. `placementModeOwnerDrift` holds the
- * table to the descriptor flags at load, and
- * `__tests__/supportPlacementRouting.test.ts` holds the router to it.
+ * Which types own a placement mode of their own, with the literals kept so the
+ * owner union narrows rather than widening to every type.
+ * `placementModeOwnerDrift` holds the table to the descriptor flags at load.
  */
 export const PLACEMENT_MODE_OWNER_BY_TYPE = {
     trunk: false,
@@ -2558,14 +2435,8 @@ export function defaultPlacementToolTypeId(): SupportTypeId {
 }
 
 /**
- * The type whose entities live in `key`.
- *
- * The inverse of each descriptor's `location.key`. A caller walking a
- * `SupportState` collection by key -- which it must, because the key IS the
- * `SupportState` field -- can ask this for the type that owns what it just read,
- * rather than naming the type a second time. The state keys do not change when a
- * type is renamed (`branch` stores into `branches`), so a key written here is
- * not a second naming point.
+ * The type whose entities live in `key`: the inverse of each descriptor's
+ * `location.key`, for a caller walking a `SupportState` collection by key.
  */
 export function typeIdForCollection(key: SupportCollectionKey): SupportTypeId {
     const descriptor = SUPPORT_TYPES.find((candidate) => candidate.location.key === key);

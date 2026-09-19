@@ -4,8 +4,7 @@ import { useSyncExternalStore } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { subscribe, getSnapshot } from './state';
-// Loading the generated barrel runs every type's registration, which imports
-// that type's proxy geometry recipe from its own folder.
+// Loading the generated barrel runs every type's proxy geometry registration.
 import './generatedSupportRegistrations';
 import { supportProxyGeometryOf, type ProxyGeometryContext } from './proxyGeometry/seam';
 import { getRaftSettings, subscribeToRaftStore } from './Rafts/Crenelated/RaftState';
@@ -114,11 +113,7 @@ function fromModelKey(modelKey: string): string | undefined {
 }
 
 
-/**
- * The namespace an interior-support id carries: the entity's own `typeId`, then
- * a colon, so two types cannot collide on a shared id. The geometry loops that
- * look an id up build it through here too, so both sides always agree.
- */
+/** An interior-support id: the entity's `typeId`, a colon, then its own id. */
 function interiorIdPrefix(entity: { typeId?: SupportTypeId }): string {
     return `${entity.typeId}:`;
 }
@@ -129,18 +124,9 @@ function interiorSupportKey(entity: { id: string; typeId?: SupportTypeId }): str
 }
 
 /**
- * Which supports the interior (cavity) view draws, from each type's declaration:
- *
- * - A type whose lower end is a `plateRoot` starts on the build plate in open
- *   space, so none of its geometry is ever inside a cavity. It is skipped.
- * - A type's contacts, and whether they are cones or disks, come from
- *   `contactEndpointsFor` / `anyContactMatches`. Any interior contact qualifies.
- * - A shaft is tested along its length only when its lower end is a `knot`: it
- *   begins mid-air on another support and can cross a cavity on the way to its
- *   contact. A shaft spanning two model contacts is already tested at both ends.
- *
- * The predicates are injected so this stays pure: the layer passes BVH-backed
- * ones, a test passes `placementSurface`-driven ones.
+ * Which supports the interior (cavity) view draws. A `plateRoot` type is
+ * skipped; any interior contact qualifies; a shaft is tested along its length
+ * only when it starts at a knot. Predicates are injected to keep this pure.
  */
 export function interiorSupportIds(
     state: SupportState,
@@ -174,13 +160,7 @@ export function interiorSupportIds(
     return ids;
 }
 
-/**
- * Every proxy primitive the layer draws, grouped by model.
- *
- * Pure, and exported, so what a scene produces can be asserted directly rather
- * than through a rendered scene graph. The component keeps the cache and the
- * visibility filtering; this is only the geometry.
- */
+/** Every proxy primitive the layer draws, grouped by model. Geometry only. */
 export function collectProxyPrimitives(
     state: SupportState,
     options: {
@@ -234,11 +214,9 @@ export function collectProxyPrimitives(
     registerSegmentMeta(shaft.id, shaft.modelId, shaft.supportId);
   };
 
-  // Curved segments become curved batched-shaft entries; InstancedShaftGroup
-  // renders them as smooth capped tubes (same approach as the support-mode
-  // scene batch). This keeps curves visible in proxy views AND in mesh
-  // export: the unscoped STL/3MF path serializes this layer's live scene
-  // graph in prepare/export modes.
+  // Curved segments become batched-shaft entries, drawn as capped tubes. The
+  // unscoped STL/3MF export serializes this layer's scene graph, so curves must
+  // be visible here too.
   const pushSegmentShafts = (segment: Segment, start: Vec3, end: Vec3, supportId: string, modelId?: string) => {
     if (segment.type === 'bezier') {
       pushShaft(bezierSegmentToBatchedShaft(segment, start, end, supportId, modelId));
@@ -298,9 +276,7 @@ export function collectProxyPrimitives(
     pushCone,
   };
 
-  // One walk over every type; what each emits is that type's recipe, declared in
-  // its own folder. The interior filter and the two declared flags are the only
-  // things the layer decides.
+  // One walk over every type, each emitting its own registered recipe.
   for (const descriptor of SUPPORT_TYPES) {
     const registered = supportProxyGeometryOf(descriptor.id);
     if (!registered) continue;
@@ -356,8 +332,7 @@ export function SupportProxyMeshLayer({
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
 
-  // The walk reads the state itself, so the snapshot is the one identity the
-  // cache signature and the memo deps need.
+  // The walk reads the state itself, so the snapshot is the only identity needed.
   const hasSolidBottom = raftSettings.bottomMode === 'solid';
   const raftThickness = raftSettings.thickness ?? 0;
 
@@ -568,12 +543,9 @@ export function SupportProxyMeshLayer({
       return dot > 0 || result.distance < INTERIOR_WALL_THRESHOLD_MM;
     };
 
-    // A contact is interior when its placement surface says so, or -- for a
-    // contact that has not been stamped -- when its position is on the cavity
-    // side. Cone and disk are the same question, so they are the same predicate.
-    //
-    // Takes `unknown` because `interiorSupportIds` hands it whichever field the
-    // descriptor declared; it narrows here rather than at the seam.
+    // A contact is interior when its placement surface says so, or when an
+    // unstamped one sits on the cavity side. Takes `unknown` and narrows here,
+    // since the seam hands over whichever field the descriptor declared.
     const isInteriorContact = (contact: unknown, modelId?: string): boolean => {
       const c = contact as { pos?: Vec3; placementSurface?: 'interior' | 'exterior' } | null | undefined;
       if (!c?.pos) return false;
@@ -611,9 +583,7 @@ export function SupportProxyMeshLayer({
       return false;
     };
 
-    // A support rooted in the build plate can never be inside a cavity, and every
-    // other question -- which contacts a type has, and whether a shaft gets the
-    // segment test -- is answered by the descriptor. See `interiorSupportIds`.
+    // See `interiorSupportIds`: the descriptor answers every question here.
     return interiorSupportIds(supportState, isInteriorContact, isAnySegmentPointInterior);
   }, [
     interiorView,
@@ -623,9 +593,7 @@ export function SupportProxyMeshLayer({
   ]);
 
   const baseProxyByModel = React.useMemo(() => {
-    // One identity covers every collection the walk reads: the store snapshot is
-    // replaced on any change, so `supportState` alone decides whether the merged
-    // view is rebuilt.
+    // The snapshot is replaced on any change, so it alone decides a rebuild.
     if (
       sharedProxyCache
       && sharedProxyCache.supportStateRef === supportState

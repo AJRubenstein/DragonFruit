@@ -1,25 +1,16 @@
 import { SUPPORT_TYPES } from './supportTypeRegistry';
 
 /**
- * Rewrite a support payload written under a type's FORMER names into the shape
- * the store reads today.
- *
- * A `.voxl` scene or `.lys` import keys its support payload by collection name
- * (`anchors: [...]`). Renaming a type renames that key, so without this pass a
- * file written under the old name loads with those entities in no collection at
- * all -- they are dropped from the scene with no error.
- *
- * This module names no type: the old spellings are declared on each descriptor
- * as `renamedFrom`, so a later rename edits only the descriptor.
+ * Rewrite a support payload written under a type's former names into the shape
+ * the store reads today. Without this pass those entities load into no
+ * collection and are dropped with no error. The old spellings are declared on
+ * each descriptor as `renamedFrom`.
  */
 
 /** A payload keyed by support collection, as the wire format writes it. */
 type SupportPayload = Record<string, unknown>;
 
-/**
- * Every descriptor's former collection key, mapped to the key in use now.
- * Derived once at load: the registry is a naming point and its content is fixed.
- */
+/** Every descriptor's former collection key, mapped to the key in use now. */
 const COLLECTION_KEY_MIGRATIONS: readonly { from: string; to: string }[] =
     SUPPORT_TYPES.flatMap((descriptor) => (
         (descriptor.renamedFrom?.collectionKeys ?? []).map((from) => ({
@@ -41,9 +32,8 @@ function currentTypeId(typeId: unknown): string | undefined {
 }
 
 /**
- * Migrate a support payload in place-of-copy. Idempotent, and a payload that is
- * already current is returned BY IDENTITY, so a caller holding a cached document
- * does not see it rebuilt on every load. The input is never mutated.
+ * Migrate a support payload. Idempotent; an already-current payload is returned
+ * by identity, and the input is never mutated.
  */
 export function migrateLegacySupportPayload<T>(payload: T): T {
     if (!payload || typeof payload !== 'object') return payload;
@@ -66,8 +56,7 @@ export function migrateLegacySupportPayload<T>(payload: T): T {
     for (const { from, to } of COLLECTION_KEY_MIGRATIONS) {
         if (!(from in migrated)) continue;
         const legacy = migrated[from];
-        // A payload carrying both keys was written by a build that migrated and
-        // then re-saved, so the former key is stale residue: the current one wins.
+        // A payload carrying both keys has stale residue under the former one.
         if (!(to in migrated)) migrated[to] = legacy;
         delete migrated[from];
     }
@@ -82,10 +71,8 @@ export function migrateLegacySupportPayload<T>(payload: T): T {
         migrated[descriptor.location.key] = entities.map((entity) => {
             const record = entity as { typeId?: unknown; origin?: unknown } | null;
             const to = currentTypeId(record?.typeId);
-            // An entity's ORIGIN may carry the same former name: the origin that
-            // names the near-plate band is spelled after the type that claims it.
-            // It is a separate vocabulary, so it is migrated separately and only
-            // when it actually holds a former name.
+            // `origin` is a separate vocabulary that can carry the same former
+            // name, so it migrates separately.
             const originTo = currentTypeId(record?.origin);
             if (!to && !originTo) return entity;
             return {
