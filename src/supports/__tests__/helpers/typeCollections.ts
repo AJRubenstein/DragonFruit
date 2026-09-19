@@ -8,15 +8,7 @@ import {
     type SupportTypeId,
 } from '../../supportTypeRegistry';
 
-/**
- * Fixtures and assertions here key rows on a COLLECTION, and a collection's name
- * is something the registry declares. Writing that name out as a string couples
- * the row to a spelling it does not otherwise mention -- renaming a type then
- * breaks a fixture that never named the type at all.
- *
- * These helpers ask the registry instead, so a rename in the registry alone
- * reaches every row. That is the property the rename probe measures.
- */
+/** Collection keys and entity walks, asked of the registry rather than spelled. */
 
 /** The collection a type's entities live in. */
 export function keyOf(typeId: SupportTypeId): SupportCollectionKey {
@@ -26,21 +18,14 @@ export function keyOf(typeId: SupportTypeId): SupportCollectionKey {
 /** Every collection key, in registry order. */
 export const ALL_COLLECTION_KEYS: readonly SupportCollectionKey[] = SUPPORT_COLLECTION_KEYS;
 
-/**
- * The type that owns a collection, or `null` for the primitive ones (`roots`,
- * `knots`), which no type declares. The registry's own `typeIdForCollection`
- * throws on those, which is right where a caller has a type in hand and wrong
- * for a walker that is deliberately covering every collection.
- */
+/** The type owning a collection, or null for the primitives (`roots`, `knots`). */
 export function owningTypeId(key: SupportCollectionKey): SupportTypeId | null {
     return SUPPORT_TYPES.find((descriptor) => descriptor.location.key === key)?.id ?? null;
 }
 
 /**
- * An entity as these walkers see it: an id, maybe segments, maybe contacts. Only
- * for reading ids and joints out of a mixed walk; a caller that knows which type
- * it is looking at should ask for `SupportEntityFor<T>` instead, which is derived
- * from the type id rather than named.
+ * An entity as a mixed walk sees it. A caller that knows the type should use
+ * `SupportEntityFor<T>` instead.
  */
 export interface WalkedEntity {
     id: string;
@@ -49,11 +34,7 @@ export interface WalkedEntity {
     [field: string]: unknown;
 }
 
-/**
- * A collection's entities, whether the source holds them as an ARRAY (a clipboard
- * payload or import document) or as a RECORD keyed by id (the store). Both shapes
- * are the same set of rows.
- */
+/** A collection's entities, whether the source holds an array or a record. */
 export function entitiesIn<T = WalkedEntity>(source: object, key: SupportCollectionKey): T[] {
     const value = (source as Record<string, unknown>)[key];
     if (Array.isArray(value)) return value as T[];

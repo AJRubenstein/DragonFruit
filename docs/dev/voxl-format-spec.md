@@ -239,25 +239,6 @@ Optional arrays:
 Every entity may carry an optional `typeId` naming its support type (V2.3). A payload without
 it is read exactly as before, with each entity's type derived from the array it appears in.
 
-### Renamed collections
-
-A collection key is a support type's name, so renaming a type renames the key. A file written
-before a rename carries the former key, and its entities would otherwise be found under no
-collection at all — dropped with no error.
-
-Readers migrate at the parse boundary (`migrateLegacySupportPayload`), rewriting former
-collection keys and any former `typeId` / `origin` stamp to the current names. The former names
-are declared on each type's descriptor as `renamedFrom`, so the migration itself names no type.
-
-Renames so far:
-
-| former key | current key | former `typeId` |
-| --- | --- | --- |
-| `anchors` | `stumps` | `anchor` |
-
-A payload carrying both keys was written by a build that migrated and then re-saved; the current
-key wins and the former one is dropped.
-
 Extensions location:
 
 - V1: root `extensions`

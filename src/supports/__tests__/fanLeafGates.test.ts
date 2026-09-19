@@ -11,27 +11,12 @@ import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 
 /**
  * The four gates a fanning leaf passes through, tested at the function that
- * enforces them.
+ * enforces them rather than end to end.
  *
- * ## Why not end to end
- *
- * The post-placement fanning LOOP could not be made to place a leaf in any
- * scene built here, and the reason is geometric rather than a missing fixture:
- *
- *   - The loop only runs for islands the coverage pass calls UNCOVERED, and
- *     `computeRegionCoverage` compares only X and Y. A tip covers a footprint
- *     within ~4mm in XY at ANY height — its Z is used only to widen the disc.
- *   - The fan's reach at `maxAngleDeg` from vertical is a cone: an island is
- *     reachable only within `min(fanRadiusMm, fanRadiusMm · sin(maxAngleDeg))`
- *     horizontally. At the default cap (30°) that is `8 · 0.5 = 4mm`.
- *
- * 4mm of fan reach against 4mm of coverage disc leaves the loop no band to work
- * in — it can only fire at the exact boundary. Raising the fan-angle cap to 45°
- * opens a band (8 · sin45 ≈ 5.7mm), and the loop then does evaluate candidates,
- * but every one lands in `tooFar` or `sameZ`.
- *
- * So the gates are tested HERE, at the function, which is also the code a
- * rewrite of the loop would have to keep intact.
+ * The post-placement loop cannot place a leaf in a scene built here: it runs
+ * only for islands the coverage pass calls uncovered, and coverage compares X
+ * and Y within ~4mm, while the fan's horizontal reach at the default 30° cap is
+ * `8 · sin30 = 4mm`. The two leave no band to work in.
  */
 
 const MODEL = 'model-a';

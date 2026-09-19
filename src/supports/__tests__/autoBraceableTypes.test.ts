@@ -13,16 +13,8 @@ import {
 import type { Branch, Roots, SupportState, Trunk } from '../types';
 
 /**
- * What auto-bracing may brace, and the fact that it is DECLARED.
- *
- * `branch` declared `isAutoBraceable: true` and was unreachable: the pass built
- * a sample pool from the flag, then filtered every use site on the literal
- * `'trunk'`, so branch samples were produced and discarded. A flag that selects
- * nothing is indistinguishable from a flag that is false, which is why the
- * contradiction went unnoticed.
- *
- * These tests pin the DERIVED set, not the literal, so re-narrowing it fails
- * here rather than silently dropping a type from bracing.
+ * What auto-bracing may brace, pinned as the DERIVED set so re-narrowing it
+ * fails here rather than dropping a type from bracing.
  */
 
 function root(id: string, modelId: string, x: number): Roots {

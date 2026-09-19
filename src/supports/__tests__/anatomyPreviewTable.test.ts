@@ -52,9 +52,8 @@ test('no type is reported as drawing a preview it did not register', () => {
 });
 
 test('every type answers panel facts, including ones with no panel yet', () => {
-    // The point of deriving: a type the sidebar does not offer today still has
-    // answers, so showing it is a UI change rather than a data gap. Stump is
-    // the one this was noticed on.
+    // A type the sidebar does not offer still answers, so offering it later is a
+    // UI change rather than a data gap.
     for (const descriptor of SUPPORT_TYPES) {
         const facts = typePanelFacts(descriptor.id);
         assert.ok(facts.settingsGroups, `${descriptor.id} has no settings groups`);

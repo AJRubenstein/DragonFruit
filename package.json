@@ -41,7 +41,6 @@
     "pretauri:dev": "npm run sync:version",
     "pretest": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins && npm run generate:support-registrations && npm run generate:support-renderers",
     "scan:support-types": "tsx scripts/scan-support-type-references.ts",
-    "scan:rename": "tsx scripts/rename-probe.ts",
     "sync:contributors": "node scripts/sync-contributors.mjs",
     "sync:sponsors": "node scripts/sync-sponsors.mjs",
     "sync:version": "node scripts/sync-app-version.mjs",
@@ -56,9 +55,7 @@
     "test": "node --import tsx --test 'src/**/*.test.{ts,tsx}' 'plugins/**/*.test.{ts,tsx}'",
     "test:watch": "node --import tsx --test --watch 'src/**/*.test.{ts,tsx}' 'plugins/**/*.test.{ts,tsx}'",
     "generate:support-registrations": "node scripts/generate-support-registrations.mjs",
-    "generate:support-renderers": "node scripts/generate-support-renderers.mjs",
-    "check:support-literals": "tsx scripts/scan-type-name-literals.ts --check",
-    "scan:support-literals": "tsx scripts/scan-type-name-literals.ts"
+    "generate:support-renderers": "node scripts/generate-support-renderers.mjs"
   },
   "dependencies": {
     "@lingui/core": "^6.3.0",

@@ -15,46 +15,15 @@ import { footprintFromPoints } from '@/volumeAnalysis/Islands/voxelFootprint';
 import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 
 /**
- * A whole-run signature for auto-placement.
+ * A whole-run signature for auto-placement: one scene run end to end, with the
+ * per-type outcome pinned. Movement here is a behaviour change to explain, not
+ * a fixture to update.
  *
- * Every other test in this folder asserts ONE behaviour. That is right for
- * pinning rules, and wrong for a rewrite: a change to the decision ladder can
- * move which TYPE a candidate becomes while every individual rule still holds,
- * and nothing would notice.
- *
- * This runs a scene end to end and pins what came out, per type. It is the
- * regression net for restructuring `placeOneCandidate` — treat any movement in
- * these numbers as a behaviour change to explain, not a fixture to update.
- *
- * Deliberately ONE scene rather than many: the value is in a broad signature
- * over the paths a rewrite touches.
- *
- * ## What this actually covers — measured by mutation, not assumed
- *
- * Caught:
- *   - the anchor height threshold (5 -> 40): 4 failures
- *   - the fan radius the settings resolve to (5 -> 15): 1 failure
- *
- * NOT caught, with the reason:
- *   - `MAX_LEAF_SPAN_BEFORE_BRANCH_MM` — the gridless merge never reaches the
- *     branch arm. A merge needs a host within 4mm of the candidate's TIP or of a
- *     segment JOINT, and a single-segment trunk only exposes its tip and its
- *     bottom joint, so candidates near the middle or top of a shaft find no
- *     host at all; those it does find are refused as `rejected`.
- *   - the post-placement FANNING LOOP (`MAX_FANNING_PASSES`). Its precondition
- *     is reached (`islandsUncovered > 0` happens for far-off tiny islands), but
- *     the loop's own reach is TIGHTER than the ladder's: the loop uses the raw
- *     fan radius (5) while the ladder floors its own at 8mm. Every island the
- *     loop could reach, the ladder already reached, so the loop never places
- *     anything and its pass count is unobservable.
- *   - the fan ANGLE gate — the fan is refused for distance before it is refused
- *     for angle in every geometry reachable here.
- *   - `ALREADY_SUPPORTED_RADIUS_MM` — widening it does not change this scene.
- *
- * So this net guards the ladder, the cavity fallback, the anchor short-circuit,
- * the grid decision and the fan radius. It does NOT guard the branch promotion
- * or the fanning loop; converting those without a targeted test is unguarded
- * work, and a smaller targeted test per path is the cheaper way to close it.
+ * What it does NOT guard, measured by mutation: branch promotion
+ * (`MAX_LEAF_SPAN_BEFORE_BRANCH_MM`, unreachable here -- the gridless merge finds
+ * no host), the post-placement fanning loop (its reach is tighter than the
+ * ladder's, so it never places), the fan angle gate (distance refuses first) and
+ * `ALREADY_SUPPORTED_RADIUS_MM`. Each wants its own targeted test.
  */
 
 const MODEL = 'model-a';
@@ -169,16 +138,9 @@ function fanHost(): DetectedIsland {
 }
 
 /**
- * A sub-threshold overhang a given offset from that host's shaft.
- *
- * The offset picks the outcome, which is why there are two: one close enough to
- * attach, and one at ~9.8mm that sits OUTSIDE the fan's effective reach. The
- * far one is the interesting case — it flips between a standalone trunk and a
- * fanned leaf depending on the fan radius, which is what makes the radius
- * observable from a whole run.
- *
- * (Measured, not assumed: at 3mm the outcome is the same whether the radius is 2
- * or 15, so a fixture with only the near case cannot see the radius at all.)
+ * A sub-threshold overhang at a given offset from that host's shaft. Two are
+ * used: one within the fan's reach, and one at ~9.8mm outside it, which flips
+ * between a standalone trunk and a fanned leaf with the fan radius.
  */
 function fanTarget(xOffsetMm: number, zOffsetMm: number): DetectedIsland {
     return {
@@ -196,10 +158,7 @@ function fanTarget(xOffsetMm: number, zOffsetMm: number): DetectedIsland {
     };
 }
 
-/**
- * One whole-run signature: what `runSignature` returns and `assertSignature`
- * pins. `placed` is the ladder's own per-type ledger, keyed by the registry.
- */
+/** What `runSignature` returns and `assertSignature` pins. */
 interface RunSignature {
     placed: AutoPlaceResult['placed'];
     rejectedCandidates: number;
@@ -215,10 +174,8 @@ function runSignature(gridEnabled: boolean): RunSignature {
     initializeBVH();
     setModelMesh(MODEL, cavityMesh());
 
-    // The two settings produce two DIFFERENT ladders: with grid on, candidates
-    // go through `decideGridPlacement`; with it off they go through the
-    // merge/trunk/cavity fallback chain. A rewrite of that chain has to be
-    // pinned in both.
+    // Grid on routes candidates through `decideGridPlacement`; grid off routes
+    // them through the merge/trunk/cavity chain. Both are pinned.
     const settings = createDefaultSettings();
     settings.grid.enabled = gridEnabled;
     setSettings(settings);

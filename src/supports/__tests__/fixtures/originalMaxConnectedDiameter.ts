@@ -1,9 +1,7 @@
 /**
- * The pre-derivation `computeMaxConnectedDiameterFromTrunk`, kept verbatim so the
- * registry-driven walk that replaced it can be compared against it directly.
- *
- * Seven per-type arms, each rescanning every knot. Anchors and kickstands were
- * absent from it entirely, which is the one place the two should disagree.
+ * A reference implementation of `computeMaxConnectedDiameterFromTrunk`, for the
+ * derived walk to be compared against. It covers neither stumps nor kickstands,
+ * which is the one place the two are expected to disagree.
  */
 
 import type { Leaf, SupportState } from '../../types';
@@ -11,16 +9,7 @@ import type { SupportTypeId } from '../../supportTypeRegistry';
 import { contactEndpointsFor, SUPPORT_TYPES } from '../../supportTypeRegistry';
 import { entitiesIn, keyOf } from '../helpers/typeCollections';
 
-/**
- * The one type this reference implementation was written around: the bridge that
- * carries a cone at BOTH ends.
- *
- * Asked of the registry rather than spelled, because a type id written here is a
- * name passed as data -- `check:support-literals` counts exactly those, and its
- * budget may only fall. The fact itself is the arm's premise: a knot can ride
- * this type's segment and its span reaches from one contact to the other, which
- * is why its diameter can connect two surfaces the way no single-ended type can.
- */
+/** The type this reference is written around: the one carrying a cone at both ends. */
 const SUBJECT_TYPE: SupportTypeId = (() => {
     const twoEnded = SUPPORT_TYPES.find(
         (descriptor) => contactEndpointsFor(descriptor.id).filter((endpoint) => endpoint.kind === 'cone').length === 2,
