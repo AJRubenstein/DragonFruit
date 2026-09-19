@@ -21,9 +21,8 @@ export type SupportPlacementFamily = 'none' | PlacementFamilyName;
 /**
  * Which placement a pointer gesture belongs to.
  *
- * Drawn from the registry's `PlacementModeOwnerTypeId` rather than spelled out,
- * so renaming a type in the registry renames it here. Only the types with a
- * placement mode appear; the set is held by `supportPlacementRouting.test.ts`.
+ * Drawn from the registry's `PlacementModeOwnerTypeId`; only types with a
+ * placement mode appear.
  */
 export type SupportPlacementOwner = 'none' | PlacementModeOwnerTypeId;
 /** Model-surface gestures route to the types that declare they claim them. */
@@ -58,11 +57,8 @@ function isBranchFamilyMember(typeId: PlacementModeOwnerTypeId): typeId is Branc
 }
 
 /**
- * The own-named placement families: the owners that are NOT members of the
- * shared `branchFamily` binding, and so give their binding their own name.
- *
- * Read off the registry, so a type joining or leaving either set moves this
- * list, and with it the family values below.
+ * The own-named placement families: the owners outside the shared
+ * `branchFamily` binding, which give their binding their own name.
  */
 const OWN_NAMED_PLACEMENT_FAMILY_TYPES: readonly OwnNamedPlacementFamilyTypeId[] =
     PLACEMENT_MODE_OWNER_TYPES.filter(
@@ -71,15 +67,8 @@ const OWN_NAMED_PLACEMENT_FAMILY_TYPES: readonly OwnNamedPlacementFamilyTypeId[]
 
 /**
  * The one own-named family declaring `flag`, asserting there is exactly one.
- *
- * The two own-named families are told apart by WHERE they place, which is what
- * `claimsModelSurfaceGestures` already records: a leaf is placed against the
- * model face and claims a model-surface gesture, while a kickstand is placed
- * between existing shafts and claims none. Reading that flag is what keeps the
- * type's name out of this table -- a name is exactly the literal this table
- * exists to avoid. Should a third own-named family ever appear, one side of the
- * split would stop being unique; this throws rather than silently picking a
- * contender, the same shape as the registry's `coneKnotHostType`.
+ * The two are told apart by `claimsModelSurfaceGestures`: a leaf places against
+ * the model face, a kickstand between existing shafts.
  */
 function singleOwnNamedFamily(
     flag: string,
@@ -112,17 +101,11 @@ const BETWEEN_SUPPORTS_PLACEMENT_FAMILY = singleOwnNamedFamily(
 /**
  * The family each placement binding belongs to.
  *
- * A mode with a family of its own gives its binding that family's name -- the
- * binding and the family are the same word, because the family was never
- * separate from the type. Branch and brace share the one `branchFamily`
- * binding, which is a family NAME rather than a type id and so is the only
- * value here that is not a type.
+ * Branch and brace share the one `branchFamily` binding, the only value here
+ * that is a family name rather than a type id.
  *
- * Only `branchFamily` is spelled here; the type-named values come off the
- * registry's flag-derived families, so a rename moves them.
- *
- * Keyed by BINDING, not owner: the owner constants are derived in the router,
- * which imports the resolver, so an owner-keyed table would cycle.
+ * Keyed by binding, not owner: the owner constants are derived in the router,
+ * which imports this, so an owner-keyed table would cycle.
  */
 export const PLACEMENT_FAMILY_BY_BINDING = {
     branchFamily: 'branchFamily',

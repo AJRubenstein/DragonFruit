@@ -46,15 +46,9 @@ export function draftAddPrimitive<K extends 'roots' | 'knots'>(
  * Commit one placed support: the entity plus every primitive its declared
  * `edges` point at.
  *
- * Derived, so a caller never names a type to place it. The two facts this needs
- * are already declared on the descriptor — `location.key` is the collection the
- * entity joins, and each `edges` entry names a field holding a primitive's id
- * and the collection that primitive lives in. Trunk carries a root that way;
- * branch and leaf carry the knot they hang from; a type with no edges (stump,
- * twig, stick) carries nothing and adds only itself.
- *
- * `supplied` is keyed by EDGE FIELD, so the caller passes what it built against
- * the same names the declaration uses and the two cannot drift apart.
+ * `location.key` is the collection the entity joins, and each `edges` entry
+ * names a field holding a primitive's id and the collection it lives in.
+ * `supplied` is keyed by edge field, matching the declaration.
  */
 export function draftCommitSupport(
     draft: SupportState,
@@ -69,10 +63,8 @@ export function draftCommitSupport(
         if (edge.to !== 'roots' && edge.to !== 'knots') continue;
         const primitive = supplied[edge.field];
         if (!primitive) continue;
-        // The declared edge says which collection this belongs to, so the
-        // narrowing follows the DECLARATION rather than a shape guess. This is
-        // the one cast: a value keyed by edge field cannot be paired with its
-        // collection in the type, and the pairing is exactly what this reads.
+        // The declared edge says which collection this belongs to. The cast is
+        // unavoidable: a value keyed by edge field cannot carry its collection.
         if (edge.to === 'roots') next = draftAddPrimitive(next, 'roots', primitive as Roots);
         else next = draftAddPrimitive(next, 'knots', primitive as Knot);
     }

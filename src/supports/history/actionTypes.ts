@@ -53,8 +53,7 @@ export interface SupportBranchPayload {
   branch: Branch;
   knot?: Knot | null;
   /** The host re-solved because one of its attachments changed, with the
-   *  collection it lives in: which type owns that host is data, not a field
-   *  name, so a different host type repairs itself through the same slot. */
+   *  collection it lives in. */
   hostUpdate?: {
     typeId: SupportTypeId;
     before: { id: string };
@@ -79,8 +78,7 @@ export interface SupportBranchRemovePayload {
   leaves: Leaf[];
   knots: Knot[];
   /** The host re-solved because one of its attachments changed, with the
-   *  collection it lives in: which type owns that host is data, not a field
-   *  name, so a different host type repairs itself through the same slot. */
+   *  collection it lives in. */
   hostUpdate?: {
     typeId: SupportTypeId;
     before: { id: string };

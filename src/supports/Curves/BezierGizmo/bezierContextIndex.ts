@@ -8,20 +8,12 @@ import type { Brace, Joint, Segment, SupportState } from '../../types';
  * Which bezier handles to offer for the current selection.
  *
  * One context per joint and per segment end, indexed by the id a selection
- * carries -- joint id, segment id, or brace id. Every shafted type comes from
- * its descriptor: where a first segment's missing bottom joint comes from (the
- * declared lower endpoint), and the context id prefix, which is a React key.
+ * carries. A segment end resolves through the same declarations the geometry
+ * does: a bottom joint or the declared lower endpoint, a top joint or the
+ * declared upper contact's socket or host knot.
  *
- * A segment end resolves through the same declarations the geometry does, so a
- * handle never sits somewhere the shaft does not:
- *
- * - a bottom joint, when the segment carries one, else the declared lower
- *   endpoint (a plate root's top, or a host knot);
- * - a top joint, else the declared upper contact's socket, else -- for a type
- *   whose upper end is a knot -- the host knot its `hostedBy` edge names.
- *
- * Brace keeps its own loop: it declares no segments, so the generic walk skips
- * it, and its two handles are the knots its curve runs between.
+ * Brace keeps its own loop: it declares no segments, and its two handles are the
+ * knots its curve runs between.
  */
 export interface HandleContext {
     id: string; // Unique ID for key

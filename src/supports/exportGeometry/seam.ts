@@ -6,13 +6,10 @@ import type { SupportState } from '../types';
 /**
  * How a support type contributes its geometry to an export.
  *
- * A slot for the same reason the registry's other slots are: each type's export
- * geometry is a fact about that type, so it lives in that type's own folder and
- * registers itself here. Nothing else names a type -- the export walks
- * `SUPPORT_TYPES` and asks each one what it builds.
- *
- * The registry itself declares what a type IS, not how it draws, so this seam
- * lives beside the geometry rather than in `supportTypeRegistry.ts`.
+ * Each type's export geometry lives in that type's own folder and registers
+ * here; the export walks `SUPPORT_TYPES` and asks each one what it builds.
+ * Beside the geometry rather than in the registry, which declares what a type
+ * is rather than how it draws.
  */
 export interface SupportExportContext {
     /** The live store, for a type that must resolve an owned root or host knot. */

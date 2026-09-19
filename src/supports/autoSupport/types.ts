@@ -3,19 +3,9 @@ import { AUTO_PLACED_TYPE_IDS, type AutoPlacedTypeId, type ShaftHostedMemberType
 
 export type { AutoPlacedTypeId };
 
-/**
- * Auto-placement reports cover a subset of the support types, not all of them.
- * Each subset is taken from the registry's own declaration of it -- the
- * auto-placed set and the shaft-hosted member walk -- so a renamed type reaches
- * these two through the registry instead of as a second literal here.
- */
 /** A type the ledger can report, from the registry's declared set. */
 export type PlacedKind = AutoPlacedTypeId;
-/**
- * A hosted member auto-placement can attach: the types the registry's own
- * shaft-hosted member walk visits, which the engine reads members back from.
- * Aliased rather than restated, so the member names stay the walk's business.
- */
+/** A hosted member auto-placement can attach: what the member walk visits. */
 export type AttachmentKind = ShaftHostedMemberTypeId;
 /** Which kind of entity was culled: any host type, or a hosted member. */
 type OrphanKind = SupportTypeId;
@@ -59,10 +49,7 @@ export type RejectReason =
     | 'already_supported'
     | 'exception';
 
-/**
- * The ledger's own type set, as values — the registry's declared set, so adding
- * an auto-placed type is one edit there and nothing here.
- */
+/** The ledger's own type set, as values. */
 export const LEDGER_KINDS: readonly PlacedKind[] = AUTO_PLACED_TYPE_IDS;
 
 export { isAutoPlacedType as isLedgerKind } from '../supportTypeRegistry';
@@ -146,10 +133,8 @@ export interface ForestReport {
          *  angle (raft/connector territory). */
         consolidationRefusals: Partial<Record<string, number>>;
         /** Candidates whose trunk could not reach the plate and were bridged
-         *  model-to-model instead -- by whichever type registered a bridge
-         *  builder. Tip position = where
-         *  the bridge starts; each entry is a candidate for elimination by
-         *  better routing. */
+         *  model-to-model instead, by whichever type registered a bridge
+         *  builder. Tip = where the bridge starts. */
         cavityFallbacks: Array<{ id: string; kind: SupportTypeId; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
     };
 }

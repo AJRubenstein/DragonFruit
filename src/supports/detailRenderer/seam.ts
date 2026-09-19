@@ -5,10 +5,9 @@ import { SUPPORT_TYPES, type SupportTypeId } from '../supportTypeRegistry';
 /**
  * What one type's detail renderer is and what it needs from the frame.
  *
- * Held in each type's own folder and registered into this seam, so the shared
- * renderer asks "give me this type's renderer" by id rather than naming the
- * type or importing its component. The entry closes over live scene state, so
- * a registration stores a FACTORY and the renderer supplies the context.
+ * Held in each type's own folder and registered here, so the shared renderer
+ * asks by id. The entry closes over live scene state, so a registration stores
+ * a factory and the renderer supplies the context.
  */
 export interface DetailRendererEntry {
     component: ComponentType<Record<string, unknown>>;
@@ -21,9 +20,8 @@ export interface DetailRendererEntry {
 }
 
 /**
- * The live scene state a detail-renderer factory closes over. Supplied by the
- * renderer, not read here: this seam is imported while the type folders load,
- * so it must not reach back into the renderer it is building entries for.
+ * The live scene state a factory closes over. Supplied by the renderer: this
+ * seam loads with the type folders and must not reach back into it.
  */
 export interface DetailRendererContext {
     roots: Record<string, Roots>;

@@ -12,8 +12,7 @@ import { getActiveMaterialProfile, getActivePrinterProfile } from '@/features/pr
  * The pieces every type's export geometry shares.
  *
  * One type's builder lives in that type's folder (see `seam.ts`); these are the
- * parts that are the same whatever is being exported, so they would otherwise
- * be copied eight times.
+ * parts that are the same whatever is being exported.
  */
 
 /** The anti-aliasing standoff applied to a contact primitive, in mm. */
@@ -69,6 +68,6 @@ export function appendShafts(group: THREE.Group, segment: Segment, start: Vec3, 
 }
 
 // The toolkit a type's export builder draws with. Re-exported so a type folder
-// has ONE import for its export geometry rather than four reaching across the
+// has one import for its export geometry rather than four reaching across the
 // tree, and so the generator can move without touching eight folders.
 export { SupportGeometryGenerator, getFinalSocketPosition };

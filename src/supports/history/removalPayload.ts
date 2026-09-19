@@ -5,25 +5,9 @@ import type { SupportTypeId } from '../supportTypeRegistry';
 import type { SupportState } from '../types';
 
 /**
- * What a removal records, and any repair the removal forced.
- *
- * Two jobs, both derived:
- *
- * 1. **The payload.** `SUPPORT_REMOVAL_SHAPES` already declares every field a
- *    removal reports — `brace: { knots: ['startKnot', 'endKnot'] }` expands to
- *    `{ startKnot, endKnot }`, `leaf: { knots: 'knot' }` to `{ knot }`. So the
- *    payload is the cascade result re-keyed from that declaration, with its
- *    singular fields normalized from `undefined` to `null`. No type is named.
- *
- * 2. **The host repair.** A HOST type declaring `recomputesDiameterFromAttachments`
- *    is sized from what it carries, so losing an attachment leaves it sized for
- *    something that is gone; it is re-solved and the result reported beside the
- *    cascade. Which types those are is a registry fact, and which host was
- *    involved is read from the removed entity's declared `hostedBy` knot edge —
- *    nothing here names a type.
- *
- * It lives here rather than in the interaction manager because a React hook
- * cannot be exercised in tests, and both decisions are worth testing.
+ * What a removal records, and any repair it forced: the cascade result re-keyed
+ * from `SUPPORT_REMOVAL_SHAPES`, plus a re-solve of a host declaring
+ * `recomputesDiameterFromAttachments`.
  */
 
 /** The history payload a completed removal carries. */
@@ -42,13 +26,8 @@ export interface ResolvedSupportRemoval {
 type RemovedRoot = Record<string, unknown> | undefined;
 
 /**
- * The fields a removal of `typeId` reports, re-keyed from the declaration.
- *
- * `SUPPORT_REMOVAL_SHAPES` gives `self` (the entity's own field) and `cascade`
- * (each affected collection, mapped to the field names the payload uses). A
- * field declared as an array — `['startKnot', 'endKnot']` — is a set of NAMED
- * singular slots rather than a list, which is the only difference between the
- * two forms.
+ * The fields a removal of `typeId` reports, re-keyed from its declared shape. A
+ * field declared as an array is a set of named slots, not a list.
  */
 function payloadFields(
     typeId: SupportTypeId,
@@ -59,7 +38,6 @@ function payloadFields(
 
     for (const field of Object.values(shape.cascade)) {
         if (typeof field !== 'string') {
-            // Declared as an array: NAMED singular slots rather than a list.
             // `Array.isArray` does not narrow `readonly string[]`, so the test
             // is on the string case.
             for (const name of field) {
@@ -74,16 +52,8 @@ function payloadFields(
 }
 
 /**
- * Re-solve the host a removed entity hung from.
- *
- * The host is found through the removed entity's own declarations — its
- * `hostedBy` knot edge, then that knot's shaft, then whichever type owns the
- * segment — so nothing here names a type.
- *
- * The re-solve itself is the flagged type's: `computeAndApplySupportDiameterProfile`
- * is the stepwise profile a host declaring `recomputesDiameterFromAttachments`
- * uses, and trunk is the one type that declares it today. The gate is the flag,
- * not a name, so a second such type reaches this path by declaring it.
+ * Re-solve the host a removed entity hung from, found through its `hostedBy`
+ * knot edge, that knot's shaft, and whichever type owns the segment.
  */
 function repairHostAfterRemoval(
     typeId: SupportTypeId,
@@ -111,9 +81,7 @@ function repairHostAfterRemoval(
     const owner = findShaftOwnerOfSegment(parentSegId);
     if (!owner) return {};
 
-    // The gate: does the HOST's own type derive its diameter from what it
-    // carries? Trunk does; nothing else does today. Read from the host rather
-    // than the removed entity, because the specialness is the host's.
+    // Read from the HOST's type, not the removed entity's.
     if (!getSupportTypeDescriptor(owner.typeId).recomputesDiameterFromAttachments) return {};
 
     // The host has to still exist; the profile call reports null when there is

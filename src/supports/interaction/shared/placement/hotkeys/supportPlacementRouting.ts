@@ -20,33 +20,15 @@ import type {
 import type { SupportPlacementActive, SupportPlacementPreviews } from '../../../../rendering';
 
 /**
- * The types that have a placement mode of their own.
- *
- * A type declares `hasPlacementPreview` when it previews a placement at all, and
- * `previewYieldsToOtherModes` when that preview IS the default tool rather than a
- * mode the user toggles. Trunk declares the latter, so what is left is the modes
- * a pointer gesture can belong to.
- *
- * Aliased to the registry's flag table rather than filtered a second time here,
- * so the router's owner set moves with the table and with a rename in it.
+ * The types with a placement mode of their own: those declaring
+ * `hasPlacementPreview` without `previewYieldsToOtherModes` (the default tool).
  */
 export const PLACEMENT_MODE_TYPE_IDS: readonly PlacementModeOwnerTypeId[] = PLACEMENT_MODE_OWNER_TYPES;
 
-/**
- * The placement owner union without the empty arm: the types themselves.
- *
- * `SupportPlacementOwner` carries `'none'` because a router answer can be "no
- * owner"; a registry lookup can only ever name a type, and this says so.
- */
+/** The placement owner union without its `'none'` arm: the types themselves. */
 export type PlacementOwnerTypeId = Exclude<SupportPlacementOwner, 'none'>;
 
-/**
- * The one type declaring `flag`, asserting there is exactly one.
- *
- * The registry is the only place a type is named, so the owners below are read
- * off it rather than spelled into the arms that use them. Everything here goes
- * through this one lookup.
- */
+/** The one type declaring `flag`, asserting there is exactly one. */
 function singleTypeDeclaring(
     flag: string,
     test: (descriptor: SupportTypeDescriptor) => boolean,
@@ -61,13 +43,7 @@ function singleTypeDeclaring(
     return typeId;
 }
 
-/**
- * Whether `typeId` names a type the router resolves a placement owner to.
- *
- * The registry's modes and the router's `SupportPlacementOwner` union are the
- * same four types, which is what makes this the one place the two meet:
- * `__tests__/supportPlacementRouting.test.ts` holds them to each other.
- */
+/** Whether `typeId` names a type the router resolves a placement owner to. */
 function isPlacementOwnerType(typeId: SupportTypeId): typeId is PlacementOwnerTypeId {
     return PLACEMENT_MODE_TYPE_IDS.some((ownerTypeId) => ownerTypeId === typeId);
 }
@@ -77,12 +53,7 @@ function isModelSurfaceGestureOwner(typeId: SupportTypeId): typeId is ModelSurfa
     return (MODEL_SURFACE_GESTURE_TYPES as readonly SupportTypeId[]).includes(typeId);
 }
 
-/**
- * The one placement mode declaring `flag`.
- *
- * Every owner below is read through here, so a registry that stops declaring a
- * flag says which one rather than leaving a stale owner behind.
- */
+/** The one placement mode declaring `flag`. */
 function placementOwnerDeclaring(
     flag: string,
     test: (descriptor: SupportTypeDescriptor) => boolean,
@@ -95,17 +66,8 @@ function placementOwnerDeclaring(
 }
 
 /**
- * The one type declaring `flag` among those the router hands a model-face
- * gesture to.
- *
- * The gesture set is part of the LOOKUP rather than a check afterwards: a flag
- * that several types declare is not a way to name one of them, so narrowing the
- * candidates first is what makes the answer unique -- and what makes the "found:"
- * list in the error read as the contenders rather than the whole registry.
- *
- * The guard then asserts two things: that the answer is one of the router's
- * owners, so an arm may return it, and that a type taking a model gesture is
- * always one of those owners -- the same relationship the test holds.
+ * The one type declaring `flag` among those taking a model-face gesture.
+ * Narrowing to that set first is what makes the answer unique.
  */
 function gestureOwnerDeclaring(
     flag: string,
@@ -121,28 +83,12 @@ function gestureOwnerDeclaring(
     return typeId;
 }
 
-/**
- * The kickstand's placement family, read from the one place the family
- * vocabulary is written down rather than spelled here.
- *
- * Two of the family union's three named members ARE type ids, because those
- * families were never separate from their type; this is the one the router
- * compares a gesture against. It comes from `PLACEMENT_FAMILY_BY_BINDING`,
- * whose type-named values are themselves derived from the registry's
- * placement-owner table -- so a rename moves the family and the
- * `KICKSTAND_PLACEMENT_OWNER` it names together rather than leaving a stale
- * spelling behind.
- */
+/** The kickstand's placement family, read from `PLACEMENT_FAMILY_BY_BINDING`. */
 const KICKSTAND_FAMILY = PLACEMENT_FAMILY_BY_BINDING.kickstand;
 
 /**
- * The type the branch family's gesture belongs to.
- *
- * The family cannot be named after its type -- branch and brace share its
- * binding -- so the registry declares which of the two owns its own placement
- * mode: `previewRequiresOwnMode` is branch's, the mode whose preview stands up
- * only while it is live. Brace places between two existing supports and claims
- * no model gesture, which is why it declares the flag false.
+ * The type the branch family's gesture belongs to. Branch and brace share the
+ * binding, so `previewRequiresOwnMode` is what separates them.
  */
 export const BRANCH_FAMILY_PLACEMENT_OWNER = gestureOwnerDeclaring(
     'whose own mode owns its preview',
@@ -150,14 +96,8 @@ export const BRANCH_FAMILY_PLACEMENT_OWNER = gestureOwnerDeclaring(
 );
 
 /**
- * The leaf's placement: the mode that claims a model gesture and does NOT gate
- * its preview on being active.
- *
- * That is the same distinction the branch above is read from, one flag over:
- * a gesture-claiming mode either stands its preview up only while it is live
- * (branch) or leaves it up (leaf). Reading the flag rather than the name keeps
- * the leaf's own name out of the router, which is where the family and the type
- * are the same word and so cannot drift apart.
+ * The leaf's placement: the mode claiming a model gesture that does not gate its
+ * preview on being active.
  */
 export const LEAF_PLACEMENT_OWNER = gestureOwnerDeclaring(
     'whose preview is not kept for its own mode',
@@ -177,10 +117,8 @@ export const KICKSTAND_PLACEMENT_OWNER = placementOwnerDeclaring(
 );
 
 /**
- * The default tool: the one type whose preview yields to every other mode,
- * because it stands in for a mode rather than being one. Not a placement mode
- * -- it is what the modes stand down to -- so it is typed as the wider id and
- * `PLACEMENT_MODE_TYPE_IDS` leaves it out.
+ * The default tool: the type whose preview yields to every other mode. Not a
+ * placement mode itself, so `PLACEMENT_MODE_TYPE_IDS` leaves it out.
  */
 export const DEFAULT_PLACEMENT_TYPE_ID = singleTypeDeclaring(
     'whose preview yields to another mode',

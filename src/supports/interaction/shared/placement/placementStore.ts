@@ -18,17 +18,14 @@ export interface PlacementStore<T> {
      * Replaces the state and notifies. Pass a function to derive the next
      * state from the current one.
      *
-     * Unconditional on purpose: a setter that wants a no-op guard writes the
-     * guard itself, because what counts as "changed" is per-field and
-     * per-type. `read()` is there for exactly that.
+     * Unconditional: a setter wanting a no-op guard writes it, using `read()`.
      */
     write(next: T | ((current: T) => T)): void;
     /**
      * Restores the initial state, keeping the named fields' current values.
      *
-     * Every adopter's reset preserves its mode flag (holding Alt, or the
-     * hotkey): releasing a placement must not also release the mode. A store
-     * already holding the values it would reset to notifies nobody, so a reset
+     * Every adopter's reset preserves its mode flag: releasing a placement must
+     * not release the mode. A store already holding those values notifies nobody,
      * on an idle store cannot churn every subscriber.
      */
     resetPreserving<K extends keyof T>(...preserved: K[]): void;
