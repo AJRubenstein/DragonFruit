@@ -223,7 +223,7 @@ export function samplePerimeterLoops(
  *  hangs half its contact disc past the edge — half attached to air. The
  *  perimeter ring (and grid outer ring / boundary fill) is generated on the
  *  footprint ERODED by this amount (1 mask pixel = 0.25 mm): covers the max
- *  standard tip-contact radius (stump 0.4 mm → 0.2 mm) plus a 0.05 mm
+ *  standard tip-contact radius (anchor 0.4 mm → 0.2 mm) plus a 0.05 mm
  *  margin — fully on the surface, not over-inset. */
 export const PERIMETER_CONTACT_INSET_MM = 0.25;
 

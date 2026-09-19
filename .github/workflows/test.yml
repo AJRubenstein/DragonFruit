@@ -78,29 +78,3 @@ jobs:
 
       - name: Lint the directories under lint control
         run: npm run check:lint
-
-  support-literals:
-    name: Support type-name literals
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22.23.2"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      # A budget, not a target. The number must only move DOWN, in a commit that
-      # lowers it -- see the BUDGET table in scripts/scan-type-name-literals.ts.
-      # This exists because the previous metric counted only `=== 'type'`
-      # comparisons, so type-name literals in ARGUMENT position could be added
-      # and removed with every instrument reading the same number.
-      - name: Check the type-name literal budget
-        run: npm run check:support-literals

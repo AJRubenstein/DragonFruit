@@ -95,7 +95,7 @@ test('the payload reports exactly the fields the registry declares', () => {
 
 test('a brace reports two NAMED knots, not a list', () => {
     // `brace: { knots: ['startKnot', 'endKnot'] }` in the registry is what makes
-    // this shape, and it used to be hand-written in the interaction manager.
+    // this shape.
     load();
     const removed = removeSupportEntityWithPayload('leaf', 'leaf-a');
     assert.ok(removed);

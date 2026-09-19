@@ -9,11 +9,10 @@ import { SUPPORT_TYPES } from '../supportTypeRegistry';
 /**
  * Every declared type registers a detail renderer.
  *
- * `SupportRenderer` used to hold an eight-entry table keyed by type id; the
- * entries now live in each type's own folder and register into the seam. A
- * ninth type that reaches the registry without registering would draw nothing,
- * silently -- so the load-time completeness check asserts the missing list is
- * empty, and a resolved table has a component for every type.
+ * Each renderer lives in its type's own folder and registers into the seam. A
+ * type that reaches the registry without registering would draw nothing, so the
+ * load-time completeness check asserts the missing list is empty and a resolved
+ * table has a component for every type.
  */
 
 const EMPTY_CONTEXT: DetailRendererContext = {

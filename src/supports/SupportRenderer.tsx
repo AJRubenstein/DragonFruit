@@ -1362,10 +1362,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         candidateKnots: previewCandidateKnots,
     });
 
-    // One derived index. Each builder this replaces named its type and that
-    // type's host-knot field by hand; this reads both off the entities and their
-    // declared edges, so a renamed field, a new host knot, or a list that ever
-    // held another type is covered.
+    // One derived index, reading each entity's type and its declared host-knot
+    // edges, so a renamed field or a new host knot is covered.
     const branchesByParentKnotId = useMemo(
         () => buildEntitiesByHostKnot(branchList, (branch) => branch),
         [branchList],
@@ -2777,8 +2775,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         // One instanced group per COLOUR, never per model: the per-model drop
         // offset is baked into each instance, so models sharing a colour share a
         // draw. Keying by colour alone (not `model:color`, and not the instance
-        // count) also keeps the mesh mounted when supports are edited — the
-        // count in the key used to remount and reallocate its buffers.
+        // count) also keeps the mesh mounted when supports are edited: a count in
+        // the key remounts the mesh and reallocates its buffers.
         return groups.map((group) => (
             <group key={`scene-${typeId}-batch:${group.color}`}>
                 {simpleRender ? (

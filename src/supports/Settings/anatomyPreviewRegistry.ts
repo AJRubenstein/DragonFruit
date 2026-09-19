@@ -10,10 +10,8 @@ import type { SidebarPanel } from './sidebarPanels';
  * whatever is registered rather than holding a table it must be kept in step
  * with.
  *
- * This replaces a hand-written `ANATOMY_PREVIEWS` table plus a `drawsOwnPreview`
- * boolean: the boolean existed only to keep the table and itself agreeing, and a
- * test policed the pair. A registration cannot disagree with itself, so "does
- * this panel draw its own preview" is just "did anyone register one".
+ * "Does this panel draw its own preview" is "did anyone register one", so a
+ * registration cannot disagree with itself.
  *
  * A panel that registers nothing falls through to `TrunkPreview`, the generic
  * renderer, which is deliberately not registered here.

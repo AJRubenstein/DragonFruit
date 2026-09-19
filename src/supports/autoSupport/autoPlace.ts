@@ -1613,10 +1613,9 @@ export function rehostLegacyKnots(draft: SupportState): SupportState {
  * stays exactly as placed.
  */
 export function syncContactConeDiameters(draft: SupportState): SupportState {
-    // Which types contribute their segment diameters, and none else: the loop
-    // this replaces listed trunks and branches by hand while leaf read a host
-    // shaft through its knot. A type whose cone body is deliberately left alone
-    // (stick, stump) declares no source at all rather than being filtered out.
+    // Which types contribute their segment diameters, from each type's declared
+    // `coneBodyFollows`. A type whose cone body is left alone (stick, stump)
+    // declares no source rather than being filtered out.
     const diameterBySegmentId = new Map<string, number>();
     for (const descriptor of SUPPORT_TYPES) {
         if (descriptor.coneBodyFollows !== 'ownFirstSegment'

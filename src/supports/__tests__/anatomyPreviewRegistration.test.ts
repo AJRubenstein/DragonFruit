@@ -43,8 +43,8 @@ test('the default panel uses the generic preview', () => {
 });
 
 test('panelFacts agrees with the registry for every panel', () => {
-    // A tool panel used to return `drawsOwnPreview: undefined` -- the declared
-    // object had no such field and a cast hid it.
+    // A tool panel declares no `drawsOwnPreview`, so the fact must come from
+    // whether it registered a preview rather than from the object.
     for (const panel of SIDEBAR_PANELS) {
         assert.equal(
             panelDrawsOwnPreview(panel),

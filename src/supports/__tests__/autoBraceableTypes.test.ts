@@ -111,17 +111,12 @@ test('types with no shaft, or that are not braceable, stay out', () => {
 });
 
 /**
- * The behaviour behind the flag, tested so it FAILS on the old literal.
+ * The behaviour behind the flag.
  *
- * The scene holds branches and NO trunks, which makes the sample-pool filter the
- * only thing that can decide the outcome: the early return reports
- * `skippedSupportCount: samples.length`, so with the old `=== 'trunk'` filter
- * this is 0 and with the derived filter it is the branch count.
- *
- * An earlier version of this test used a scene that also held a trunk and
- * asserted `skippedSupportCount > 0`. It passed under the old literal too — the
- * trunk satisfied it — so it verified nothing. Caught by mutating the filter
- * back and watching the test stay green.
+ * The scene holds branches and NO trunks, so the sample-pool filter alone
+ * decides the outcome: the early return reports `skippedSupportCount:
+ * samples.length`, which is the branch count only if branches reach the pool.
+ * A scene holding a trunk as well would pass whether or not they do.
  */
 test('a branch reaches the pass: a branches-only scene reports it as a sample', () => {
     const snapshot = emptySnapshot();

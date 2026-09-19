@@ -10,9 +10,8 @@ import { recomputeConeHostKnotGeometry, recomputeSpanHostKnotGeometry } from '..
  * reverse order would compute the span endpoints from knots the cone pass had
  * not yet moved.
  *
- * The node inputs are the state the write produced -- the leaf collection
- * already replaced, every other collection still as it was -- which is exactly
- * what the body this replaces read from the store.
+ * The inputs are the state the write produced: the leaf collection already
+ * replaced, every other collection still as it was.
  */
 registerSupportSettle('leaf', ({ next }) => {
   const coneHost = recomputeConeHostKnotGeometry(next.leaves, next.knots);

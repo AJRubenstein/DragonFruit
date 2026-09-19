@@ -13,10 +13,8 @@ import { SUPPORT_TYPES } from '../supportTypeRegistry';
 /**
  * The anatomy preview registration.
  *
- * A panel's preview used to be a hand-written table plus a `drawsOwnPreview`
- * boolean that only existed to keep the table and the boolean agreeing -- a test
- * policed the pair, which is a smell: two sources for one fact. A registration
- * cannot disagree with itself, so these hold the properties that matter instead.
+ * A panel draws its own preview when it registered one, so a registration
+ * cannot disagree with itself. These hold the properties that follow from it.
  */
 
 test('a panel that registered a preview is reported as drawing its own', () => {

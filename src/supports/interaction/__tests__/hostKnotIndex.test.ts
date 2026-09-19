@@ -8,12 +8,10 @@ import { hostKnotFieldsFor, SUPPORT_TYPES, type SupportTypeId } from '../../supp
  * The parent-knot index, derived from each entity's own type and that type's
  * declared host-knot edges.
  *
- * Three near-identical builders used to sit in `supportPreviewOverlay.ts` -- one
- * per type, each naming its type AND its field by hand. `buildBranches…` and
- * `buildLeafIds…` differed only in which type they walked and whether they kept
- * the entity; `buildBraceIds…` indexed BOTH ends. They are one rule now.
+ * One rule for every type: a branch and a leaf name one host knot, a brace
+ * names two and is indexed under both.
  *
- * Two properties the three copies could not state are what these pin:
+ * Two properties a per-type builder could not state are what these pin:
  *
  * - a type with TWO knot edges is indexed under both, which is why brace needed
  *   its own builder;
@@ -72,9 +70,8 @@ test('a type declaring no knot edge yields nothing', () => {
 });
 
 test('a missing or empty knot id is skipped, not keyed', () => {
-    // The builders this replaces would have keyed on `undefined` and on `''`,
-    // which a later lookup for a real knot id can never hit -- entries that cost
-    // memory and read as data.
+    // Keying on `undefined` or `''` makes entries no lookup for a real knot id
+    // can hit: memory that reads as data.
     const map = buildEntitiesByHostKnot([
         entity('b1', 'branch'),
         entity('b2', 'branch', ['parentKnotId', '']),

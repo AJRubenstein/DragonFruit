@@ -9,8 +9,7 @@ import { computeJointDragPreviewKnots, type JointDragPreviewSnapshot } from './j
  * The fields come off the type's declared `hostedBy` knot edges rather than
  * being named here. Branch and leaf name one (`parentKnotId`); brace names two
  * (`startKnotId` and `endKnotId`), so a brace is indexed under BOTH knots it
- * spans -- which is why one derived rule replaces the three near-identical
- * builders this used to be, one per type.
+ * spans.
  *
  * `project` is what the caller wants back -- the entity, or its id -- so a caller
  * that only needs ids does not allocate an entity list to throw away.

@@ -10,11 +10,8 @@ import type { SupportTypeId } from '../supportTypeRegistry';
 /**
  * Which shaft a contact-cone BODY follows, declared per type.
  *
- * `syncContactConeDiameters` used to build its segment-diameter map from
- * `draft.trunks` and `draft.branches` by hand, while reading a leaf's host shaft
- * through the leaf's knot -- three arms, two of them named. They are one declared
- * `coneBodyFollows` now, and the types that follow NOTHING say so by declaring
- * nothing.
+ * `syncContactConeDiameters` builds its segment-diameter map from each type's
+ * declared `coneBodyFollows`. A type that follows nothing declares nothing.
  *
  * The declarations below are the whole point of the flag: they pin which types
  * participate, so a type gaining or losing one is a visible change rather than a
