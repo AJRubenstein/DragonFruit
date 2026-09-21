@@ -1012,6 +1012,9 @@ export function SettingsModal({
     didCommitThemeDraftRef.current = true;
     requestClose();
   }, [
+    // Every draft this callback reads belongs in this list. One omission and
+    // Apply pushes whatever the draft happened to be when the callback was last
+    // rebuilt, which presents as a control that saves once and then reverts.
     applyLocale,
     draftLocale,
     draftAmbientIntensity,
@@ -1019,6 +1022,7 @@ export function SettingsModal({
     draftFlatUseVertexColors,
     draftMatcapVariant,
     draftMaterialRoughness,
+    draftBakedAoIntensity,
     draftMeshColor,
     draftHoverTintStrength,
     draftSelectedTintStrength,
