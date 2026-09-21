@@ -1,6 +1,6 @@
 # Tauri IPC and Native Bridge
 
-The desktop app (Tauri) exposes **107** native commands to the frontend
+The desktop app (Tauri) exposes **108** native commands to the frontend
 (`#[tauri::command]` under `src-tauri/src/`, all registered in the single
 `tauri::generate_handler![…]` list in `main.rs`).
 
@@ -60,6 +60,23 @@ grep -rhoE '\binvoke(<[^>]*>)?\(' src plugins --include=*.ts --include=*.tsx \
 
 ## Conventions to respect
 
+- **Results indexed against geometry must be sent the geometry.**
+  If a command's output is addressed *by element* — triangle ids, per-vertex
+  values, region masks — pass that mesh **in the request** (raw body is fine) and
+  return values in the same order or index space. Do **not** read the shared
+  staging buffer, and do **not** re-load the file on the Rust side: both give the
+  Rust code a mesh that can differ from the one the frontend will map onto, and
+  the difference is invisible until it renders as misaligned triangles or
+  disconnected speckles. The island scanner learned this first, overhang
+  classification second, the ambient-occlusion bake third — see the gotcha entry
+  in `dev/backlog.md` for the whole history. Staging stays the right tool for
+  commands that *produce* or *transform* a mesh (`mesh_repair_staged`, hollowing):
+  there the output replaces the buffer, so there is nothing to index against.
+- **A raw-body command cannot also take arguments.** A command declared with
+  `request: tauri::ipc::Request` has no JSON body, so any sibling parameter is
+  rejected at the call site — *"expected a value for key … but the IPC call used
+  a bytes payload"*. Put options in request headers, or keep them as crate
+  constants; `stage_mesh_binary_set` takes nothing else for this reason.
 - **camelCase in TS → snake_case in Rust.** `serde(rename_all = "camelCase")`
   on the args struct handles the field names; keep payloads flat.
 - **Binary vs JSON.** Large binary payloads (mesh geometry, slice output) use a
@@ -75,6 +92,64 @@ grep -rhoE '\binvoke(<[^>]*>)?\(' src plugins --include=*.ts --include=*.tsx \
 - **Cancellation.** Long-running commands (slicing, SDF, A* pathfinding) support
   a cancel command (`cancel_slicing`, …). Always offer cancellation for anything
   that runs longer than a second.
+
+## Baked ambient occlusion (`bake_vertex_occlusion`)
+
+`bake_vertex_occlusion(rays?, reach_mm?)` bakes per-vertex ambient occlusion for
+a mesh passed **in the request body** as a raw little-endian `f32` triangle soup
+(9 floats per triangle). The response is the values as little-endian `f32`, one
+per soup corner in the order they were sent, so the frontend maps them onto the
+geometry it sent — through the index buffer, when the geometry has one.
+
+**Why the body and not the staging buffer.** It is an instance of the
+geometry-indexed rule in *Conventions to respect* above: staging is process-wide
+mutable state shared with repair, hole punching and hollowing, so a bake that
+read it could compute occlusion for a different mesh than the one the values were
+attached to. Raw bytes rather than a JSON `Vec<f32>` because a print-sized soup
+is millions of floats and the JS side already has a byte buffer.
+
+The command logs `soup corners -> welded vertices`; that ratio is this feature's
+diagnostic. Occlusion is one value per soup corner, merged only where corners are
+genuinely shared, so a ratio of 3.0 means nothing welded (the values are then
+per-triangle, which reads as a mosaic) and a count that does not divide the corners
+means the model's topology is not what the caller assumed.
+
+The algorithm lives in `dragonfruit-mesh-core::vertex_occlusion` (testable
+without Tauri, `cargo test -p dragonfruit-mesh-core`), the boundary is
+`src-tauri/src/ao_vertex.rs`, and the frontend side is
+`src/features/scene/bakedOcclusion.ts` — which attaches the values as the
+`aBakedAo` attribute that `softClay` samples. Gated behind the `model-ao`
+experiment, and a no-op in the plain web build (`canBakeOcclusion()` is false, so
+the material's strength uniform stays 0).
+
+Measured bake cost (release), from `cargo test -p dragonfruit-mesh-core --release
+-- --ignored --nocapture bench_vertex_occlusion` (a sphere fixture; `verts` are
+welded, and the cost tracks vertices × rays rather than triangles):
+
+| triangles | vertices | bake |
+| --- | --- | --- |
+| 40k | 19.8k | 11 ms |
+| 160k | 79.6k | 45 ms |
+| 640k | 319k | 203 ms |
+
+On real print geometry the same bake measures 64 ms for a 150k-triangle model and
+**2.97 s for a 2.13M-triangle one** (1.09M vertices, 8 rays: 8.7M rays, 339 ns
+per ray). Most of the cost is rays, and most of *that* is genuine: with the reach
+at 8% of the diagonal, a ray that is **not** occluded — the majority — has to
+establish that nothing blocks it anywhere in that sphere. `Bvh` in
+`dragonfruit-mesh-core` is therefore flat and leaf-batched (32-byte nodes, 8
+triangles per leaf, near-first traversal pruned at the caller's distance). The
+enum-per-triangle tree it replaced built 4.3M nodes over 150 MB for that model and
+spent 15.4 s on the same rays; the flat one spends 2.97 s. Two things that do
+*not* help, both measured: sorting the occluder's vertices along a Morton curve
+(1.02×, so the cost is not memory layout) and clustering the occluder down to a
+250k-triangle budget (2.3× faster but moves the field by a mean of 0.19, because
+the cell size that budget implies collapses the model's own detail).
+
+The frontend keeps two bakes in flight (`AO_BAKE_CONCURRENCY` in
+`useSceneCollectionManager.ts`): each command is parallel across vertices on its
+own, but the weld, the tree build and the transfer are serial phases, and in a
+multi-model scene overlapping them is worth more than one model finishing sooner.
 
 ## The Rust side of the seam
 
