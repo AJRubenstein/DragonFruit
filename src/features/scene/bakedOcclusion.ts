@@ -27,14 +27,14 @@ export const BAKED_OCCLUSION_ATTRIBUTE = 'aBakedAo';
 /**
  * How much of the baked occlusion the material applies.
  *
- * Higher than it looks like it should be, because the bake weights each ray by
- * its hit distance: the field it returns is cleaner than an unweighted one, with
- * a flat base near 1.0 and crevices around 0.6, and this maps that range back to
- * the contrast the surface wants. Paired with `FALLOFF_EDGE_MULTIPLE` in
- * `dragonfruit-mesh-core`: changing one without the other makes the model flat or
- * dirty.
+ * Paired with the falloff in `dragonfruit-mesh-core`: this maps the weighted
+ * field's range back to the contrast the surface wants. Measured on the model the
+ * report came from, 0.75 renders its deepest 5% at 0.57 against 0.55 for the
+ * unweighted bake at 0.6, so folds look as they did, while a flat base under them
+ * renders at 0.98 against 0.95, which is the part that was reading as dirt.
+ * Changing either constant without the other makes the model flat or dirty.
  */
-export const BAKED_OCCLUSION_STRENGTH = 0.9;
+export const BAKED_OCCLUSION_STRENGTH = 0.75;
 
 /** How much of the baked occlusion to apply for a user-set intensity. */
 export function bakedOcclusionStrength(intensity: number): number {

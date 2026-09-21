@@ -150,27 +150,32 @@ the cell size that budget implies collapses the model's own detail).
 
 A boolean "is anything in the way" query makes a flat base under a mass of detail
 as dark as a crevice, and that reads as dirt rather than as shape. The bake asks
-for the *nearest* hit instead and weights the ray by `1 - distance/falloff`, so
-what is right against the surface counts and what is millimetres off barely does.
+for the *nearest* hit instead, and weights it: full weight within a plateau of 15%
+of the reach, then a straight taper to nothing at the reach itself.
 
-The distances are measurably different, which is why this works at all. On the
-same model, as the fraction of vertices reading as occluded:
+The plateau matters as much as the taper. An earlier version tapered from zero and
+scaled by the *mesh's median edge*, which is tessellation density rather than
+feature size: on a densely triangulated model that lands at a couple of
+millimetres, so a cape's folds, whose occluders sit five to ten millimetres away,
+lost their shading outright while the flat base it was meant to clean kept
+everything the material's strength could not put back. The reach is a fraction of
+the model's diagonal, so tying the falloff to it keys the weighting to the size
+features are actually made at.
 
-| occluded within | 0.5mm | 1mm | 2mm | 3mm | 4.5mm |
-| --- | --- | --- | --- | --- | --- |
-| the base | 1% | 3% | 10% | 21% | 42% |
-| the deepest 5% (crevices) | 68% | 86% | 99% | 100% | 100% |
+Measured on the model the report came from, over three versions of the same bake:
 
-The falloff is a multiple of the *mesh's median edge*, not of the reach, so a
-small part with large features is not attenuated into flatness. Eight was chosen
-from a sweep, the base's spread against the crevices' depth: 4 clears the base
-completely (sd 0.009) but takes a third of the crevices (p05 0.697), 20 keeps the
-crevices (0.494) and leaves most of the mottle (0.053). At eight the base's spread
-is 0.021 against 0.121 without it and the crevices sit at 0.614, which the
-material's `BAKED_OCCLUSION_STRENGTH` then maps back to the contrast the surface
-wants. The two constants are a pair: changing one without the other makes the
-model flat or dirty. The bake costs about 30% more, since a nearest-hit query
-cannot stop at the first hit.
+| | flat base (mean / spread) | deepest 5% |
+| --- | --- | --- |
+| unweighted | 0.915 / 0.121 | 0.250 |
+| median-edge falloff | 0.999 / 0.009 | 0.697 |
+| plateau and taper | 0.970 / 0.062 | 0.426 |
+
+which the material's `BAKED_OCCLUSION_STRENGTH` maps back to a rendered surface:
+at 0.75 the deepest 5% renders at 0.57 against 0.55 for the unweighted bake, so
+folds look as they did, while the flat base renders at 0.98 against 0.95. The two
+constants are a pair: changing one without the other makes the model flat or
+dirty. The bake costs about 30% more than an unweighted one, because a nearest-hit
+query cannot stop at the first hit.
 
 ### Faces too long to carry a per-vertex field
 
