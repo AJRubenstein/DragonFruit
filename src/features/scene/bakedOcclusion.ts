@@ -25,12 +25,16 @@ import { expandGeometryToTriangleSoup } from '@/utils/tauriMeshBridge';
 export const BAKED_OCCLUSION_ATTRIBUTE = 'aBakedAo';
 
 /**
- * How much of the baked occlusion the material applies. The baked values sit
- * mostly between ~0.4 and 1.0 — a hemisphere fan only ever blocks part of the
- * sky — so this is deliberately not 1.0: at full strength the crevice shading
- * reads as dirt rather than as light.
+ * How much of the baked occlusion the material applies.
+ *
+ * Higher than it looks like it should be, because the bake weights each ray by
+ * its hit distance: the field it returns is cleaner than an unweighted one, with
+ * a flat base near 1.0 and crevices around 0.6, and this maps that range back to
+ * the contrast the surface wants. Paired with `FALLOFF_EDGE_MULTIPLE` in
+ * `dragonfruit-mesh-core`: changing one without the other makes the model flat or
+ * dirty.
  */
-export const BAKED_OCCLUSION_STRENGTH = 0.6;
+export const BAKED_OCCLUSION_STRENGTH = 0.9;
 
 /** Whether the native bake is reachable — false in the plain web build. */
 export function canBakeOcclusion(): boolean {

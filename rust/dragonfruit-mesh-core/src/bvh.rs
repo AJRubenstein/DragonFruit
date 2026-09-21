@@ -218,6 +218,75 @@ impl Bvh {
         false
     }
 
+    /// Distance to the nearest hit within `max_distance`, or `None`.
+    ///
+    /// Ambient occlusion wants *how close* the blocking geometry is, not merely
+    /// whether there is any: measured on a real model, the deepest crevices are
+    /// occluded by geometry within half a millimetre while a flat base under a
+    /// mass of detail is only occluded by geometry several millimetres away. A
+    /// boolean query cannot tell those apart. Unlike [`Self::ray_occluded_within`]
+    /// this cannot stop at the first hit, so it prunes against the best distance
+    /// found so far instead.
+    pub fn ray_nearest_within(
+        &self,
+        mesh: &IndexedMesh,
+        origin: Vec3,
+        dir: Vec3,
+        max_distance: f32,
+    ) -> Option<f32> {
+        if self.nodes.is_empty() {
+            return None;
+        }
+        let inv_dir = inverse_direction(dir);
+        let mut best = max_distance;
+        let mut found = false;
+        let entry = node_entry(origin, inv_dir, &self.nodes[self.root as usize], best);
+        if entry.is_infinite() {
+            return None;
+        }
+        let mut stack = [0u32; STACK_DEPTH];
+        let mut depth = 1usize;
+        stack[0] = self.root;
+        while depth > 0 {
+            depth -= 1;
+            let node = self.nodes[stack[depth] as usize];
+            if node_entry(origin, inv_dir, &node, best).is_infinite() {
+                continue;
+            }
+            if node.is_leaf() {
+                for k in 0..node.face_count() {
+                    let face = self.faces[node.a as usize + k];
+                    let [a, b, c] = mesh.tri_positions(face);
+                    if let Some(t) = ray_tri(origin, dir, a, b, c) {
+                        if t >= 0.0 && t < best {
+                            best = t;
+                            found = true;
+                        }
+                    }
+                }
+                continue;
+            }
+            // Near child first: the far one is likelier to be pruned once the
+            // near one has tightened `best`.
+            let near = node_entry(origin, inv_dir, &self.nodes[node.a as usize], best);
+            let far = node_entry(origin, inv_dir, &self.nodes[node.b as usize], best);
+            let (first, second) = if near <= far {
+                (node.a, node.b)
+            } else {
+                (node.b, node.a)
+            };
+            stack[depth] = second;
+            depth += 1;
+            stack[depth] = first;
+            depth += 1;
+        }
+        if found {
+            Some(best)
+        } else {
+            None
+        }
+    }
+
     fn traverse_count<F>(&self, mesh: &IndexedMesh, origin: Vec3, dir: Vec3, include_face: &F) -> u32
     where
         F: Fn(u32) -> bool,

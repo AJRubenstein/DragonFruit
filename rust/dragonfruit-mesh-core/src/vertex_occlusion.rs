@@ -29,6 +29,27 @@ pub const DEFAULT_RAYS: usize = 8;
 /// fraction the on-device experiments settled on: below it the estimator is
 /// blind, above it crevice shading turns into an overall wash.
 pub const REACH_RATIO: f32 = 0.08;
+/// How far an occluder still counts, as a multiple of the mesh's median edge
+/// length.
+///
+/// The occlusion that reads as shape comes from geometry right against the
+/// surface, and the occlusion that reads as dirt comes from geometry further
+/// away: measured on a real model, 68% of the deepest crevices' occlusion comes
+/// from within half a millimetre, while a flat base under a mass of bumps is only
+/// shaded by geometry one to five millimetres off. Weighting each ray by its hit
+/// distance therefore keeps crevices and clears bases.
+///
+/// The scale is a multiple of the *mesh's* own median edge rather than of the
+/// reach, so a small part with large features is not attenuated into flatness:
+/// the attenuation has to be relative to what the model is made of, not to how
+/// far a probe happens to travel.
+///
+/// Eight was chosen from a sweep on that model, as the base's spread against the
+/// crevices' depth: 4 cleans the base completely (sd 0.009) but takes a third of
+/// the crevices (p05 0.697), 20 keeps the crevices (0.494) and leaves most of the
+/// mottle (sd 0.053). At eight the base is 0.021 against 0.121 without it, and the
+/// crevices sit at 0.614, which the material's strength then restores.
+const FALLOFF_EDGE_MULTIPLE: f32 = 8.0;
 /// Ray-origin offset along the normal, as a fraction of the reach.
 const ORIGIN_BIAS_RATIO: f32 = 1e-3;
 /// Vertex-weld tolerance for the input soup, relative to its bounding-box
@@ -115,6 +136,24 @@ pub fn bake_vertex_occlusion_for_soup(
     (out, welded_vertices)
 }
 
+/// The mesh's median edge length: the scale its faces are made at.
+fn median_edge_length(mesh: &IndexedMesh) -> f32 {
+    let mut lengths: Vec<f32> = Vec::with_capacity(mesh.triangles.len() * 3);
+    for triangle in &mesh.triangles {
+        for edge in 0..3 {
+            let a = mesh.positions[triangle[edge] as usize];
+            let b = mesh.positions[triangle[(edge + 1) % 3] as usize];
+            lengths.push(a.sub(b).length());
+        }
+    }
+    if lengths.is_empty() {
+        return 0.0;
+    }
+    let middle = lengths.len() / 2;
+    lengths.select_nth_unstable_by(middle, |a, b| a.partial_cmp(b).unwrap());
+    lengths[middle]
+}
+
 /// One value per vertex: 1 = open sky, 0 = fully occluded.
 pub fn bake_vertex_occlusion(mesh: &IndexedMesh, rays: usize, reach_mm: Option<f32>) -> Vec<f32> {
     bake_against(mesh, mesh, rays, reach_mm)
@@ -160,6 +199,7 @@ pub fn bake_against(
     let bias = reach * ORIGIN_BIAS_RATIO;
     let samples = hemisphere_samples(rays);
     let bvh = Bvh::build(occluder);
+    let falloff = median_edge_length(mesh) * FALLOFF_EDGE_MULTIPLE;
 
     let mut out = vec![1.0f32; vertex_count];
     out.par_iter_mut().enumerate().for_each(|(index, value)| {
@@ -182,18 +222,20 @@ pub fn bake_against(
         let tangent = bitangent.cross(normal);
 
         let origin = mesh.positions[index].add(normal.scale(bias));
-        let mut hits = 0usize;
+        let mut hits = 0.0f32;
         for sample in &samples {
             let dir = tangent
                 .scale(sample.x)
                 .add(bitangent.scale(sample.y))
                 .add(normal.scale(sample.z));
             let dir = dir.scale(1.0 / dir.length().max(1e-12));
-            if bvh.ray_occluded_within(occluder, origin, dir, reach) {
-                hits += 1;
+            // Weighted by distance: a surface half a millimetre away blocks most
+            // of the sky behind it, one at the far end of the reach barely counts.
+            if let Some(t) = bvh.ray_nearest_within(occluder, origin, dir, reach) {
+                hits += (1.0 - t / falloff.max(1e-6)).clamp(0.0, 1.0);
             }
         }
-        *value = 1.0 - hits as f32 / samples.len() as f32;
+        *value = 1.0 - hits / samples.len() as f32;
     });
 
     out
@@ -298,6 +340,70 @@ mod tests {
                 "corner {corner}: copies disagree ({a} vs {b}) — the corner map and the welded mesh do not match",
             );
         }
+    }
+
+
+    /// Occlusion counts by distance: a wall just over a surface darkens it, the
+    /// same wall further off does not.
+    ///
+    /// This is what keeps a flat base clean without flattening crevices, and it
+    /// fails against an estimator that counts every hit within the reach equally.
+    #[test]
+    fn nearby_occluders_count_and_distant_ones_do_not() {
+        // A wide floor of 0.5mm triangles: the falloff is 8 x the median edge, so
+        // 4mm, and the floor has to be large enough that the reach (8% of its
+        // diagonal) reaches past it. 60mm gives a 6.8mm reach.
+        let size = 60.0f32;
+        let step = 0.5f32;
+        let cells = (size / step) as u32;
+        let mut soup = Vec::new();
+        let vertex = |x: u32, y: u32| [x as f32 * step, y as f32 * step, 0.0];
+        for x in 0..cells {
+            for y in 0..cells {
+                let a = vertex(x, y);
+                let b = vertex(x + 1, y);
+                let c = vertex(x + 1, y + 1);
+                let d = vertex(x, y + 1);
+                soup.extend_from_slice(&[a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]]);
+                soup.extend_from_slice(&[a[0], a[1], a[2], c[0], c[1], c[2], d[0], d[1], d[2]]);
+            }
+        }
+
+        let occluded_under_wall_at = |height: f32| -> f32 {
+            let mut all = soup.clone();
+            // A wall over the middle of the floor, facing down.
+            let (x0, x1) = (size * 0.4, size * 0.6);
+            let (y0, y1) = (size * 0.4, size * 0.6);
+            all.extend_from_slice(&[x0, y0, height, x1, y0, height, x1, y1, height]);
+            all.extend_from_slice(&[x0, y0, height, x1, y1, height, x0, y1, height]);
+            let mesh = IndexedMesh::from_triangle_soup(&all, 1e-5);
+            let values = bake_vertex_occlusion(&mesh, DEFAULT_RAYS, None);
+            // The floor vertex nearest the middle of the wall footprint.
+            let middle = size * 0.5;
+            let mut best = f32::MAX;
+            let mut value = 1.0;
+            for (index, position) in mesh.positions.iter().enumerate() {
+                if position.z.abs() > 1e-6 {
+                    continue;
+                }
+                let distance = (position.x - middle).powi(2) + (position.y - middle).powi(2);
+                if distance < best {
+                    best = distance;
+                    value = values[index];
+                }
+            }
+            value
+        };
+
+        // Within the falloff: the wall shades the floor under it.
+        let near = occluded_under_wall_at(0.5);
+        assert!(near < 0.75, "a wall half a millimetre away should shade the floor, got {near}");
+        // Beyond the 4mm falloff but still inside the 6.8mm reach: it must not.
+        let far = occluded_under_wall_at(5.5);
+        assert!(
+            far > 0.95,
+            "a wall beyond the falloff should leave the floor open, got {far}"
+        );
     }
 
     #[test]
