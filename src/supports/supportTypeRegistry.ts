@@ -2358,6 +2358,31 @@ export function parseKnotHostId(
 }
 
 /**
+ * The selection id for an entity whose span stands in for a segment, from the
+ * prefix that type declares.
+ */
+export function segmentSelectionId(typeId: SupportTypeId, entityId: string): string {
+    const prefix = getSupportTypeDescriptor(typeId).segmentSelectionPrefix;
+    if (!prefix) throw new Error(`${typeId} declares no segmentSelectionPrefix; its segments are real`);
+    return `${prefix}${entityId}`;
+}
+
+/**
+ * Split a segment selection id into the type whose span it names and that
+ * entity's id, or null when the id names a real segment.
+ */
+export function parseSegmentSelectionId(
+    segmentId: string,
+): { typeId: SupportTypeId; entityId: string } | null {
+    for (const descriptor of SUPPORT_TYPES) {
+        const prefix = descriptor.segmentSelectionPrefix;
+        if (!prefix || !segmentId.startsWith(prefix)) continue;
+        return { typeId: descriptor.id, entityId: segmentId.slice(prefix.length) };
+    }
+    return null;
+}
+
+/**
  * The two kinds of pseudo-shaft a knot can ride, told apart by what they
  * declare rather than by name.
  *

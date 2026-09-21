@@ -7,7 +7,7 @@ import { addSupportEntity, subscribe, getSnapshot, addKnot } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import type { Brace, Knot, Segment, Vec3 } from '../../types';
-import { braceSnapConeType, knotHostId, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
+import { braceSnapConeType, knotHostId, parseSegmentSelectionId, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
 import { addAction } from '../../history/actionTypes';
 import { getSettings, getAutoBracingSettings } from '../../Settings/state';
 import { bracePlacementStore, useBracePlacementState } from './bracePlacementState';
@@ -520,9 +520,9 @@ export function BracePlacementController() {
                 } else {
                     const target = resolveNearestPathTarget(resolvedSnap.targetId, resolvedSnap.snappedPos) ?? getTarget(resolvedSnap.targetId);
                     let hostDia = target?.pathSegment?.radius !== undefined ? target.pathSegment.radius * 2 : fallbackDia;
-                    if (resolvedSnap.targetId.startsWith('braceSegment:')) {
-                        const braceId = resolvedSnap.targetId.slice('braceSegment:'.length);
-                        const brace = supportState.braces[braceId];
+                    const spanTarget = parseSegmentSelectionId(resolvedSnap.targetId);
+                    if (spanTarget) {
+                        const brace = supportState.braces[spanTarget.entityId];
                         if (brace) {
                             const resolvedDiameter = resolveBracePathDiameterAtT(brace, supportState.knots, resolvedSnap.t);
                             if (resolvedDiameter !== null) {
@@ -665,9 +665,9 @@ export function BracePlacementController() {
                 let hostDiameterMm = target?.pathSegment?.radius !== undefined ? target.pathSegment.radius * 2 : undefined;
                 let ownerModelId = segmentMeta.get(resolvedSnap.targetId)?.modelId;
 
-                if (resolvedSnap.targetId.startsWith('braceSegment:')) {
-                    const braceId = resolvedSnap.targetId.slice('braceSegment:'.length);
-                    const brace = supportState.braces[braceId];
+                const spanTarget = parseSegmentSelectionId(resolvedSnap.targetId);
+                if (spanTarget) {
+                    const brace = supportState.braces[spanTarget.entityId];
                     if (brace) {
                         const resolvedDiameter = resolveBracePathDiameterAtT(brace, supportState.knots, resolvedSnap.t);
                         if (resolvedDiameter !== null) {

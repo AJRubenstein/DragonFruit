@@ -20,7 +20,7 @@ import { clearSupportSelection } from '../../interaction/shared/selection/select
 import { canResolveSupportPlacementBindingFromModifierState, getSupportPlacementModifierState, isSupportPlacementBindingSatisfiedByModifierState } from '../../interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
 import { buildKickstandPathSnapTargets, buildPrimarySnapTargetIndex, ALL_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
-import { getSupportTypeDescriptor, KICKSTAND_HOST_TYPES, resolveSupportTypeIdOf, type SupportCollectionKey } from '../../supportTypeRegistry';
+import { getSupportTypeDescriptor, KICKSTAND_HOST_TYPES, parseSegmentSelectionId, resolveSupportTypeIdOf, type SupportCollectionKey } from '../../supportTypeRegistry';
 import { LEAF_PLACEMENT_OWNER } from '../../interaction/shared/placement/hotkeys/supportPlacementRouting';
 import { projectPointToSnapTargetPath, projectRayToSnapTargetPath, selectNearestPathTarget } from '../../interaction/shared/placement/snapping/pathProjection';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
@@ -273,8 +273,9 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 }
 
                 // If snapped to a brace, compute local tapered host diameter.
-                if (resolvedSnap.targetId.startsWith('braceSegment:')) {
-                    const braceId = resolvedSnap.targetId.slice('braceSegment:'.length);
+                const spanTarget = parseSegmentSelectionId(resolvedSnap.targetId);
+                if (spanTarget) {
+                    const braceId = spanTarget.entityId;
                     const brace = supportState.braces[braceId];
                     const startKnot = brace ? supportState.knots[brace.startKnotId] : undefined;
                     const endKnot = brace ? supportState.knots[brace.endKnotId] : undefined;
@@ -330,8 +331,9 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                         t = projected.t;
                         hostDiameterMm = hoveredTarget.pathSegment.radius * 2;
 
-                        if (segmentId.startsWith('braceSegment:')) {
-                            const braceId = segmentId.slice('braceSegment:'.length);
+                        const spanSegment = parseSegmentSelectionId(segmentId);
+                        if (spanSegment) {
+                            const braceId = spanSegment.entityId;
                             const brace = supportState.braces[braceId];
                             const startKnot = brace ? supportState.knots[brace.startKnotId] : undefined;
                             const endKnot = brace ? supportState.knots[brace.endKnotId] : undefined;

@@ -103,3 +103,43 @@ test('the lists that coincide today still answer different questions', () => {
         keys(registry.SUPPORT_STATE_COLLECTIONS).sort(),
     );
 });
+
+test('every declared id prefix round-trips through its builder and parser', () => {
+    // A spelled prefix splits a write from its read on a rename, which the
+    // `--check` scan refuses. These pin the pair each caller goes through.
+    for (const descriptor of registry.SUPPORT_TYPES) {
+        if (descriptor.knotHostPrefix) {
+            const id = registry.knotHostId(descriptor.id, 'entity-1');
+            assert.deepEqual(
+                registry.parseKnotHostId(id),
+                { typeId: descriptor.id, entityId: 'entity-1' },
+                `${descriptor.id}: knot host id does not round-trip`,
+            );
+        }
+
+        if (descriptor.segmentSelectionPrefix) {
+            const id = registry.segmentSelectionId(descriptor.id, 'entity-1');
+            assert.deepEqual(
+                registry.parseSegmentSelectionId(id),
+                { typeId: descriptor.id, entityId: 'entity-1' },
+                `${descriptor.id}: segment selection id does not round-trip`,
+            );
+        }
+    }
+});
+
+test('a real segment id parses as neither pseudo-shaft kind', () => {
+    assert.equal(registry.parseKnotHostId('seg-123'), null);
+    assert.equal(registry.parseSegmentSelectionId('seg-123'), null);
+});
+
+test('a type declaring no prefix refuses to build one', () => {
+    const noKnotHost = registry.SUPPORT_TYPES.find((d) => !d.knotHostPrefix);
+    if (noKnotHost) {
+        assert.throws(() => registry.knotHostId(noKnotHost.id, 'x'), /declares no knotHostPrefix/);
+    }
+    const noSegment = registry.SUPPORT_TYPES.find((d) => !d.segmentSelectionPrefix);
+    if (noSegment) {
+        assert.throws(() => registry.segmentSelectionId(noSegment.id, 'x'), /declares no segmentSelectionPrefix/);
+    }
+});

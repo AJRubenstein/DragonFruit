@@ -17,6 +17,7 @@
     "check:generated-plugin-registry": "node scripts/verify-generated-plugin-registry.mjs",
     "check:lint": "node scripts/check-lint-clean.mjs",
     "check:plugin-allowlist": "node scripts/check-complex-plugin-allowlist.mjs",
+    "check:support-prefixes": "tsx scripts/scan-support-type-references.ts --check",
     "clean": "cargo clean --manifest-path src-tauri/Cargo.toml && cargo clean --manifest-path rust/dragonfruit-voxl-thumbnail/Cargo.toml && rm -rf .next frontend-dist",
     "dev": "next dev -p 3005",
     "generate:builtin-simple-plugins": "node scripts/generate-builtin-simple-plugins.mjs",
