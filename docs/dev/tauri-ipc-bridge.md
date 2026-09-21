@@ -132,19 +132,40 @@ welded, and the cost tracks vertices × rays rather than triangles):
 | 160k | 79.6k | 45 ms |
 | 640k | 319k | 203 ms |
 
-On real print geometry the same bake measures 64 ms for a 150k-triangle model and
-**2.97 s for a 2.13M-triangle one** (1.09M vertices, 8 rays: 8.7M rays, 339 ns
-per ray). Most of the cost is rays, and most of *that* is genuine: with the reach
-at 8% of the diagonal, a ray that is **not** occluded — the majority — has to
+On real print geometry, as the meshes arrive *after* refinement, the bake measures
+81 ms for the 171k-triangle mesh a 150k one refines into, and **4.8 s for a
+2.78M-triangle one** (1.41M vertices, 8 rays, 341 ns per vertex, minimum of five
+runs — this machine varies by more than 10% run to run, so single samples are not
+worth quoting). Most of the cost is rays, and most of *that* is genuine: with the
+reach at 8% of the diagonal, a ray that is **not** occluded — the majority — has to
 establish that nothing blocks it anywhere in that sphere. `Bvh` in
 `dragonfruit-mesh-core` is therefore flat and leaf-batched (32-byte nodes, 8
-triangles per leaf, near-first traversal pruned at the caller's distance). The
-enum-per-triangle tree it replaced built 4.3M nodes over 150 MB for that model and
-spent 15.4 s on the same rays; the flat one spends 2.97 s. Two things that do
-*not* help, both measured: sorting the occluder's vertices along a Morton curve
-(1.02×, so the cost is not memory layout) and clustering the occluder down to a
-250k-triangle budget (2.3× faster but moves the field by a mean of 0.19, because
-the cell size that budget implies collapses the model's own detail).
+triangles per leaf, near-first traversal pruned at the caller's distance; re-measured
+at 4, 8 and 16 faces per leaf, 8 still wins). The enum-per-triangle tree it replaced
+built 4.3M nodes over 150 MB for that model and spent 15.4 s on the same rays; the
+flat one spends 4.8 s.
+
+What the traversal spends its time on is proving the *nearest* hit, so the cheapest
+gains are the ones that stop proving it earlier. It may now stop at the first hit
+inside the falloff plateau rather than the nearest hit overall, because a hit there
+weighs full strength either way — a tenth of the bake on the 2.78M model. The weld
+also returns its corner-to-vertex map instead of the bake replaying the traversal
+and quantisation to rebuild it, which removes a second hash pass over every corner
+(7%) and, more to the point, the two independent chances to disagree about which
+corners are the same vertex — the bug class that put occlusion on the wrong
+vertices. Only the first of those changed any value, and not by a bit: both models'
+output checksums are identical before and after.
+
+Things that do *not* help, all measured: sorting the occluder's vertices along a
+Morton curve (1.02×, and this time 1.22× *slower* with the sort included — the cost
+is not memory layout), gathering each triangle's vertices into the tree (8% faster
+on the 2.78M model for 36 bytes per face, i.e. 100 MB of transient allocation, so
+reverted), and dropping the per-ray direction normalisation, which looks redundant
+on an orthonormal basis but is not: 13.7% of that model's values move by up to 0.038,
+because the rounding error the division removes is enough to flip grazing rays onto
+different triangles. Clustering the occluder down to a 250k-triangle budget is 2.3×
+faster but moves the field by a mean of 0.19, because the cell size that budget
+implies collapses the model's own detail.
 
 ### Occlusion is weighted by how far away the occluder is
 
@@ -174,8 +195,8 @@ which the material's `BAKED_OCCLUSION_STRENGTH` maps back to a rendered surface:
 at 0.75 the deepest 5% renders at 0.57 against 0.55 for the unweighted bake, so
 folds look as they did, while the flat base renders at 0.98 against 0.95. The two
 constants are a pair: changing one without the other makes the model flat or
-dirty. The bake costs about 30% more than an unweighted one, because a nearest-hit
-query cannot stop at the first hit.
+dirty. The bake costs about 30% more than an unweighted one, because a nearest-hit query
+cannot stop at the first hit — only at the first hit inside the plateau.
 
 ### Faces too long to carry a per-vertex field
 

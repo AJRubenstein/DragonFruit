@@ -95,43 +95,21 @@ pub fn bake_vertex_occlusion_for_soup(
         return (Vec::new(), 0);
     }
 
-    let mesh = IndexedMesh::from_triangle_soup(positions, SOUP_MERGE_EPSILON);
+    let (mesh, corner_map) =
+        IndexedMesh::from_triangle_soup_with_corner_map(positions, SOUP_MERGE_EPSILON);
     let welded = bake_vertex_occlusion(&mesh, rays, reach_mm);
 
-    // Rebuild the *same* mapping by replaying the same traversal order and the
-    // same quantisation, and keep the ids as we go.
-    let mut bbox = crate::mesh::Aabb::empty();
-    for chunk in positions.chunks_exact(3) {
-        bbox.expand(Vec3::new(chunk[0], chunk[1], chunk[2]));
-    }
-    let step = (SOUP_MERGE_EPSILON * bbox.diag().max(1e-6)).max(1e-7);
-    let inv_step = 1.0 / step;
-    let mut out = vec![1.0f32; corner_count];
-    let mut ids: Vec<u32> = Vec::with_capacity(mesh.positions.len());
-    let mut seen: ahash::AHashMap<(i32, i32, i32), u32> =
-        ahash::AHashMap::with_capacity(corner_count);
-    for corner in 0..corner_count {
-        let key = (
-            (positions[corner * 3] * inv_step).round() as i32,
-            (positions[corner * 3 + 1] * inv_step).round() as i32,
-            (positions[corner * 3 + 2] * inv_step).round() as i32,
-        );
-        let id = *seen.entry(key).or_insert_with(|| {
-            let id = ids.len() as u32;
-            ids.push(id);
-            id
-        });
-        out[corner] = welded.get(id as usize).copied().unwrap_or(1.0);
-    }
+    let out: Vec<f32> = corner_map
+        .iter()
+        .map(|id| welded.get(*id as usize).copied().unwrap_or(1.0))
+        .collect();
 
-    let welded_vertices = mesh.positions.len();
     debug_assert_eq!(
-        ids.len(),
-        welded_vertices,
-        "the corner map and the welded mesh must agree on the vertex count, or the \
-         values are attached to the wrong vertices"
+        out.len(),
+        positions.len() / 3,
+        "one value per corner of the soup, in its own order"
     );
-    (out, welded_vertices)
+    (out, mesh.positions.len())
 }
 
 /// One value per vertex: 1 = open sky, 0 = fully occluded.
@@ -209,10 +187,17 @@ pub fn bake_against(
                 .scale(sample.x)
                 .add(bitangent.scale(sample.y))
                 .add(normal.scale(sample.z));
+            // Kept even though the basis is orthonormal and the fan is on the unit
+            // sphere, so this should be a no-op: the sum of squares it divides by
+            // carries a rounding error of its own, and without it the directions
+            // shift by ~1e-6, which flips grazing rays onto different triangles.
+            // Measured: 13.7% of one model's values move, by up to 0.038.
             let dir = dir.scale(1.0 / dir.length().max(1e-12));
             // Weighted by distance: a surface half a millimetre away blocks most
             // of the sky behind it, one at the far end of the reach barely counts.
-            if let Some(t) = bvh.ray_nearest_within(occluder, origin, dir, reach) {
+            // Everything inside the plateau weighs the same, so the traversal is
+            // allowed to stop at the first hit there.
+            if let Some(t) = bvh.ray_nearest_within(occluder, origin, dir, reach, plateau) {
                 // Full weight within the plateau, then a straight taper to nothing
                 // at the end of the reach.
                 let span = (t - plateau) / (falloff_end - plateau).max(1e-6);
