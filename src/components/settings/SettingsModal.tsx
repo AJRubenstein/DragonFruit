@@ -189,7 +189,10 @@ type SettingsModalProps = {
   directionalIntensity: number;
   onDirectionalIntensityChange: (value: number) => void;
   materialRoughness: number;
+  /** Multiplier on the baked occlusion's strength; 0 means the bake is off. */
+  bakedAoIntensity: number;
   onMaterialRoughnessChange: (value: number) => void;
+  onBakedAoIntensityChange: (value: number) => void;
   xrayOpacity: number;
   heatmapMinAngle: number;
   heatmapMaxAngle: number;
@@ -306,6 +309,8 @@ export function SettingsModal({
   directionalIntensity,
   onDirectionalIntensityChange,
   materialRoughness,
+  bakedAoIntensity,
+  onBakedAoIntensityChange,
   onMaterialRoughnessChange,
   xrayOpacity,
   heatmapMinAngle,
@@ -393,6 +398,7 @@ export function SettingsModal({
   const [draftAmbientIntensity, setDraftAmbientIntensity] = useState(ambientIntensity);
   const [draftDirectionalIntensity, setDraftDirectionalIntensity] = useState(directionalIntensity);
   const [draftMaterialRoughness, setDraftMaterialRoughness] = useState(materialRoughness);
+  const [draftBakedAoIntensity, setDraftBakedAoIntensity] = useState(bakedAoIntensity);
   const [draftXrayOpacity, setDraftXrayOpacity] = useState(xrayOpacity);
   const [draftHeatmapMinAngle, setDraftHeatmapMinAngle] = useState(heatmapMinAngle);
   const [draftHeatmapMaxAngle, setDraftHeatmapMaxAngle] = useState(heatmapMaxAngle);
@@ -494,6 +500,7 @@ export function SettingsModal({
     setDraftAmbientIntensity(ambientIntensity);
     setDraftDirectionalIntensity(directionalIntensity);
     setDraftMaterialRoughness(materialRoughness);
+    setDraftBakedAoIntensity(bakedAoIntensity);
     setDraftXrayOpacity(xrayOpacity);
     setDraftHeatmapMinAngle(heatmapMinAngle);
     setDraftHeatmapMaxAngle(heatmapMaxAngle);
@@ -536,6 +543,7 @@ export function SettingsModal({
     meshColor,
     matcapVariant,
     materialRoughness,
+    bakedAoIntensity,
     heatmapColors,
     hoverTintStrength,
     selectedTintStrength,
@@ -935,6 +943,7 @@ export function SettingsModal({
     onAmbientIntensityChange(draftAmbientIntensity);
     onDirectionalIntensityChange(draftDirectionalIntensity);
     onMaterialRoughnessChange(draftMaterialRoughness);
+    onBakedAoIntensityChange(draftBakedAoIntensity);
     onXrayOpacityChange(draftXrayOpacity);
     onHeatmapMinAngleChange(draftHeatmapMinAngle);
     onHeatmapMaxAngleChange(draftHeatmapMaxAngle);
@@ -1549,6 +1558,8 @@ export function SettingsModal({
                   onDirectionalIntensityChange={setDraftDirectionalIntensity}
                   materialRoughness={draftMaterialRoughness}
                   onMaterialRoughnessChange={setDraftMaterialRoughness}
+                  bakedAoIntensity={draftBakedAoIntensity}
+                  onBakedAoIntensityChange={setDraftBakedAoIntensity}
                   xrayOpacity={draftXrayOpacity}
                   heatmapMinAngle={draftHeatmapMinAngle}
                   heatmapMaxAngle={draftHeatmapMaxAngle}

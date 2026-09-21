@@ -9798,6 +9798,8 @@ export default function Home() {
         onDirectionalIntensityChange={scene.setDirectionalIntensity}
         materialRoughness={scene.materialRoughness}
         onMaterialRoughnessChange={scene.setMaterialRoughness}
+        bakedAoIntensity={scene.bakedAoIntensity}
+        onBakedAoIntensityChange={scene.setBakedAoIntensity}
         xrayOpacity={scene.xrayOpacity}
         onXrayOpacityChange={scene.setXrayOpacity}
         heatmapMinAngle={scene.heatmapMinAngle}
@@ -10166,6 +10168,7 @@ export default function Home() {
             ambientIntensity={scene.ambientIntensity}
             directionalIntensity={scene.directionalIntensity}
             materialRoughness={scene.materialRoughness}
+            bakedAoIntensity={scene.bakedAoIntensity}
             scanResults={islands.scanData}
             layerHeightMm={slicing.layerHeightMm}
             scanBBox={islands.scanBBox}

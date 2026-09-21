@@ -36,6 +36,12 @@ export const BAKED_OCCLUSION_ATTRIBUTE = 'aBakedAo';
  */
 export const BAKED_OCCLUSION_STRENGTH = 0.9;
 
+/** How much of the baked occlusion to apply for a user-set intensity. */
+export function bakedOcclusionStrength(intensity: number): number {
+  if (!Number.isFinite(intensity)) return BAKED_OCCLUSION_STRENGTH;
+  return BAKED_OCCLUSION_STRENGTH * Math.min(Math.max(intensity, 0), 2);
+}
+
 /** Whether the native bake is reachable — false in the plain web build. */
 export function canBakeOcclusion(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;

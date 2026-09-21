@@ -101,6 +101,8 @@ type PersistedMeshAppearance = {
   ambientIntensity: number;
   directionalIntensity: number;
   materialRoughness: number;
+  /** Multiplier on the baked occlusion's strength; 0 disables the bake. */
+  bakedAoIntensity: number;
   wireframeThicknessPx: number;
   xrayOpacity: number;
   heatmapMinAngle: number;
@@ -129,6 +131,12 @@ const DEFAULT_MESH_COLOR = '#a3a3a3';
 const DEFAULT_AMBIENT_INTENSITY = 0.28;
 const DEFAULT_DIRECTIONAL_INTENSITY = 1.12;
 const DEFAULT_MATERIAL_ROUGHNESS = 0.55;
+/**
+ * Multiplier on the baked occlusion's strength, as the Mesh tab's AO slider sets
+ * it: 0 turns the bake off entirely, 1 is the value the shader was tuned at, and
+ * the top of the range is deliberately stronger than the tuning.
+ */
+const DEFAULT_BAKED_AO_INTENSITY = 1;
 const DEFAULT_WIREFRAME_THICKNESS_PX = 1.5;
 const DEFAULT_XRAY_OPACITY = 0.25;
 const DEFAULT_HEATMAP_MIN_ANGLE = 0;
@@ -464,6 +472,7 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
       ambientIntensity: clampNumber(parsed.ambientIntensity, 0, 4, DEFAULT_AMBIENT_INTENSITY),
       directionalIntensity: clampNumber(parsed.directionalIntensity, 0, 4, DEFAULT_DIRECTIONAL_INTENSITY),
       materialRoughness: clampNumber(parsed.materialRoughness, 0, 1, DEFAULT_MATERIAL_ROUGHNESS),
+      bakedAoIntensity: clampNumber(parsed.bakedAoIntensity, 0, 2, DEFAULT_BAKED_AO_INTENSITY),
       wireframeThicknessPx: clampNumber(parsed.wireframeThicknessPx, 0.5, 6, DEFAULT_WIREFRAME_THICKNESS_PX),
       xrayOpacity: clampNumber(parsed.xrayOpacity, 0.02, 0.85, DEFAULT_XRAY_OPACITY),
       heatmapMinAngle: clampNumber(parsed.heatmapMinAngle, 0, 90, DEFAULT_HEATMAP_MIN_ANGLE),
@@ -1568,6 +1577,7 @@ export function useSceneCollectionManager() {
   const [ambientIntensity, setAmbientIntensity] = useState<number>(DEFAULT_AMBIENT_INTENSITY);
   const [directionalIntensity, setDirectionalIntensity] = useState<number>(DEFAULT_DIRECTIONAL_INTENSITY);
   const [materialRoughness, setMaterialRoughness] = useState<number>(DEFAULT_MATERIAL_ROUGHNESS);
+  const [bakedAoIntensity, setBakedAoIntensity] = useState<number>(DEFAULT_BAKED_AO_INTENSITY);
 
   // Shader-specific settings (Global)
   const [shaderType, setShaderType] = useState<MeshShaderType>(DEFAULT_SHADER_TYPE);
@@ -1623,6 +1633,7 @@ export function useSceneCollectionManager() {
       setAmbientIntensity(persistedAppearance.ambientIntensity);
       setDirectionalIntensity(persistedAppearance.directionalIntensity);
       setMaterialRoughness(persistedAppearance.materialRoughness);
+      setBakedAoIntensity(persistedAppearance.bakedAoIntensity);
       setWireframeThicknessPx(persistedAppearance.wireframeThicknessPx);
       setXrayOpacity(persistedAppearance.xrayOpacity);
       setHeatmapMinAngle(persistedAppearance.heatmapMinAngle ?? DEFAULT_HEATMAP_MIN_ANGLE);
@@ -1652,6 +1663,7 @@ export function useSceneCollectionManager() {
       ambientIntensity,
       directionalIntensity,
       materialRoughness,
+      bakedAoIntensity,
       wireframeThicknessPx,
       xrayOpacity,
       heatmapMinAngle,
@@ -1671,6 +1683,7 @@ export function useSceneCollectionManager() {
     ambientIntensity,
     directionalIntensity,
     materialRoughness,
+    bakedAoIntensity,
     wireframeThicknessPx,
     xrayOpacity,
     heatmapMinAngle,
@@ -3294,7 +3307,10 @@ export function useSceneCollectionManager() {
    * paid per frame afterwards.
    */
   useEffect(() => {
-    if (!isExperimentEnabled('model-ao') || !canBakeOcclusion()) return;
+    // Zero intensity means off, so there is nothing to bake for: raising the
+    // slider later re-runs this and the geometries that never got an attribute
+    // are the ones that get baked.
+    if (!isExperimentEnabled('model-ao') || !canBakeOcclusion() || bakedAoIntensity <= 0) return;
 
     const queue = modelsRef.current
       .filter((model) => {
@@ -3361,7 +3377,7 @@ export function useSceneCollectionManager() {
       scheduleIdle(() => void bakeOne());
     }
     return () => { cancelled = true; };
-  }, [models, setModels]);
+  }, [models, setModels, bakedAoIntensity]);
 
   const finalizeModelGeometryPostProcessing = useCallback((id: string) => {
     const target = modelsRef.current.find((m) => m.id === id);
@@ -6072,6 +6088,8 @@ export function useSceneCollectionManager() {
     setDirectionalIntensity,
     materialRoughness,
     setMaterialRoughness,
+    bakedAoIntensity,
+    setBakedAoIntensity,
     wireframeThicknessPx,
     setWireframeThicknessPx,
     xrayOpacity,

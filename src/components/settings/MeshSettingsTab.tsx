@@ -34,7 +34,10 @@ type MeshSettingsTabProps = {
   directionalIntensity: number;
   onDirectionalIntensityChange: (value: number) => void;
   materialRoughness: number;
+  /** Multiplier on the baked occlusion's strength; 0 means the bake is off. */
+  bakedAoIntensity: number;
   onMaterialRoughnessChange: (value: number) => void;
+  onBakedAoIntensityChange: (value: number) => void;
   xrayOpacity: number;
   onXrayOpacityChange: (value: number) => void;
   heatmapMinAngle: number;
@@ -68,6 +71,8 @@ export function MeshSettingsTab({
   directionalIntensity,
   onDirectionalIntensityChange,
   materialRoughness,
+  bakedAoIntensity,
+  onBakedAoIntensityChange,
   onMaterialRoughnessChange,
   xrayOpacity,
   onXrayOpacityChange,
@@ -124,10 +129,13 @@ export function MeshSettingsTab({
 
   const showLighting = configuredShaderType === 'soft_clay' || configuredShaderType === 'xray';
   const showRoughness = configuredShaderType === 'soft_clay' || configuredShaderType === 'xray';
+  // The baked occlusion only reaches the model through the Standard material.
+  const showBakedAo = configuredShaderType === 'soft_clay';
   const hasRenderingOptions =
     configuredShaderType === 'matcap' ||
     configuredShaderType === 'flat_unlit' ||
     showRoughness ||
+    showBakedAo ||
     showLighting ||
     configuredShaderType === 'overhang_heatmap';
 
@@ -368,6 +376,7 @@ export function MeshSettingsTab({
               </div>
             )}
 
+
             {showLighting && (
               <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
@@ -394,6 +403,22 @@ export function MeshSettingsTab({
                   type="range" min="0.05" max="0.95" step="0.01"
                   value={contrast}
                   onChange={(e) => onContrastChange(parseFloat(e.target.value))}
+                  className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                  style={{ accentColor: 'var(--accent)', background: 'color-mix(in srgb, var(--text-muted), transparent 72%)' }}
+                />
+              </div>
+            )}
+
+            {showBakedAo && (
+              <div className="rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Ambient Occlusion</span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{bakedAoIntensity.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range" min="0.0" max="2.0" step="0.05"
+                  value={bakedAoIntensity}
+                  onChange={(e) => onBakedAoIntensityChange(parseFloat(e.target.value))}
                   className="w-full h-2 rounded-lg appearance-none cursor-pointer"
                   style={{ accentColor: 'var(--accent)', background: 'color-mix(in srgb, var(--text-muted), transparent 72%)' }}
                 />

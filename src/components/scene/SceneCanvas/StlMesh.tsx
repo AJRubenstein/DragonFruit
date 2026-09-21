@@ -28,10 +28,7 @@ import type { SupportMode } from '@/supports/types';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
-import { BAKED_OCCLUSION_ATTRIBUTE, BAKED_OCCLUSION_STRENGTH } from '@/features/scene/bakedOcclusion';
-
-/** How strongly a model's baked occlusion darkens its surface. */
-const BAKED_AO_STRENGTH = BAKED_OCCLUSION_STRENGTH;
+import { BAKED_OCCLUSION_ATTRIBUTE, bakedOcclusionStrength } from '@/features/scene/bakedOcclusion';
 
 // Scratch raycaster reused for clip-zone fallback raycasts.
 const _clipFallbackRaycaster = new THREE.Raycaster();
@@ -178,6 +175,7 @@ function StlMeshComponent({
   meshRef,
   actualMeshRef,
   materialRoughness,
+  bakedAoIntensity = 1,
   shaderType,
   matcapVariant,
   flatUseVertexColors,
@@ -245,6 +243,8 @@ function StlMeshComponent({
   /** Ref to the actual mesh (for outline effect) */
   actualMeshRef?: React.Ref<THREE.Mesh | null>;
   materialRoughness?: number;
+  /** Multiplier on the baked occlusion's strength; 0 means the bake is off. */
+  bakedAoIntensity?: number;
   shaderType: MeshShaderType;
   matcapVariant?: import('@/features/shaders/mesh').MatcapVariant;
   flatUseVertexColors?: boolean;
@@ -413,9 +413,9 @@ function StlMeshComponent({
     const occlusion = geometry.getAttribute(BAKED_OCCLUSION_ATTRIBUTE);
     void bakedAoVersion;
     return occlusion && occlusion.count === geometry.getAttribute('position').count
-      ? BAKED_AO_STRENGTH
+      ? bakedOcclusionStrength(bakedAoIntensity)
       : 0;
-  }, [geometry, bakedAoVersion]);
+  }, [geometry, bakedAoVersion, bakedAoIntensity]);
 
   const hasVertexColorAttribute = React.useMemo(() => {
     const colorAttr = geometry.getAttribute('color');

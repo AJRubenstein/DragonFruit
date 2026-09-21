@@ -55,7 +55,10 @@ interface TopBarProps {
   directionalIntensity: number;
   onDirectionalIntensityChange: (value: number) => void;
   materialRoughness: number;
+  /** Multiplier on the baked occlusion's strength; 0 means the bake is off. */
+  bakedAoIntensity: number;
   onMaterialRoughnessChange: (value: number) => void;
+  onBakedAoIntensityChange: (value: number) => void;
   xrayOpacity: number;
   onXrayOpacityChange: (value: number) => void;
   heatmapMinAngle: number;
@@ -122,6 +125,8 @@ export function TopBar({
   directionalIntensity,
   onDirectionalIntensityChange,
   materialRoughness,
+  bakedAoIntensity,
+  onBakedAoIntensityChange,
   onMaterialRoughnessChange,
   xrayOpacity,
   onXrayOpacityChange,
@@ -1337,6 +1342,8 @@ export function TopBar({
         directionalIntensity={directionalIntensity}
         onDirectionalIntensityChange={onDirectionalIntensityChange}
         materialRoughness={materialRoughness}
+        bakedAoIntensity={bakedAoIntensity}
+        onBakedAoIntensityChange={onBakedAoIntensityChange}
         onMaterialRoughnessChange={onMaterialRoughnessChange}
         xrayOpacity={xrayOpacity}
         onXrayOpacityChange={onXrayOpacityChange}

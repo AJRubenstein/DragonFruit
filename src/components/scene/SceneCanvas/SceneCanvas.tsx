@@ -444,6 +444,7 @@ export function SceneCanvas({
   overlaySelectedIslandId,
   showOverhangs = true,
   materialRoughness,
+  bakedAoIntensity,
   scanResults,
   layerHeightMm,
   scanBBox,
@@ -558,6 +559,8 @@ export function SceneCanvas({
   directionalIntensity?: number;
   headlightIntensity?: number;
   materialRoughness?: number;
+  /** Multiplier on the baked occlusion's strength; 0 means the bake is off. */
+  bakedAoIntensity?: number;
   scanResults?: ScanResults | null;
   layerHeightMm?: number;
   scanBBox?: THREE.Box3 | null;
@@ -6096,6 +6099,7 @@ export function SceneCanvas({
                       meshRef={meshGroupRefCallback}
                       actualMeshRef={actualMeshRefCallback}
                       materialRoughness={materialRoughness}
+                      bakedAoIntensity={bakedAoIntensity}
                       shaderType={shaderType ?? 'soft_clay'}
                       matcapVariant={matcapVariant}
                       flatUseVertexColors={flatUseVertexColors}
