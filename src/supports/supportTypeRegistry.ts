@@ -2357,20 +2357,14 @@ export function parseKnotHostId(
     return null;
 }
 
-/**
- * The selection id for an entity whose span stands in for a segment, from the
- * prefix that type declares.
- */
+/** The selection id for an entity whose span stands in for a segment. */
 export function segmentSelectionId(typeId: SupportTypeId, entityId: string): string {
     const prefix = getSupportTypeDescriptor(typeId).segmentSelectionPrefix;
     if (!prefix) throw new Error(`${typeId} declares no segmentSelectionPrefix; its segments are real`);
     return `${prefix}${entityId}`;
 }
 
-/**
- * Split a segment selection id into the type whose span it names and that
- * entity's id, or null when the id names a real segment.
- */
+/** Split a segment selection id into its type and entity id, or null for a real segment. */
 export function parseSegmentSelectionId(
     segmentId: string,
 ): { typeId: SupportTypeId; entityId: string } | null {

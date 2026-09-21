@@ -12,9 +12,7 @@
  *   npx tsx scripts/scan-support-type-references.ts --json       machine readable
  *   npx tsx scripts/scan-support-type-references.ts --check --budget N
  *
- * `--check` also fails on any spelled-out knot-host or segment-selection prefix
- * outside the registry, which has no budget: `knotHostId`, `segmentSelectionId`
- * and their parsers derive every one.
+ * `--check` also fails on any id prefix spelled outside the registry.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -26,11 +24,7 @@ import {
     SUPPORT_TYPES,
 } from '../src/supports/supportTypeRegistry';
 
-/**
- * The id prefixes each type declares, which a caller must build and parse
- * through the registry rather than spell. Read off the descriptors, so a new
- * prefix is covered the moment it is declared.
- */
+/** The id prefixes each type declares, so a new one is covered once declared. */
 function declaredPrefixes(): string[] {
     const prefixes = new Set<string>();
     for (const descriptor of SUPPORT_TYPES) {
@@ -146,9 +140,8 @@ for (const abs of walk(SRC)) {
     const raw = readFileSync(abs, 'utf8');
     const rawLines = raw.split('\n');
 
-    // Prefixes are scanned everywhere but the registry that declares them: a
-    // type's own folder may spell its NAME, but an id format is cross-cutting
-    // and every folder builds it through the same helpers.
+    // Scanned everywhere but the registry: a type's own folder may spell its
+    // NAME, but an id format is cross-cutting.
     if (path !== REGISTRY) {
         for (const prefix of PREFIXES) {
             rawLines.forEach((text, index) => {
@@ -207,8 +200,7 @@ if (flag('--check')) {
         failed = true;
     }
 
-    // No budget: every one of these has a registry builder or parser to go
-    // through, so a spelled prefix splits a write from its read on a rename.
+    // No budget: a spelled prefix splits a write from its read on a rename.
     if (prefixHits.length) {
         console.error(
             `\n${prefixHits.length} spelled-out id prefix(es) outside the registry. `

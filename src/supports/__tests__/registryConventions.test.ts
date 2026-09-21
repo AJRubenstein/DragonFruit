@@ -105,8 +105,7 @@ test('the lists that coincide today still answer different questions', () => {
 });
 
 test('every declared id prefix round-trips through its builder and parser', () => {
-    // A spelled prefix splits a write from its read on a rename, which the
-    // `--check` scan refuses. These pin the pair each caller goes through.
+    // Pins the builder/parser pair each caller goes through.
     for (const descriptor of registry.SUPPORT_TYPES) {
         if (descriptor.knotHostPrefix) {
             const id = registry.knotHostId(descriptor.id, 'entity-1');
