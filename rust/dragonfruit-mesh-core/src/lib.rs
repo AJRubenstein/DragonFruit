@@ -10,4 +10,6 @@
 pub mod vertex_occlusion;
 pub mod bvh;
 pub mod halfedge;
+pub mod normals;
+pub mod refine;
 pub mod mesh;

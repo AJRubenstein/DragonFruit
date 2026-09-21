@@ -1574,7 +1574,9 @@ pub async fn load_stl_file(
                 None,
             );
 
-            let mesh = io::stl::load(path)
+            // Through the dispatcher, not `io::stl::load`, so the model gets the
+            // same coarse-face refinement every other import path applies.
+            let mesh = io::load_mesh_from_path(path)
                 .map_err(|e| format!("Failed to load STL '{}': {e}", file_path))?;
             
             let (mesh_to_decimate, model_tri_count) = if skip_classification.unwrap_or(false) && model_triangle_count.is_some() {
@@ -1609,8 +1611,11 @@ pub async fn load_stl_file(
     }
     drop(file);
 
+    // Through the dispatcher, not `io::stl::load`: an STL imported here is the
+    // geometry the frontend renders and bakes against, and `load_mesh_from_path`
+    // is where coarse faces are refined before anything derives data from them.
     let mesh =
-        io::stl::load(path).map_err(|e| format!("Failed to load STL '{}': {e}", file_path))?;
+        io::load_mesh_from_path(path).map_err(|e| format!("Failed to load STL '{}': {e}", file_path))?;
 
     let tri_count = mesh.triangles.len();
     encode_stl_response(&mesh, tri_count as u32, false, None).map(Response::new)
@@ -1687,71 +1692,18 @@ fn encode_stl_response(
                 vertex_output[8..12].copy_from_slice(&vertex.z.to_le_bytes());
             }
         });
-    // Smooth vertex normals, accumulated over the *welded* mesh.
-    //
-    // An STL carries one normal per triangle, and writing those straight out is
-    // what made STL imports shade as a stack of flat facets: each triangle is lit
-    // by its own normal, so a coarsely triangulated part reads as a mosaic. It is
-    // not a shading preference — the file simply has no vertex normals to give —
-    // but a LYS (or 3MF) import arrives with shared vertices and shades as a
-    // surface, so the two paths disagreed about what the same model looks like.
-    // The mosaic was also read as broken baked-ambient-occlusion data, because a
-    // smooth per-vertex AO field was being multiplied into flat facets.
-    //
-    // `mesh` is welded here, so the accumulation is over real adjacency and a
-    // vertex gets one normal shared by every triangle that touches it.
-    let mut normal_sums = vec![[0.0f32; 3]; mesh.positions.len()];
-    for triangle in &mesh.triangles {
-        let p0 = mesh.positions[triangle[0] as usize];
-        let p1 = mesh.positions[triangle[1] as usize];
-        let p2 = mesh.positions[triangle[2] as usize];
-        let face = p1.sub(p0).cross(p2.sub(p0));
-        if face.length() < 1e-20 {
-            continue;
-        }
-        for index in triangle {
-            let slot = &mut normal_sums[*index as usize];
-            slot[0] += face.x;
-            slot[1] += face.y;
-            slot[2] += face.z;
-        }
-    }
-    let vertex_normals: Vec<Vec3> = normal_sums
-        .iter()
-        .map(|sum| {
-            let len = (sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]).sqrt();
-            if len > 1e-12 {
-                Vec3::new(sum[0] / len, sum[1] / len, sum[2] / len)
-            } else {
-                Vec3::ZERO
-            }
-        })
-        .collect();
+    // Smooth vertex normals, averaged over the welded mesh and split at creases:
+    // see `dragonfruit_mesh_core::normals` for why both halves matter.
+    let normals = dragonfruit_mesh_core::normals::corner_normals(mesh);
 
     normal_output
         .par_chunks_mut(9 * std::mem::size_of::<f32>())
-        .zip(mesh.triangles.par_iter())
-        .for_each(|(output, triangle)| {
-            let p0 = mesh.positions[triangle[0] as usize];
-            let p1 = mesh.positions[triangle[1] as usize];
-            let p2 = mesh.positions[triangle[2] as usize];
-            // Fallback for a vertex no non-degenerate face touches: the model is
-            // a soup with no other source of orientation, and an unlit vertex
-            // would render black.
-            let face_normal = p1.sub(p0).cross(p2.sub(p0));
-            let len = face_normal.length();
-            let face_normal = if len > 1e-10 {
-                face_normal.scale(1.0 / len)
-            } else {
-                Vec3::ZERO
-            };
-            let normals = [
-                vertex_normals[triangle[0] as usize],
-                vertex_normals[triangle[1] as usize],
-                vertex_normals[triangle[2] as usize],
-            ];
-            for (normal_output, normal) in output.chunks_exact_mut(12).zip(normals) {
-                let normal = if normal.length() < 1e-12 { face_normal } else { normal };
+        .zip(mesh.triangles.par_iter().enumerate())
+        .for_each(|(output, (face, _))| {
+            for (normal_output, normal) in output
+                .chunks_exact_mut(12)
+                .zip(normals[face * 3..face * 3 + 3].iter())
+            {
                 normal_output[0..4].copy_from_slice(&normal.x.to_le_bytes());
                 normal_output[4..8].copy_from_slice(&normal.y.to_le_bytes());
                 normal_output[8..12].copy_from_slice(&normal.z.to_le_bytes());
@@ -2237,6 +2189,71 @@ mod tests {
             let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
             assert!((len - 1.0).abs() < 1e-4, "normal is not unit length: {normal:?}");
         }
+    }
+
+    /// A hard crease keeps two normals; a shallow fold still averages.
+    ///
+    /// Averaging across a crease is what put a faceted band around every organic
+    /// shape that meets the base, because the shared vertices carried a ramp
+    /// between the two surfaces and the rest of the base did not.
+    #[test]
+    fn stl_normals_split_at_creases_and_average_on_shallow_folds() {
+        // Two quads sharing the edge x = 0, folded by `fold_deg` about it: a
+        // floor to the left, a wall rising to the right at that angle. The two
+        // crease vertices are shared, which is what the welding produces on a
+        // model where an organic shape meets a base.
+        let folded = |fold_deg: f32| -> IndexedMesh {
+            let angle = fold_deg.to_radians();
+            let (sin, cos) = angle.sin_cos();
+            let positions = vec![
+                Vec3::new(0.0, 0.0, 0.0),  // 0: crease
+                Vec3::new(0.0, 1.0, 0.0),  // 1: crease
+                Vec3::new(-1.0, 0.0, 0.0), // 2: floor
+                Vec3::new(-1.0, 1.0, 0.0), // 3: floor
+                Vec3::new(0.0, 1.0, 0.0),  // 4: wall
+                Vec3::new(0.0, 0.0, 0.0),  // 5: wall
+            ];
+            let mut positions = positions;
+            positions[4] = Vec3::new(cos, 1.0, sin);
+            positions[5] = Vec3::new(cos, 0.0, sin);
+            IndexedMesh {
+                positions,
+                triangles: vec![[0, 2, 3], [0, 3, 1], [1, 4, 5], [1, 5, 0]],
+            }
+        };
+
+        let hard = folded(90.0);
+        let bytes = encode_stl_response(&hard, hard.triangles.len() as u32, false, None).unwrap();
+        let (_, normals) = decode_positions_and_normals(&bytes);
+        // The two faces at the shared vertex keep their own normals: up for the
+        // floor, sideways for the wall.
+        let floor_normal = normals[0];
+        let wall_normal = normals[2 * 3];
+        assert!(
+            floor_normal[2].abs() > 0.9,
+            "the floor face should keep an upward normal, got {floor_normal:?}"
+        );
+        assert!(
+            wall_normal[0].abs() > 0.9 || wall_normal[2].abs() > 0.9,
+            "the wall face should keep its own normal, got {wall_normal:?}"
+        );
+        let dot: f32 = (0..3).map(|i| floor_normal[i] * wall_normal[i]).sum();
+        assert!(
+            dot.abs() < 0.5,
+            "a ninety degree crease must not be averaged into a ramp, got dot {dot}"
+        );
+
+        // A twenty degree fold is a curve as far as shading is concerned.
+        let shallow = folded(20.0);
+        let bytes = encode_stl_response(&shallow, shallow.triangles.len() as u32, false, None).unwrap();
+        let (_, normals) = decode_positions_and_normals(&bytes);
+        let floor_normal = normals[0];
+        let fold_normal = normals[2 * 3];
+        let dot: f32 = (0..3).map(|i| floor_normal[i] * fold_normal[i]).sum();
+        assert!(
+            dot > 0.8,
+            "a twenty degree fold should still average, got dot {dot}"
+        );
     }
 
     #[test]
