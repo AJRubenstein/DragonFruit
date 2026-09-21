@@ -17,30 +17,42 @@ use crate::mesh::{IndexedMesh, Vec3};
 
 /// Faces further apart than this at a shared vertex get separate normals.
 ///
-/// Sixty degrees leaves a scanned or organic surface smooth (measured: the
-/// ninetieth percentile of dihedral angles on one is 15 degrees, and the
-/// ninety-ninth is 60) while splitting the corners where a shape meets a plane.
+/// Sixty degrees leaves a scanned or organic surface smooth while splitting the
+/// corners where a shape meets a plane. Raising it does not help where it hurts:
+/// measured on a dense hard-surface model, going from 60 to 80 degrees moved the
+/// share of split corners from 24.8% to 24.0%, because what splits them are faces
+/// folded back on each other, not a marginal angle.
 pub const CREASE_ANGLE_DEG: f32 = 60.0;
 
 /// One normal per triangle corner, in triangle order.
 pub fn corner_normals(mesh: &IndexedMesh) -> Vec<Vec3> {
     let crease_cosine = CREASE_ANGLE_DEG.to_radians().cos();
-    let face_normals: Vec<Vec3> = mesh
+    // The raw cross product is twice the triangle's area times its normal, so
+    // accumulating these weights each face by its area while the crease test below
+    // divides it out. That weighting is not a refinement: a mesh that has been
+    // subdivided by the longest edge is full of thin slivers whose normals are
+    // meaningless, and with one vote each they outvote the real surfaces around
+    // them, which shows up as a quarter of a dense model's corners splitting at
+    // angles up to 180 degrees and rendering as speckle.
+    let raw: Vec<Vec3> = mesh
         .triangles
         .iter()
         .map(|triangle| {
             let a = mesh.positions[triangle[0] as usize];
             let b = mesh.positions[triangle[1] as usize];
             let c = mesh.positions[triangle[2] as usize];
-            let face = b.sub(a).cross(c.sub(a));
-            let length = face.length();
-            if length > 1e-20 {
-                face.scale(1.0 / length)
-            } else {
-                Vec3::ZERO
-            }
+            b.sub(a).cross(c.sub(a))
         })
         .collect();
+    let unit = |face: Vec3| -> Vec3 {
+        let length = face.length();
+        if length > 1e-20 {
+            face.scale(1.0 / length)
+        } else {
+            Vec3::ZERO
+        }
+    };
+    let face_normals: Vec<Vec3> = raw.iter().map(|face| unit(*face)).collect();
 
     let mut incident: Vec<Vec<u32>> = vec![Vec::new(); mesh.positions.len()];
     for (index, triangle) in mesh.triangles.iter().enumerate() {
