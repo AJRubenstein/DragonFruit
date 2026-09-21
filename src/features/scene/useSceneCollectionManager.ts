@@ -17,6 +17,8 @@ import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/buil
 import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginContracts';
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
+import { BAKED_OCCLUSION_ATTRIBUTE, bakeOcclusionForGeometry, canBakeOcclusion } from '@/features/scene/bakedOcclusion';
+import { isExperimentEnabled } from '@/features/experiments/experimentsRegistry';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -109,6 +111,14 @@ type PersistedMeshAppearance = {
   hoverTintStrength: number;
   selectedTintStrength: number;
 };
+
+/**
+ * Ambient-occlusion bakes in flight at once (see the scheduling comment in the
+ * bake effect). Each command is internally parallel across vertices, so this is
+ * about hiding the serial phases — weld, tree build, IPC — of one model behind
+ * another model's ray pass, not about using more cores per model.
+ */
+const AO_BAKE_CONCURRENCY = 2;
 
 const MESH_APPEARANCE_STORAGE_KEY = 'mesh-appearance-settings';
 
@@ -953,6 +963,10 @@ export interface LoadedModel {
   manualZMoveOverride?: boolean;
   isSupportGeometry?: boolean;
   linkGroupId?: string;
+  /** Bumped when the background bake attaches `aBakedAo` to this model's
+   *  geometry. `StlMesh` is memoised on props and the geometry object keeps its
+   *  identity, so this counter is what tells the material to start using it. */
+  bakedAoVersion?: number;
 }
 
 type DebugPrimitiveType =
@@ -1047,6 +1061,10 @@ type ModelClipboardEntry = {
   supportClipboard: SupportClipboardPayload | null;
   isSupportGeometry?: boolean;
   linkGroupId?: string;
+  /** Bumped when the background bake attaches `aBakedAo` to this model's
+   *  geometry. `StlMesh` is memoised on props and the geometry object keeps its
+   *  identity, so this counter is what tells the material to start using it. */
+  bakedAoVersion?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -1242,6 +1260,9 @@ export function useSceneCollectionManager() {
   // Count of scheduled-but-unfinished flattening-plane computations (idle
   // callbacks after geometry swaps). Part of hasPendingBackgroundGeometryWork.
   const pendingFlatteningPlanesRef = useRef(0);
+  // Models whose AO volume bake is queued or awaiting the native round trip.
+  // Part of hasPendingBackgroundGeometryWork.
+  const pendingAoBakeRef = useRef(0);
   const trackedGeometriesRef = useRef<Set<THREE.BufferGeometry>>(new Set());
 
   const tryRevokeObjectUrl = useCallback((url: string) => {
@@ -2054,7 +2075,8 @@ export function useSceneCollectionManager() {
 
   /**
    * True while deferred post-swap geometry work (BVH acceleration builds,
-   * deferred geometry disposals, flattening-plane computation) is queued or
+   * deferred geometry disposals, flattening-plane computation, AO bakes) is
+   * queued or
    * running. Lets the UI keep a blocking "finalizing" indicator visible
    * until the app is genuinely responsive again after a large geometry swap
    * — the swap itself resolves long before this work drains.
@@ -2065,6 +2087,7 @@ export function useSceneCollectionManager() {
     || deferredDisposalQueueRef.current.length > 0
     || deferredDisposalProcessingRef.current
     || pendingFlatteningPlanesRef.current > 0
+    || pendingAoBakeRef.current > 0
   ), []);
 
   const processDeferredDisposalQueue = useCallback(() => {
@@ -3259,6 +3282,85 @@ export function useSceneCollectionManager() {
     scheduleIdle(step);
     return () => { cancelled = true; };
   }, [higherContrastModelEdges, setModels]);
+
+  /**
+   * Baked ambient occlusion (`model-ao` experiment).
+   *
+   * One native bake per model, on an idle callback, off the main thread:
+   * `dragonfruit-mesh-core::vertex_occlusion` fires a hemisphere fan per vertex
+   * from the mesh's own normal, which measures 12-263 ms for 40k-640k triangle
+   * meshes. The result is attached to the geometry as `aBakedAo`, so nothing is
+   * paid per frame afterwards.
+   */
+  useEffect(() => {
+    if (!isExperimentEnabled('model-ao') || !canBakeOcclusion()) return;
+
+    const queue = modelsRef.current
+      .filter((model) => {
+        const geometry = model.geometry.geometry;
+        if (!geometry.getAttribute('position')) return false;
+        // Re-bake when the geometry was replaced (repair, boolean cut, hole
+        // punch): the attribute lives on the old geometry, so without this the
+        // new shape would be shaded with the old shape's occlusion.
+        return geometry.getAttribute(BAKED_OCCLUSION_ATTRIBUTE) === undefined;
+      })
+      .map((model) => model.id);
+    if (queue.length === 0) return;
+
+    let cancelled = false;
+    pendingAoBakeRef.current += queue.length;
+
+    const scheduleIdle = (cb: () => void) => {
+      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(cb, { timeout: 500 });
+      } else {
+        setTimeout(cb, 16);
+      }
+    };
+
+    const bakeOne = async () => {
+      while (!cancelled) {
+        const id = queue.shift();
+        if (!id) return;
+        const model = modelsRef.current.find((m) => m.id === id);
+        try {
+          if (model) {
+            const geometry = model.geometry.geometry;
+            const occlusion = await bakeOcclusionForGeometry(geometry);
+            if (occlusion && !cancelled) {
+              const attribute = new THREE.BufferAttribute(occlusion, 1);
+              attribute.setUsage(THREE.StaticDrawUsage);
+              geometry.setAttribute(BAKED_OCCLUSION_ATTRIBUTE, attribute);
+              setModels((prev) => prev.map((m) => (
+                m.id === id && m.geometry.geometry === geometry
+                  ? { ...m, bakedAoVersion: (m.bakedAoVersion ?? 0) + 1 }
+                  : m
+              )));
+            }
+          }
+        } catch (error) {
+          // A failed bake is not worth surfacing: the model simply keeps the
+          // unoccluded look it has today.
+          console.warn('[ao] bake failed', error);
+        } finally {
+          pendingAoBakeRef.current = Math.max(0, pendingAoBakeRef.current - 1);
+        }
+      }
+    };
+
+    // Two bakes in flight, not one. The ray pass saturates the pool on its own,
+    // but the weld, the tree build and the IPC transfer of each model are serial
+    // phases — on a print-sized model that is about a quarter of its bake, and in
+    // a loaded scene it is a quarter of *every* model's bake spent with fifteen
+    // cores idle. Both commands share one rayon pool, so overlapping them lets
+    // one model's serial phase run during another's ray pass. Two rather than
+    // more: each in-flight bake holds its soup and its output, and past a couple
+    // the pool is oversubscribed for no further gain.
+    for (let worker = 0; worker < Math.min(AO_BAKE_CONCURRENCY, queue.length); worker += 1) {
+      scheduleIdle(() => void bakeOne());
+    }
+    return () => { cancelled = true; };
+  }, [models, setModels]);
 
   const finalizeModelGeometryPostProcessing = useCallback((id: string) => {
     const target = modelsRef.current.find((m) => m.id === id);
