@@ -1,6 +1,6 @@
 # Tauri IPC and Native Bridge
 
-The desktop app (Tauri) exposes **108** native commands to the frontend
+The desktop app (Tauri) exposes **109** native commands to the frontend
 (`#[tauri::command]` under `src-tauri/src/`, all registered in the single
 `tauri::generate_handler![…]` list in `main.rs`).
 
@@ -145,6 +145,66 @@ spent 15.4 s on the same rays; the flat one spends 2.97 s. Two things that do
 (1.02×, so the cost is not memory layout) and clustering the occluder down to a
 250k-triangle budget (2.3× faster but moves the field by a mean of 0.19, because
 the cell size that budget implies collapses the model's own detail).
+
+### Occlusion is weighted by how far away the occluder is
+
+A boolean "is anything in the way" query makes a flat base under a mass of detail
+as dark as a crevice, and that reads as dirt rather than as shape. The bake asks
+for the *nearest* hit instead and weights the ray by `1 - distance/falloff`, so
+what is right against the surface counts and what is millimetres off barely does.
+
+The distances are measurably different, which is why this works at all. On the
+same model, as the fraction of vertices reading as occluded:
+
+| occluded within | 0.5mm | 1mm | 2mm | 3mm | 4.5mm |
+| --- | --- | --- | --- | --- | --- |
+| the base | 1% | 3% | 10% | 21% | 42% |
+| the deepest 5% (crevices) | 68% | 86% | 99% | 100% | 100% |
+
+The falloff is a multiple of the *mesh's median edge*, not of the reach, so a
+small part with large features is not attenuated into flatness. Eight was chosen
+from a sweep, the base's spread against the crevices' depth: 4 clears the base
+completely (sd 0.009) but takes a third of the crevices (p05 0.697), 20 keeps the
+crevices (0.494) and leaves most of the mottle (0.053). At eight the base's spread
+is 0.021 against 0.121 without it and the crevices sit at 0.614, which the
+material's `BAKED_OCCLUSION_STRENGTH` then maps back to the contrast the surface
+wants. The two constants are a pair: changing one without the other makes the
+model flat or dirty. The bake costs about 30% more, since a nearest-hit query
+cannot stop at the first hit.
+
+### Faces too long to carry a per-vertex field
+
+The bake samples at vertices, so a face is the resolution it renders at: a base
+triangulated as a fan has spokes an order of magnitude longer than the geometry
+around it, and the occlusion cast by what sits above it, which varies at about a
+millimetre, gets drawn as one straight ramp per spoke. That is the wedge pattern a
+low-poly base shows, and no per-vertex trick removes it. Fading the value where the
+span is long does not separate a coarse base from a genuine crevice, since both sit
+on short edges, and smoothing does not help either: on a fan the mesh-graph
+neighbours are ten millimetres away in space.
+
+Import through `io::load_mesh_from_path`, never the format loaders (`io::stl::load`,
+`io::obj::load`, `io::three_mf::load`) directly. The refinement lives in the
+dispatcher, and the shell's STL path called `io::stl::load` for a while, so the
+model in the viewport was never refined while every probe that called the
+dispatcher said it was.
+
+A plugin cannot call native code, so geometry an importer builds in the renderer
+(LYS, via `plugins/lys-import/`) never reaches that dispatcher either. The host
+calls `refine_mesh_soup` after a plugin import instead: soup in the request body,
+`[u32 triangle count][positions][normals]` out. It welds the mesh on the way in,
+which is what gives the refinement shared edges to split and the normals adjacency
+to average over, and it returns normals for the same reason the loaders compute
+them, so the importer does not have to repeat the crease rule in TypeScript.
+
+The fix is at the source. `io::load_mesh_from_path` refines faces longer than 2% of
+the model's diagonal, which is a quarter of the occlusion reach, before anything
+derives data from the mesh, because triangle ids are what the overhang scan,
+support placement, masks and caches index. Measured on that base: the longest edge
+went from 16.8mm to 1.1mm, its vertices from 1608 to 10261, the model from 150k to
+171k triangles (+14%), the bake from 63ms to 74ms, and the refinement itself costs
+10ms. Meshes that are already fine are returned untouched, so the common case pays
+one pass over the triangles and nothing else.
 
 The frontend keeps two bakes in flight (`AO_BAKE_CONCURRENCY` in
 `useSceneCollectionManager.ts`): each command is parallel across vertices on its
