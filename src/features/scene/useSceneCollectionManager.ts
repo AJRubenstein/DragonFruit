@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore
 import { useLingui } from '@lingui/react';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
@@ -4898,8 +4899,24 @@ export function useSceneCollectionManager() {
         processed: GeometryWithBounds;
       }> = [];
       for (const normalized of normalizedPayloads) {
-        const processed = await processGeometry(normalized.geometry, {
+        // The plugin built this geometry in the renderer, so it has not been
+        // through the native loaders that refine coarse faces. Refine it here, and
+        // keep the normals the command returns: they are welded and split at
+        // creases, which `computeVertexNormals` would flatten again.
+        let geometry = normalized.geometry;
+        let skipComputeNormals = false;
+        try {
+          const refined = await refineCoarseFaces(geometry);
+          if (refined) {
+            geometry = refined;
+            skipComputeNormals = true;
+          }
+        } catch (error) {
+          console.warn('[refine] plugin geometry left unrefined', error);
+        }
+        const processed = await processGeometry(geometry, {
           center: false,
+          ...(skipComputeNormals ? { _skipComputeNormals: true } : {}),
           nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
           onNativeProcessingStage: (stage) => {
             if (options?.suppressProgress) return;

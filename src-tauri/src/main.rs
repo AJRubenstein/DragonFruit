@@ -3,6 +3,7 @@
 mod astar;
 mod mesh_minima;
 mod mesh_repair;
+mod mesh_refine;
 mod network;
 mod ao_vertex;
 mod overhang;
@@ -4453,6 +4454,7 @@ fn main() {
             network::plugin_network_request,
             network::ensure_rtsp_relay,
             mesh_repair::mesh_analyze_from_path,
+            mesh_refine::refine_mesh_soup,
             mesh_repair::mesh_analyze_staged,
             mesh_repair::mesh_repair_from_path,
             mesh_repair::mesh_repair_staged,
