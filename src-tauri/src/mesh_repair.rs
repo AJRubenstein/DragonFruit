@@ -1687,6 +1687,47 @@ fn encode_stl_response(
                 vertex_output[8..12].copy_from_slice(&vertex.z.to_le_bytes());
             }
         });
+    // Smooth vertex normals, accumulated over the *welded* mesh.
+    //
+    // An STL carries one normal per triangle, and writing those straight out is
+    // what made STL imports shade as a stack of flat facets: each triangle is lit
+    // by its own normal, so a coarsely triangulated part reads as a mosaic. It is
+    // not a shading preference — the file simply has no vertex normals to give —
+    // but a LYS (or 3MF) import arrives with shared vertices and shades as a
+    // surface, so the two paths disagreed about what the same model looks like.
+    // The mosaic was also read as broken baked-ambient-occlusion data, because a
+    // smooth per-vertex AO field was being multiplied into flat facets.
+    //
+    // `mesh` is welded here, so the accumulation is over real adjacency and a
+    // vertex gets one normal shared by every triangle that touches it.
+    let mut normal_sums = vec![[0.0f32; 3]; mesh.positions.len()];
+    for triangle in &mesh.triangles {
+        let p0 = mesh.positions[triangle[0] as usize];
+        let p1 = mesh.positions[triangle[1] as usize];
+        let p2 = mesh.positions[triangle[2] as usize];
+        let face = p1.sub(p0).cross(p2.sub(p0));
+        if face.length() < 1e-20 {
+            continue;
+        }
+        for index in triangle {
+            let slot = &mut normal_sums[*index as usize];
+            slot[0] += face.x;
+            slot[1] += face.y;
+            slot[2] += face.z;
+        }
+    }
+    let vertex_normals: Vec<Vec3> = normal_sums
+        .iter()
+        .map(|sum| {
+            let len = (sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]).sqrt();
+            if len > 1e-12 {
+                Vec3::new(sum[0] / len, sum[1] / len, sum[2] / len)
+            } else {
+                Vec3::ZERO
+            }
+        })
+        .collect();
+
     normal_output
         .par_chunks_mut(9 * std::mem::size_of::<f32>())
         .zip(mesh.triangles.par_iter())
@@ -1694,14 +1735,23 @@ fn encode_stl_response(
             let p0 = mesh.positions[triangle[0] as usize];
             let p1 = mesh.positions[triangle[1] as usize];
             let p2 = mesh.positions[triangle[2] as usize];
+            // Fallback for a vertex no non-degenerate face touches: the model is
+            // a soup with no other source of orientation, and an unlit vertex
+            // would render black.
             let face_normal = p1.sub(p0).cross(p2.sub(p0));
             let len = face_normal.length();
-            let normal = if len > 1e-10 {
+            let face_normal = if len > 1e-10 {
                 face_normal.scale(1.0 / len)
             } else {
                 Vec3::ZERO
             };
-            for normal_output in output.chunks_exact_mut(12) {
+            let normals = [
+                vertex_normals[triangle[0] as usize],
+                vertex_normals[triangle[1] as usize],
+                vertex_normals[triangle[2] as usize],
+            ];
+            for (normal_output, normal) in output.chunks_exact_mut(12).zip(normals) {
+                let normal = if normal.length() < 1e-12 { face_normal } else { normal };
                 normal_output[0..4].copy_from_slice(&normal.x.to_le_bytes());
                 normal_output[4..8].copy_from_slice(&normal.y.to_le_bytes());
                 normal_output[8..12].copy_from_slice(&normal.z.to_le_bytes());
@@ -2078,6 +2128,116 @@ fn replace_staging_with_mesh(mesh: &IndexedMesh) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Parse an encoded STL response into (positions, normals) as f32 triples.
+    fn decode_positions_and_normals(bytes: &[u8]) -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
+        let tri_count = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        let header = STL_RESPONSE_HEADER_BYTES;
+        let floats = |start: usize| -> Vec<[f32; 3]> {
+            (0..tri_count * 3)
+                .map(|v| {
+                    let at = start + v * 12;
+                    [
+                        f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()),
+                        f32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()),
+                        f32::from_le_bytes(bytes[at + 8..at + 12].try_into().unwrap()),
+                    ]
+                })
+                .collect()
+        };
+        (floats(header), floats(header + tri_count * 36))
+    }
+
+    /// A coarsely triangulated cylinder: every adjacent face pair differs by enough
+    /// that a flat-shaded import is unmistakable.
+    fn cylinder_mesh(sides: usize) -> IndexedMesh {
+        let mut positions = Vec::new();
+        for z in [0.0f32, 1.0] {
+            for i in 0..sides {
+                let angle = std::f32::consts::TAU * i as f32 / sides as f32;
+                positions.push(Vec3::new(angle.cos(), angle.sin(), z));
+            }
+        }
+        let mut triangles = Vec::new();
+        for i in 0..sides {
+            let j = (i + 1) % sides;
+            let (b0, b1) = (i as u32, j as u32);
+            let (t0, t1) = ((sides + i) as u32, (sides + j) as u32);
+            triangles.push([b0, b1, t1]);
+            triangles.push([b0, t1, t0]);
+        }
+        IndexedMesh { positions, triangles }
+    }
+
+    /// STL imports must shade as a surface, not as a stack of facets.
+    ///
+    /// The file format carries one normal per triangle and the loader used to
+    /// write that normal onto all three corners, so every face was lit by its own
+    /// orientation: a coarsely triangulated part rendered as a mosaic, which also
+    /// made a smooth per-vertex baked-AO field look like broken per-triangle data.
+    /// LYS imports arrive welded with shared normals, so the two paths disagreed
+    /// about the same model.
+    #[test]
+    fn stl_normals_are_smooth_at_shared_vertices() {
+        let sides = 8;
+        let mesh = cylinder_mesh(sides);
+        let bytes = encode_stl_response(&mesh, mesh.triangles.len() as u32, false, None).unwrap();
+        let (positions, normals) = decode_positions_and_normals(&bytes);
+
+        // A welded vertex has ONE normal, whichever triangle it is read from.
+        // Indexed by position, which is what the consumer sees, so this does not
+        // depend on the builder's corner ordering.
+        // sees, so this does not depend on the builder's corner ordering.
+        let mut shared: std::collections::HashMap<[i64; 3], Vec<[f32; 3]>> =
+            std::collections::HashMap::new();
+        for (corner, position) in positions.iter().enumerate() {
+            let key = [
+                (position[0] * 4096.0).round() as i64,
+                (position[1] * 4096.0).round() as i64,
+                (position[2] * 4096.0).round() as i64,
+            ];
+            shared.entry(key).or_default().push(normals[corner]);
+        }
+        let mut checked = 0usize;
+        for (key, list) in &shared {
+            if list.len() < 2 {
+                continue;
+            }
+            checked += 1;
+            for normal in list {
+                let delta = (0..3)
+                    .map(|axis| (normal[axis] - list[0][axis]).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(
+                    delta < 1e-6,
+                    "position {key:?} is shaded by two different normals ({list:?}) - the mesh \
+                     will render as facets"
+                );
+            }
+        }
+        assert!(checked >= sides, "the fixture must have shared vertices, got {checked}");
+
+        // ...and the normals carry the vertex orientation, so a curved face has
+        // three distinct corner normals rather than one flat one.
+        let smooth_faces = (0..mesh.triangles.len())
+            .filter(|tri| {
+                let n0 = normals[tri * 3];
+                (1..3).any(|corner| {
+                    (0..3).any(|axis| (normals[tri * 3 + corner][axis] - n0[axis]).abs() > 1e-6)
+                })
+            })
+            .count();
+        assert!(
+            smooth_faces * 2 > mesh.triangles.len(),
+            "only {smooth_faces} of {} faces carry vertex normals - still flat shaded",
+            mesh.triangles.len()
+        );
+
+        for normal in &normals {
+            let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+            assert!((len - 1.0).abs() < 1e-4, "normal is not unit length: {normal:?}");
+        }
+    }
 
     #[test]
     fn hollow_options_parsing_rejects_malformed_json_instead_of_defaulting() {
