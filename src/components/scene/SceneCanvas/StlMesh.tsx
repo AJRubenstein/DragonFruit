@@ -28,6 +28,7 @@ import type { SupportMode } from '@/supports/types';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
+import { BAKED_OCCLUSION_ATTRIBUTE, bakedOcclusionStrength } from '@/features/scene/bakedOcclusion';
 
 // Scratch raycaster reused for clip-zone fallback raycasts.
 const _clipFallbackRaycaster = new THREE.Raycaster();
@@ -174,10 +175,10 @@ function StlMeshComponent({
   meshRef,
   actualMeshRef,
   materialRoughness,
+  bakedAoIntensity = 1,
   shaderType,
   matcapVariant,
   flatUseVertexColors,
-  toonSteps,
   xrayOpacity,
   heatmapMinAngle,
   heatmapMaxAngle,
@@ -230,6 +231,7 @@ function StlMeshComponent({
   blockerEditMode = false,
   interiorView = false,
   cavityGeometry,
+  bakedAoVersion,
   children,
 }: {
   geometry: THREE.BufferGeometry;
@@ -241,10 +243,11 @@ function StlMeshComponent({
   /** Ref to the actual mesh (for outline effect) */
   actualMeshRef?: React.Ref<THREE.Mesh | null>;
   materialRoughness?: number;
+  /** Multiplier on the baked occlusion's strength; 0 means the bake is off. */
+  bakedAoIntensity?: number;
   shaderType: MeshShaderType;
   matcapVariant?: import('@/features/shaders/mesh').MatcapVariant;
   flatUseVertexColors?: boolean;
-  toonSteps?: number;
   xrayOpacity?: number;
   heatmapMinAngle?: number;
   heatmapMaxAngle?: number;
@@ -258,6 +261,10 @@ function StlMeshComponent({
   interiorView?: boolean;
   /** Interior cavity mesh to render as solid in Interior View Mode. */
   cavityGeometry?: THREE.BufferGeometry | null;
+  /** Bumped by the background bake when `aBakedAo` lands on `geometry`. The
+   *  geometry keeps its identity, so this prop — not the geometry — is what
+   *  re-runs the attribute detection below. */
+  bakedAoVersion?: number;
   transform?: ModelTransform | null;
   mode?: SupportMode;
   transformMode?: TransformMode;
@@ -397,6 +404,18 @@ function StlMeshComponent({
       ?? new THREE.Box3().setFromBufferAttribute(geometry.getAttribute('position') as THREE.BufferAttribute)
     );
   }, [geometry]);
+
+  // Baked per-vertex occlusion (see docs/dev/backlog.md). The bake attaches the
+  // attribute in the background, so a model can gain it while mounted —
+  // `bakedAoVersion` is what re-runs this memo, because the geometry object
+  // itself keeps its identity.
+  const bakedAoStrength = React.useMemo(() => {
+    const occlusion = geometry.getAttribute(BAKED_OCCLUSION_ATTRIBUTE);
+    void bakedAoVersion;
+    return occlusion && occlusion.count === geometry.getAttribute('position').count
+      ? bakedOcclusionStrength(bakedAoIntensity)
+      : 0;
+  }, [geometry, bakedAoVersion, bakedAoIntensity]);
 
   const hasVertexColorAttribute = React.useMemo(() => {
     const colorAttr = geometry.getAttribute('color');
@@ -1463,13 +1482,13 @@ if (uDitherAmount > 0.0) {
             meshColor={meshColor}
             matcapVariant={matcapVariant}
             flatUseVertexColors={flatUseVertexColors}
-            toonSteps={toonSteps}
             materialRoughness={materialRoughness}
             clippingPlanes={planes}
             xrayOpacity={xrayOpacity}
             heatmapMinAngle={heatmapMinAngle}
             heatmapMaxAngle={heatmapMaxAngle}
             heatmapColors={heatmapColors}
+            bakedAoStrength={bakedAoStrength}
           />
         )}
       </mesh>
@@ -1491,7 +1510,6 @@ if (uDitherAmount > 0.0) {
               meshColor={meshColor}
               matcapVariant={matcapVariant}
               flatUseVertexColors={flatUseVertexColors}
-              toonSteps={toonSteps}
               materialRoughness={materialRoughness}
               clippingPlanes={planes}
               xrayOpacity={xrayOpacity}

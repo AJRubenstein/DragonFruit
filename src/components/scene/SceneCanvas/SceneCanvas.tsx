@@ -425,7 +425,6 @@ export function SceneCanvas({
   shaderType,
   matcapVariant,
   flatUseVertexColors,
-  toonSteps,
   xrayOpacity,
   heatmapMinAngle,
   heatmapMaxAngle,
@@ -445,6 +444,7 @@ export function SceneCanvas({
   overlaySelectedIslandId,
   showOverhangs = true,
   materialRoughness,
+  bakedAoIntensity,
   scanResults,
   layerHeightMm,
   scanBBox,
@@ -539,7 +539,6 @@ export function SceneCanvas({
   shaderType?: import('@/features/shaders/mesh').MeshShaderType;
   matcapVariant?: import('@/features/shaders/mesh').MatcapVariant;
   flatUseVertexColors?: boolean;
-  toonSteps?: number;
   xrayOpacity?: number;
   heatmapMinAngle?: number;
   heatmapMaxAngle?: number;
@@ -560,6 +559,8 @@ export function SceneCanvas({
   directionalIntensity?: number;
   headlightIntensity?: number;
   materialRoughness?: number;
+  /** Multiplier on the baked occlusion's strength; 0 means the bake is off. */
+  bakedAoIntensity?: number;
   scanResults?: ScanResults | null;
   layerHeightMm?: number;
   scanBBox?: THREE.Box3 | null;
@@ -6098,11 +6099,12 @@ export function SceneCanvas({
                       meshRef={meshGroupRefCallback}
                       actualMeshRef={actualMeshRefCallback}
                       materialRoughness={materialRoughness}
+                      bakedAoIntensity={bakedAoIntensity}
                       shaderType={shaderType ?? 'soft_clay'}
                       matcapVariant={matcapVariant}
                       flatUseVertexColors={flatUseVertexColors}
-                      toonSteps={toonSteps}
                       xrayOpacity={xrayOpacity}
+                      bakedAoVersion={model.bakedAoVersion}
                       heatmapMinAngle={heatmapMinAngle}
                       heatmapMaxAngle={heatmapMaxAngle}
                       heatmapColors={heatmapColors ?? emptyHeatmapColors}

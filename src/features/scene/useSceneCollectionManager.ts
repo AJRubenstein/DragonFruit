@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore
 import { useLingui } from '@lingui/react';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
@@ -17,6 +18,7 @@ import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/buil
 import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginContracts';
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
+import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -52,7 +54,7 @@ import {
 } from '@/features/scene/sceneImportMessages';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
-import type { MatcapVariant, MeshShaderType } from '@/features/shaders/mesh';
+import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
 import { getSavedThemeCustomColors } from '@/components/settings/themeCustomizations';
 import {
   getSavedWorkspaceCameraSettings,
@@ -89,13 +91,17 @@ import { performModelCut, selectModelsForClipboard } from '@/features/scene/mode
 
 type PersistedMeshAppearance = {
   v: 1;
+  /** The view mode the camera dropdown shows, which is also the shader the viewport renders. */
   shaderType: MeshShaderType;
+  /** The type the Mesh settings tab is configuring. Independent of what the viewport renders. */
+  configuredShaderType: MeshShaderType;
   matcapVariant: MatcapVariant;
   flatUseVertexColors: boolean;
-  toonSteps: number;
   ambientIntensity: number;
   directionalIntensity: number;
   materialRoughness: number;
+  /** Multiplier on the baked occlusion's strength; 0 disables the bake. */
+  bakedAoIntensity: number;
   wireframeThicknessPx: number;
   xrayOpacity: number;
   heatmapMinAngle: number;
@@ -108,12 +114,22 @@ type PersistedMeshAppearance = {
   selectedTintStrength: number;
 };
 
+/**
+ * Ambient-occlusion bakes in flight at once (see the scheduling comment in the
+ * bake effect). Each command is internally parallel across vertices, so this is
+ * about hiding the serial phases — weld, tree build, IPC — of one model behind
+ * another model's ray pass, not about using more cores per model.
+ */
+const AO_BAKE_CONCURRENCY = 2;
+
 const MESH_APPEARANCE_STORAGE_KEY = 'mesh-appearance-settings';
 
 const DEFAULT_MESH_COLOR = '#a3a3a3';
-const DEFAULT_AMBIENT_INTENSITY = 0.6;
-const DEFAULT_DIRECTIONAL_INTENSITY = 0.8;
-const DEFAULT_MATERIAL_ROUGHNESS = 0.65;
+// Split so the Mesh tab's derived sliders read Lightness 1.40, Contrast 0.80
+// (contrast = directional / (ambient + directional)).
+const DEFAULT_AMBIENT_INTENSITY = 0.28;
+const DEFAULT_DIRECTIONAL_INTENSITY = 1.12;
+const DEFAULT_MATERIAL_ROUGHNESS = 0.55;
 const DEFAULT_WIREFRAME_THICKNESS_PX = 1.5;
 const DEFAULT_XRAY_OPACITY = 0.25;
 const DEFAULT_HEATMAP_MIN_ANGLE = 0;
@@ -122,7 +138,6 @@ export const DEFAULT_HEATMAP_COLORS = ['#E55959', '#E5A559', '#D9D959', '#73D973
 const DEFAULT_SHADER_TYPE: MeshShaderType = 'soft_clay';
 const DEFAULT_MATCAP_VARIANT: MatcapVariant = 'neutral';
 const DEFAULT_FLAT_USE_VERTEX_COLORS = true;
-const DEFAULT_TOON_STEPS = 5;
 export const DEFAULT_SELECTION_COLOR = '#ec2a77';
 export const DEFAULT_HOVER_COLOR = '#ec2a77';
 export function getThemedDefaultSelectionColor(): string {
@@ -142,7 +157,7 @@ export function getThemedDefaultHoverColor(): string {
   return DEFAULT_HOVER_COLOR;
 }
 export const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
-export const DEFAULT_SELECTED_TINT_STRENGTH = 0.75;
+export const DEFAULT_SELECTED_TINT_STRENGTH = 0.70;
 const RECENT_OPENED_FILES_STORAGE_KEY = 'app-recent-opened-files';
 const RECENT_OPENED_FILES_LIMIT = 10;
 const RECENT_FILES_DB_NAME = 'dragonfruit-recent-files';
@@ -416,12 +431,8 @@ function clampMatcapVariant(input: unknown, fallback: MatcapVariant): MatcapVari
 }
 
 function clampPersistedMeshShaderType(input: unknown, fallback: MeshShaderType): MeshShaderType {
-  return input === 'soft_clay'
-    || input === 'toon'
-    || input === 'normal_debug'
-    || input === 'wireframe'
-    || input === 'xray'
-    ? input
+  return typeof input === 'string' && (MESH_SHADER_TYPES as readonly string[]).includes(input)
+    ? (input as MeshShaderType)
     : fallback;
 }
 
@@ -448,12 +459,13 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
     return {
       v: 1,
       shaderType,
+      configuredShaderType: clampPersistedMeshShaderType(parsed.configuredShaderType ?? parsed.shaderType, DEFAULT_SHADER_TYPE),
       matcapVariant: clampMatcapVariant(parsed.matcapVariant, DEFAULT_MATCAP_VARIANT),
       flatUseVertexColors: clampBoolean(parsed.flatUseVertexColors, DEFAULT_FLAT_USE_VERTEX_COLORS),
-      toonSteps: clampInt(parsed.toonSteps, 2, 16, DEFAULT_TOON_STEPS),
       ambientIntensity: clampNumber(parsed.ambientIntensity, 0, 4, DEFAULT_AMBIENT_INTENSITY),
       directionalIntensity: clampNumber(parsed.directionalIntensity, 0, 4, DEFAULT_DIRECTIONAL_INTENSITY),
       materialRoughness: clampNumber(parsed.materialRoughness, 0, 1, DEFAULT_MATERIAL_ROUGHNESS),
+      bakedAoIntensity: clampNumber(parsed.bakedAoIntensity, 0, 2, DEFAULT_BAKED_OCCLUSION_INTENSITY),
       wireframeThicknessPx: clampNumber(parsed.wireframeThicknessPx, 0.5, 6, DEFAULT_WIREFRAME_THICKNESS_PX),
       xrayOpacity: clampNumber(parsed.xrayOpacity, 0.02, 0.85, DEFAULT_XRAY_OPACITY),
       heatmapMinAngle: clampNumber(parsed.heatmapMinAngle, 0, 90, DEFAULT_HEATMAP_MIN_ANGLE),
@@ -954,6 +966,10 @@ export interface LoadedModel {
   manualZMoveOverride?: boolean;
   isSupportGeometry?: boolean;
   linkGroupId?: string;
+  /** Bumped when the background bake attaches `aBakedAo` to this model's
+   *  geometry. `StlMesh` is memoised on props and the geometry object keeps its
+   *  identity, so this counter is what tells the material to start using it. */
+  bakedAoVersion?: number;
 }
 
 type DebugPrimitiveType =
@@ -1048,6 +1064,10 @@ type ModelClipboardEntry = {
   supportClipboard: SupportClipboardPayload | null;
   isSupportGeometry?: boolean;
   linkGroupId?: string;
+  /** Bumped when the background bake attaches `aBakedAo` to this model's
+   *  geometry. `StlMesh` is memoised on props and the geometry object keeps its
+   *  identity, so this counter is what tells the material to start using it. */
+  bakedAoVersion?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -1243,6 +1263,9 @@ export function useSceneCollectionManager() {
   // Count of scheduled-but-unfinished flattening-plane computations (idle
   // callbacks after geometry swaps). Part of hasPendingBackgroundGeometryWork.
   const pendingFlatteningPlanesRef = useRef(0);
+  // Models whose AO volume bake is queued or awaiting the native round trip.
+  // Part of hasPendingBackgroundGeometryWork.
+  const pendingAoBakeRef = useRef(0);
   const trackedGeometriesRef = useRef<Set<THREE.BufferGeometry>>(new Set());
 
   const tryRevokeObjectUrl = useCallback((url: string) => {
@@ -1547,12 +1570,22 @@ export function useSceneCollectionManager() {
   const [ambientIntensity, setAmbientIntensity] = useState<number>(DEFAULT_AMBIENT_INTENSITY);
   const [directionalIntensity, setDirectionalIntensity] = useState<number>(DEFAULT_DIRECTIONAL_INTENSITY);
   const [materialRoughness, setMaterialRoughness] = useState<number>(DEFAULT_MATERIAL_ROUGHNESS);
+  const [bakedAoIntensity, setBakedAoIntensity] = useState<number>(DEFAULT_BAKED_OCCLUSION_INTENSITY);
+
+  // Geometry prep runs outside React and bakes before a model reaches the scene,
+  // so it reads the intensity from the module rather than from this state.
+  useEffect(() => {
+    setBakedOcclusionIntensity(bakedAoIntensity);
+  }, [bakedAoIntensity]);
 
   // Shader-specific settings (Global)
   const [shaderType, setShaderType] = useState<MeshShaderType>(DEFAULT_SHADER_TYPE);
+  // What the Mesh settings tab edits. Deliberately separate from shaderType:
+  // the camera dropdown owns what the viewport renders, the settings tab owns
+  // which type's options it is showing.
+  const [configuredShaderType, setConfiguredShaderType] = useState<MeshShaderType>(DEFAULT_SHADER_TYPE);
   const [matcapVariant, setMatcapVariant] = useState<MatcapVariant>(DEFAULT_MATCAP_VARIANT);
   const [flatUseVertexColors, setFlatUseVertexColors] = useState<boolean>(DEFAULT_FLAT_USE_VERTEX_COLORS);
-  const [toonSteps, setToonSteps] = useState<number>(DEFAULT_TOON_STEPS);
   const [wireframeThicknessPx, setWireframeThicknessPx] = useState<number>(DEFAULT_WIREFRAME_THICKNESS_PX);
   const [xrayOpacity, setXrayOpacity] = useState<number>(DEFAULT_XRAY_OPACITY);
   const [heatmapMinAngle, setHeatmapMinAngle] = useState<number>(DEFAULT_HEATMAP_MIN_ANGLE);
@@ -1593,12 +1626,13 @@ export function useSceneCollectionManager() {
     const persistedAppearance = readMeshAppearanceFromLocalStorage();
     if (persistedAppearance) {
       setShaderType(persistedAppearance.shaderType);
+      setConfiguredShaderType(persistedAppearance.configuredShaderType);
       setMatcapVariant(persistedAppearance.matcapVariant);
       setFlatUseVertexColors(persistedAppearance.flatUseVertexColors);
-      setToonSteps(persistedAppearance.toonSteps);
       setAmbientIntensity(persistedAppearance.ambientIntensity);
       setDirectionalIntensity(persistedAppearance.directionalIntensity);
       setMaterialRoughness(persistedAppearance.materialRoughness);
+      setBakedAoIntensity(persistedAppearance.bakedAoIntensity);
       setWireframeThicknessPx(persistedAppearance.wireframeThicknessPx);
       setXrayOpacity(persistedAppearance.xrayOpacity);
       setHeatmapMinAngle(persistedAppearance.heatmapMinAngle ?? DEFAULT_HEATMAP_MIN_ANGLE);
@@ -1615,34 +1649,51 @@ export function useSceneCollectionManager() {
     setView3dSettingsState(getSavedView3DSettings());
   }, []);
 
+  // The whole appearance record is persisted whenever any of it changes, so
+  // settings survive a reload: the view mode the camera dropdown picks, the
+  // type the Mesh tab is configuring, and every parameter either of them edits.
   useEffect(() => {
-    const prev = readMeshAppearanceFromLocalStorage();
-    if (!prev) {
-      writeMeshAppearanceToLocalStorage({
-        v: 1,
-        shaderType,
-        matcapVariant,
-        flatUseVertexColors,
-        toonSteps,
-        ambientIntensity,
-        directionalIntensity,
-        materialRoughness,
-        wireframeThicknessPx,
-        xrayOpacity,
-        heatmapMinAngle,
-        heatmapMaxAngle,
-        heatmapColors,
-        meshColor: preferredMeshColor,
-        hoverTintStrength,
-        selectedTintStrength,
-        selectionColor,
-        hoverColor,
-      });
-      return;
-    }
-    if (prev.selectionColor === selectionColor && prev.hoverColor === hoverColor) return;
-    writeMeshAppearanceToLocalStorage({ ...prev, selectionColor, hoverColor });
-  }, [selectionColor, hoverColor]);
+    writeMeshAppearanceToLocalStorage({
+      v: 1,
+      shaderType,
+      configuredShaderType,
+      matcapVariant,
+      flatUseVertexColors,
+      ambientIntensity,
+      directionalIntensity,
+      materialRoughness,
+      bakedAoIntensity,
+      wireframeThicknessPx,
+      xrayOpacity,
+      heatmapMinAngle,
+      heatmapMaxAngle,
+      heatmapColors,
+      meshColor: preferredMeshColor,
+      hoverTintStrength,
+      selectedTintStrength,
+      selectionColor,
+      hoverColor,
+    });
+  }, [
+    shaderType,
+    configuredShaderType,
+    matcapVariant,
+    flatUseVertexColors,
+    ambientIntensity,
+    directionalIntensity,
+    materialRoughness,
+    bakedAoIntensity,
+    wireframeThicknessPx,
+    xrayOpacity,
+    heatmapMinAngle,
+    heatmapMaxAngle,
+    heatmapColors,
+    preferredMeshColor,
+    hoverTintStrength,
+    selectedTintStrength,
+    selectionColor,
+    hoverColor,
+  ]);
 
   const setView3dSettings = useCallback((next: View3DSettings) => {
     const normalized = normalizeView3DSettings(next);
@@ -2037,7 +2088,8 @@ export function useSceneCollectionManager() {
 
   /**
    * True while deferred post-swap geometry work (BVH acceleration builds,
-   * deferred geometry disposals, flattening-plane computation) is queued or
+   * deferred geometry disposals, flattening-plane computation, AO bakes) is
+   * queued or
    * running. Lets the UI keep a blocking "finalizing" indicator visible
    * until the app is genuinely responsive again after a large geometry swap
    * — the swap itself resolves long before this work drains.
@@ -2048,6 +2100,7 @@ export function useSceneCollectionManager() {
     || deferredDisposalQueueRef.current.length > 0
     || deferredDisposalProcessingRef.current
     || pendingFlatteningPlanesRef.current > 0
+    || pendingAoBakeRef.current > 0
   ), []);
 
   const processDeferredDisposalQueue = useCallback(() => {
@@ -3242,6 +3295,88 @@ export function useSceneCollectionManager() {
     scheduleIdle(step);
     return () => { cancelled = true; };
   }, [higherContrastModelEdges, setModels]);
+
+  /**
+   * Baked ambient occlusion.
+   *
+   * One native bake per model, on an idle callback, off the main thread:
+   * `dragonfruit-mesh-core::vertex_occlusion` fires a hemisphere fan per vertex
+   * from the mesh's own normal, which measures 12-263 ms for 40k-640k triangle
+   * meshes. The result is attached to the geometry as `aBakedAo`, so nothing is
+   * paid per frame afterwards.
+   */
+  useEffect(() => {
+    // Zero intensity means off, so there is nothing to bake for: raising the
+    // slider later re-runs this and the geometries that never got an attribute
+    // are the ones that get baked.
+    if (!canBakeOcclusion() || bakedAoIntensity <= 0) return;
+
+    const queue = modelsRef.current
+      .filter((model) => {
+        const geometry = model.geometry.geometry;
+        if (!geometry.getAttribute('position')) return false;
+        // Re-bake when the geometry was replaced (repair, boolean cut, hole
+        // punch): the attribute lives on the old geometry, so without this the
+        // new shape would be shaded with the old shape's occlusion.
+        return geometry.getAttribute(BAKED_OCCLUSION_ATTRIBUTE) === undefined;
+      })
+      .map((model) => model.id);
+    if (queue.length === 0) return;
+
+    let cancelled = false;
+    pendingAoBakeRef.current += queue.length;
+
+    const scheduleIdle = (cb: () => void) => {
+      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(cb, { timeout: 500 });
+      } else {
+        setTimeout(cb, 16);
+      }
+    };
+
+    const bakeOne = async () => {
+      while (!cancelled) {
+        const id = queue.shift();
+        if (!id) return;
+        const model = modelsRef.current.find((m) => m.id === id);
+        try {
+          if (model) {
+            const geometry = model.geometry.geometry;
+            const occlusion = await bakeOcclusionForGeometry(geometry);
+            if (occlusion && !cancelled) {
+              const attribute = new THREE.BufferAttribute(occlusion, 1);
+              attribute.setUsage(THREE.StaticDrawUsage);
+              geometry.setAttribute(BAKED_OCCLUSION_ATTRIBUTE, attribute);
+              setModels((prev) => prev.map((m) => (
+                m.id === id && m.geometry.geometry === geometry
+                  ? { ...m, bakedAoVersion: (m.bakedAoVersion ?? 0) + 1 }
+                  : m
+              )));
+            }
+          }
+        } catch (error) {
+          // A failed bake is not worth surfacing: the model simply keeps the
+          // unoccluded look it has today.
+          console.warn('[ao] bake failed', error);
+        } finally {
+          pendingAoBakeRef.current = Math.max(0, pendingAoBakeRef.current - 1);
+        }
+      }
+    };
+
+    // Two bakes in flight, not one. The ray pass saturates the pool on its own,
+    // but the weld, the tree build and the IPC transfer of each model are serial
+    // phases — on a print-sized model that is about a quarter of its bake, and in
+    // a loaded scene it is a quarter of *every* model's bake spent with fifteen
+    // cores idle. Both commands share one rayon pool, so overlapping them lets
+    // one model's serial phase run during another's ray pass. Two rather than
+    // more: each in-flight bake holds its soup and its output, and past a couple
+    // the pool is oversubscribed for no further gain.
+    for (let worker = 0; worker < Math.min(AO_BAKE_CONCURRENCY, queue.length); worker += 1) {
+      scheduleIdle(() => void bakeOne());
+    }
+    return () => { cancelled = true; };
+  }, [models, setModels, bakedAoIntensity]);
 
   const finalizeModelGeometryPostProcessing = useCallback((id: string) => {
     const target = modelsRef.current.find((m) => m.id === id);
@@ -4779,8 +4914,24 @@ export function useSceneCollectionManager() {
         processed: GeometryWithBounds;
       }> = [];
       for (const normalized of normalizedPayloads) {
-        const processed = await processGeometry(normalized.geometry, {
+        // The plugin built this geometry in the renderer, so it has not been
+        // through the native loaders that refine coarse faces. Refine it here, and
+        // keep the normals the command returns: they are welded and split at
+        // creases, which `computeVertexNormals` would flatten again.
+        let geometry = normalized.geometry;
+        let skipComputeNormals = false;
+        try {
+          const refined = await refineCoarseFaces(geometry);
+          if (refined) {
+            geometry = refined;
+            skipComputeNormals = true;
+          }
+        } catch (error) {
+          console.warn('[refine] plugin geometry left unrefined', error);
+        }
+        const processed = await processGeometry(geometry, {
           center: false,
+          ...(skipComputeNormals ? { _skipComputeNormals: true } : {}),
           nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
           onNativeProcessingStage: (stage) => {
             if (options?.suppressProgress) return;
@@ -5591,31 +5742,7 @@ export function useSceneCollectionManager() {
         return { ...m, color: normalizedColor };
       }));
     }
-
-    const prev = readMeshAppearanceFromLocalStorage();
-
-    const persistedShaderType = clampPersistedMeshShaderType(prev?.shaderType ?? shaderType, DEFAULT_SHADER_TYPE);
-    writeMeshAppearanceToLocalStorage({
-      v: 1,
-      shaderType: persistedShaderType,
-      matcapVariant: prev?.matcapVariant ?? matcapVariant,
-      flatUseVertexColors: prev?.flatUseVertexColors ?? flatUseVertexColors,
-      toonSteps: prev?.toonSteps ?? toonSteps,
-      ambientIntensity: prev?.ambientIntensity ?? ambientIntensity,
-      directionalIntensity: prev?.directionalIntensity ?? directionalIntensity,
-      materialRoughness: prev?.materialRoughness ?? materialRoughness,
-      wireframeThicknessPx: prev?.wireframeThicknessPx ?? wireframeThicknessPx,
-      xrayOpacity: prev?.xrayOpacity ?? xrayOpacity,
-      heatmapMinAngle: prev?.heatmapMinAngle ?? heatmapMinAngle,
-      heatmapMaxAngle: prev?.heatmapMaxAngle ?? heatmapMaxAngle,
-      heatmapColors: prev?.heatmapColors ?? heatmapColors,
-      meshColor: normalizedColor,
-      selectionColor: prev?.selectionColor ?? selectionColor,
-      hoverColor: prev?.hoverColor ?? hoverColor,
-      hoverTintStrength: prev?.hoverTintStrength ?? hoverTintStrength,
-      selectedTintStrength: prev?.selectedTintStrength ?? selectedTintStrength,
-    });
-  }, [activeModelId, ambientIntensity, directionalIntensity, flatUseVertexColors, heatmapMinAngle, heatmapColors, heatmapMaxAngle, hoverColor, hoverTintStrength, materialRoughness, matcapVariant, selectedTintStrength, selectionColor, shaderType, toonSteps, wireframeThicknessPx, xrayOpacity]);
+  }, [activeModelId]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
     if (activeModelId) {
@@ -5960,6 +6087,8 @@ export function useSceneCollectionManager() {
     setDirectionalIntensity,
     materialRoughness,
     setMaterialRoughness,
+    bakedAoIntensity,
+    setBakedAoIntensity,
     wireframeThicknessPx,
     setWireframeThicknessPx,
     xrayOpacity,
@@ -5970,12 +6099,12 @@ export function useSceneCollectionManager() {
     setHeatmapMaxAngle,
     shaderType,
     setShaderType,
+    configuredShaderType,
+    setConfiguredShaderType,
     matcapVariant,
     setMatcapVariant,
     flatUseVertexColors,
     setFlatUseVertexColors,
-    toonSteps,
-    setToonSteps,
     selectionColor,
     setSelectionColor,
     hoverColor,

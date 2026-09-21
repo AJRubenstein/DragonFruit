@@ -3,7 +3,9 @@
 mod astar;
 mod mesh_minima;
 mod mesh_repair;
+mod mesh_refine;
 mod network;
+mod ao_vertex;
 mod overhang;
 mod sdf;
 mod spacemouse;
@@ -4400,6 +4402,7 @@ fn main() {
             mesh_minima::scan_mesh_minima_from_path,
             mesh_minima::scan_voxel_islands_from_path,
             mesh_minima::scan_islands_from_path,
+            ao_vertex::bake_vertex_occlusion,
             overhang::scan_overhangs,
             export_mesh_file,
             save_print_file,
@@ -4451,6 +4454,7 @@ fn main() {
             network::plugin_network_request,
             network::ensure_rtsp_relay,
             mesh_repair::mesh_analyze_from_path,
+            mesh_refine::refine_mesh_soup,
             mesh_repair::mesh_analyze_staged,
             mesh_repair::mesh_repair_from_path,
             mesh_repair::mesh_repair_staged,
