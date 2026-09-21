@@ -19,12 +19,6 @@
       "name": "Auto Orientation",
       "description": "Orientation suggestions that minimize support contact area. Early access.",
       "defaultEnabled": false
-    },
-    {
-      "id": "model-ao",
-      "name": "Baked Model Occlusion",
-      "description": "Ambient occlusion baked once per model on a background thread and shaded by the model material. No per-frame cost; the bake runs after a model loads.",
-      "defaultEnabled": false
     }
   ]
 }

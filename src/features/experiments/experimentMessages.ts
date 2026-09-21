@@ -18,13 +18,11 @@ const NAMES: Record<string, MessageDescriptor> = {
   'chitubox-import': msg`Chitubox File Import`,
   'auto-supports': msg`Auto Supports`,
   'auto-rotation': msg`Auto Orientation`,
-  'model-ao': msg`Baked Model Occlusion`,
 };
 
 const DESCRIPTIONS: Record<string, MessageDescriptor> = {
   'chitubox-import': msg`Enable importing .chitubox project files. Lacks comprehensive testing and may not work with all files.`,
   'auto-supports': msg`Automatic support generation from model analysis. Early access.`,
-  'model-ao': msg`Ambient occlusion baked once per model on a background thread and shaded by the model material. No per-frame cost; the bake runs after a model loads.`,
 };
 
 export function translateExperimentName(definition: ExperimentDefinition, translate: Translate): string {

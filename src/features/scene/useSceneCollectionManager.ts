@@ -19,7 +19,6 @@ import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginC
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
 import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
-import { isExperimentEnabled } from '@/features/experiments/experimentsRegistry';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -3298,7 +3297,7 @@ export function useSceneCollectionManager() {
   }, [higherContrastModelEdges, setModels]);
 
   /**
-   * Baked ambient occlusion (`model-ao` experiment).
+   * Baked ambient occlusion.
    *
    * One native bake per model, on an idle callback, off the main thread:
    * `dragonfruit-mesh-core::vertex_occlusion` fires a hemisphere fan per vertex
@@ -3310,7 +3309,7 @@ export function useSceneCollectionManager() {
     // Zero intensity means off, so there is nothing to bake for: raising the
     // slider later re-runs this and the geometries that never got an attribute
     // are the ones that get baked.
-    if (!isExperimentEnabled('model-ao') || !canBakeOcclusion() || bakedAoIntensity <= 0) return;
+    if (!canBakeOcclusion() || bakedAoIntensity <= 0) return;
 
     const queue = modelsRef.current
       .filter((model) => {

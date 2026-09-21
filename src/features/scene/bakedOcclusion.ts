@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { invoke } from '@tauri-apps/api/core';
-import { isExperimentEnabled } from '@/features/experiments/experimentsRegistry';
 import { expandGeometryToTriangleSoup } from '@/utils/tauriMeshBridge';
 
 /**
@@ -175,7 +174,9 @@ export function setBakedOcclusionIntensity(intensity: number): void {
 export async function bakeAndAttachOcclusionForGeometry(
   geometry: THREE.BufferGeometry,
 ): Promise<boolean> {
-  if (!isExperimentEnabled('model-ao') || !canBakeOcclusion()) return false;
+  // Not an experiment any more: what is left is a capability check, since the
+  // bake is native and the plain web build has no command to call.
+  if (!canBakeOcclusion()) return false;
   if (!(currentIntensity > 0)) return false;
   if (!geometry.getAttribute('position')) return false;
 

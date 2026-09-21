@@ -118,9 +118,10 @@ The algorithm lives in `dragonfruit-mesh-core::vertex_occlusion` (testable
 without Tauri, `cargo test -p dragonfruit-mesh-core`), the boundary is
 `src-tauri/src/ao_vertex.rs`, and the frontend side is
 `src/features/scene/bakedOcclusion.ts` — which attaches the values as the
-`aBakedAo` attribute that `softClay` samples. Gated behind the `model-ao`
-experiment, and a no-op in the plain web build (`canBakeOcclusion()` is false, so
-the material's strength uniform stays 0).
+`aBakedAo` attribute that `softClay` samples. It is on for everyone — it was the
+`model-ao` experiment until the bake got cheap enough to ship — with a no-op left
+in the plain web build (`canBakeOcclusion()` is false, so the material's strength
+uniform stays 0).
 
 Measured bake cost (release), from `cargo test -p dragonfruit-mesh-core --release
 -- --ignored --nocapture bench_vertex_occlusion` (a sphere fixture; `verts` are
