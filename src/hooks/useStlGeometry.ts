@@ -552,8 +552,16 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // Yield to let the loading indicator repaint before each heavy synchronous op
   await new Promise<void>(r => setTimeout(r, 0));
 
-  if (!options._skipComputeNormals || nativeModifiedGeometry) {
-    console.log(`[${new Date().toISOString()}] [processGeometry] Computing Normals${nativeModifiedGeometry ? ' (geometry modified by native processing)' : ''}`);
+  // A geometry with no `normal` attribute at all must be given one, whatever the
+  // caller asked for: `_skipComputeNormals` means "the loader already computed
+  // them", and the Manifold fallback invalidates that promise by rewriting the
+  // positions and index and deleting the stale normals for the caller to
+  // recompute (see `repairGeometryWithManifold`). Without this the repaired
+  // geometry kept no normals, so it shaded from a zeroed attribute — which reads
+  // as garbage on exactly the imports that needed repair, and is easy to mistake
+  // for the baked occlusion being wrong.
+  if (!options._skipComputeNormals || nativeModifiedGeometry || !geometry.getAttribute('normal')) {
+    console.log(`[${new Date().toISOString()}] [processGeometry] Computing Normals${nativeModifiedGeometry ? ' (geometry modified by native processing)' : geometry.getAttribute('normal') ? '' : ' (geometry has none)'}`);
     geometry.computeVertexNormals();
   } else {
     console.log(`[${new Date().toISOString()}] [processGeometry] Normals already present — skipping computeVertexNormals`);
