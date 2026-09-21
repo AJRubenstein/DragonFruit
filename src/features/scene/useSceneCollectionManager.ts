@@ -18,7 +18,7 @@ import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/buil
 import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginContracts';
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
-import { BAKED_OCCLUSION_ATTRIBUTE, bakeOcclusionForGeometry, canBakeOcclusion } from '@/features/scene/bakedOcclusion';
+import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, canBakeOcclusion } from '@/features/scene/bakedOcclusion';
 import { isExperimentEnabled } from '@/features/experiments/experimentsRegistry';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
@@ -131,12 +131,6 @@ const DEFAULT_MESH_COLOR = '#a3a3a3';
 const DEFAULT_AMBIENT_INTENSITY = 0.28;
 const DEFAULT_DIRECTIONAL_INTENSITY = 1.12;
 const DEFAULT_MATERIAL_ROUGHNESS = 0.55;
-/**
- * Multiplier on the baked occlusion's strength, as the Mesh tab's AO slider sets
- * it: 0 turns the bake off entirely, 1 is the value the shader was tuned at, and
- * the top of the range is deliberately stronger than the tuning.
- */
-const DEFAULT_BAKED_AO_INTENSITY = 1;
 const DEFAULT_WIREFRAME_THICKNESS_PX = 1.5;
 const DEFAULT_XRAY_OPACITY = 0.25;
 const DEFAULT_HEATMAP_MIN_ANGLE = 0;
@@ -472,7 +466,7 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
       ambientIntensity: clampNumber(parsed.ambientIntensity, 0, 4, DEFAULT_AMBIENT_INTENSITY),
       directionalIntensity: clampNumber(parsed.directionalIntensity, 0, 4, DEFAULT_DIRECTIONAL_INTENSITY),
       materialRoughness: clampNumber(parsed.materialRoughness, 0, 1, DEFAULT_MATERIAL_ROUGHNESS),
-      bakedAoIntensity: clampNumber(parsed.bakedAoIntensity, 0, 2, DEFAULT_BAKED_AO_INTENSITY),
+      bakedAoIntensity: clampNumber(parsed.bakedAoIntensity, 0, 2, DEFAULT_BAKED_OCCLUSION_INTENSITY),
       wireframeThicknessPx: clampNumber(parsed.wireframeThicknessPx, 0.5, 6, DEFAULT_WIREFRAME_THICKNESS_PX),
       xrayOpacity: clampNumber(parsed.xrayOpacity, 0.02, 0.85, DEFAULT_XRAY_OPACITY),
       heatmapMinAngle: clampNumber(parsed.heatmapMinAngle, 0, 90, DEFAULT_HEATMAP_MIN_ANGLE),
@@ -1577,7 +1571,7 @@ export function useSceneCollectionManager() {
   const [ambientIntensity, setAmbientIntensity] = useState<number>(DEFAULT_AMBIENT_INTENSITY);
   const [directionalIntensity, setDirectionalIntensity] = useState<number>(DEFAULT_DIRECTIONAL_INTENSITY);
   const [materialRoughness, setMaterialRoughness] = useState<number>(DEFAULT_MATERIAL_ROUGHNESS);
-  const [bakedAoIntensity, setBakedAoIntensity] = useState<number>(DEFAULT_BAKED_AO_INTENSITY);
+  const [bakedAoIntensity, setBakedAoIntensity] = useState<number>(DEFAULT_BAKED_OCCLUSION_INTENSITY);
 
   // Shader-specific settings (Global)
   const [shaderType, setShaderType] = useState<MeshShaderType>(DEFAULT_SHADER_TYPE);

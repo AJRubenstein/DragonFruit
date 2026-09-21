@@ -10,6 +10,7 @@ import { SponsorsCarousel } from '@/components/settings/SponsorsCarousel';
 import { CameraSettingsTab } from '@/components/settings/CameraSettingsTab';
 import { HotkeysSettingsTab } from '@/components/settings/HotkeysSettingsTab';
 import { MeshSettingsTab } from '@/components/settings/MeshSettingsTab';
+import { DEFAULT_BAKED_OCCLUSION_INTENSITY } from '@/features/scene/bakedOcclusion';
 import { PluginsSettingsTab } from '@/components/settings/PluginsSettingsTab';
 import { ExperimentsSettingsTab } from '@/components/settings/ExperimentsSettingsTab';
 import { getEnabledExperimentIds } from '@/features/experiments/experimentsRegistry';
@@ -862,6 +863,7 @@ export function SettingsModal({
     setDraftAmbientIntensity(DEFAULT_AMBIENT_INTENSITY);
     setDraftDirectionalIntensity(DEFAULT_DIRECTIONAL_INTENSITY);
     setDraftMaterialRoughness(DEFAULT_MATERIAL_ROUGHNESS);
+    setDraftBakedAoIntensity(DEFAULT_BAKED_OCCLUSION_INTENSITY);
     setDraftXrayOpacity(DEFAULT_XRAY_OPACITY);
     setDraftHeatmapMinAngle(DEFAULT_HEATMAP_MIN_ANGLE);
     setDraftHeatmapMaxAngle(DEFAULT_HEATMAP_MAX_ANGLE);

@@ -36,6 +36,14 @@ export const BAKED_OCCLUSION_ATTRIBUTE = 'aBakedAo';
  */
 export const BAKED_OCCLUSION_STRENGTH = 0.75;
 
+/**
+ * What the Ambient Occlusion slider starts at, and what Restore Defaults sets it
+ * to. With the strength below, 0.85 renders a little lighter than the value the
+ * two constants were tuned to match, which is the default the shading was asked
+ * for.
+ */
+export const DEFAULT_BAKED_OCCLUSION_INTENSITY = 0.85;
+
 /** How much of the baked occlusion to apply for a user-set intensity. */
 export function bakedOcclusionStrength(intensity: number): number {
   if (!Number.isFinite(intensity)) return BAKED_OCCLUSION_STRENGTH;
