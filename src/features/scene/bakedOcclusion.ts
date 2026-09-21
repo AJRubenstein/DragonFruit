@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { invoke } from '@tauri-apps/api/core';
+import { isExperimentEnabled } from '@/features/experiments/experimentsRegistry';
 import { expandGeometryToTriangleSoup } from '@/utils/tauriMeshBridge';
 
 /**
@@ -142,4 +143,42 @@ export function mapCornerValuesToVertices(
     values[array[slot]] = cornerValues[slot];
   }
   return values;
+}
+
+/**
+ * The intensity the store currently has, for the geometry prep that runs outside
+ * React and has to decide whether to bake at all. The store pushes it here
+ * whenever it changes, so this is never more than one render behind.
+ */
+let currentIntensity = DEFAULT_BAKED_OCCLUSION_INTENSITY;
+
+export function setBakedOcclusionIntensity(intensity: number): void {
+  currentIntensity = intensity;
+}
+
+/**
+ * Bake this geometry's occlusion and attach it, before it reaches the scene.
+ *
+ * Geometry prep is the one place every import goes through, and the model is not
+ * added to the scene until prep resolves, so baking here means the first frame a
+ * model appears in already has its occlusion. Baking after the fact instead, on an
+ * idle callback, is what made it pop in a moment after the model showed up. The
+ * caller can start this before the rest of prep and await it at the end: the bake
+ * is native work while prep is synchronous, so most of it overlaps.
+ *
+ * Returns whether an attribute was attached.
+ */
+export async function bakeAndAttachOcclusionForGeometry(
+  geometry: THREE.BufferGeometry,
+): Promise<boolean> {
+  if (!isExperimentEnabled('model-ao') || !canBakeOcclusion()) return false;
+  if (!(currentIntensity > 0)) return false;
+  if (!geometry.getAttribute('position')) return false;
+
+  const occlusion = await bakeOcclusionForGeometry(geometry);
+  if (!occlusion) return false;
+  const attribute = new THREE.BufferAttribute(occlusion, 1);
+  attribute.setUsage(THREE.StaticDrawUsage);
+  geometry.setAttribute(BAKED_OCCLUSION_ATTRIBUTE, attribute);
+  return true;
 }

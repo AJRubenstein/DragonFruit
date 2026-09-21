@@ -1,4 +1,5 @@
 import { isTauriRuntime } from '@/utils/tauriRuntime';
+import { bakeAndAttachOcclusionForGeometry } from '@/features/scene/bakedOcclusion';
 import { getSavedWorkspaceCameraSettings } from '@/components/settings/workspaceCameraPreferences';
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
@@ -584,6 +585,18 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   await new Promise<void>(r => setTimeout(r, 0));
 
   // Add BVH acceleration for fast raycasting (critical for support placement)
+  // Bake the occlusion now and await it at the end: the model is not added to the
+  // scene until prep resolves, so this is what keeps it from popping in a moment
+  // after the model appears. The bake is native work while the rest of prep is
+  // synchronous, so starting it here overlaps most of it.
+  // A preview is replaced by the full model later, so baking it is wasted work.
+  const occlusionPromise = options._isNativePreview
+    ? Promise.resolve(false)
+    : bakeAndAttachOcclusionForGeometry(geometry).catch((error) => {
+        console.warn('[ao] bake during prep failed', error);
+        return false;
+      });
+
   console.log(`[${new Date().toISOString()}] [processGeometry] Starting BVH Construction`);
   const startBVH = performance.now();
   accelerateGeometry(geometry);
@@ -632,6 +645,13 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   }
 
   const shouldSurfaceDefects = meshDefects.hasDefects || meshDefects.nativeRepairReport != null;
+  // The model is not added to the scene until this resolves, so its first frame
+  // already carries the occlusion.
+  const baked = await occlusionPromise;
+  if (baked) {
+    console.log(`[${new Date().toISOString()}] [processGeometry] Baked occlusion attached during prep`);
+  }
+
   return { geometry, bbox, center, size, flatteningPlanes, edgeGeometry, ...(shouldSurfaceDefects ? { meshDefects } : {}) };
 }
 

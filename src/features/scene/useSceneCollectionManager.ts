@@ -18,7 +18,7 @@ import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/buil
 import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginContracts';
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
-import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, canBakeOcclusion } from '@/features/scene/bakedOcclusion';
+import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
 import { isExperimentEnabled } from '@/features/experiments/experimentsRegistry';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
@@ -1572,6 +1572,12 @@ export function useSceneCollectionManager() {
   const [directionalIntensity, setDirectionalIntensity] = useState<number>(DEFAULT_DIRECTIONAL_INTENSITY);
   const [materialRoughness, setMaterialRoughness] = useState<number>(DEFAULT_MATERIAL_ROUGHNESS);
   const [bakedAoIntensity, setBakedAoIntensity] = useState<number>(DEFAULT_BAKED_OCCLUSION_INTENSITY);
+
+  // Geometry prep runs outside React and bakes before a model reaches the scene,
+  // so it reads the intensity from the module rather than from this state.
+  useEffect(() => {
+    setBakedOcclusionIntensity(bakedAoIntensity);
+  }, [bakedAoIntensity]);
 
   // Shader-specific settings (Global)
   const [shaderType, setShaderType] = useState<MeshShaderType>(DEFAULT_SHADER_TYPE);
