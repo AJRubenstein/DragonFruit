@@ -1000,6 +1000,11 @@ export function BracePlacementController() {
             const point: Vec3 | null = detail?.point ?? null;
             if (!leafId || !point) return;
 
+            // The cone host this brace end rides, from the type declaring it.
+            const coneType = braceSnapConeType();
+            if (!coneType) return;
+            const coneHostId = knotHostId(coneType, leafId);
+
             if (stage === 'idle') {
                 const snap = resolveLeafSnapFromClick(leafId, point);
                 if (!snap) return;
@@ -1049,7 +1054,7 @@ export function BracePlacementController() {
 
                 const endKnot: Knot = {
                     id: endKnotId,
-                    parentShaftId: `leafCone:${leafId}`,
+                    parentShaftId: coneHostId,
                     t: endSnap.coneT,
                     pos: endSnap.snappedPos,
                     diameter: endDiam + 0.1,
@@ -1118,7 +1123,7 @@ export function BracePlacementController() {
 
             const endKnot: Knot = {
                 id: endKnotId,
-                parentShaftId: `leafCone:${leafId}`,
+                parentShaftId: coneHostId,
                 t: endSnap.coneT,
                 pos: endSnap.snappedPos,
                 diameter: endDiam + 0.1,

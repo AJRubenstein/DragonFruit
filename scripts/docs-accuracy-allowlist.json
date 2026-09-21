@@ -47,7 +47,7 @@
       ],
       "paths": [
             "src/supports/generatedSupportRegistrations.ts",
-    "src/features/plugins/generatedBuiltinComplexPlugins.ts",
+            "src/features/plugins/generatedBuiltinComplexPlugins.ts",
             "src/features/plugins/generatedBuiltinComplexPluginNetworkHandlers.ts",
             "src/features/plugins/generatedBuiltinComplexPluginUploadHandlers.ts",
             "src/features/plugins/generatedBuiltinComplexPluginFileTypeHandlers.ts",
