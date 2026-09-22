@@ -93,6 +93,22 @@ test('every editable type applies without falling through', () => {
 });
 
 
+test('an inline root takes the root settings, as a shared one does', () => {
+    // A `Roots` row is written separately; an inline root is fields on the
+    // entity, so without this the settings were silently dropped.
+    scene();
+    const settingsToApply = settings();
+    assert.equal(
+        applySettingsToSupportTarget({ kind: 'stump', id: 'stump-a' }, settingsToApply as never),
+        true,
+    );
+
+    const stump = getSnapshot().stumps['stump-a'] as unknown as Record<string, number>;
+    assert.equal(stump.rootBaseDiameter, settingsToApply.roots.diameterMm);
+    assert.equal(stump.rootTopDiameter, settingsToApply.roots.neckDiameterMm);
+    assert.equal(stump.rootHeight, settingsToApply.roots.coneHeightMm);
+});
+
 test('a missing entity or non-editable type applies nothing', () => {
     scene();
     assert.equal(applySettingsToSupportTarget({ kind: 'trunk', id: 'nope' }, settings() as never), false);

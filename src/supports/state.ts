@@ -3511,6 +3511,15 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
     // Only a root-owning type records its shaft width on the entity.
     if (descriptor.ownsRoot) next.baseDiameterMm = settings.shaft.diameterMm;
 
+    // An inline root is geometry on the entity, so the same settings land on the
+    // fields it declares rather than on a shared `Roots` row.
+    if (descriptor.lower.kind === 'inlineRoot') {
+        const { radiusField, topRadiusField, heightField } = descriptor.lower;
+        if (radiusField) next[radiusField] = settings.roots.diameterMm;
+        if (topRadiusField) next[topRadiusField] = settings.roots.neckDiameterMm;
+        if (heightField) next[heightField] = settings.roots.coneHeightMm;
+    }
+
     setCachedSupportSettingsHex(descriptor.id, entity.id, nextHex);
 
     logSupportSettingsDebug(`apply ${descriptor.id} hex`, {

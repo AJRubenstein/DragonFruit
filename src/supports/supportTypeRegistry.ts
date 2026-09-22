@@ -61,6 +61,13 @@ export interface SupportEndpoint {
      * field of that entity rather than the `diameter` of a shared `Roots` record.
      */
     radiusField?: string;
+    /**
+     * For `inlineRoot`: the fields holding the rest of the base's dimensions,
+     * which a `Roots` row would carry as `diameter` / `coneHeight`. Declared so
+     * the settings reach an inline root the same way they reach a shared one.
+     */
+    topRadiusField?: string;
+    heightField?: string;
 }
 
 /**
@@ -923,7 +930,13 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
             shaftMultiplier: 1.25,
         },
         isAutoBraceable: false,
-        lower: { kind: 'inlineRoot', field: 'rootPos', radiusField: 'rootBaseDiameter' },
+        lower: {
+            kind: 'inlineRoot',
+            field: 'rootPos',
+            radiusField: 'rootBaseDiameter',
+            topRadiusField: 'rootTopDiameter',
+            heightField: 'rootHeight',
+        },
         upper: { kind: 'cone', field: 'contactCone' },
         recomputesDiameterFromAttachments: false,
         replacedByHigherContact: false,
