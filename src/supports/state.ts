@@ -3,6 +3,7 @@ import { calculateBezierControlPoints, getBezierPointAtT, toVector3, toVec3 } fr
 import { calculateKnotPositionOnSegmentFromT } from './SupportPrimitives/Knot/knotUtils';
 import type { SupportSelectionCategory } from './supportTypeRegistry';
 import {
+    parseInlineRootId,
     typesDeclaringOwnHistoryEntryWithoutUpdate,
     typesMissingContactOverride,
     typesMissingHostPromotion, removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
@@ -3352,7 +3353,12 @@ export function resolveEditableSupportTarget(selectedId: string | null, selected
             .filter(Boolean);
 
     if (selectedCategory === 'root') {
-        return findOwner((entity) => entity.rootId === selectedId);
+        // A type owning a `Roots` row matches by id; one declaring an inline
+        // root carries the geometry itself, so its primitive id names the entity.
+        const inlineOwner = parseInlineRootId(selectedId);
+        return findOwner((entity, descriptor) =>
+            entity.rootId === selectedId
+            || (descriptor.lower.kind === 'inlineRoot' && entity.id === inlineOwner));
     }
 
     if (selectedCategory === 'segment') {

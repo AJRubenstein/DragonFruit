@@ -55,6 +55,12 @@ function scene() {
         transform: { pos: { x: 5, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0, w: 1 } },
         diameter: 3, diskHeight: 0.5, coneHeight: 1.5,
     } as never);
+    addSupportEntity('stump', {
+        id: 'stump-a', modelId: MODEL,
+        rootPos: { x: 10, y: 0, z: 0 }, rootBaseDiameter: 3, rootTopDiameter: 1.5, rootHeight: 2,
+        joint: { id: 'stump-a-joint', pos: { x: 10, y: 0, z: 2 }, diameter: 1.2 },
+        segments: [segment('seg-sa')], contactCone: cone('cone-sa'),
+    } as never);
     addSupportEntity('kickstand', {
         id: 'kickstand-a', modelId: MODEL, rootId: 'root-k',
         hostKnotId: 'knot-a', hostSegmentId: 'seg-ta',
