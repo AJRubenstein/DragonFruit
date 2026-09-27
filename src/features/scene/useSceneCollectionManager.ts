@@ -55,7 +55,6 @@ import {
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
 import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
-import { getSavedThemeCustomColors } from '@/components/settings/themeCustomizations';
 import {
   getSavedWorkspaceCameraSettings,
   getWorkspaceCameraSettingsServerSnapshot,
@@ -81,6 +80,7 @@ import {
   getStoredMeshModifiers,
   storeModelMeshModifiers,
 } from '@/features/mesh-modifiers/meshModifierStore';
+import { clearPreparedGeometryCacheForModel } from '@/features/mesh-modifiers/prepareModelGeometry';
 import { splitClassifiedSupportGeometry } from '@/features/scene/splitClassifiedSupports';
 import {
   applyModelGrouping,
@@ -108,8 +108,6 @@ type PersistedMeshAppearance = {
   heatmapMaxAngle: number;
   heatmapColors: string[];
   meshColor: string;
-  selectionColor: string;
-  hoverColor: string;
   hoverTintStrength: number;
   selectedTintStrength: number;
 };
@@ -138,24 +136,6 @@ export const DEFAULT_HEATMAP_COLORS = ['#E55959', '#E5A559', '#D9D959', '#73D973
 const DEFAULT_SHADER_TYPE: MeshShaderType = 'soft_clay';
 const DEFAULT_MATCAP_VARIANT: MatcapVariant = 'neutral';
 const DEFAULT_FLAT_USE_VERTEX_COLORS = true;
-export const DEFAULT_SELECTION_COLOR = '#ec2a77';
-export const DEFAULT_HOVER_COLOR = '#ec2a77';
-export function getThemedDefaultSelectionColor(): string {
-  try {
-    if (typeof window === 'undefined') return DEFAULT_SELECTION_COLOR;
-    const c = getSavedThemeCustomColors()?.accent;
-    if (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
-  } catch {}
-  return DEFAULT_SELECTION_COLOR;
-}
-export function getThemedDefaultHoverColor(): string {
-  try {
-    if (typeof window === 'undefined') return DEFAULT_HOVER_COLOR;
-    const c = getSavedThemeCustomColors()?.accent;
-    if (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
-  } catch {}
-  return DEFAULT_HOVER_COLOR;
-}
 export const DEFAULT_HOVER_TINT_STRENGTH = 0.5;
 export const DEFAULT_SELECTED_TINT_STRENGTH = 0.70;
 const RECENT_OPENED_FILES_STORAGE_KEY = 'app-recent-opened-files';
@@ -163,7 +143,7 @@ const RECENT_OPENED_FILES_LIMIT = 10;
 const RECENT_FILES_DB_NAME = 'dragonfruit-recent-files';
 const RECENT_FILES_DB_VERSION = 1;
 const RECENT_FILES_STORE_NAME = 'files';
-const SCENE_MODELS_SNAPSHOT_APPLY = 'scene_models_snapshot_apply' as const;
+export const SCENE_MODELS_SNAPSHOT_APPLY = 'scene_models_snapshot_apply' as const;
 // A marker pushed after a slice so change-detection can tell whether the scene
 // was edited since. It carries no undo behaviour, but it still lands on the undo
 // stack, so it must have a (pass-through) handler — otherwise undoing onto it
@@ -176,7 +156,7 @@ const SCENE_HISTORY_MAX_SNAPSHOTS = 200;
 // flat count cap alone can leave a lot of stale geometry pinned alive.
 const SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES = 300 * 1024 * 1024;
 
-type SceneSnapshotPayload = { key: string };
+type SceneSnapshotPayload = { key: string; modelId?: string };
 
 /** Action→payload map for the scene history domain. */
 type SceneHistoryPayloadMap = {
@@ -195,6 +175,7 @@ type SceneSnapshot = {
   activeModelId: string | null;
   selectedModelIds: string[];
   supportState?: SupportState;
+  modifierRecord?: { modelId: string; modifiers: ModelMeshModifiers | undefined };
 };
 
 type SceneSnapshotCaptureOptions = {
@@ -260,6 +241,26 @@ function cloneMeshModifiersShallow(modifiers: ModelMeshModifiers): ModelMeshModi
     holePunchAppliedPlacements: modifiers.holePunchAppliedPlacements
       ? modifiers.holePunchAppliedPlacements.map((p) => ({ ...p }))
       : undefined,
+  };
+}
+
+function cloneMeshModifiersForHistory(modifiers: ModelMeshModifiers | null | undefined): ModelMeshModifiers | undefined {
+  if (!modifiers) return undefined;
+  const hollowing = modifiers.hollowing;
+  const clonePlacements = (placements: typeof modifiers.holePunches) => placements?.map((placement) => ({
+    ...placement,
+    centerNorm: placement.centerNorm.slice() as typeof placement.centerNorm,
+    direction: placement.direction.slice() as typeof placement.direction,
+  }));
+  return {
+    ...modifiers,
+    hollowing: hollowing ? {
+      ...hollowing,
+      blockedVoxelIndices: hollowing.blockedVoxelIndices?.slice(),
+      blockedVoxelRotationQuat: hollowing.blockedVoxelRotationQuat?.slice() as typeof hollowing.blockedVoxelRotationQuat,
+    } : hollowing,
+    holePunches: clonePlacements(modifiers.holePunches),
+    holePunchAppliedPlacements: clonePlacements(modifiers.holePunchAppliedPlacements),
   };
 }
 
@@ -472,8 +473,6 @@ function readMeshAppearanceFromLocalStorage(): PersistedMeshAppearance | null {
       heatmapMaxAngle: clampNumber(parsed.heatmapMaxAngle, 0, 90, DEFAULT_HEATMAP_MAX_ANGLE),
       heatmapColors: Array.isArray(parsed.heatmapColors) && parsed.heatmapColors.length === 5 ? parsed.heatmapColors : DEFAULT_HEATMAP_COLORS,
       meshColor: clampHexColor(parsed.meshColor, DEFAULT_MESH_COLOR),
-      selectionColor: clampHexColor(parsed.selectionColor, getThemedDefaultSelectionColor()),
-      hoverColor: clampHexColor(parsed.hoverColor, getThemedDefaultHoverColor()),
       hoverTintStrength: clampNumber(parsed.hoverTintStrength, 0, 1, DEFAULT_HOVER_TINT_STRENGTH),
       selectedTintStrength: clampNumber(parsed.selectedTintStrength, 0, 1, DEFAULT_SELECTED_TINT_STRENGTH),
     };
@@ -1588,8 +1587,6 @@ export function useSceneCollectionManager() {
   const [heatmapMaxAngle, setHeatmapMaxAngle] = useState<number>(DEFAULT_HEATMAP_MAX_ANGLE);
   const [heatmapColors, setHeatmapColors] = useState<string[]>(DEFAULT_HEATMAP_COLORS);
   const [preferredMeshColor, setPreferredMeshColor] = useState<string>(DEFAULT_MESH_COLOR);
-  const [selectionColor, setSelectionColor] = useState<string>(() => getThemedDefaultSelectionColor());
-  const [hoverColor, setHoverColor] = useState<string>(() => getThemedDefaultHoverColor());
   const [hoverTintStrength, setHoverTintStrength] = useState<number>(DEFAULT_HOVER_TINT_STRENGTH);
   const [selectedTintStrength, setSelectedTintStrength] = useState<number>(DEFAULT_SELECTED_TINT_STRENGTH);
   const [storedView3dSettings, setView3dSettingsState] = useState<View3DSettings>(() => DEFAULT_VIEW3D_SETTINGS);
@@ -1635,8 +1632,6 @@ export function useSceneCollectionManager() {
       setHeatmapMaxAngle(persistedAppearance.heatmapMaxAngle ?? DEFAULT_HEATMAP_MAX_ANGLE);
       setHeatmapColors(persistedAppearance.heatmapColors ?? DEFAULT_HEATMAP_COLORS);
       setPreferredMeshColor(persistedAppearance.meshColor);
-      setSelectionColor(persistedAppearance.selectionColor ?? getThemedDefaultSelectionColor());
-      setHoverColor(persistedAppearance.hoverColor ?? getThemedDefaultHoverColor());
       setHoverTintStrength(persistedAppearance.hoverTintStrength);
       setSelectedTintStrength(persistedAppearance.selectedTintStrength);
     }
@@ -1667,8 +1662,6 @@ export function useSceneCollectionManager() {
       meshColor: preferredMeshColor,
       hoverTintStrength,
       selectedTintStrength,
-      selectionColor,
-      hoverColor,
     });
   }, [
     shaderType,
@@ -1687,8 +1680,6 @@ export function useSceneCollectionManager() {
     preferredMeshColor,
     hoverTintStrength,
     selectedTintStrength,
-    selectionColor,
-    hoverColor,
   ]);
 
   const setView3dSettings = useCallback((next: View3DSettings) => {
@@ -1928,6 +1919,10 @@ export function useSceneCollectionManager() {
   }, [buildMeshPlacementOffsets, defaultImportCenterXY.x, defaultImportCenterXY.y, estimateSupportBoundsForModel, intersectsRect, isRectInsidePlate, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
 
   const applySceneSnapshot = useCallback((snapshot: SceneSnapshot) => {
+    if (snapshot.modifierRecord) {
+      storeModelMeshModifiers(snapshot.modifierRecord.modelId, cloneMeshModifiersForHistory(snapshot.modifierRecord.modifiers));
+      clearPreparedGeometryCacheForModel(snapshot.modifierRecord.modelId);
+    }
     setModels(snapshot.models.map(cloneLoadedModel));
     setActiveModelId(snapshot.activeModelId);
     setSelectedModelIds([...snapshot.selectedModelIds]);
@@ -1965,12 +1960,12 @@ export function useSceneCollectionManager() {
     };
   }, [applySceneSnapshot]);
 
-  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: string) => {
+  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: string, modelId?: string) => {
     const key = storeSceneSnapshotPair({ before, after });
     sceneHistory.push({
       type: SCENE_MODELS_SNAPSHOT_APPLY,
       description,
-      payload: { key },
+      payload: { key, ...(modelId ? { modelId } : {}) },
     });
   }, []);
 
@@ -2908,7 +2903,7 @@ export function useSceneCollectionManager() {
     id: string,
     nextBufferGeometry: THREE.BufferGeometry,
     historyDescription: string,
-    options?: { includeSupportState?: boolean; deferPostProcessing?: boolean },
+    options?: { includeSupportState?: boolean; deferPostProcessing?: boolean; meshModifiersAfter?: ModelMeshModifiers | null; meshModifiersBefore?: ModelMeshModifiers | null },
   ) => {
     const currentModels = modelsRef.current;
     const currentActiveModelId = activeModelIdRef.current;
@@ -2972,12 +2967,19 @@ export function useSceneCollectionManager() {
       return pos ? Math.floor(pos.count / 3) : target.polygonCount;
     })();
 
-    const includeSupportHistory = options?.includeSupportState
-      ?? hasSupportsForModel(id, getSnapshot());
-
-    const before = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
-    });
+    const modifierAfter = options?.meshModifiersAfter;
+    const includeSupportHistory = modifierAfter !== undefined
+      ? (options?.includeSupportState ?? hasSupportsForModel(id, getSnapshot()))
+      : false;
+    const before = modifierAfter !== undefined
+      ? captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, { includeSupportState: includeSupportHistory })
+      : null;
+    if (before) {
+      before.modifierRecord = {
+        modelId: id,
+        modifiers: cloneMeshModifiersForHistory(options?.meshModifiersBefore !== undefined ? options.meshModifiersBefore : getStoredMeshModifiers(id)),
+      };
+    }
 
     const nextModels = currentModels.map((m) => (
       m.id === id
@@ -2990,11 +2992,19 @@ export function useSceneCollectionManager() {
           }
         : m
     ));
+    if (modifierAfter !== undefined) {
+      storeModelMeshModifiers(id, modifierAfter);
+      clearPreparedGeometryCacheForModel(id);
+    }
     setModels(nextModels);
 
-    const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
-    });
+    if (before) {
+      const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
+        includeSupportState: includeSupportHistory,
+      });
+      after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(modifierAfter) };
+      pushSceneSnapshotHistory(before, after, historyDescription, id);
+    }
     // COW chunk-store bake (Ph0.1 sub-phase C3). This is the VERIFIED sole
     // finalization point for hollow, hole-punch, mirror and repair, so baking
     // here moves the encode+SHA+zlib-6 onto the operation the user is already
@@ -6037,10 +6047,6 @@ export function useSceneCollectionManager() {
     setMatcapVariant,
     flatUseVertexColors,
     setFlatUseVertexColors,
-    selectionColor,
-    setSelectionColor,
-    hoverColor,
-    setHoverColor,
     hoverTintStrength,
     setHoverTintStrength,
     selectedTintStrength,
