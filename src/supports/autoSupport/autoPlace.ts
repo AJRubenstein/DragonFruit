@@ -51,7 +51,7 @@ import {
     computeRegionCoverage,
     coverageRadiusForArea,
 } from './coverage';
-import { sizeParameters, presetForArea } from './parameterSizing';
+import { sizeParameters, presetForArea, modelSizingFactors, RESIN_DENSITY_G_PER_MM3 } from './parameterSizing';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { memberDepartureAngleFromVerticalDeg } from '../PlacementLogic/smartPlacementSearchUtils';
@@ -885,6 +885,7 @@ function placeOneCandidate(
     _settingsOverride: Partial<AutoSupportSettings> | undefined,
     gridHostIds?: ReadonlySet<string>,
     mesh?: THREE.Mesh,
+    sizingCtx?: ModelSizingContext,
 ): { kind: PlacementOutcomeKind; draft: SupportState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: string } {
     const supportSettings = getSettings();
     const snapshot = draft;
@@ -1196,6 +1197,7 @@ function placeOneCandidate(
     const overrides = sizeParameters(
         candidate,
         supportSettings.autoSupport?.sizeScale ?? 1,
+        sizingCtx,
     );
     const isSmallIsland = (candidate.source !== 'overhang' && (candidate.islandAreaMm2 ?? 0) < 5) || candidate.zHeight < 15;
     const trunkResult = buildTrunkData({
@@ -2725,8 +2727,6 @@ export function computeAutoSupportPlan(
         }
     }
 
-    // Candidate generation phase: every overhang region above the threshold
-    // gets the unified fixed-density distribution (2D-projected boundary ring
     // Minima reinforcement pass: a mesh minima is the first point of a
     // section, so its own tip support holds a POINT while the section's whole
     // cross-section hangs off it. Ring that minima with contacts on its own
@@ -2754,6 +2754,8 @@ export function computeAutoSupportPlan(
         }
     }
 
+    // Candidate generation phase: every overhang region above the threshold
+    // gets the unified fixed-density distribution (2D-projected boundary ring
     // + grid infill). Shape decides the degenerate cases — slivers get a ring
     // only, small patches stay on the single-candidate path below. A
     // generation failure must not kill the whole run — fall back to the
@@ -2846,15 +2848,26 @@ export function computeAutoSupportPlan(
     console.log(LOG_PREFIX,
         `Grid mode: ${gridEnabled ? 'ENABLED (supports share grid nodes, branch/leaf fan-out active)' : 'DISABLED (all supports become standalone trunks)'}`);
 
-    // ── Model sizing context (mesh volume/top-Z for the debug analytics) ──
+    // ── Model sizing context (mesh volume/extent for the sizing terms) ──
     let modelCtx: ModelSizingContext | undefined;
     if (resolvedMesh) {
         const bbox = new THREE.Box3().setFromObject(resolvedMesh);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
         modelCtx = {
             modelVolumeMm3: computeMeshVolumeMm3(resolvedMesh),
             modelZMaxMm: bbox.max.z,
             totalCandidates: candidates.length,
+            // The print's own geometric scale, as oriented: a part rotated to
+            // stand taller is the part the supports have to hold.
+            modelSizeMm: size.length(),
         };
+        const f = modelSizingFactors(modelCtx);
+        console.log(LOG_PREFIX,
+            `Sizing: model ${f.sizeMm.toFixed(0)}mm · ${(modelCtx.modelVolumeMm3 * RESIN_DENSITY_G_PER_MM3).toFixed(0)}g · ` +
+            `${f.loadShareG.toFixed(2)}g/support (${modelCtx.totalCandidates} candidates) → ` +
+            `size ×${f.sizeFactor.toFixed(2)}, load ×${f.loadFactor.toFixed(2)}, ` +
+            `trunk ×${(f.sizeFactor * f.loadFactor).toFixed(2)} over the profile band`);
     }
 
     const placed = emptyPlacedCounts();
@@ -2907,7 +2920,7 @@ export function computeAutoSupportPlan(
 
     const placeOne = (candidate: CandidatePoint): string => {
         try {
-            const result = placeOneCandidate(candidate, draft, settingsOverride, gridHostIds, resolvedMesh);
+            const result = placeOneCandidate(candidate, draft, settingsOverride, gridHostIds, resolvedMesh, modelCtx);
             draft = result.draft;
             // A fan host is a type whose shaft the pool offers, which is what
             // `canBeGridHost` declares. Recorded so later candidates fan to a
@@ -3235,7 +3248,8 @@ export function computeAutoSupportPlan(
     // ── Sizing debug info ───────────────────────────────────────────
     let sizingDebug: AutoPlaceAnalytics['sizingDebug'];
     if (modelCtx && candidates.length > 0) {
-        const weightG = modelCtx.modelVolumeMm3 * 0.0011;
+        const weightG = modelCtx.modelVolumeMm3 * RESIN_DENSITY_G_PER_MM3;
+        const factors = modelSizingFactors(modelCtx);
         const areas = candidates.map(c => c.islandAreaMm2);
         areas.sort((a, b) => a - b);
         const minArea = areas[0];
@@ -3248,9 +3262,10 @@ export function computeAutoSupportPlan(
             modelId: '', source: 'voxel', islandAreaMm2: area,
             zHeight: z, priority: 0,
         });
-        const sMin = sizeParameters(makeSample(minArea, 10), getSettings().autoSupport?.sizeScale ?? 1);
-        const sMax = sizeParameters(makeSample(maxArea, zMax), getSettings().autoSupport?.sizeScale ?? 1);
-        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), getSettings().autoSupport?.sizeScale ?? 1);
+        const sizeScale = getSettings().autoSupport?.sizeScale ?? 1;
+        const sMin = sizeParameters(makeSample(minArea, 10), sizeScale, modelCtx);
+        const sMax = sizeParameters(makeSample(maxArea, zMax), sizeScale, modelCtx);
+        const sAvg = sizeParameters(makeSample(avgArea, zMax / 2), sizeScale, modelCtx);
         sizingDebug = {
             modelVolumeMm3: Math.round(modelCtx.modelVolumeMm3),
             estimatedWeightG: round2Mm(weightG),
@@ -3258,6 +3273,12 @@ export function computeAutoSupportPlan(
             // Honest mass share: total model weight divided by the number of
             // placed supports. A load share, not a force estimate.
             weightPerSupportG: round2Mm(placedHostCount() > 0 ? weightG / placedHostCount() : 0),
+            // What the sizing itself read: the estimated share at placement
+            // time (candidates, not placed hosts) and the factors it produced.
+            modelSizeMm: round2Mm(factors.sizeMm),
+            loadShareG: round2Mm(factors.loadShareG),
+            sizeFactor: round2Mm(factors.sizeFactor),
+            loadFactor: round2Mm(factors.loadFactor),
             avgIslandAreaMm2: round2Mm(avgArea),
             standaloneHosts: diagnostics.hostsByKind.standalone,
             gridInfillHosts: diagnostics.hostsByKind.gridInfill + diagnostics.hostsByKind.coverageFill,
@@ -3594,7 +3615,7 @@ export function computeAutoSupportPlan(
                                 priority: 0,
                             };
                             try {
-                                const result = placeOneCandidate(recandidate, draft, undefined, gridHostIds, resolvedMesh);
+                                const result = placeOneCandidate(recandidate, draft, undefined, gridHostIds, resolvedMesh, modelCtx);
                                 draft = result.draft;
                                 if (result.kind === 'reject') rejectedCount++;
                                 else placed[result.kind]++;

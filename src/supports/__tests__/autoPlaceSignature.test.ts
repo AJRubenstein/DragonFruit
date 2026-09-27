@@ -229,15 +229,22 @@ function runSignature(gridEnabled: boolean): RunSignature {
  * counts: grid mode attaches to the trunk already standing on a node instead of
  * standing a second one (so fewer trunks, the tips becoming leaves), and a long
  * overhang fan link becomes a branch rather than staying a leaf.
+ *
+ * Re-recorded once more when model-scale sizing landed (`parameterSizing.ts`):
+ * the grid-on run moves 2 members from branch to leaf (151/21 → 149/23). The
+ * height term is what moves them — long supports are thicker now — and
+ * neutering the model terms leaves these counts unchanged, so tuning the
+ * print-scale/mass-share constants does not churn this signature. The grid-off
+ * run does not move at all.
  */
 const RECORDED = {
     /** Grid enabled: candidates resolve through `decideGridPlacement`, branch-heavy. */
     gridOn: {
-        placed: [28, 151, 21, 197, 0, 0, 1, 0],
+        placed: [28, 149, 23, 197, 0, 0, 1, 0],
         rejectedCandidates: 0,
         changed: true,
-        inStore: { trunks: 28, branches: 151, leaves: 21, twigs: 197, sticks: 0, anchors: 1, knots: 172, roots: 28 },
-        forest: { hostCount: 28, leafCount: 21, branchCount: 151, bareHosts: 2 },
+        inStore: { trunks: 28, branches: 149, leaves: 23, twigs: 197, sticks: 0, anchors: 1, knots: 172, roots: 28 },
+        forest: { hostCount: 28, leafCount: 23, branchCount: 149, bareHosts: 2 },
     },
     /** Grid disabled: candidates resolve through the merge/trunk/cavity ladder, leaf-heavy. */
     gridOff: {

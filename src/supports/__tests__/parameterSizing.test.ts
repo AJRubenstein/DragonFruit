@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { sizeParameters, presetForArea, activeSizingBand } from '../autoSupport/parameterSizing';
+import {
+    sizeParameters,
+    presetForArea,
+    activeSizingBand,
+    HEIGHT_MAX_FACTOR,
+    HEIGHT_REFERENCE_MM,
+    SHARE_MAX_FACTOR,
+    SIZE_MAX_FACTOR,
+} from '../autoSupport/parameterSizing';
+import type { ModelSizingContext } from '../autoSupport/parameterSizing';
 import { setSettings, getSettings, updateAutoSupportSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
 import type { CandidatePoint } from '../autoSupport/types';
@@ -98,11 +107,54 @@ test('big islands extend beyond the band on the log tail', () => {
     assert.ok(shaftAt(10000) <= 2.0, 'tail caps at 2.0');
 });
 
-test('taller supports are mildly thicker (capped +25%)', () => {
-    const low = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }))!;
-    const high = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 90 }))!;
-    assert.ok(high.shaftDiameterMm! > low.shaftDiameterMm!, 'taller → thicker');
-    assert.ok(high.shaftDiameterMm! <= 1.0 * 1.25 + 1e-9, 'height cap holds');
+test('taller supports are thicker, floored at the band and capped', () => {
+    const band = activeSizingBand().shaftDiameterMm;
+    const at = (zHeight: number) => sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight })).shaftDiameterMm!;
+    // At or below the reference the support is exactly at its band — a short
+    // support is never thinned by the height term.
+    assert.equal(at(10), band, 'below the height reference: band');
+    assert.equal(at(HEIGHT_REFERENCE_MM), band, 'at the height reference: band');
+    assert.ok(at(90) > at(40), 'longer → thicker');
+    assert.ok(at(90) <= band * HEIGHT_MAX_FACTOR + 1e-9, 'height cap holds');
+    assert.equal(at(90), at(400), 'saturates at the cap');
+});
+
+test('a bigger print gets thicker trunks than a small one', () => {
+    const ctx = (modelSizeMm: number): ModelSizingContext => ({
+        modelVolumeMm3: 27000, totalCandidates: 100, modelSizeMm,
+    });
+    const candidate = makeCandidate({ islandAreaMm2: 8, zHeight: 40 });
+    const mini = sizeParameters(candidate, 1, ctx(40))!;
+    const mid = sizeParameters(candidate, 1, ctx(150))!;
+    const large = sizeParameters(candidate, 1, ctx(400))!;
+    assert.deepEqual(mini, sizeParameters(candidate), 'a mini is the band, exactly');
+    assert.ok(mid.shaftDiameterMm! > mini.shaftDiameterMm!, 'mid-size model is thicker');
+    assert.ok(large.shaftDiameterMm! > mid.shaftDiameterMm!, 'larger model is thicker again');
+    assert.ok(
+        large.shaftDiameterMm! <= mini.shaftDiameterMm! * SIZE_MAX_FACTOR * SHARE_MAX_FACTOR + 1e-9,
+        'the factors bound the growth',
+    );
+    assert.ok(large.rootsDiameterMm! > mini.rootsDiameterMm!, 'the pad scales with the trunk');
+    assert.ok(large.tipContactDiameterMm! > mini.tipContactDiameterMm!, 'the tip floor rides the shaft');
+});
+
+test('a heavy share per support thickens, an easy one does not', () => {
+    const candidate = makeCandidate({ islandAreaMm2: 8, zHeight: 10 });
+    const share = (totalCandidates: number) => sizeParameters(candidate, 1, {
+        modelVolumeMm3: 400000, totalCandidates, modelSizeMm: 60,
+    })!;
+    // 440 g over 4000 supports = 0.11 g each: below the reference, at band.
+    assert.equal(share(4000).shaftDiameterMm, sizeParameters(candidate).shaftDiameterMm, 'easy share: band');
+    assert.ok(share(400).shaftDiameterMm! > share(4000).shaftDiameterMm!, 'more mass each → thicker');
+    assert.ok(share(20).shaftDiameterMm! <= 1.0 * SHARE_MAX_FACTOR + 1e-9, 'share cap holds');
+});
+
+test('sizing without a model context is exactly the band', () => {
+    // Short support, no context: no height term, no model terms.
+    const s = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }));
+    assert.equal(s.shaftDiameterMm, activeSizingBand().shaftDiameterMm,
+        'no context = no model factors: manual paths and existing callers are untouched');
+    assert.equal(s.rootsDiameterMm, activeSizingBand().rootDiameterMm, 'roots too');
 });
 
 test('tip contact never drops below 30% of the shaft', () => {

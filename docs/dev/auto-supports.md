@@ -139,7 +139,48 @@ A tip covers surface within `TIP_COVERAGE_RADIUS_MM` (3 mm) at its own height, w
 !!! warning "Physics-based sizing was tried and removed — do not reintroduce it"
     An area-derived shaft curve **inverted the profiles**: a light 16 mm² cell sized *thicker* (1.28 mm) than a heavy 5 mm² cell (1.12 mm), because the curve rose with cell area. Light / Medium / Heavy are now hardcoded profile blocks (detail ≈ 0.8, structure ≈ 1.0, anchor ≈ 1.2 shafts) and sizing follows the active block. Session overrides apply until the next profile switch. See the header comment in `parameterSizing.ts`.
 
-Tip contact is the profile band scaled by underside angle — flat ceilings get the full contact, steeper slopes less — floored at 30% of the shaft so a thick shaft keeps a proportional tip. Candidates from sub-0.15mm² islands carry a per-point `tipDiameterMm` (detail band, 0.22mm) that bypasses band and floor, so fine detail gets a shrunk tip without dragging the shaft down. Roots, tip length and penetration take the profile band flat.
+Tip contact is the profile band scaled by underside angle — flat ceilings get the full contact, steeper slopes less — floored at 30% of the shaft so a thick shaft keeps a proportional tip. Candidates from sub-0.15mm² islands carry a per-point `tipDiameterMm` (detail band, 0.22mm) that bypasses band and floor, so fine detail gets a shrunk tip without dragging the shaft down. Tip length and penetration take the profile band flat.
+
+### Model-scale sizing: three bounded factors over the band
+
+A mini that already prints well and a 250 mm part were both getting the 1.0 mm
+structure shaft, because every term in `sizeParameters` was local — the
+candidate's own island area, its own height, and the profile band. Three
+run-level factors now ride on top of the band (`modelSizingFactors`), and the
+same three apply to Roots, which keep their ratio to the shaft they carry:
+
+| Factor | Input | Curve |
+| ------ | ----- | ----- |
+| size | model bbox diagonal (`modelSizeMm`) | `(size / SIZE_REFERENCE_MM)^SIZE_EXPONENT`, ×1 → `SIZE_MAX_FACTOR` |
+| load | model weight / support count | `(share / SHARE_REFERENCE_G)^SHARE_EXPONENT`, ×1 → `SHARE_MAX_FACTOR` |
+| height | the support's own `zHeight` | `(z / HEIGHT_REFERENCE_MM)^HEIGHT_EXPONENT`, ×1 → `HEIGHT_MAX_FACTOR` |
+
+All three are monotone in their own input and **floored at ×1**: no factor can
+thin a support below its band, so the light end — the tier that already works —
+is provably untouched, and none can invert a heavier support below a lighter
+one on the same input. That is the property the removed area-derived curve
+lacked (see the warning above). Direction is physical — a bigger print is a
+longer lever, a column's buckling load falls with L², mass per support is a
+load share — but every exponent and cap is calibration, not a calculation, and
+nothing here reads a force.
+
+`ModelSizingContext` is optional on `sizeParameters`: a caller with no mesh gets
+the band exactly, which is why the unit tests and the manual-placement paths are
+unaffected. The run reads it once, before placement, from mesh volume, bbox
+diagonal and the candidate count (`totalCandidates` — an estimate of how many
+supports will share the model, since the pillar geometry, including its contact
+cone body, is built at placement time; the post-placement forest resize below
+only ever thickens). **The run logs all three factors** (`[AutoSupport] Sizing:
+… → size ×…, load ×…`) and the panel's Sizing Debug shows them beside the shaft
+diameter range, which is where they get fitted to real models. The user's
+`sizeScale` master multiplier still rides on top and is the only term allowed
+past `MAX_SHAFT_DIAMETER_MM` — an explicit instruction, not a curve.
+
+What is deliberately NOT a factor: **where the support stands**. The spatial
+axes are already covered by the local terms — how far from the plate it reaches
+(height), how much surface it holds (the area tail), and what it carries after
+placement (the forest resize thickens a trunk by its attachments). A second
+positional term would double-count those.
 
 Every builder the run calls takes the band through `SizeOverrides` — trunk, branch, leaf, and the cavity `buildCavityBridge` (its sticks and twigs). Each of them reads `input.<field> ?? settings.<field>`, so the Studio preset sizes manual placement only. `buildStick` skipped its overrides once and sized every cavity stick from whatever profile was loaded in Support Studio at the time; if you add a builder to the pipeline, honour the override the same way.
 

@@ -267,12 +267,19 @@ export interface PlacementDiagnostics {
     cavityFallbacks: Array<{ id: string; kind: SupportTypeId; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
 }
 
-/** Physics-based sizing debug data. */
+/** Sizing debug data: what the run read, and the diameters that came out. */
 export interface SizingDebugInfo {
     modelVolumeMm3: number;
     estimatedWeightG: number;
     totalCandidates: number;
     weightPerSupportG: number;
+    /** Model extent (mm) the size term read. */
+    modelSizeMm: number;
+    /** Resin grams per support the load term read, at placement time. */
+    loadShareG: number;
+    /** Print-scale and mass-share factors on the profile band (each ≥ 1). */
+    sizeFactor: number;
+    loadFactor: number;
     avgIslandAreaMm2: number;
     /** Standalone trunks (neither fanned nor merged) — the over-supply signal. */
     standaloneHosts: number;

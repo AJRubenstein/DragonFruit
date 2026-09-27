@@ -1182,3 +1182,43 @@ test('runAutoPlace builds the near-plate overridden type for a low island, not a
 
     setModelMesh('model-a', null);
 });
+
+// ---------------------------------------------------------------------------
+// Model-scale sizing: the run-level factors reach the built geometry.
+// ---------------------------------------------------------------------------
+
+test('the same island sizes a thicker trunk on a big model than on a small one', () => {
+    resetStore();
+    resetKickstandsInState();
+    clearHistory();
+    initializeBVH();
+
+    /** Run the SAME single island against a box of the given footprint and
+     *  return the shaft diameter the run actually built. */
+    const shaftForBox = (sizeX: number, sizeY: number, sizeZ: number): number => {
+        const geometry = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
+        geometry.translate(0, 0, 10 + sizeZ / 2); // underside at z = 10
+        accelerateGeometry(geometry);
+        const mesh = new THREE.Mesh(geometry);
+        mesh.updateMatrixWorld();
+        setModelMesh('model-a', mesh);
+
+        resetStore();
+        const result = runAutoPlace([makeIsland('i1', 0, 0, 10, 100)], 'model-a', {
+            debugSkipAutoBracing: true,
+            stabilizationEnabled: false,
+        });
+        assert.equal(result.placed.trunk, 1, 'one trunk placed');
+        const trunk = Object.values(getSnapshot().trunks)[0]!;
+        return trunk.segments[0]!.diameter;
+    };
+
+    const small = shaftForBox(30, 30, 30);
+    const large = shaftForBox(220, 220, 60);
+    assert.ok(
+        large > small,
+        `the large model's trunk is thicker (${large.toFixed(2)} mm vs ${small.toFixed(2)} mm)`,
+    );
+
+    setModelMesh('model-a', null);
+});
