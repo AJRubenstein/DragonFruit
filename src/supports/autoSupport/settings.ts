@@ -47,6 +47,9 @@ export interface AutoSupportSettings {
     debugSkipAutoBracing: boolean;
     /** Add stabilization anchors for poses bearing on a point/edge (default on). */
     stabilizationEnabled: boolean;
+    /** Ring mesh minima (the first point of a section) with reinforcement
+     *  contacts on their own flank (default on). */
+    minimaReinforcementEnabled: boolean;
 }
 
 export type NumericConstraint = {
@@ -138,6 +141,7 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         debugSupportOriginColors: false,
         debugSkipAutoBracing: false,
         stabilizationEnabled: true,
+        minimaReinforcementEnabled: true,
     };
 }
 
@@ -167,6 +171,10 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         debugSupportOriginColors: normalizeBoolean(source.debugSupportOriginColors, defaults.debugSupportOriginColors),
         debugSkipAutoBracing: normalizeBoolean(source.debugSkipAutoBracing, defaults.debugSkipAutoBracing),
         stabilizationEnabled: normalizeBoolean(source.stabilizationEnabled, defaults.stabilizationEnabled),
+        minimaReinforcementEnabled: normalizeBoolean(
+            source.minimaReinforcementEnabled,
+            defaults.minimaReinforcementEnabled,
+        ),
     };
 }
 

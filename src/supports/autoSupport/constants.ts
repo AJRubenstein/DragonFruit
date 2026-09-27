@@ -80,6 +80,23 @@ export const CAVITY_FAN_RADIUS_MM = 12;
 /** Distance (mm) within which an existing support tip counts a candidate as already supported. */
 export const ALREADY_SUPPORTED_RADIUS_MM = 3.0;
 
+/** Minima reinforcement: radius (mm) of the ring of contacts drawn around a mesh
+ *  minima's own contact. Close enough to land on the feature it reinforces (a
+ *  minima is a sharp local low point, not a broad face) and outside the contact
+ *  cone's own body, so the ring never collides with the tip support it rings. */
+export const MINIMA_RING_RADIUS_MM = 2.5;
+
+/** Minima reinforcement: contact directions sampled on the ring (mm apart at
+ *  the default radius ≈ the default density-grid spacing). Directions whose
+ *  ray finds no valid flank are dropped, so this is an upper bound. */
+export const MINIMA_RING_COUNT = 6;
+
+/** Minima reinforcement: least rise (mm) at the ring radius for a contact to
+ *  count as the feature's flank. Below it the surface around the minima is flat
+ *  as far as detection is concerned (the voxel mask is 0.25 mm) — a flat is the
+ *  density grid's job, and a sub-voxel dip is served by its single tip. */
+export const MINIMA_RING_MIN_RISE_MM = 0.2;
+
 /** Gridless mode: merge candidates within this 3D distance of an existing trunk. */
 export const GRIDLESS_MERGE_RADIUS_MM = 4.0;
 

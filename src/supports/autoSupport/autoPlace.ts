@@ -31,6 +31,7 @@ import { activeSizingBand } from './parameterSizing';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates, shouldUseDensityGrid } from './gridPlacement';
 import { computeStabilizationAnchors } from './stabilization';
+import { computeMinimaReinforcementPoints } from './minimaReinforcement';
 import {
     isSlenderPart,
     measurePoseStability,
@@ -951,7 +952,12 @@ function placeOneCandidate(
             }
         }
     }
-    if (!supportSettings.grid?.enabled && !candidate.gridPoint && candidate.source !== 'stabilization') {
+    // Anchor-broadening sources stay standalone: a stabilization anchor is a
+    // buttress and a minima reinforcement point widens the base of the section
+    // it rings — fanning either onto a nearby host (very often the very trunk
+    // it exists to strengthen) would collapse the base they exist to spread.
+    const isAnchorSource = candidate.source === 'stabilization' || candidate.source === 'reinforcement';
+    if (!supportSettings.grid?.enabled && !candidate.gridPoint && !isAnchorSource) {
         // Overhang-derived candidates (sub-threshold, non-anchor regions)
         // attach via the regular leaf-fanning path — a standalone straight
         // trunk next to fan leaves reads as a misplaced island support. No
@@ -2520,7 +2526,7 @@ export function forestReportToText(report: ForestReport): string {
         const d = report.diagnostics;
         lines.push('PLACEMENT DIAGNOSTICS');
         lines.push(`  ${hostLabel} by kind: grid ${d.hostsByKind.gridInfill} (ring + infill), gap-fill ${d.hostsByKind.coverageFill}, standalone ${d.hostsByKind.standalone} (sub-threshold overhang, no host)`);
-        lines.push(`  Candidates by source: voxel ${d.candidatesBySource.voxel} · minima ${d.candidatesBySource.minima} · intersection ${d.candidatesBySource.intersection} · overhang ${d.candidatesBySource.overhang} · stabilization ${d.candidatesBySource.stabilization}`);
+        lines.push(`  Candidates by source: voxel ${d.candidatesBySource.voxel} · minima ${d.candidatesBySource.minima} · intersection ${d.candidatesBySource.intersection} · overhang ${d.candidatesBySource.overhang} · stabilization ${d.candidatesBySource.stabilization} · reinforcement ${d.candidatesBySource.reinforcement}`);
         const fanEntries = Object.entries(d.fanRefusals).filter(([, v]) => v);
         const mergeEntries = Object.entries(d.mergeRefusals).filter(([, v]) => v);
         if (fanEntries.length > 0 || mergeEntries.length > 0) {
@@ -2721,6 +2727,33 @@ export function computeAutoSupportPlan(
 
     // Candidate generation phase: every overhang region above the threshold
     // gets the unified fixed-density distribution (2D-projected boundary ring
+    // Minima reinforcement pass: a mesh minima is the first point of a
+    // section, so its own tip support holds a POINT while the section's whole
+    // cross-section hangs off it. Ring that minima with contacts on its own
+    // flank (see `minimaReinforcement.ts`). Standalone trunks like the
+    // stabilization anchors — broadening the section's base IS the job, so
+    // they must not fan onto the tip support they ring. Gated on
+    // `minimaOnly` islands: a minima the voxel mask already saw sits on a
+    // surface the island/overhang passes cover.
+    let reinforcementPoints = 0;
+    if (autoSettings.minimaReinforcementEnabled !== false && resolvedMesh) {
+        const points = computeMinimaReinforcementPoints(islandsToCover, resolvedMesh, autoSettings);
+        if (points.length > 0) {
+            const reinforcementCandidates: CandidatePoint[] = points.map((p, i) => ({
+                id: `reinf-${p.islandId}-${i}`,
+                tipPos: { x: p.x, y: p.y, z: p.z },
+                tipNormal: { x: 0, y: 0, z: -1 }, // placeholder — caller raycasts for the real normal
+                modelId,
+                source: 'reinforcement',
+                islandAreaMm2: 0.05,
+                zHeight: p.z,
+                priority: 0,
+            }));
+            reinforcementPoints = reinforcementCandidates.length;
+            candidates = [...candidates, ...reinforcementCandidates];
+        }
+    }
+
     // + grid infill). Shape decides the degenerate cases — slivers get a ring
     // only, small patches stay on the single-candidate path below. A
     // generation failure must not kill the whole run — fall back to the
@@ -2757,7 +2790,8 @@ export function computeAutoSupportPlan(
         `Step 1/3: ${candidates.length} candidates generated ` +
         `(filtered from ${islands.length} islands, min area ${autoSettings.minIslandAreaMm2}mm², ` +
         `grid: ${autoSettings.areaPerSupportMm2}mm²/support @ ${autoSettings.gridAreaThresholdMm2}mm² threshold, ` +
-        `stabilization: ${stabilizationAnchors} anchors)`);
+        `stabilization: ${stabilizationAnchors} anchors, ` +
+        `reinforcement: ${reinforcementPoints} points)`);
     if (candidates.length === 0) {
         return noopPlan(makeResult(emptyPlacedCounts(), 0, false, 'no-candidates'));
     }
@@ -2841,7 +2875,7 @@ export function computeAutoSupportPlan(
     // Placement-path diagnostics: where each placed trunk came from and why
     // non-fanned candidates didn't fan/merge. Pure counts — no physics.
     const diagnostics: PlacementDiagnostics = {
-        candidatesBySource: { voxel: 0, minima: 0, intersection: 0, overhang: 0, stabilization: 0 },
+        candidatesBySource: { voxel: 0, minima: 0, intersection: 0, overhang: 0, stabilization: 0, reinforcement: 0 },
         hostsByKind: { gridInfill: 0, coverageFill: 0, standalone: 0 },
         fanRefusals: {},
         mergeRefusals: {},

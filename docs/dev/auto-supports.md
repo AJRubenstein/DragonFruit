@@ -19,7 +19,7 @@ Six phases inside `computeAutoSupportPlan` (`autoPlace.ts`):
 | # | Phase | What happens |
 | - | ----- | ------------ |
 | 0 | Settings | Normalize; bail out returning `null` when disabled |
-| 1 | Generate candidates | Turn detected islands into `CandidatePoint`s |
+| 1 | Generate candidates | Turn detected islands into `CandidatePoint`s, then the two anchor-broadening passes: stabilization anchors, minima reinforcement |
 | 2 | Deduplicate | Collapse candidates that would support the same spot |
 | 3 | Place | The bulk of the work — fixed-density ring + grid infill distribution, trunk/leaf decisions, collision checks, gap filling |
 | 4 | Forest resize | Re-derive every trunk's stepwise diameter now that the forest is known |
@@ -49,6 +49,39 @@ Stabilization anchors enter placement as `source: 'stabilization'` candidates
 and are deliberately standalone trunks: they never fan or merge onto a nearby
 host (the merge gate is source-gated), so a tip pillar and its flanking
 anchors stay independent instead of collapsing into drift-culled leaves.
+
+
+## Minima reinforcement
+
+A mesh minima is the first point of a section — the lowest vertex of whatever
+is about to start printing — so one tip under it holds a *point* while the
+section's whole cross-section hangs off that contact. `computeMinimaReinforcementPoints`
+(`minimaReinforcement.ts`) rings it: `MINIMA_RING_COUNT` (6) contacts on a
+circle of `MINIMA_RING_RADIUS_MM` (2.5 mm) around the minima, each landing on
+the feature's own flank, so the section starts on a base instead of a needle.
+
+Only `minimaOnly` islands are reinforced — a minima the voxel mask already saw
+(`class: 'intersection'`) sits on a surface the island/overhang passes cover,
+and ringing those would double supports on every ordinary overhang. A ring
+direction is dropped unless its upward ray finds the flank within
+`MINIMA_RING_MIN_RISE_MM` (0.2 mm) … `radius · tan(selfSupportAngleDeg)` above
+the minima: a flat (a sub-voxel dip in a plane) has no flank and is served by
+its single tip, a needle's flanks are steeper than the self-support angle and
+hold themselves, and a direction that leaves the model ends in air. The ring is
+drawn in XY, like the grid's boundary ring, so it cannot climb a limb.
+
+Reinforcement points enter placement as `source: 'reinforcement'` candidates —
+standalone trunks for the same reason as the stabilization anchors: spreading
+the section's base is the whole job, so they must not fan onto the tip support
+they ring. Gated by the `minimaReinforcementEnabled` setting (default on).
+
+Two interactions fall out of existing gates rather than from this pass. On a
+bare cone the stabilization anchors climb the same feature, and dedup's 0.5 mm
+ball then decides which of the two owns each direction (measured on a test
+cone: 48 anchors ate 4 of 6 ring points) — the contact exists either way. And
+since the ring sits inside `ALREADY_SUPPORTED_RADIUS_MM` (3 mm) of its own
+minima, re-running on a supported model adds nothing: the tips already there
+filter every direction.
 
 
 ## Distribution: one fixed-density scheme
@@ -247,7 +280,7 @@ A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` re
   - `drift` — knot >0.5mm from host shaft (split offset, `pointToSegmentDistanceSq >0.25`)
   - `cross` — leaf/branch crosses another shaft after thickening (`leafPathCrossesSupports` `radius 0.25`, kept but flagged)
   - `host culled (blocked)` — a member on a host that was itself `hostBlocked`
-- **PLACEMENT DIAGNOSTICS** — `Trunks by kind: grid 44 (ring + infill), gap-fill 0, standalone 41 (sub-threshold overhang, no host)`; `Candidates by source: voxel 49 · minima 21 · intersection 47 · overhang 98`; `Fan refusals: noHost=1 (too far >5mm/2.5mm grid, angle >45°, sameZ|cross|blocked|capacity)`; `Merge refusals: noHost=22, rejected=20`; `Consolidation refusals: blocked=99, cross=3 (sameZ=surface too flat for side-leaves — chunking needs ≥0.4 mm neighbour height rise)`. Sourced from `diagnostics` captured in `computeAutoSupportPlan`.
+- **PLACEMENT DIAGNOSTICS** — `Trunks by kind: grid 44 (ring + infill), gap-fill 0, standalone 41 (sub-threshold overhang, no host)`; `Candidates by source: voxel 49 · minima 21 · intersection 47 · overhang 98 · stabilization 12 · reinforcement 18`; `Fan refusals: noHost=1 (too far >5mm/2.5mm grid, angle >45°, sameZ|cross|blocked|capacity)`; `Merge refusals: noHost=22, rejected=20`; `Consolidation refusals: blocked=99, cross=3 (sameZ=surface too flat for side-leaves — chunking needs ≥0.4 mm neighbour height rise)`. Sourced from `diagnostics` captured in `computeAutoSupportPlan`.
 - **Counts** — `56 trunks · 70 leaves … | 16 trees, 40 bare` — `trees` are hosts with members, `bare` are 1:1 pillars.
 - **FAN-OUT GROUPS** — `v115 @ Z=26.6mm Ø1.03mm [area 0.53mm² …] → 12: v116(L 2.8mm/20°) …`, headed by the gates that admitted its members: placement fans `≤leafFanMaxAngleDeg` within `LEAF_FAN_RADIUS_MM` (`GRID_HOST_FAN_RADIUS_MM` for grid hosts), chunk-consolidation links `≤CONSOLIDATION_MAX_ANGLE_DEG` within `CONSOLIDATION_FAN_RADIUS_MM`, and the `maxAttachmentsPerTrunk` cap in force — so a group is readable without re-deriving which pass attached each member. `spanMm`/`angleDeg` are `knot→tip` distance and angle from vertical, measured **after** the resize/orphan passes: segment splits and rehosting can drift a knot down its host, so a link can read shallower than the gate that admitted it.
 - **STANDALONE TRUNKS** — `grid-o0-… @ Z=5.1mm Ø1.21mm [area 10mm² …]` plus `— region ring + grid infill` or `— standalone voxel/minima (below threshold or consolidated)` based on `id` prefix.
