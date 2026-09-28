@@ -162,6 +162,41 @@ A tip covers surface within `TIP_COVERAGE_RADIUS_MM` (3 mm) at its own height, w
 
 Tip contact is the profile band scaled by underside angle — flat ceilings get the full contact, steeper slopes less — floored at 30% of the shaft so a thick shaft keeps a proportional tip. Candidates from sub-0.15mm² islands carry a per-point `tipDiameterMm` (detail band, 0.22mm) that bypasses band and floor, so fine detail gets a shrunk tip without dragging the shaft down. Tip length and penetration take the profile band flat.
 
+**A tip is also capped by the free width of the feature it lands on.** A contact
+tip is a rendered disc, and a disc wider than the tooth it sits on does not fit
+it: it overlaps the neighbouring teeth and the printed contact smears across
+the row. `applyContactTipCaps` (`contactTipCap.ts`) runs in the shared candidate
+path — both `generateCandidates` (island emission) and `generateGridCandidates`
+(the overhang lattice, which used to take the full band contact whatever it
+landed on) — and sets `tipDiameterMm` to
+`clamp(min(existing ?? band tip, W × CONTACT_MARGIN_SCALE), floor = smallIslandTipDiameterMm())`,
+where `W` is the local free width at the contact: the width of the free span
+there, i.e. the diameter of the largest sphere that fits in the plane the tip
+lands on. `CONTACT_MARGIN_SCALE` is **0.6** — the disc keeps a standing margin
+inside the feature rather than touching its silhouette edge, the same idea as
+`PERIMETER_CONTACT_INSET_MM` on the boundary ring.
+
+The width is read from the same `SDFCache` distance field the routers already
+use — no second geometry source. The query cannot be made *at* the contact
+point: a contact lies on the surface by construction, where the signed distance
+is zero for a wide slab and a narrow tooth alike (measured). The probe steps out
+along the tangent plane, `CONTACT_WIDTH_PROBE_MM` (**0.5 mm**) each way along
+each of the two tangent axes, and reads how far it walked past the feature's
+silhouette (`reach - d`); the narrower axis's two sides *summed* is the span the
+disc has to fit inside. Summing rather than taking the nearer side is what keeps
+the cap a width rule: the nearer-side reading collapses to zero on any
+silhouette edge, so it would floor every contact on the rim of a wide face — a
+placement-inset problem (the disc hangs over the edge at any width), not a width
+one. The reach is also a floor on the reported width (a rim contact reads its
+inward side in full) and is deliberately shorter than the ~1 mm pitch a
+scalloped surface repeats at, so a probe cannot land on the *next* tooth and
+read it as solid ground. A feature wider than the reach reads full width and the
+cap is a no-op — the right answer for anything wider than the tip.
+
+The cap only ever **shrinks**: `tipDiameterMm` stays unset when the cap does not
+bind, so a candidate with room keeps the band sizing it had (shaft floor, angle
+factor and all) and the user's tip setting semantics are untouched.
+
 ### Model-scale sizing: three bounded factors over the band
 
 A mini that already prints well and a 250 mm part were both getting the 1.0 mm

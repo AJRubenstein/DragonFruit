@@ -32,8 +32,10 @@ export interface CandidatePoint {
     /** Computed placement priority. Higher = place first. */
     priority: number;
     /** Per-point tip contact override (mm). Set for small-island candidates
-     *  so fine detail gets a shrunk tip without dragging the shaft down;
-     *  undefined = active band default (full contact for grid/overhang points). */
+     *  (fine detail gets a shrunk tip without dragging the shaft down) and for
+     *  any candidate the free-width cap shrinks (see `contactTipCap.ts`);
+     *  undefined = active band default (full contact for grid/overhang points),
+     *  which is also what a candidate with room keeps. */
     tipDiameterMm?: number;
     /** Density-grid point: must become its own standalone trunk (never merged
      *  into a nearby host) so flat regions get independent supports. */

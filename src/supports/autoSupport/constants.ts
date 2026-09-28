@@ -10,6 +10,32 @@ export const MAX_AUTO_LEAF_SPAN_MM = 2.5;
  *  instead of the active band contact — matches the detail preset boundary. */
 export const SMALL_ISLAND_TIP_AREA_MM2 = 0.15;
 
+/** Fraction of the local free width a contact tip may occupy. A tip must fit
+ *  the feature it lands on: a 0.5 mm tooth cannot carry an active-band contact
+ *  without the rendered disc spilling over its neighbours. Applied to BOTH
+ *  candidate producers (island emission and the overhang lattice), because the
+ *  lattice used to take the full band contact whatever it landed on.
+ *
+ *  0.6 rather than 1.0 leaves the disc a standing margin inside the feature
+ *  instead of touching its silhouette edge, matching the erosion margin the
+ *  boundary ring uses (`PERIMETER_CONTACT_INSET_MM`, 0.25 mm on the ring
+ *  spacing) — the two are the same idea: keep the rendered contact on the
+ *  surface it was placed for. */
+export const CONTACT_MARGIN_SCALE = 0.6;
+
+/** Tangent-plane reach (mm) each side of the free-width probe looks out to.
+ *  The cap only binds while the free width is under `bandTip / CONTACT_MARGIN_SCALE`
+ *  (at the widest band, 0.4 / 0.6 ≈ 0.67 mm), so a 0.5 mm reach — above the
+ *  widest width the cap can act on — covers it with headroom while staying
+ *  short of the ~1 mm tooth/gap pitch a scalloped surface repeats at. A probe
+ *  that reached across a whole pitch would read the next tooth as solid ground
+ *  and miss the gap between them entirely. The reach is also a floor on the
+ *  reported width — a contact on a silhouette edge reads its inward side in
+ *  full — and that floor must stay above the 0.67 mm threshold or every
+ *  boundary contact would cap. Past the reach the width reads full and the cap
+ *  is a no-op, which is the correct answer for a feature wider than the tip. */
+export const CONTACT_WIDTH_PROBE_MM = 0.5;
+
 /** Islands with bbox extent at/below this (mm) get a single tip at the bbox
  *  center — robust for specks where centroid/medial math is noise. */
 export const ISLAND_SUB_HEAD_MM = 0.5;

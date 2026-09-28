@@ -9,6 +9,7 @@ import {
     ISLAND_TWO_POINT_MAX_MM,
 } from './constants';
 import type { AutoSupportSettings } from './settings';
+import { applyContactTipCaps } from './contactTipCap';
 import { isSupportBlockedContact } from './supportBlockers';
 
 const FOOTPRINT_TOLERANCE_MM = 0.25;
@@ -685,5 +686,9 @@ export function generateGridCandidates(
         }
     }
 
+    // Cap every lattice/ring contact by the local free width at its contact,
+    // the same pass the island path runs: a tip must fit the feature it lands
+    // on, and the lattice used to take the full band contact whatever it hit.
+    applyContactTipCaps(candidates, mesh);
     return candidates;
 }
