@@ -592,7 +592,7 @@ export function findMergeHost(
     draft: SupportState,
 ): MergeHost | null {
     const snapshot = draft;
-    const r2 = GRIDLESS_MERGE_RADIUS_MM * GRIDLESS_MERGE_RADIUS_MM;
+    const reach2 = GRIDLESS_MERGE_RADIUS_MM * GRIDLESS_MERGE_RADIUS_MM;
     let best: MergeHost | null = null;
     let bestScore = Infinity;
     // Dumas-style gain ranking: among in-radius hosts, nearer wins, but a
@@ -614,15 +614,27 @@ export function findMergeHost(
         if (entity.modelId !== modelId) continue;
         if (entity.origin === NEAR_PLATE_ORIGIN) continue;
 
+        // Reach is measured in PLAN, the way the fan measures it. The
+        // attachment is chosen on the host's SHAFT, by the knot search below
+        // that owns the rise and angle rules; this search only says which
+        // hosts are candidates. Measured in 3D, every legal attachment point
+        // fell outside a ball drawn around the tip, because a joint ten
+        // millimetres down a neighbouring pillar is ten millimetres away even
+        // when the pillar stands three millimetres away on the plate. Two
+        // pillars of equal height, the common case on a mini, reported `noHost`
+        // and stood as two plate contacts. Height is not a gate here at all: a
+        // candidate level with, or above, a host's joints still attaches lower
+        // down its shaft. Ranking stays on the 3D span, so the shorter, steeper
+        // link wins.
+
         // Check the host's tip (contact cone).
         const tp = entity.contactCone?.pos;
         if (tp) {
             const dx = tipPos.x - tp.x;
             const dy = tipPos.y - tp.y;
-            const dz = tipPos.z - tp.z;
-            const d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 <= r2) {
-                const score = scoreFor(hostTypeId, hostId, d2);
+            if (dx * dx + dy * dy <= reach2) {
+                const dz = tipPos.z - tp.z;
+                const score = scoreFor(hostTypeId, hostId, dx * dx + dy * dy + dz * dz);
                 if (score < bestScore) {
                     bestScore = score;
                     best = { hostTypeId, hostId, tipPos: tp };
@@ -636,10 +648,9 @@ export function findMergeHost(
             if (!jp) continue;
             const dx = tipPos.x - jp.x;
             const dy = tipPos.y - jp.y;
+            if (dx * dx + dy * dy > reach2) continue;
             const dz = tipPos.z - jp.z;
-            const d2 = dx * dx + dy * dy + dz * dz;
-            const adjustedD2 = d2 * 0.9;
-            if (adjustedD2 > r2) continue;
+            const adjustedD2 = (dx * dx + dy * dy + dz * dz) * 0.9;
             const score = scoreFor(hostTypeId, hostId, adjustedD2);
             if (score < bestScore) {
                 bestScore = score;
@@ -1018,6 +1029,19 @@ function placeOneCandidate(
                 90 - memberMaxAngleFromVerticalDeg(),
             );
             const MAX_MERGE_ATTACH_SPAN_MM = 12;
+            // Walk the host span in fixed steps from its top and take the FIRST
+            // sample that clears the steep minimum: that is the highest legal
+            // knot, and the member ends up as short as the rule allows. It used
+            // to take the highest of 11 fixed fractions, which on a 20mm shaft
+            // lands up to 2mm below the rung it was after — enough to push a
+            // member across the 6mm leaf/branch threshold by sampling error
+            // alone. A ring contact 2.5mm off its pillar measured 6.9mm instead
+            // of its 5.0mm minimum, became a branch, and the branch's first
+            // segment left the host at 45° from vertical, which the angle rule
+            // refuses — so the contact stood alone. 0.5mm keeps that error well
+            // inside the threshold.
+            const ATTACH_SEARCH_STEP_MM = 0.5;
+            const MAX_ATTACH_SAMPLES = 256;
             let maxRiseDeg = 0;
             if (hostEntity) {
                 for (const seg of hostEntity.segments) {
@@ -1026,8 +1050,13 @@ function placeOneCandidate(
                     const span = hostSegmentSpan(snapshot, hostEntity, seg);
                     if (!span) continue;
                     const { start, end } = span;
-                    for (let i = 0; i <= 10; i++) {
-                        const t = i / 10;
+                    const spanMm = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z);
+                    const steps = Math.max(1, Math.min(
+                        MAX_ATTACH_SAMPLES,
+                        Math.ceil(spanMm / ATTACH_SEARCH_STEP_MM),
+                    ));
+                    for (let i = steps; i >= 0; i--) {
+                        const t = i / steps;
                         const sx = start.x + (end.x - start.x) * t;
                         const sy = start.y + (end.y - start.y) * t;
                         const sz = start.z + (end.z - start.z) * t;
@@ -1043,6 +1072,9 @@ function placeOneCandidate(
                             bestKnotSegmentId = seg.id;
                             bestKnotT = t;
                         }
+                        // First legal sample from the top of this segment is the
+                        // highest one it can offer.
+                        break;
                     }
                 }
             }
