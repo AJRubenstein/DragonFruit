@@ -92,6 +92,7 @@ import {
     CONSOLIDATION_FAN_RADIUS_MM,
     CAVITY_FAN_RADIUS_MM,
     CONSOLIDATION_MAX_ANGLE_DEG,
+    FAN_LINK_TIP_INSET_MM,
     CONSOLIDATION_BRANCH_MIN_HEIGHT_MM,
     MAX_LEAF_SPAN_BEFORE_BRANCH_MM,
     MERGE_HOST_LOAD_WEIGHT,
@@ -2314,12 +2315,41 @@ export function fanLeafToHost(
             pos: sp.pos,
             diameter: sp.diameter + 0.125,
         };
-        if (mesh && isShaftBlocked(sp.pos, target, 0.2, mesh)) {
-            lastBlockedReason = 'blocked';
-            continue;
+        const resolved = resolveSurfaceNormal(target, mesh ?? undefined);
+        /**
+         * The pre-test asks the question the member will have to answer at build
+         * time, and no more. A leaf is one tapered cone from the host to the tip,
+         * and a contact cone is allowed to touch the surface it points at (that is
+         * what `contactConeCollides` exempts), so testing a bare ray all the way to
+         * the tip refused every link onto a flat: the tip sits *on* the surface,
+         * and the last stretch of a ray to it is inside the shaft keep-out however
+         * steep the link is. Measured on a dense flat in gridless mode: 976
+         * consolidation links refused that way, 308 of 438 hosts left bare. A
+         * branch, which is a real shaft, still has to reach a point short of the
+         * tip, because its own collision test runs after it is built.
+         */
+        if (mesh) {
+            const toTip = {
+                x: target.x - sp.pos.x,
+                y: target.y - sp.pos.y,
+                z: target.z - sp.pos.z,
+            };
+            const length = Math.hypot(toTip.x, toTip.y, toTip.z) || 1;
+            const inset = Math.min(FAN_LINK_TIP_INSET_MM, length * 0.5);
+            const shortOfTip = {
+                x: target.x - (toTip.x / length) * inset,
+                y: target.y - (toTip.y / length) * inset,
+                z: target.z - (toTip.z / length) * inset,
+            };
+            const blocked = Math.sqrt(dist2) > MAX_LEAF_SPAN_BEFORE_BRANCH_MM
+                ? isShaftBlocked(sp.pos, shortOfTip, 0.2, mesh)
+                : contactConeCollides(sp.pos, { pos: target, normal: resolved.normal }, mesh);
+            if (blocked) {
+                lastBlockedReason = 'blocked';
+                continue;
+            }
         }
 
-        const resolved = resolveSurfaceNormal(target, mesh ?? undefined);
         // Long spans route to branches with real shafts instead of long tapered
         // leaf cones (spindly spikes), for EVERY origin. Overhang fanning used to
         // stay a leaf past this threshold, which is how an 11.6mm cone got built;

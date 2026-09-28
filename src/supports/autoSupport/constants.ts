@@ -103,6 +103,14 @@ export const GRIDLESS_MERGE_RADIUS_MM = 4.0;
 /** Merge host choice weights longest already-hosted member span this much
  *  (mm-equivalent per mm) against raw distance — Dumas Score = Gain − k·lmax
  *  shape with k explicit. Zero hosted members → pure nearest-first. */
+/**
+ * How far short of a tip a fan's pre-test stops walking. The contact disk stands
+ * the cone off the surface, so a member is never asked to reach inside the
+ * surface's keep-out; the same reasoning the orphan validator applies when it
+ * checks a member at build time.
+ */
+export const FAN_LINK_TIP_INSET_MM = 0.5;
+
 export const MERGE_HOST_LOAD_WEIGHT = 0.5;
 /** Leaf fanning: the least reach the fan is allowed (mm). Every path floors here. */
 export const MIN_LEAF_FAN_RADIUS_MM = 8;
