@@ -236,15 +236,23 @@ function runSignature(gridEnabled: boolean): RunSignature {
  * neutering the model terms leaves these counts unchanged, so tuning the
  * print-scale/mass-share constants does not churn this signature. The grid-off
  * run does not move at all.
+ *
+ * Re-recorded for the contact-tip cap (`contactTipCap.ts`): the grid-on run
+ * moves 4 members from leaf to branch (149/23 → 153/19). Capping a tip changes
+ * the sized group the member lands in, and the span/load rules pick branch over
+ * leaf for those four. The grid-off run still does not move, and the corpus
+ * (see `bench-auto-supports.ts`) is byte-identical on five of seven fixtures;
+ * `steep-flat-wedge` gains coverage (40.4 → 41.0%) and sheds material (−31%)
+ * while `sloped-cantilever` trades 0.2% coverage for 11% fewer router probes.
  */
 const RECORDED = {
     /** Grid enabled: candidates resolve through `decideGridPlacement`, branch-heavy. */
     gridOn: {
-        placed: [28, 149, 23, 197, 0, 0, 1, 0],
+        placed: [28, 153, 19, 197, 0, 0, 1, 0],
         rejectedCandidates: 0,
         changed: true,
-        inStore: { trunks: 28, branches: 149, leaves: 23, twigs: 197, sticks: 0, anchors: 1, knots: 172, roots: 28 },
-        forest: { hostCount: 28, leafCount: 23, branchCount: 149, bareHosts: 2 },
+        inStore: { trunks: 28, branches: 153, leaves: 19, twigs: 197, sticks: 0, anchors: 1, knots: 172, roots: 28 },
+        forest: { hostCount: 28, leafCount: 19, branchCount: 153, bareHosts: 2 },
     },
     /** Grid disabled: candidates resolve through the merge/trunk/cavity ladder, leaf-heavy. */
     gridOff: {
