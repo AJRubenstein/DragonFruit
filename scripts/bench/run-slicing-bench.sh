@@ -629,9 +629,11 @@ run_matrix() { # <label> <sha> <ts-cmd> <rust-binary> <hw-label> <hw-cpus> <hw-m
     for lh in "${LHS[@]}"; do
      for aa in "${AAS[@]}"; do
       vname="$(basename "$voxl" .voxl)"; pname="$(basename "$printer" .json)"
-      repfile="$(mktemp -p "$BENCH_SCRATCH")"; ok_repeats=0; valjson=""; valfile=""; fail_diag=""
+      # Templates rather than `-p`/`--suffix`: those are GNU extensions, and BSD
+      # mktemp (macOS) rejects them outright, which took the whole run down.
+      repfile="$(mktemp "$BENCH_SCRATCH/rep.XXXXXX")"; ok_repeats=0; valjson=""; valfile=""; fail_diag=""
       for ((r=1; r<=REPEATS; r++)); do
-        tmp="$(mktemp -u -p "$BENCH_SCRATCH" --suffix="$pext")"; errf="$(mktemp -p "$BENCH_SCRATCH")"; resf="$(mktemp -p "$BENCH_SCRATCH")"; inspf="$(mktemp -p "$BENCH_SCRATCH")"; reslog="$(mktemp -p "$BENCH_SCRATCH")"
+        tmp="$(mktemp -u "$BENCH_SCRATCH/out.XXXXXX")$pext"; errf="$(mktemp "$BENCH_SCRATCH/err.XXXXXX")"; resf="$(mktemp "$BENCH_SCRATCH/res.XXXXXX")"; inspf="$(mktemp "$BENCH_SCRATCH/insp.XXXXXX")"; reslog="$(mktemp "$BENCH_SCRATCH/reslog.XXXXXX")"
         # Stream the CLI's JSON to a file, not a shell var: a long slice's `samples`
         # time-series can exceed the single-argv limit, and `--argjson s "$res"` then
         # dies with "Argument list too long". jq reads it back via `input` below.
