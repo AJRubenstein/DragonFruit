@@ -668,7 +668,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               {([
                 { key: 'enabled' as const, label: _(msg`Enabled`), title: _(msg`Generate supports automatically on scan`) },
                 { key: 'prioritizeIntersection' as const, label: _(msg`Prioritize Dual`), title: _(msg`Islands found by BOTH the slice and mesh scans are placed first (they are the most certain)`) },
-                { key: 'debugSupportOriginColors' as const, label: _(msg`Origin Colors`), title: _(msg`Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple)`) },
+                { key: 'debugSupportOriginColors' as const, label: _(msg`Origin Colors`), title: _(msg`Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple), reinforcement (teal)`) },
                 { key: 'debugSkipAutoBracing' as const, label: _(msg`No Brace`), title: _(msg`Debug: skip automatic bracing for this run`) },
               ]).map((t) => (
                 <button key={t.key} type="button" title={t.title}

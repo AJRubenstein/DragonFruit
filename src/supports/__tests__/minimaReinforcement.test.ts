@@ -134,6 +134,23 @@ test('a minima tip ends up held by its own tip plus a ring of contacts', () => {
     assert.ok(ringed.length >= MINIMA_RING_COUNT,
         `ring contacts sit off the minima's axis (${ringed.length} of ${contacts.length})`);
 
+    // ... and the crown chunks: ring pillars are stamped with their own origin,
+    // declared convertible, so the consolidation pass pulls them onto the pillar
+    // they ring (one plate contact per chunk) wherever the link clears the
+    // model. On this cone the tip pillar leans off its own axis, so its crown
+    // links pierce the section and only some convert; the plate contacts still
+    // come out below one-per-contact.
+    const snapshot = getSnapshot();
+    const roots = Object.keys(snapshot.roots).length;
+    assert.ok(
+        roots < MINIMA_RING_COUNT + 1,
+        `the crown chunks: ${roots} plate contacts for ${MINIMA_RING_COUNT + 1} contacts`,
+    );
+    assert.ok(
+        Object.values(snapshot.trunks).some((t) => t.origin === 'reinforcement'),
+        'ring pillars carry the reinforcement origin (what makes them convertible)',
+    );
+
     // Re-running on the now-supported model stacks nothing: the ring sits
     // inside ALREADY_SUPPORTED_RADIUS_MM of its own minima, so the tips the
     // first run placed filter every direction.

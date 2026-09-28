@@ -583,6 +583,19 @@ function isHostAtAttachmentCapacity(
 // Nearby-trunk merge
 // ---------------------------------------------------------------------------
 
+/** The origin each candidate source stamps on the support it builds. Declared
+ *  as a table so a new source is a compile error here rather than a silent
+ *  'island'; `convertibleToTree` on that origin is what lets the consolidation
+ *  pass chunk the support later. */
+const ORIGIN_BY_SOURCE: Record<CandidatePoint['source'], SupportOrigin> = {
+    voxel: 'island',
+    minima: 'island',
+    intersection: 'island',
+    overhang: 'standalone',
+    stabilization: 'island',
+    reinforcement: 'reinforcement',
+};
+
 /** Find the closest existing host (shaft or tip) within merge radius.
  *  Stump-origin entities never host merges: they are load-bearing standalone
  *  pillars, leaves are not. */
@@ -964,12 +977,15 @@ function placeOneCandidate(
             }
         }
     }
-    // Anchor-broadening sources stay standalone: a stabilization anchor is a
-    // buttress and a minima reinforcement point widens the base of the section
-    // it rings — fanning either onto a nearby host (very often the very trunk
-    // it exists to strengthen) would collapse the base they exist to spread.
-    const isAnchorSource = candidate.source === 'stabilization' || candidate.source === 'reinforcement';
-    if (!supportSettings.grid?.enabled && !candidate.gridPoint && !isAnchorSource) {
+    // Stabilization anchors stay standalone: they are buttresses along a
+    // bearing edge, and fanning them onto a host collapses the base they exist
+    // to widen. Reinforcement points are not buttresses but ordinary contacts
+    // that happen to ring a minima, so they attach like any island contact:
+    // the minima's own tip pillar is 2.5mm away, and a crown of leaves on it
+    // leaves ONE plate contact instead of seven. Ringing them standalone was
+    // the rule until a mini report showed 18 of its 61 bare trunks were ring
+    // points, all within 5mm of each other.
+    if (!supportSettings.grid?.enabled && !candidate.gridPoint && candidate.source !== 'stabilization') {
         // Overhang-derived candidates (sub-threshold, non-anchor regions)
         // attach via the regular leaf-fanning path — a standalone straight
         // trunk next to fan leaves reads as a misplaced island support. No
@@ -1385,9 +1401,7 @@ function placeOneCandidate(
             // Whether this type records an origin is declared.
             const entity = { ...placed.entity } as typeof placed.entity & { origin?: SupportOrigin };
             if (getSupportTypeDescriptor(typeId).hasOrigin) {
-                entity.origin = candidate.gridPoint
-                    ? 'overhang'
-                    : (candidate.source === 'overhang' ? 'standalone' : 'island');
+                entity.origin = candidate.gridPoint ? 'overhang' : ORIGIN_BY_SOURCE[candidate.source];
             }
             d = draftCommitSupport(d, typeId, entity, supplied);
             logPlacement(
@@ -3079,11 +3093,18 @@ export function computeAutoSupportPlan(
             // release in chunks (one plate contact per chunk). Chunk size is
             // bounded by the declared attachment cap; stumps (near-plate) and
             // island hosts are never converted.
+            //
+            // Reinforcement pillars are the exception among non-overhang
+            // hosts, and the reason the convertibility flag exists: a minima's
+            // ring is one to six contacts 2.5mm apart, the closest neighbours
+            // in the forest, so a crown of pillars becomes a crown of leaves
+            // on the pillar it rings. Read through the origin, never by id.
             const originKind = hostOriginById.get(hostId);
             const isConvertible = isOriginConvertibleToTree(entity.origin)
                 && (originKind === 'gridInfill'
                     || originKind === 'coverageFill'
-                    || entity.origin === 'standalone');
+                    || entity.origin === 'standalone'
+                    || entity.origin === 'reinforcement');
             if (!isConvertible) continue;
             if (countAttachmentsOnHost(hostTypeId, hostId, draft) > 0) continue;
             const tip = entity.contactCone?.pos;
