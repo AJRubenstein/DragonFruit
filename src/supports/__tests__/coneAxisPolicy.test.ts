@@ -5,6 +5,7 @@ import * as THREE from 'three';
 
 import {
     coneAxisLeanFromVerticalDeg,
+    coneKeepsContactHighest,
     isSideWallContact,
     MAX_SIDE_WALL_CONTACT_LEAN_DEG,
     resolveConeAxisPolicy,
@@ -88,4 +89,47 @@ test('a contact whose cone renders within 15 degrees of flat is a side wall', ()
     // And a genuine overhang is never touched, however steep.
     assert.equal(isSideWallContact({ x: 0, y: 0, z: -1 }, 'normal'), false);
     assert.equal(isSideWallContact(leaningNormal(45), 'normal'), false);
+});
+
+/** A cone `leanDeg` off vertical, socket `lengthMm` down the axis from the tip. */
+function coneUnderTest(leanDeg: number, lengthMm: number, bodyDiameterMm: number) {
+    const rad = (leanDeg * Math.PI) / 180;
+    const tipPos = { x: 0, y: 0, z: 10 };
+    const coneAxis = { x: Math.sin(rad), y: 0, z: -Math.cos(rad) };
+    return {
+        tipPos,
+        coneAxis,
+        socketPos: {
+            x: tipPos.x + coneAxis.x * lengthMm,
+            y: tipPos.y + coneAxis.y * lengthMm,
+            z: tipPos.z + coneAxis.z * lengthMm,
+        },
+        bodyDiameterMm,
+    };
+}
+
+test('a cone stays under its contact until its own socket end would rise over it', () => {
+    // 3mm cone, 1.2mm body: the socket end rises `0.6 * sin(lean)` over a descent
+    // of `3 * cos(lean)`, so the tip stays on top up to atan(3 / 0.6) = 78.7°.
+    const bound = (Math.atan2(3, 0.6) * 180) / Math.PI;
+    assert.ok(coneKeepsContactHighest(coneUnderTest(bound - 1, 3, 1.2)),
+        'just inside the bound the contact is still the highest point');
+    assert.equal(coneKeepsContactHighest(coneUnderTest(bound + 1, 3, 1.2)), false,
+        'past it the socket end is over the tip');
+
+    // Flat is over the tip whatever the body: at 90° the descent is zero and the
+    // socket's own rim is a body radius above the contact.
+    assert.equal(coneKeepsContactHighest(coneUnderTest(90, 3, 1.2)), false,
+        'a cone lying flat is not a support');
+
+    // And past flat the socket is above the tip outright — the geometry that
+    // grows back up over its contact.
+    assert.equal(coneKeepsContactHighest(coneUnderTest(97, 3, 1.2)), false,
+        'a cone pointing up is refused by the same check');
+
+    // Steep cones are never in question: this is what a support normally is.
+    assert.ok(coneKeepsContactHighest(coneUnderTest(0, 3, 1.2)), 'a vertical cone keeps its tip on top');
+    assert.ok(coneKeepsContactHighest(coneUnderTest(45, 3, 1.2)), 'so does the 45° shape');
+    assert.ok(coneKeepsContactHighest(coneUnderTest(60, 2.5, 1.0)),
+        'the adaptive wall cone (60° off vertical) keeps its tip on top');
 });

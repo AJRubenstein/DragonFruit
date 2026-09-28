@@ -198,6 +198,31 @@ export function isSideWallContact(
 }
 
 /**
+ * Whether a cone keeps its contact the highest point of the support.
+ *
+ * A support hangs from the point it touches the model at: nothing it is made of
+ * sits above that point. The contact cone is the piece that can break it — the
+ * cone ends at its socket, a body of radius `bodyDiameterMm / 2` standing on the
+ * axis — so an axis swung far enough off vertical lifts the socket's own rim
+ * over the tip, and the member reads as a cone pointing down with the support
+ * growing out of the top of it.
+ *
+ * Measured on the axis and the socket that axis lands, not on the surface
+ * normal: a deviation walk moves the socket anywhere inside its budget, and
+ * where it lands is what renders.
+ */
+export function coneKeepsContactHighest(args: {
+    coneAxis: Vec3;
+    socketPos: Vec3;
+    tipPos: Vec3;
+    bodyDiameterMm: number;
+}): boolean {
+    const axis = normalizeOrFallback(args.coneAxis, { x: 0, y: 0, z: -1 });
+    const socketRimRiseMm = (args.bodyDiameterMm / 2) * Math.hypot(axis.x, axis.y);
+    return args.socketPos.z + socketRimRiseMm <= args.tipPos.z + 1e-6;
+}
+
+/**
  * Ensures a cone axis never points upward (positive Z).
  * Projects upward-pointing axes to horizontal with a 5° downward tilt.
  */

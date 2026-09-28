@@ -43,6 +43,7 @@ import { isContactConeBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { buildDirectionFan, findEscapeJoint, findGridJoint } from './EscapeJointSearch';
 import {
     clampConeAxisDeviationFromSurfaceNormal,
+    coneKeepsContactHighest,
     MAX_CONE_AXIS_DEVIATION_FROM_SURFACE_NORMAL_DEG,
 } from '../PlacementLogic/ConeAxisPolicy';
 import { getSocketPosition } from '../SupportPrimitives/ContactCone';
@@ -256,8 +257,10 @@ function rootsVolumeBlocked(
  * With a joint to aim at, the socket moves onto the line from the cone start
  * toward that joint, so the cone and the first shaft segment form one line. The
  * move is clamped, because the contact disk is oriented along the surface
- * normal and the cone cannot point radically away from it. With no joint (a
- * straight shaft) the socket stands and the axis follows it.
+ * normal and the cone cannot point radically away from it, and it is dropped
+ * outright when it would lift the cone's socket end over the tip: the contact is
+ * the top of the member, and the socket the walk already cleared does not.
+ * With no joint (a straight shaft) the socket stands and the axis follows it.
  */
 function resolveConeSocketAndAxis(args: {
     socketPos: Vec3;
@@ -298,7 +301,13 @@ function resolveConeSocketAndAxis(args: {
         const alignedSocket = getSocketPosition(coneStartPos, alignedAxis, tipProfile);
         if (!args.coneBlockedAt(alignedSocket)
             && !args.contactConeBlockedAt(coneStartPos, alignedSocket)
-            && !args.segmentBlockedBetween(alignedSocket, firstJoint)) {
+            && !args.segmentBlockedBetween(alignedSocket, firstJoint)
+            && coneKeepsContactHighest({
+                coneAxis: alignedAxis,
+                socketPos: alignedSocket,
+                tipPos,
+                bodyDiameterMm: tipProfile.bodyDiameterMm,
+            })) {
             return { socketPos: alignedSocket, coneAxis: alignedAxis, coneStartPos };
         }
     }
@@ -544,6 +553,20 @@ export function calculateSmartPlacementV3(
         coneAxis: axis,
         coneStartPos,
     });
+    /**
+     * The contact is the top of the member: no cone the router commits may lift
+     * its own socket end over the tip. The axis the surface wants and every
+     * deviation the walk around the tip tries pass through this gate, so the
+     * geometry the builder renders never grows back up over its contact.
+     */
+    const coneKeepsContactOnTop = (cone: { coneAxis: Vec3; socketPos: Vec3 }): boolean => (
+        coneKeepsContactHighest({
+            coneAxis: cone.coneAxis,
+            socketPos: cone.socketPos,
+            tipPos: input.tipPos,
+            bodyDiameterMm: input.tipProfile.bodyDiameterMm,
+        })
+    );
     // Built only when the cone at the nominal socket is blocked: the walk around
     // the tip is the rare case, and the common one pays nothing for it.
     let deviationAxes: Vec3[] | null = null;
@@ -620,6 +643,7 @@ export function calculateSmartPlacementV3(
     for (const candidate of [straightCone, ...getDeviationCones(straightCone.coneStartPos)]) {
         routerStats.conesTested++;
         if (contactConeBlockedAt(candidate.coneStartPos, candidate.socketPos)) continue;
+        if (!coneKeepsContactOnTop(candidate)) continue;
         const columnEnd = { x: candidate.socketPos.x, y: candidate.socketPos.y, z: rootTopZ };
         if (segmentBlockedBetween(candidate.socketPos, columnEnd)) continue;
         if (rootsBlockedAt(candidate.socketPos.x, candidate.socketPos.y)) continue;
@@ -721,6 +745,7 @@ export function calculateSmartPlacementV3(
         const startSocket = socketCandidate.socketPos;
         routerStats.conesTested++;
         if (contactConeBlockedAt(socketCandidate.coneStartPos, startSocket)) continue;
+        if (!coneKeepsContactOnTop(socketCandidate)) continue;
 
         // Grid mode searches the lattice: the drop has to land on a node, so the
         // node is chosen first and the joint derived from it. Every other mode
