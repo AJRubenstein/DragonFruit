@@ -31,14 +31,17 @@ export function generateCandidates(
     // Note: grounded/plate-contact filtering is handled upstream by the
     // Islands panel's Plate toggle — filteredIslands already reflects it.
     const eligible = islands.filter(island => {
-        // Minima islands don't have area — they represent sharp geometric
-        // features that need support regardless of size.
-        const isMinima = island.source === 'minima' && island.class === 'minimaOnly';
-        if (!isMinima) {
-            const area = island.areaMm2 ?? 0;
-            if (area < settings.minIslandAreaMm2) return false;
-        }
-        return true;
+        // A minima is a sharp geometric feature that needs support regardless of
+        // size, and it carries no area of its own: the detector reports a vertex,
+        // not a footprint. The exemption reads the source for that reason. It
+        // used to also require `class === 'minimaOnly'`, which `classifyIntersection`
+        // rewrites to `intersection` for every minima a voxel island covers, so a
+        // covered minima fell through to the area test as "0 mm²" and was dropped
+        // whenever that voxel island was itself below the floor: a silent miss on
+        // a real minimum, with nothing in the report to show for it.
+        if (island.source === 'minima') return true;
+        const area = island.areaMm2 ?? 0;
+        return area >= settings.minIslandAreaMm2;
     });
 
     // Map to candidates
