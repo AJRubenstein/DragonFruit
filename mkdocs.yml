@@ -120,6 +120,7 @@ nav:
           - System Notifications: dev/system-notifications.md
           - Support System: dev/support-system.md
           - Auto-Supports: dev/auto-supports.md
+          - Auto-Support Metrics: dev/auto-support-metrics.md
           - Auto-Support Worker: dev/auto-support-worker.md
           - Auto-Orientation (Pre-Plan): dev/auto-orientation.md
           - Adding a New Support Type: dev/support-type-extension.md

@@ -81,3 +81,27 @@ jobs:
 
       - name: Check support id prefixes are derived
         run: npm run check:support-prefixes
+
+  support-metrics:
+    name: Auto-support metrics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.2"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Placement metrics, against the baseline in scripts/bench. A deliberate
+      # change updates that file in the same pull request; an unintended one
+      # fails here with the metric that moved.
+      - name: Compare auto-support metrics with the baseline
+        run: npm run bench:auto-supports -- --check
