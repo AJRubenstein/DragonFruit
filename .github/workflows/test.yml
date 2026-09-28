@@ -105,3 +105,8 @@ jobs:
       # fails here with the metric that moved.
       - name: Compare auto-support metrics with the baseline
         run: npm run bench:auto-supports -- --check
+
+      # Grid mode has its own baseline: the two modes measure different runs
+      # (node-snapped placement, and the fallback for tips the lattice refuses).
+      - name: Compare grid-mode auto-support metrics with the grid baseline
+        run: npm run bench:auto-supports -- --grid --baseline scripts/bench/auto-support-baseline-grid.json --check

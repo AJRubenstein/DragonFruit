@@ -63,6 +63,10 @@ Grid support logic ensures deterministic trunk ownership and efficient branch re
 A contact's cone is the member's last stretch into the surface, and it is what reads as
 a support or as a whisker:
 
+- **A refused tip is retried without the grid before it is dropped.** See
+  [Auto-Supports](auto-supports.md): `grid_reject_*` refusals fall back to a
+  free-standing placement for that candidate alone, and the run reports how many.
+
 - **A contact whose cone renders within 15° of flat is refused** (`isSideWallContact`,
   `MAX_SIDE_WALL_CONTACT_LEAN_DEG` 75°). The contact disk stays on the surface, so a
   near-vertical face forces a near-horizontal cone whichever way the shaft leaves: the

@@ -128,6 +128,8 @@ export interface ForestReport {
         hostsByKind: { gridInfill: number; coverageFill: number; standalone: number };
         fanRefusals: Partial<Record<string, number>>;
         mergeRefusals: Partial<Record<string, number>>;
+        /** Candidates the grid refused and the fallback then placed without it. */
+        gridFallbacks: number;
         /** Why consolidation (chunk fanning) refused candidates — sameZ means
          *  the surface is too flat for side-leaves at the consolidation
          *  angle (raft/connector territory). */
@@ -260,6 +262,8 @@ export interface PlacementDiagnostics {
     fanRefusals: Partial<Record<FanLeafRefusal, number>>;
     /** Why candidates failed to merge (no host vs host rejected the attachment). */
     mergeRefusals: Partial<Record<'noHost' | 'rejected', number>>;
+    /** Candidates the grid refused and the fallback then placed without it. */
+    gridFallbacks: number;
     /** Candidates whose trunk could not reach the plate and were bridged
      *  model-to-model instead -- by whichever type registered a bridge
      *  builder. Tip = where the bridge

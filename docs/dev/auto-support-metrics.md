@@ -18,7 +18,8 @@ moves in the wrong direction is visible before anything is printed.
 | `scripts/bench-auto-supports.ts` | The harness: arguments, the per-model run, metric collection, the table, the baseline diff |
 | `scripts/bench-auto-support-corpus.ts` | The synthetic corpus: each entry's mesh and the islands it presents |
 | `scripts/bench-island-scan.ts` | The app's voxel island detector, run in this process (Worker stand-in) |
-| `scripts/bench/auto-support-baseline.json` | The committed metric snapshot `--check` compares against |
+| `scripts/bench/auto-support-baseline.json` | The committed metric snapshot `--check` compares against (grid off) |
+| `scripts/bench/auto-support-baseline-grid.json` | The same for `--grid`, which measures a different run and has its own snapshot |
 
 ```bash
 npm run bench:auto-supports                     # the table, synthetic corpus
@@ -72,6 +73,7 @@ module before a scan starts.
 | `cover %` | Footprint fraction covered at the tip radius | `AutoPlaceAnalytics.areaCoverage` |
 | `orphans` | Members culled after the forest resize, by reason | `ForestReport.orphans` |
 | `above` | Contacts whose own cone rises over the tip it touches | see below |
+| `fallbk` | Candidates the grid refused and the fallback then placed without it | `PlacementDiagnostics.gridFallbacks` |
 | `probes` | Distance-field probes the router spent | `getRouterStats().jointProbes` |
 | `ms` | Wall clock for the model | the harness |
 
@@ -97,7 +99,11 @@ Two metrics are worth reading carefully:
 
 ## The baseline and `--check`
 
-`--update-baseline` writes the current run to `scripts/bench/auto-support-baseline.json`.
+`--update-baseline` writes the current run to `scripts/bench/auto-support-baseline.json`
+(or to `--baseline <file>`, which is how the grid snapshot is recorded). Each mode
+keeps its own file: `--check` refuses a baseline recorded with different flags,
+because grid mode's node-snapped placement and its fallback for tips the lattice
+refuses are a different measurement from the gridless run.
 Read the diff before committing it: the baseline is the claim "this is the forest
 we intend", and re-recording it to make a run pass is how the gate stops meaning
 anything.

@@ -910,8 +910,15 @@ function placeOneCandidate(
     gridHostIds?: ReadonlySet<string>,
     mesh?: THREE.Mesh,
     sizingCtx?: ModelSizingContext,
-): { kind: PlacementOutcomeKind; draft: SupportState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: string } {
+    /**
+     * Place this candidate as if grid mode were off. Set by the retry below, and
+     * never by the caller's own request: the run's grid setting still decides
+     * whether other candidates are node placements.
+     */
+    ignoreGrid = false,
+): { kind: PlacementOutcomeKind; draft: SupportState; rejectedReason?: RejectReason; preset?: 'detail' | 'structure' | 'anchor'; entityId?: string; stickCount?: number; fanRefusal?: FanLeafRefusal; mergeRefusal?: 'noHost' | 'rejected'; cavityFanRefusal?: string; gridFallback?: boolean } {
     const supportSettings = getSettings();
+    const gridEnabled = supportSettings.grid?.enabled === true && !ignoreGrid;
     const snapshot = draft;
     let d = draft;
 
@@ -941,7 +948,7 @@ function placeOneCandidate(
     // independent supports, not a bush of branches off one shaft).
     let mergeHostFound = false;
     let fanRefusal: FanLeafRefusal | undefined;
-    if (!supportSettings.grid?.enabled) {
+    if (!gridEnabled) {
         // Grid/poisson points fan into ISLAND trunks only (hosts not placed
         // from gridPoint candidates). Only ORGANIC Poisson + coverage-fill
         // points — flat-lattice grid infill and the anchor band stay
@@ -985,7 +992,7 @@ function placeOneCandidate(
     // leaves ONE plate contact instead of seven. Ringing them standalone was
     // the rule until a mini report showed 18 of its 61 bare trunks were ring
     // points, all within 5mm of each other.
-    if (!supportSettings.grid?.enabled && !candidate.gridPoint && candidate.source !== 'stabilization') {
+    if (!gridEnabled && !candidate.gridPoint && candidate.source !== 'stabilization') {
         // Overhang-derived candidates (sub-threshold, non-anchor regions)
         // attach via the regular leaf-fanning path — a standalone straight
         // trunk next to fan leaves reads as a misplaced island support. No
@@ -1256,6 +1263,7 @@ function placeOneCandidate(
         overrides,
         isPreview: false,
         isSmallIsland,
+        ignoreGrid,
     });
     if (trunkResult.error) {
         // Cavity fallback: if the trunk can't reach the build plate, try
@@ -1372,7 +1380,7 @@ function placeOneCandidate(
     // This handles grid snapping, SDF collision checks, host-trunk
     // attachment (branch/leaf), anchor short-circuit, and rejection.
     const decision = decideGridPlacement({
-        settings: supportSettings,
+        settings: gridEnabled ? supportSettings : { ...supportSettings, grid: { ...supportSettings.grid, enabled: false } },
         snapshot,
         candidate: trunkResult,
         tipPos,
@@ -1409,7 +1417,7 @@ function placeOneCandidate(
                 `area=${candidate.islandAreaMm2.toFixed(2)}mm² Z=${candidate.zHeight.toFixed(1)}mm ${preset}` +
                 (fanRefusal ? ` fan:${fanRefusal}` : '') +
                 (mergeHostFound ? ' merge:rejected' : ''));
-            const mergeChecked = !supportSettings.grid?.enabled && !candidate.gridPoint;
+            const mergeChecked = !gridEnabled && !candidate.gridPoint;
             return {
                 kind: typeId as PlacementOutcomeKind,
                 preset,
@@ -1426,6 +1434,21 @@ function placeOneCandidate(
                 decision.reason === 'NO_VALID_ATTACHMENT' || decision.reason === 'KNOT_ABOVE_TIP' ? 'grid_reject_no_attachment' :
                 'grid_reject_other';
             logPlacement(`Rejected ${candidate.id}: ${decision.reason} (grid ${decision.nodeKey})`);
+            if (gridEnabled) {
+                // The lattice could not serve this tip: its node and the ones
+                // near it were occupied, unreachable, or refused by the
+                // attachment gates. The tip still needs a support, so it is
+                // retried with the grid off for this candidate alone before it
+                // counts as rejected. That retry cannot recurse: it passes
+                // `ignoreGrid`, which leaves `gridEnabled` false inside.
+                const fallback = placeOneCandidate(
+                    candidate, draft, _settingsOverride, gridHostIds, mesh, sizingCtx, true,
+                );
+                logPlacement(fallback.kind === 'reject'
+                    ? `Grid fallback failed ${candidate.id}: ${fallback.rejectedReason}`
+                    : `Grid fallback placed ${candidate.id} as ${fallback.kind} (no lattice node could take it)`);
+                return fallback.kind === 'reject' ? fallback : { ...fallback, gridFallback: true };
+            }
             return { kind: 'reject', rejectedReason: reason, preset, draft: d };
         }
     }
@@ -2591,6 +2614,9 @@ export function forestReportToText(report: ForestReport): string {
         } else {
             lines.push(`  Fan/Merge refusals: none (all fanned or standalone)`);
         }
+        if ((d.gridFallbacks ?? 0) > 0) {
+            lines.push(`  Grid fallbacks: ${d.gridFallbacks} — the lattice could not serve these tips, so they were placed without it`);
+        }
         if (d.cavityFallbacks && d.cavityFallbacks.length > 0) {
             lines.push(`  Cavity fallbacks: ${d.cavityFallbacks.length} — trunk could not reach the plate (bridged model-to-model)`);
             for (const fb of d.cavityFallbacks.slice(0, 20)) {
@@ -2938,6 +2964,7 @@ export function computeAutoSupportPlan(
         hostsByKind: { gridInfill: 0, coverageFill: 0, standalone: 0 },
         fanRefusals: {},
         mergeRefusals: {},
+        gridFallbacks: 0,
         cavityFallbacks: [],
     };
     // Consolidation (chunk fanning) refusal tallies — hoisted so the forest
@@ -2984,6 +3011,7 @@ export function computeAutoSupportPlan(
                 }
             } else {
                 placed[result.kind]++;
+                if (result.gridFallback) diagnostics.gridFallbacks++;
                 if (bridgingTypes.includes(result.kind)) {
                     // Cavity fallback: the trunk could not reach the plate, so
                     // we bridged model-to-model. Report WHERE, so avoidable
@@ -3758,6 +3786,7 @@ export function computeAutoSupportPlan(
                 hostsByKind: diagnostics.hostsByKind,
                 fanRefusals: { ...diagnostics.fanRefusals },
                 mergeRefusals: { ...diagnostics.mergeRefusals },
+                gridFallbacks: diagnostics.gridFallbacks,
                 consolidationRefusals: { ...conRefusals },
                 cavityFallbacks: [...diagnostics.cavityFallbacks],
             };
