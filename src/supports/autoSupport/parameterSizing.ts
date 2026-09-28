@@ -108,6 +108,15 @@ export function applySizingOverridesToSettings(
 }
 
 /** The auto-support tier's band. */
+/**
+ * The band a preset sizes with. Exported so callers that must weigh a band
+ * against the others (the load budget credits a support by its band's
+ * cross-section) read the same table the sizing does.
+ */
+export function sizingBandFor(preset: SizingPreset): SizingBand {
+    return SIZING_BANDS[preset];
+}
+
 export function activeSizingBand(): SizingBand {
     const preset = getSettings().autoSupport?.sizingPreset ?? 'structure';
     return SIZING_BANDS[preset];

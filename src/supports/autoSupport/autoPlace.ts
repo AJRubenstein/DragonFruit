@@ -52,6 +52,7 @@ import {
     coverageRadiusForArea,
 } from './coverage';
 import { sizeParameters, presetForArea, modelSizingFactors, RESIN_DENSITY_G_PER_MM3 } from './parameterSizing';
+import { computeLoadBudget, type PlacedContact } from './loadBudget';
 import type { ModelSizingContext } from './parameterSizing';
 import { getSettings } from '../Settings/state';
 import { memberDepartureAngleFromVerticalDeg } from '../PlacementLogic/smartPlacementSearchUtils';
@@ -2617,6 +2618,20 @@ export function forestReportToText(report: ForestReport): string {
         if ((d.gridFallbacks ?? 0) > 0) {
             lines.push(`  Grid fallbacks: ${d.gridFallbacks} — the lattice could not serve these tips, so they were placed without it`);
         }
+        if (report.loadBudget) {
+            const budget = report.loadBudget;
+            lines.push(
+                `  Load budget (report only): demand ${budget.totalDemandMm2.toFixed(0)}mm² vs capacity `
+                + `${budget.totalCapacityMm2.toFixed(0)}mm² — would add ${budget.wouldAdd}, could cull ${budget.wouldCull} `
+                + `(deficit on ${budget.islandsInDeficit} islands, surplus on ${budget.islandsInSurplus})`,
+            );
+            if (budget.worst) {
+                lines.push(
+                    `    worst deficit: ${budget.worst.islandId} ${budget.worst.deficitMm2.toFixed(1)}mm² `
+                    + `(demand ${budget.worst.demandMm2.toFixed(1)}, capacity ${budget.worst.capacityMm2.toFixed(1)})`,
+                );
+            }
+        }
         if (d.cavityFallbacks && d.cavityFallbacks.length > 0) {
             lines.push(`  Cavity fallbacks: ${d.cavityFallbacks.length} — trunk could not reach the plate (bridged model-to-model)`);
             for (const fb of d.cavityFallbacks.slice(0, 20)) {
@@ -2975,6 +2990,11 @@ export function computeAutoSupportPlan(
     const hostOriginById = new Map<string, 'gridInfill' | 'coverageFill'>();
     // Per-placed-entity ledger for the Forest Report (display id, sizing inputs).
     const forestLedger: ForestLedgerEntry[] = [];
+    /**
+     * Where the placement put its contacts and which band sized them, for the load
+     * budget at the end of the run. Report only: nothing downstream reads it.
+     */
+    const placedContacts: PlacedContact[] = [];
 
     // Analytics accumulators
     const presets = { detail: 0, structure: 0, anchor: 0 };
@@ -3025,6 +3045,12 @@ export function computeAutoSupportPlan(
                 }
             }
             if (result.preset) presets[result.preset]++;
+            if (result.kind !== 'reject') {
+                placedContacts.push({
+                    tip: candidate.tipPos,
+                    preset: result.preset ?? presetForArea(candidate.islandAreaMm2),
+                });
+            }
 
             // Placement-path diagnostics: where each candidate ended up.
             diagnostics.candidatesBySource[candidate.source] =
@@ -3701,6 +3727,12 @@ export function computeAutoSupportPlan(
                                 if (result.kind === 'reject') rejectedCount++;
                                 else placed[result.kind]++;
                                 if (result.preset) presets[result.preset]++;
+                                if (result.kind !== 'reject') {
+                                    placedContacts.push({
+                                        tip: recandidate.tipPos,
+                                        preset: result.preset ?? presetForArea(recandidate.islandAreaMm2),
+                                    });
+                                }
                                 if (result.entityId && isLedgerKind(result.kind)) {
                                     forestLedger.push({
                                         displayId: recandidate.id,
@@ -3790,6 +3822,22 @@ export function computeAutoSupportPlan(
                 consolidationRefusals: { ...conRefusals },
                 cavityFallbacks: [...diagnostics.cavityFallbacks],
             };
+            // Report only: what a deficit budget would add and cull, in mm² of
+            // unsupported surface. Nothing here changes the forest.
+            forestReport.loadBudget = computeLoadBudget({
+                islands,
+                contacts: placedContacts,
+                areaPerSupportMm2: getSettings().autoSupport?.areaPerSupportMm2 ?? 10,
+                poseDragMomentMm3: poseStability?.dragMomentMm3,
+                toppleCoverageNeeded,
+            });
+            const budget = forestReport.loadBudget;
+            if (budget.wouldAdd > 0 || budget.wouldCull > 0) {
+                console.log(LOG_PREFIX,
+                    `Load budget (report only): would add ${budget.wouldAdd} and could cull ${budget.wouldCull} ` +
+                    `— demand ${budget.totalDemandMm2.toFixed(0)}mm² vs capacity ${budget.totalCapacityMm2.toFixed(0)}mm², ` +
+                    `deficit on ${budget.islandsInDeficit} islands, surplus on ${budget.islandsInSurplus}`);
+            }
             analytics.forestReport = forestReport;
             console.log(LOG_PREFIX,
                 `Forest report: ${forestReport.hostCount} hosts, ${forestReport.leafCount} leaves, ` +

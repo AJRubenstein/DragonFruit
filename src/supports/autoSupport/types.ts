@@ -122,6 +122,8 @@ export interface ForestReport {
     scan?: ForestScanMetrics;
     /** Leaves/branches whose host knot drifted, crossed, or lost its host segment. */
     orphans?: OrphanInfo[];
+    /** What a deficit budget would add and cull, when the run computed one. */
+    loadBudget?: LoadBudgetReport;
     /** Placement diagnostics: why trunks are where they are, fan/merge refusal counts */
     diagnostics?: {
         candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number; reinforcement: number };
@@ -152,6 +154,31 @@ export interface OrphanInfo {
 }
 
 
+
+/**
+ * The load budget, as the report carries it. Report only: the run prints what a
+ * deficit model would add and cull and moves nothing. See `loadBudget.ts` for the
+ * units and why they are what they are.
+ */
+export interface LoadBudgetIsland {
+    islandId: string;
+    demandMm2: number;
+    capacityMm2: number;
+    deficitMm2: number;
+}
+
+export interface LoadBudgetReport {
+    /** One row per island with an area of its own, in island order. */
+    rows: LoadBudgetIsland[];
+    totalDemandMm2: number;
+    totalCapacityMm2: number;
+    wouldAdd: number;
+    wouldCull: number;
+    islandsInDeficit: number;
+    islandsInSurplus: number;
+    islandsWithoutArea: number;
+    worst: LoadBudgetIsland | null;
+}
 
 /** Competitive distribution bake-off result for anchor surfaces. */
 export interface CompetitiveBakeoffAnalytics {

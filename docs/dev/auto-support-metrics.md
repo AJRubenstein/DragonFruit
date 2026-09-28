@@ -37,6 +37,11 @@ which seeds the thread's settings, snapshot and model mesh and then calls
 `computeAutoSupportPlan`. So a run here behaves as the app's run does, minus the
 detectors.
 
+Corpus entries author their own footprint voxels, and the grid path samples the ring and
+lattice from them, so a corpus run's contact count reflects the fixture's sampling rather
+than a real scan. Read density questions off a `detected` run, where the app's own detector
+produced the islands; the authored mode is for holding the input fixed across a change.
+
 **Islands come from one of two places**, and the run says which it used:
 
 | Source | When |
@@ -74,6 +79,7 @@ module before a scan starts.
 | `orphans` | Members culled after the forest resize, by reason | `ForestReport.orphans` |
 | `above` | Contacts whose own cone rises over the tip it touches | see below |
 | `fallbk` | Candidates the grid refused and the fallback then placed without it | `PlacementDiagnostics.gridFallbacks` |
+| `budget` | What a load budget would add (`+`) and call redundant (`-`), in supports. Report only, and deliberately outside `--check`: it measures the run, it does not gate it | `ForestReport.loadBudget` |
 | `probes` | Distance-field probes the router spent | `getRouterStats().jointProbes` |
 | `ms` | Wall clock for the model | the harness |
 

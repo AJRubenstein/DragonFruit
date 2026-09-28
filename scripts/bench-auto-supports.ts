@@ -105,6 +105,10 @@ interface ModelMetrics {
     orphansByReason: Record<string, number>;
     /** Candidates the grid refused and the fallback then placed without it. */
     gridFallbacks: number;
+    /** Load budget, report only: supports a deficit model would add. */
+    budgetAdd: number;
+    /** ...and how many it would call redundant. */
+    budgetCull: number;
     refusals: { fan: number; merge: number; consolidation: number; cavityFallbacks: number };
     rejections: Record<string, number>;
     deterministic: boolean;
@@ -514,6 +518,8 @@ function metricsFrom(
         islandsCovered: plan.analytics.islandsCovered,
         islandsUncovered: plan.analytics.islandsUncovered,
         gridFallbacks: diagnostics?.gridFallbacks ?? 0,
+        budgetAdd: report?.loadBudget?.wouldAdd ?? 0,
+        budgetCull: report?.loadBudget?.wouldCull ?? 0,
         orphans: report?.orphans?.length ?? 0,
         orphansByReason: (
             report?.orphans ?? []
@@ -591,7 +597,7 @@ function compareWithBaseline(metrics: ModelMetrics, baseline: ModelMetrics | und
 }
 
 function formatTable(rows: ModelMetrics[]): string {
-    const header = ['model', 'islands', 'cand', 'entities', 'contacts', 'vol mm3', 'len mm', 'cover %', 'orphans', 'above', 'fallbk', 'probes', 'ms'];
+    const header = ['model', 'islands', 'cand', 'entities', 'contacts', 'vol mm3', 'len mm', 'cover %', 'orphans', 'above', 'fallbk', 'budget', 'probes', 'ms'];
     const sum = (pick: (row: ModelMetrics) => number): number => rows.reduce((total, row) => total + pick(row), 0);
     const body = rows.map((row) => [
         row.name,
@@ -605,6 +611,7 @@ function formatTable(rows: ModelMetrics[]): string {
         String(row.orphans),
         String(row.aboveContact),
         String(row.gridFallbacks),
+        `+${row.budgetAdd}/-${row.budgetCull}`,
         String(row.routerProbes),
         row.totalMs.toFixed(0),
     ]);
@@ -614,6 +621,7 @@ function formatTable(rows: ModelMetrics[]): string {
         sum((row) => row.memberVolumeMm3).toFixed(1), sum((row) => row.memberLengthMm).toFixed(0), '',
         String(sum((row) => row.orphans)), String(sum((row) => row.aboveContact)),
         String(sum((row) => row.gridFallbacks)),
+        `+${sum((row) => row.budgetAdd)}/-${sum((row) => row.budgetCull)}`,
         String(sum((row) => row.routerProbes)), sum((row) => row.totalMs).toFixed(0),
     ];
     const widths = header.map((_, column) => Math.max(
