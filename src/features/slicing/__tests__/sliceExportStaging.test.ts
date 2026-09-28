@@ -6,6 +6,7 @@ import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profil
 import { storeModelMeshModifiers, getStoredMeshModifiers, deleteStoredMeshModifiers } from '@/features/mesh-modifiers/meshModifierStore';
 import { clearPreparedGeometryCacheForModel } from '@/features/mesh-modifiers/prepareModelGeometry';
 import { runSliceExportOrchestrator } from '../sliceExportOrchestrator';
+import { installFakeWindow } from '@/utils/__tests__/helpers/fakeWindow';
 
 function modelFromPositions(id: string, positions: Float32Array): LoadedModel {
   const geometry = new THREE.BufferGeometry();
@@ -91,14 +92,10 @@ test('streamed slice input excludes raw hollowing output and preserves the model
         throw new Error(`Unexpected native command: ${command}`);
     }
   };
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {
-      dispatchEvent: () => true,
-      __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
-      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
-    },
+  const restoreWindow = installFakeWindow({
+    dispatchEvent: () => true,
+    __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
+    __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   });
   const stage = async (currentModel: LoadedModel) => {
     await assert.rejects(runSliceExportOrchestrator({
@@ -165,8 +162,7 @@ test('streamed slice input excludes raw hollowing output and preserves the model
     assert.deepEqual(new Uint16Array(flagsOnly.bytes.buffer, flagsOnly.bytes.byteOffset, flagsOnly.bytes.byteLength / 2), originalEncoded);
     assert.equal(hollowCalls, 1, 'enabled/unbaked flags without a source must not invoke native hollowing');
   } finally {
-    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-    else Reflect.deleteProperty(globalThis, 'window');
+    restoreWindow();
     model.geometry.geometry.dispose();
     supportModel.geometry.geometry.dispose();
     redoneModel.geometry.geometry.dispose();

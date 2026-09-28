@@ -5,6 +5,7 @@ import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { snapshotGeometryPositions } from '@/utils/geometrySnapshot';
 import { clearPreparedGeometryCacheForModel, prepareModelGeometryForOutput } from '../prepareModelGeometry';
 import { deleteStoredMeshModifiers, storeModelMeshModifiers } from '../meshModifierStore';
+import { installFakeWindow } from '@/utils/__tests__/helpers/fakeWindow';
 
 type InvokeCall = { cmd: string; args: unknown };
 
@@ -33,7 +34,7 @@ function installFakeTauri(): InvokeCall[] {
         throw new Error(`unexpected command: ${cmd}`);
     }
   };
-  (globalThis as { window?: unknown }).window = { __TAURI_INTERNALS__: { invoke } };
+  installFakeWindow({ __TAURI_INTERNALS__: { invoke } });
   return calls;
 }
 
