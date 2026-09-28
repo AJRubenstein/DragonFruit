@@ -1172,8 +1172,8 @@ msgid "Debug"
 msgstr "Debug"
 
 #: src/components/controls/AutoSupportPanel.tsx:671
-msgid "Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple)"
-msgstr "Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple)"
+msgid "Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple), reinforcement (teal)"
+msgstr "Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple), reinforcement (teal)"
 
 #: src/components/controls/AutoSupportPanel.tsx:689
 msgid "Debug: show sizing and forest diagnostics in the panel"
