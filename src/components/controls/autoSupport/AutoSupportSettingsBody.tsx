@@ -26,10 +26,8 @@ import { msg } from '@lingui/core/macro';
 import { AlertTriangle, Check, ChevronDown, RotateCcw } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { FieldHelpTooltip, LabeledNumberInput, LabeledToggleInput } from '@/components/settings/profileFormAtoms';
-import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import type { AutoSupportSettings, ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
-import { restoreAutoSupportFactoryDefaults } from '@/supports/Settings/autoSupportPresets';
-import { AutoSupportPresetManagerModal, AutoSupportPresetSelector } from './AutoSupportPresets';
+import { AutoSupportPresetSelector } from './AutoSupportPresets';
 import {
   ADVANCED_CALIBRATION_HEADING,
   ADVANCED_CALIBRATION_KNOBS,
@@ -65,13 +63,6 @@ const TIER_IDLE_STYLE: CSSProperties = {
   borderColor: 'var(--border-subtle)',
   background: 'var(--surface-1)',
   color: 'var(--text-muted)',
-};
-
-/** The footer's quiet left action — the Settings modal's secondary-accent token. */
-const QUIET_ACTION_STYLE: CSSProperties = {
-  color: 'var(--accent-secondary)',
-  borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 42%)',
-  background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 92%)',
 };
 
 /** The dialog's primary action — the panel's own accent treatment. */
@@ -396,17 +387,11 @@ export function AutoSupportSettingsBody({
 }: AutoSupportSettingsBodyProps) {
   const { _ } = useLingui();
   const [showSizingDebug, setShowSizingDebug] = React.useState(false);
-  const [showPresetManager, setShowPresetManager] = React.useState(false);
-  const [showRestoreFactory, setShowRestoreFactory] = React.useState(false);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-4 space-y-3">
-        <AutoSupportPresetSelector
-          draft={draft}
-          setDraft={setDraft}
-          onManagePresets={() => setShowPresetManager(true)}
-        />
+        <AutoSupportPresetSelector draft={draft} setDraft={setDraft} />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
           {AUTO_SUPPORT_POLICY_SECTIONS.map((section) => (
@@ -461,8 +446,10 @@ export function AutoSupportSettingsBody({
         </div>
       </div>
 
+      {/* The footer is the dialog's own commit bar. Managing the preset
+          collection is the selector's second row, so nothing here repeats it. */}
       <div
-        className="flex items-center justify-between gap-2 px-4 py-3 shrink-0"
+        className="flex items-center justify-end gap-2 px-4 py-3 shrink-0"
         style={{
           borderTop: '1px solid var(--border-subtle)',
           background: 'color-mix(in srgb, var(--surface-1), transparent 10%)',
@@ -470,82 +457,23 @@ export function AutoSupportSettingsBody({
       >
         <button
           type="button"
-          onClick={() => setShowRestoreFactory(true)}
-          className="ui-button !h-9 px-3 text-xs inline-flex items-center gap-1.5 whitespace-nowrap"
-          style={QUIET_ACTION_STYLE}
-          title={_(msg`Put the built-in presets back to their factory settings; your own presets are left alone`)}
+          onClick={onCancel}
+          className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+          title={_(msg`Close without applying the edits made in this dialog`)}
         >
-          <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-          {_(msg`Restore factory presets`)}
+          {_(msg`Cancel`)}
         </button>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="ui-button ui-button-secondary !h-9 px-3 text-xs"
-            title={_(msg`Close without applying the edits made in this dialog`)}
-          >
-            {_(msg`Cancel`)}
-          </button>
-          <button
-            type="button"
-            onClick={onApply}
-            className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
-            style={ACCENT_ACTION_STYLE}
-            title={_(msg`Write the edits made in this dialog to the auto-support settings`)}
-          >
-            <Check className="h-3.5 w-3.5 shrink-0" />
-            {_(msg`Apply`)}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onApply}
+          className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
+          style={ACCENT_ACTION_STYLE}
+          title={_(msg`Write the edits made in this dialog to the auto-support settings`)}
+        >
+          <Check className="h-3.5 w-3.5 shrink-0" />
+          {_(msg`Apply`)}
+        </button>
       </div>
-
-      <AutoSupportPresetManagerModal
-        open={showPresetManager}
-        onClose={() => setShowPresetManager(false)}
-        draft={draft}
-        setDraft={setDraft}
-        onRestoreFactoryPresets={() => setShowRestoreFactory(true)}
-      />
-
-      <StructuredDialogModal
-        open={showRestoreFactory}
-        ariaLabel={_(msg`Restore factory presets`)}
-        title={_(msg`Restore Factory Presets?`)}
-        subtitle={_(msg`The built-in presets go back to their measured factory settings.`)}
-        iconTone="warning"
-        onClose={() => setShowRestoreFactory(false)}
-        onBackdropClick={() => setShowRestoreFactory(false)}
-        actions={
-          <>
-            <button
-              type="button"
-              onClick={() => setShowRestoreFactory(false)}
-              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
-              title={_(msg`Keep the built-in presets as they are`)}
-            >
-              {_(msg`Cancel`)}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                restoreAutoSupportFactoryDefaults();
-                setShowRestoreFactory(false);
-              }}
-              className="ui-button !h-9 px-3 text-xs"
-              style={ACCENT_ACTION_STYLE}
-              title={_(msg`Restore the built-in presets`)}
-            >
-              {_(msg`Restore`)}
-            </button>
-          </>
-        }
-      >
-        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          {_(msg`Your own presets are left alone, and the current settings are not touched — the built-in you are using will read as having unsaved changes, with Revert as the way to accept the factory block.`)}
-        </p>
-      </StructuredDialogModal>
     </div>
   );
 }

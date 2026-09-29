@@ -2,7 +2,7 @@
 
 /**
  * The Auto Support settings dialog's preset UI: the selector strip at the top of
- * the dialog, and the sub-modal that manages the collection.
+ * the dialog, and the management row under it.
  *
  * A preset is a named `autoSupport` block: the whole run policy. The collection,
  * the active selection and the file format belong to
@@ -19,21 +19,27 @@
  *   those ids). A built-in *is* savable over — that is how a user keeps a
  *   tweaked tier.
  *
- * The selector follows the LUT curve editor's shape (`LutCurveSelector`): a
- * `SelectDropdown` for the collection plus one square icon button that opens the
- * management surface. That surface is the material editor's shape: a list with
- * column headers, and a footer whose only destructive action sits alone on the
- * right.
+ * Two rows, and the split is deliberate:
+ *
+ * - The first holds the selector and the two **apply** actions (`Save`, `Revert`)
+ *   with the dirty strip under them: they are about the settings on screen.
+ * - The second is the **collection's** action bar, the material manager's
+ *   arrangement: `New` through `Restore factory presets`, with `Delete` alone on
+ *   the right in the danger colour.
+ *
+ * The dropdown itself lists presets and nothing else. Its row styling and right
+ * labels follow `LutCurveSelector` (`src/features/slicing/components/LutCurveEditor.tsx`)
+ * and the theme profile dropdown (`src/components/settings/UISettingsTab.tsx`) —
+ * those were the inspiration for how a preset row *reads*, not for holding
+ * actions in the menu.
  */
 import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import { Check, PenLine, SlidersHorizontal, Trash2, X } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { Check, Copy, Download, PenLine, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
-import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { FieldHelpTooltip } from '@/components/settings/profileFormAtoms';
 import { normalizeAutoSupportSettings, type AutoSupportSettings } from '@/supports/autoSupport';
 import {
@@ -49,6 +55,7 @@ import {
   isAutoSupportPresetDirty,
   renameAutoSupportPreset,
   resetToActivePreset,
+  restoreAutoSupportFactoryDefaults,
   saveAutoSupportPreset,
   setActiveAutoSupportPreset,
   subscribeToAutoSupportPresets,
@@ -66,7 +73,7 @@ import {
   readPrintArtifactBytesFromPath,
   savePrintArtifactWithNativeDialog,
 } from '@/features/slicing/tauri/nativeSlicerBridge';
-import { AUTO_SUPPORT_SECTION_CARD, SIZING_TIER_LABELS } from './autoSupportPanelTabs';
+import { SIZING_TIER_LABELS } from './autoSupportPanelTabs';
 
 type Translate = (descriptor: MessageDescriptor) => string;
 
@@ -204,155 +211,36 @@ type AutoSupportPresetSelectorProps = {
   /** The dialog's draft, so a selection can be reflected in the fields. */
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
-  /** Opens the management sub-modal. */
-  onManagePresets: () => void;
 };
 
 /**
- * The dialog's top strip: which preset the settings are, whether they have
- * drifted from it, and the two actions that resolve that.
+ * The dialog's top strip. The first row is which preset the settings are and the
+ * two actions that resolve that; the second is the collection's own action bar.
  */
-export function AutoSupportPresetSelector({ draft, setDraft, onManagePresets }: AutoSupportPresetSelectorProps) {
+export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPresetSelectorProps) {
   const { _ } = useLingui();
   const { presets, activeId, activePreset, dirty } = useAutoSupportPresetState();
+
+  const importInputRef = React.useRef<HTMLInputElement | null>(null);
+  /** The name dialog, in the two modes the references' own dialog has. */
+  const [nameDialog, setNameDialog] = React.useState<{ mode: 'create' | 'rename'; name: string } | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
+  const [showRestoreFactory, setShowRestoreFactory] = React.useState(false);
+  /** Import/export failures of any kind; the store's messages are shown verbatim. */
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+
+  const isBuiltIn = activePreset?.isBuiltIn === true;
 
   const presetOptions = presets.map((preset) => ({
     value: preset.id,
     label: translateAutoSupportPresetName(preset, _),
+    // The active preset is the one the trigger is showing; the dropdown tints the
+    // selected row, and the check names it in a list of same-shaped rows.
+    icon: preset.id === activeId ? <Check className="h-3.5 w-3.5" /> : undefined,
+    // The references label the type on the right (`Built-in` / `Custom`); a
+    // preset's tier is the other fact a user picks by, so both ride there.
+    rightContent: `${_(SIZING_TIER_LABELS[normalizeAutoSupportSettings(preset.settings).sizingPreset])} · ${preset.isBuiltIn ? _(msg`Built-in`) : _(msg`Custom`)}`,
   }));
-
-  return (
-    <section
-      className="rounded-xl border p-3"
-      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className="ui-label font-medium inline-flex shrink-0 items-center gap-1.5"
-          style={{ color: 'var(--text-strong)' }}
-        >
-          {_(msg`Preset`)}
-          <FieldHelpTooltip
-            label={_(msg`Preset`)}
-            help={_(msg`The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you press Apply.`)}
-          />
-        </span>
-
-        <div className="min-w-[12rem] flex-1">
-          <SelectDropdown
-            value={activeId ?? ''}
-            options={activeId
-              ? presetOptions
-              : [{ value: '', label: _(NO_ACTIVE_PRESET_LABEL), disabled: true }, ...presetOptions]}
-            onChange={(id) => selectAutoSupportPreset(id, setDraft)}
-            ariaLabel={_(msg`Auto-support preset`)}
-            className="space-y-0"
-            selectClassName="w-full h-[36px] px-2.5 pr-10 leading-tight text-sm"
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={() => saveDraftIntoActivePreset(draft, setDraft)}
-          disabled={!activeId}
-          className="ui-button ui-button-secondary !h-9 shrink-0 px-3 text-xs disabled:opacity-40"
-          title={_(msg`Overwrite the selected preset with the current settings`)}
-        >
-          {_(msg`Save`)}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            resetToActivePreset();
-            setDraft(getSettings().autoSupport);
-          }}
-          disabled={!activePreset || !dirty}
-          className="ui-button ui-button-secondary !h-9 shrink-0 px-3 text-xs disabled:opacity-40"
-          title={_(msg`Reload the selected preset over the current settings, discarding the edits`)}
-        >
-          {_(msg`Revert`)}
-        </button>
-        <button
-          type="button"
-          onClick={onManagePresets}
-          className="ui-button ui-button-secondary inline-flex !h-9 w-9 shrink-0 items-center justify-center !p-0"
-          title={_(msg`Manage presets`)}
-          aria-label={_(msg`Manage presets`)}
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Dirty state: the live block no longer matches the active preset. */}
-      {activePreset && dirty && (
-        <div
-          className="mt-2 flex items-center gap-2 rounded-md border px-2 py-1.5"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-            background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 90%)',
-          }}
-        >
-          <PenLine className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-secondary)' }} />
-          <span className="text-[10px] leading-snug" style={{ color: 'var(--text-strong)' }}>
-            {formatDirtyNotice(translateAutoSupportPresetName(activePreset, _), _)}
-          </span>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** One column template for the list's header row and its rows. */
-const PRESET_ROW_COLUMNS = 'grid grid-cols-[minmax(0,1fr)_5rem_7.5rem] items-center gap-2';
-
-type AutoSupportPresetManagerModalProps = {
-  open: boolean;
-  onClose: () => void;
-  draft: AutoSupportSettings;
-  setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
-  /** Restoring the built-ins is the dialog footer's action too; both open the
-   *  same confirmation, which the dialog body owns. */
-  onRestoreFactoryPresets: () => void;
-};
-
-/**
- * The preset collection as a surface of its own, the way the material editor sits
- * over the profiles list: a table you select in, and one action bar under it.
- *
- * The surface is separate from the modal so it can be rendered on its own — the
- * modal is only chrome (portal, backdrop, header) around it.
- */
-export function AutoSupportPresetManagerSurface({
-  draft,
-  setDraft,
-  onRestoreFactoryPresets,
-}: Omit<AutoSupportPresetManagerModalProps, 'open' | 'onClose'>) {
-  const { _ } = useLingui();
-  const { presets, activeId, activePreset, dirty } = useAutoSupportPresetState();
-
-  const [newName, setNewName] = React.useState(() => _(NEW_PRESET_NAME));
-  const [renamingId, setRenamingId] = React.useState<string | null>(null);
-  const [renameValue, setRenameValue] = React.useState('');
-  const renameInputRef = React.useRef<HTMLInputElement | null>(null);
-  const importInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
-  /** Import/export failures of any kind; the store's messages are shown verbatim. */
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-
-  const startInlineRename = (id: string, name: string) => {
-    setRenamingId(id);
-    setRenameValue(name);
-    requestAnimationFrame(() => {
-      renameInputRef.current?.focus();
-      renameInputRef.current?.select();
-    });
-  };
-
-  const commitInlineRename = () => {
-    if (renamingId) renameAutoSupportPreset(renamingId, renameValue);
-    setRenamingId(null);
-    setRenameValue('');
-  };
 
   const applyImportedText = (text: string) => {
     try {
@@ -384,243 +272,276 @@ export function AutoSupportPresetManagerSurface({
     }
   };
 
+  const confirmNameDialog = () => {
+    if (!nameDialog) return;
+    const name = nameDialog.name.trim();
+    if (name.length === 0) return;
+    if (nameDialog.mode === 'create') {
+      createAutoSupportPreset(name);
+    } else if (activePreset && !activePreset.isBuiltIn) {
+      renameAutoSupportPreset(activePreset.id, name);
+    }
+    setNameDialog(null);
+    setDraft(getSettings().autoSupport);
+  };
+
   const pendingDeletePreset = pendingDeleteId ? getAutoSupportPreset(pendingDeleteId) : undefined;
 
   return (
-    <>
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 space-y-3">
-        {/* The list. Selecting applies; the store keeps built-ins first. */}
-        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}>
-          <div
-            className={`${PRESET_ROW_COLUMNS} border-b px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wide`}
-            style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-          >
-            <span>{_(msg`Name`)}</span>
-            <span>{_(msg`Tier`)}</span>
-            <span>{_(msg`Status`)}</span>
-          </div>
-          <div className="p-1.5 space-y-1" data-auto-support-preset-list="true">
-            {presets.map((preset) => {
-              const isActive = preset.id === activeId;
-              return (
-                <div
-                  key={preset.id}
-                  className={`${PRESET_ROW_COLUMNS} rounded-md border px-2.5 py-2`}
-                  style={isActive
-                    ? {
-                      borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 40%)',
-                      background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
-                    }
-                    : AUTO_SUPPORT_SECTION_CARD}
-                >
-                  {renamingId === preset.id ? (
-                    <input
-                      ref={renameInputRef}
-                      type="text"
-                      value={renameValue}
-                      onChange={(event) => setRenameValue(event.target.value)}
-                      onBlur={commitInlineRename}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.stopPropagation();
-                          commitInlineRename();
-                        } else if (event.key === 'Escape') {
-                          event.stopPropagation();
-                          setRenamingId(null);
-                          setRenameValue('');
-                        }
-                      }}
-                      className="ui-input h-7 min-w-0 text-[11px]"
-                      aria-label={_(msg`Preset name`)}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => selectAutoSupportPreset(preset.id, setDraft)}
-                      onDoubleClick={() => {
-                        if (!preset.isBuiltIn) startInlineRename(preset.id, preset.name);
-                      }}
-                      title={preset.isBuiltIn
-                        ? _(msg`Apply this preset to the auto-support settings. A built-in's name is translated and cannot be renamed.`)
-                        : _(msg`Apply this preset to the auto-support settings. Double-click to rename it.`)}
-                      className="min-w-0 truncate text-left text-[12px] font-semibold"
-                      style={{ color: isActive ? 'var(--accent)' : 'var(--text-strong)' }}
-                    >
-                      {translateAutoSupportPresetName(preset, _)}
-                    </button>
-                  )}
-
-                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    {_(SIZING_TIER_LABELS[normalizeAutoSupportSettings(preset.settings).sizingPreset])}
-                  </span>
-
-                  <span className="flex min-w-0 flex-wrap items-center gap-1">
-                    {isActive && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>
-                        <Check className="h-3 w-3 shrink-0" />
-                        {_(msg`Active`)}
-                      </span>
-                    )}
-                    {isActive && dirty && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--accent-secondary)' }}>
-                        {_(msg`Unsaved`)}
-                      </span>
-                    )}
-                    <span
-                      className="text-[10px] uppercase tracking-wide"
-                      style={{ color: 'var(--text-muted)' }}
-                      title={preset.isBuiltIn
-                        ? _(msg`Built-in preset: a reserved id with the factory block, savable over but not renameable or deletable`)
-                        : _(msg`Your own preset`)}
-                    >
-                      {preset.isBuiltIn ? _(msg`Built-in`) : _(msg`Custom`)}
-                    </span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* New: captures the current (draft) block under a new name. */}
-        <div className="flex items-center gap-1.5">
-          <input
-            type="text"
-            value={newName}
-            onChange={(event) => setNewName(event.target.value)}
-            className="ui-input h-8 min-w-0 flex-1 text-xs"
-            aria-label={_(msg`New preset name`)}
-            title={_(msg`Name for the new preset`)}
+    <section
+      className="rounded-xl border p-3"
+      style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className="ui-label font-medium inline-flex shrink-0 items-center gap-1.5"
+          style={{ color: 'var(--text-strong)' }}
+        >
+          {_(msg`Preset`)}
+          <FieldHelpTooltip
+            label={_(msg`Preset`)}
+            help={_(msg`The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you press Apply.`)}
           />
-          <button
-            type="button"
-            onClick={() => {
-              createAutoSupportPreset(newName);
-              setDraft(getSettings().autoSupport);
-              setNewName(_(NEW_PRESET_NAME));
-            }}
-            className="ui-button ui-button-secondary !h-8 shrink-0 px-3 text-xs"
-            title={_(msg`Create a preset from the current settings and select it`)}
-          >
-            {_(msg`New`)}
-          </button>
+        </span>
+
+        <div className="min-w-[14rem] flex-1">
+          <SelectDropdown
+            value={activeId ?? ''}
+            options={activeId
+              ? presetOptions
+              : [{ value: '', label: _(NO_ACTIVE_PRESET_LABEL), disabled: true }, ...presetOptions]}
+            onChange={(id) => selectAutoSupportPreset(id, setDraft)}
+            ariaLabel={_(msg`Auto-support preset`)}
+            className="space-y-0"
+            selectClassName="w-full h-[36px] px-2.5 pr-10 leading-tight text-sm"
+            menuClassName="max-w-[26rem]"
+          />
         </div>
 
-        {errorMessage && (
-          <div
-            className="rounded-md border px-2 py-1.5"
-            style={{
-              borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 45%)',
-              background: 'color-mix(in srgb, var(--danger), var(--surface-1) 92%)',
-              color: 'var(--danger)',
-            }}
-            role="alert"
-          >
-            <span className="text-[10px] leading-snug break-words">{errorMessage}</span>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => saveDraftIntoActivePreset(draft, setDraft)}
+          disabled={!activeId}
+          className="ui-button ui-button-secondary !h-9 shrink-0 px-3 text-xs disabled:opacity-40"
+          title={_(msg`Overwrite the selected preset with the current settings`)}
+        >
+          {_(msg`Save`)}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            resetToActivePreset();
+            setDraft(getSettings().autoSupport);
+          }}
+          disabled={!activePreset || !dirty}
+          className="ui-button ui-button-secondary !h-9 shrink-0 px-3 text-xs disabled:opacity-40"
+          title={_(msg`Reload the selected preset over the current settings, discarding the edits`)}
+        >
+          {_(msg`Revert`)}
+        </button>
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t px-3 py-2 shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => saveDraftIntoActivePreset(draft, setDraft)}
-            disabled={!activeId}
-            className="ui-button ui-button-secondary !h-8 px-3 text-xs disabled:opacity-40"
-            title={_(msg`Overwrite the selected preset with the current settings`)}
-          >
-            {_(msg`Save`)}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (activePreset && !activePreset.isBuiltIn) startInlineRename(activePreset.id, activePreset.name);
-            }}
-            disabled={!activePreset || activePreset.isBuiltIn}
-            className="ui-button ui-button-secondary !h-8 px-3 text-xs disabled:opacity-40"
-            title={activePreset?.isBuiltIn
-              ? _(msg`A built-in's name is translated and cannot be renamed`)
-              : _(msg`Rename the selected preset in place`)}
-          >
-            {_(msg`Rename`)}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (activeId) duplicateAutoSupportPreset(activeId);
-            }}
-            disabled={!activeId}
-            className="ui-button ui-button-secondary !h-8 px-3 text-xs disabled:opacity-40"
-            title={_(msg`Copy the selected preset under a new name`)}
-          >
-            {_(msg`Duplicate`)}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!activeId) return;
-              void exportPresetToFile(activeId).catch((error: unknown) => {
-                setErrorMessage(error instanceof Error ? error.message : String(error));
-              });
-            }}
-            disabled={!activeId}
-            className="ui-button ui-button-secondary !h-8 px-3 text-xs disabled:opacity-40"
-            title={_(msg`Export the selected preset as a JSON file`)}
-          >
-            {_(msg`Export`)}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (isTauriRuntime()) {
-                void importFromNativeDialog();
-                return;
-              }
-              importInputRef.current?.click();
-            }}
-            className="ui-button ui-button-secondary !h-8 px-3 text-xs"
-            title={_(msg`Import a preset from a JSON file, and apply it`)}
-          >
-            {_(msg`Import`)}
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json,application/json"
-            onChange={importFromFile}
-            className="hidden"
-            aria-label={_(msg`Auto-support preset file`)}
-          />
-          <button
-            type="button"
-            onClick={onRestoreFactoryPresets}
-            className="ui-button ui-button-secondary !h-8 px-3 text-xs"
-            title={_(msg`Put the built-in presets back to their factory settings; your own presets are left alone`)}
-          >
-            {_(msg`Restore factory presets`)}
-          </button>
-        </div>
-
+      {/* The collection's action bar, the material manager's arrangement: every
+          action named, and the destructive one alone on the right. */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setNameDialog({ mode: 'create', name: _(NEW_PRESET_NAME) })}
+          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5"
+          title={_(msg`Create a preset from the current settings and select it`)}
+        >
+          <Plus className="h-3.5 w-3.5 shrink-0" />
+          {_(msg`New`)}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (activePreset && !activePreset.isBuiltIn) {
+              setNameDialog({ mode: 'rename', name: activePreset.name });
+            }
+          }}
+          disabled={!activePreset || isBuiltIn}
+          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
+          title={isBuiltIn
+            ? _(msg`A built-in's name is translated and cannot be renamed`)
+            : _(msg`Rename the selected preset`)}
+        >
+          <PenLine className="h-3.5 w-3.5 shrink-0" />
+          {_(msg`Rename`)}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (activeId) duplicateAutoSupportPreset(activeId);
+          }}
+          disabled={!activeId}
+          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
+          title={_(msg`Copy the selected preset under a new name`)}
+        >
+          <Copy className="h-3.5 w-3.5 shrink-0" />
+          {_(msg`Duplicate`)}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (isTauriRuntime()) {
+              void importFromNativeDialog();
+              return;
+            }
+            importInputRef.current?.click();
+          }}
+          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5"
+          title={_(msg`Import a preset from a JSON file, and apply it`)}
+        >
+          <Upload className="h-3.5 w-3.5 shrink-0" />
+          {_(msg`Import`)}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (!activeId) return;
+            void exportPresetToFile(activeId).catch((error: unknown) => {
+              setErrorMessage(error instanceof Error ? error.message : String(error));
+            });
+          }}
+          disabled={!activeId}
+          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
+          title={_(msg`Export the selected preset as a JSON file`)}
+        >
+          <Download className="h-3.5 w-3.5 shrink-0" />
+          {_(msg`Export`)}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowRestoreFactory(true)}
+          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5"
+          title={_(msg`Put the built-in presets back to their factory settings; your own presets are left alone`)}
+        >
+          <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+          {_(msg`Restore factory presets`)}
+        </button>
         <button
           type="button"
           onClick={() => {
             if (activePreset && !activePreset.isBuiltIn) setPendingDeleteId(activePreset.id);
           }}
-          disabled={!activePreset || activePreset.isBuiltIn}
-          className="ui-button ui-button-secondary !h-8 shrink-0 px-3 text-xs inline-flex items-center gap-1.5 disabled:opacity-40"
+          disabled={!activePreset || isBuiltIn}
+          className="ui-button ui-button-secondary !ml-auto !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
           style={{
-            color: !activePreset || activePreset.isBuiltIn ? 'var(--text-muted)' : 'var(--danger)',
+            color: !activePreset || isBuiltIn ? 'var(--text-muted)' : 'var(--danger)',
             borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 55%)',
           }}
-          title={activePreset?.isBuiltIn
+          title={isBuiltIn
             ? _(msg`Built-in presets cannot be deleted`)
             : _(msg`Delete the selected preset`)}
         >
           <Trash2 className="h-3.5 w-3.5 shrink-0" />
           {_(msg`Delete`)}
         </button>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={importFromFile}
+          className="hidden"
+          aria-label={_(msg`Auto-support preset file`)}
+        />
       </div>
+
+      {/* Dirty state: the live block no longer matches the active preset. */}
+      {activePreset && dirty && (
+        <div
+          className="mt-2 flex items-center gap-2 rounded-md border px-2 py-1.5"
+          style={{
+            borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
+            background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 90%)',
+          }}
+        >
+          <PenLine className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-secondary)' }} />
+          <span className="text-[10px] leading-snug" style={{ color: 'var(--text-strong)' }}>
+            {formatDirtyNotice(translateAutoSupportPresetName(activePreset, _), _)}
+          </span>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div
+          className="mt-2 rounded-md border px-2 py-1.5"
+          style={{
+            borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 45%)',
+            background: 'color-mix(in srgb, var(--danger), var(--surface-1) 92%)',
+            color: 'var(--danger)',
+          }}
+          role="alert"
+        >
+          <span className="text-[10px] leading-snug break-words">{errorMessage}</span>
+        </div>
+      )}
+
+      <StructuredDialogModal
+        open={nameDialog != null}
+        ariaLabel={nameDialog?.mode === 'create' ? _(msg`Create preset`) : _(msg`Rename preset`)}
+        title={nameDialog?.mode === 'create' ? _(msg`New Preset`) : _(msg`Rename Preset`)}
+        subtitle={nameDialog?.mode === 'create'
+          ? _(msg`The current settings are saved under this name, and it becomes the selected preset.`)
+          : _(msg`The selected preset is renamed; its settings are not touched.`)}
+        icon={<PenLine className="h-4 w-4" />}
+        iconTone="accent"
+        onClose={() => setNameDialog(null)}
+        onBackdropClick={() => setNameDialog(null)}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setNameDialog(null)}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Leave the collection as it is`)}
+            >
+              {_(msg`Cancel`)}
+            </button>
+            <button
+              type="button"
+              onClick={confirmNameDialog}
+              disabled={(nameDialog?.name.trim().length ?? 0) === 0}
+              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
+              title={nameDialog?.mode === 'create'
+                ? _(msg`Create the preset and select it`)
+                : _(msg`Rename the selected preset`)}
+            >
+              <Check className="h-3.5 w-3.5" />
+              {nameDialog?.mode === 'create' ? _(msg`Create`) : _(msg`Save Name`)}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <label
+            className="block text-xs font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {_(msg`Preset name`)}
+          </label>
+          <input
+            type="text"
+            value={nameDialog?.name ?? ''}
+            onChange={(event) => setNameDialog((current) => (current ? { ...current, name: event.target.value } : current))}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.stopPropagation();
+                confirmNameDialog();
+              }
+            }}
+            className="ui-input h-9 w-full text-xs"
+            placeholder={_(NEW_PRESET_NAME)}
+            aria-label={_(msg`Preset name`)}
+          />
+        </div>
+      </StructuredDialogModal>
 
       <StructuredDialogModal
         open={pendingDeletePreset != null}
@@ -664,70 +585,48 @@ export function AutoSupportPresetManagerSurface({
           {_(msg`The preset is removed from the list. The current settings are left as they are.`)}
         </p>
       </StructuredDialogModal>
-    </>
-  );
-}
 
-/**
- * The surface over the dialog: a backdrop, the header, and the one Escape
- * registration that keeps a press from reaching the dialog behind it.
- */
-export function AutoSupportPresetManagerModal({
-  open,
-  onClose,
-  draft,
-  setDraft,
-  onRestoreFactoryPresets,
-}: AutoSupportPresetManagerModalProps) {
-  const { _ } = useLingui();
-
-  useEscapeToClose(open, onClose);
-
-  // Closed is the common case, and the portal below needs a document.
-  if (!open) return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4 ui-modal-backdrop-enter"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="w-full max-w-[760px] max-h-[88vh] rounded-xl border shadow-2xl ui-modal-panel-enter flex flex-col"
-        style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}
-        role="dialog"
-        aria-modal="true"
-        aria-label={_(msg`Manage presets`)}
+      <StructuredDialogModal
+        open={showRestoreFactory}
+        ariaLabel={_(msg`Restore factory presets`)}
+        title={_(msg`Restore Factory Presets?`)}
+        subtitle={_(msg`The built-in presets go back to their measured factory settings.`)}
+        iconTone="warning"
+        onClose={() => setShowRestoreFactory(false)}
+        onBackdropClick={() => setShowRestoreFactory(false)}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowRestoreFactory(false)}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Keep the built-in presets as they are`)}
+            >
+              {_(msg`Cancel`)}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                restoreAutoSupportFactoryDefaults();
+                setShowRestoreFactory(false);
+              }}
+              className="ui-button !h-9 px-3 text-xs"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
+                color: 'var(--accent)',
+              }}
+              title={_(msg`Restore the built-in presets`)}
+            >
+              {_(msg`Restore`)}
+            </button>
+          </>
+        }
       >
-        <div className="flex items-center justify-between gap-4 border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-              {_(msg`Manage Presets`)}
-            </h3>
-            <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-              {_(msg`Saved auto-support policies: pick one, tweak and save it, or share it as a file.`)}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border"
-            style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
-            aria-label={_(msg`Close preset manager`)}
-            title={_(msg`Close preset manager`)}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <AutoSupportPresetManagerSurface
-          draft={draft}
-          setDraft={setDraft}
-          onRestoreFactoryPresets={onRestoreFactoryPresets}
-        />
-      </div>
-    </div>,
-    document.body,
+        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {_(msg`Your own presets are left alone, and the current settings are not touched — the built-in you are using will read as having unsaved changes, with Revert as the way to accept the factory block.`)}
+        </p>
+      </StructuredDialogModal>
+    </section>
   );
 }

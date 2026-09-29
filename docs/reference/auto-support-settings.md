@@ -39,29 +39,26 @@ the app:
 They are also the three buttons on the Auto Supports card, so the quick-select
 and the preset selector are the same policy under the same names.
 
-The selector sits at the top of the dialog and shows the preset your settings
-are. Beside it:
+The selector at the top of the dialog shows the preset your settings are; its
+menu lists the presets — built-ins first, then your own, each with its sizing
+tier and whether it is a built-in, the one in use ticked. Beside the selector:
 
 - **Save**: overwrite the selected preset with the settings shown here.
 - **Revert**: reload the selected preset, discarding your edits.
-- **Manage presets**: open the collection.
+
+The row of buttons under it manages the collection:
+
+- **New**: save the current settings as a new preset and select it.
+- **Rename** and **Duplicate** the selected preset; **Delete** it, on the right
+  in red. Rename and Delete are refused for the built-ins, whose names are
+  translated and whose ids define the file format.
+- **Import** a preset from a JSON file and apply it; **Export** the selected
+  preset to a JSON file.
+- **Restore factory presets**: put the three built-ins back to their factory
+  settings. Your own presets and your current settings are left alone.
 
 When your settings no longer match the selected preset, the strip says so.
 Editing a field never rewrites the preset by itself.
-
-### Managing presets
-
-**Manage presets** opens the collection as its own panel, with a **Name**, **Tier**
-and **Status** column per preset. There you can:
-
-- **Select** a preset: apply it to the current settings.
-- **New**: save the current settings as a new preset and select it.
-- **Rename** (or double-click a name) and **Duplicate**.
-- **Delete** a preset you made — the rightmost action in the bar.
-- **Restore factory presets**: put the three built-ins back to their factory
-  settings. Your own presets and your current settings are left alone. The
-  dialog's footer carries the same action.
-- **Export** the selected preset to a JSON file, and **Import** one from a file.
 
 The built-in presets cannot be renamed or deleted: their names are translated and
 the file format is defined in terms of them. They *can* be saved over, which is

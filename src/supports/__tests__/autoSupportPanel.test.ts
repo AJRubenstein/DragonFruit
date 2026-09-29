@@ -39,11 +39,6 @@ registerHooks({
 });
 
 let AutoSupportSettingsBody: React.ComponentType<AutoSupportSettingsBodyProps>;
-let AutoSupportPresetManagerSurface: React.ComponentType<{
-  draft: AutoSupportSettings;
-  setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
-  onRestoreFactoryPresets: () => void;
-}>;
 let selectAutoSupportPreset: (id: string, setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
 let autoSupportSections: ReadonlyArray<AutoSupportSectionDef>;
 let policySections: ReadonlyArray<AutoSupportSectionDef>;
@@ -52,7 +47,7 @@ let policySections: ReadonlyArray<AutoSupportSectionDef>;
 // already be registered — a static import would be evaluated first.
 before(async () => {
   ({ AutoSupportSettingsBody } = await import('@/components/controls/autoSupport/AutoSupportSettingsBody'));
-  ({ AutoSupportPresetManagerSurface, selectAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresets'));
+  ({ selectAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresets'));
   ({
     AUTO_SUPPORT_SECTIONS: autoSupportSections,
     AUTO_SUPPORT_POLICY_SECTIONS: policySections,
@@ -187,46 +182,32 @@ test('a numeric knob is a labelled field with its unit and a stepper, never a sl
   assert.ok(markup.includes('aria-checked="true"'));
 });
 
-test('the preset selector and the manager surface cover the whole preset lifecycle', () => {
+test('the preset selector and its action row carry the whole preset lifecycle', () => {
   const markup = renderBody();
 
-  // The selector sits above the fields, with the two actions that resolve the
-  // dirty state and the way into the collection.
+  // The selector sits above the fields, with the two apply actions beside it.
   assert.ok(markup.includes('Preset'));
   assert.ok(markup.includes('Save'));
   assert.ok(markup.includes('Revert'));
-  assert.ok(markup.includes('aria-label="Manage presets"'));
-  assert.ok(markup.indexOf('Manage presets') < markup.indexOf('Min Island Size'), 'the preset strip must sit above the fields');
+  assert.ok(markup.includes('aria-label="Auto-support preset"'));
+  assert.ok(markup.indexOf('Auto-support preset') < markup.indexOf('Min Island Size'), 'the preset strip must sit above the fields');
 
-  // The manager is a surface of its own (a portal in the app), so it is rendered
-  // directly here.
-  const managerMarkup = renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      { i18n },
-      React.createElement(AutoSupportPresetManagerSurface, {
-        draft: getSettings().autoSupport,
-        setDraft: () => {},
-        onRestoreFactoryPresets: () => {},
-      }),
-    ),
-  );
-
-  for (const column of ['Name', 'Tier', 'Status']) {
-    assert.ok(managerMarkup.includes(column), `the preset list is missing the "${column}" column`);
+  // The collection's action bar is a row of its own under the selector — no
+  // management surface to open, and nothing hidden inside the menu.
+  const visibleText = markup.replace(/<[^>]*>/g, ' ');
+  for (const action of ['New', 'Rename', 'Duplicate', 'Import', 'Export', 'Restore factory presets', 'Delete']) {
+    assert.ok(visibleText.includes(action), `the preset action row is missing the "${action}" action`);
   }
+  assert.ok(markup.indexOf('Restore factory presets') < markup.indexOf('Detection'), 'the action row sits with the preset strip, above the sections');
+
+  // The dialog footer is the commit bar: the collection actions are not repeated there.
+  const footer = markup.slice(markup.lastIndexOf('border-top'));
+  assert.ok(footer.includes('Cancel'));
+  assert.ok(footer.includes('Apply'));
+  assert.ok(!footer.includes('Restore factory presets'), 'the footer repeats the preset row');
 
   const builtIns = getAutoSupportPresets().filter((preset) => preset.isBuiltIn);
   assert.deepEqual(builtIns.map((preset) => preset.id), ['light', 'medium', 'heavy']);
-  for (const preset of builtIns) {
-    assert.ok(managerMarkup.includes(preset.name), `preset list is missing the built-in "${preset.name}"`);
-  }
-  // Built-ins first: the list renders before the "New" control that follows it.
-  assert.ok(managerMarkup.indexOf('Light') < managerMarkup.indexOf('New'));
-
-  for (const action of ['New', 'Save', 'Rename', 'Duplicate', 'Delete', 'Restore factory presets', 'Export', 'Import']) {
-    assert.ok(managerMarkup.includes(action), `the preset manager is missing the "${action}" action`);
-  }
 });
 
 test('selecting a preset applies its block to the settings and to the dialog draft', () => {
