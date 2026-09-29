@@ -20,6 +20,8 @@ import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { initializeBVH, accelerateGeometry } from '../../utils/bvh';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createEmptySupportCollections } from '../supportTypeRegistry';
+import { MEMBER_HOST_SHAFT_RATIO } from '../constants';
+import type { Branch } from '../types';
 
 const GRID_SPACING_MM = 4;
 const GRID_RING_RADIUS = 4;
@@ -310,6 +312,58 @@ test('decideGridPlacement keeps using a branch when the direct hosted span is to
     assert.equal(decision.kind, 'place');
     assert.equal(decision.nodeKey, '0,0');
     assert.equal(decision.placed.hostedBy?.id, preferredHost.build.trunk.id);
+});
+
+test('decideGridPlacement sizes a branch from the host shaft it hangs from', () => {
+    const settings = makeSettings();
+    setSettings(settings);
+
+    const snapshot = makeEmptySnapshot();
+    const preferredHost = buildStraightFixture({
+        x: 0,
+        y: 0,
+        tipZ: 10,
+        socketZ: 9,
+    });
+    // A host whose band was scaled past the member band — what a model factor
+    // does to a trunk and not to a member.
+    const HOST_DIAMETER_MM = 2.0;
+    preferredHost.build.trunk = {
+        ...preferredHost.build.trunk,
+        segments: preferredHost.build.trunk.segments.map((segment) => ({
+            ...segment,
+            diameter: HOST_DIAMETER_MM,
+        })),
+    };
+    addTrunkBuild(snapshot, preferredHost);
+
+    const candidate = buildStraightFixture({
+        x: 1.9,
+        y: 0,
+        tipZ: 16,
+        socketZ: 15,
+    });
+
+    const decision = decideGridPlacement({
+        settings,
+        snapshot,
+        candidate: candidate.build,
+        tipPos: candidate.input.tipPos,
+        tipNormal: candidate.input.tipNormal,
+        modelId: MODEL_ID,
+    });
+
+    assert.equal(decision.kind, 'place');
+    const branch = decision.placed.entity as Branch;
+    const shaftMm = Math.max(...branch.segments.map((segment) => segment.diameter));
+    assert.ok(
+        shaftMm >= HOST_DIAMETER_MM * MEMBER_HOST_SHAFT_RATIO - 1e-6,
+        `branch shaft ${shaftMm} is thinner than ${MEMBER_HOST_SHAFT_RATIO} of its ${HOST_DIAMETER_MM} host`,
+    );
+    assert.ok(
+        shaftMm > settings.shaft.diameterMm,
+        'the branch is thicker than the band because its host is',
+    );
 });
 
 test('decideGridPlacement still merges into the preferred node when a candidate tip is higher and neighbours are taller', () => {

@@ -58,6 +58,18 @@ compare across modes. Second, detection here is the **voxel family only**:
 scanners, so a Node host cannot run them, and an island set that in the app
 would have been intersected with those arrives as voxel islands instead.
 
+A third, and the one to watch before trusting a green `--check`: **the corpus
+models are small enough that every model-scale factor is ×1**. `modelSizingFactors`
+returns ×1 at or below `SIZE_REFERENCE_MM` (60 mm) and `SHARE_REFERENCE_G` (0.6 g),
+and the fixtures are 30–48 mm with no load share, so a rule keyed on the model
+scale — the member host-relative floor of `MEMBER_HOST_SHAFT_RATIO`, say — is a
+**provable no-op** here and moves no baseline. Reproduce it by setting the
+`autoSupport.sizeScale` master multiplier instead: it rides the same trunk-only
+sizing path. Note that `--settings '{"sizeScale":…}'` does **not** do it — the
+per-candidate sizing reads the live `getSettings()`, not the run's normalized
+override, so a harness has to seed `appSettings.autoSupport.sizeScale` — or
+measure on a real part. Do not read "identical" as "the new rule never fires".
+
 Detection runs at the app's island-panel resolution (`pxMm` 0.1, the print's own
 layer height) and costs seconds per model; `--px-mm` and `--layer-height` trade
 accuracy for speed on a large part. It works in this process through a `Worker`

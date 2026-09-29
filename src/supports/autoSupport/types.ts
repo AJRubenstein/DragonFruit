@@ -74,7 +74,9 @@ export interface ForestTree {
     hostZ: number;
     shaftDiameterMm: number;
     sizingNote: string;
-    members: Array<{ id: string; kind: AttachmentKind; spanMm: number; angleDeg: number }>;
+    /** One attachment: id, kind, post-resize knot→tip span/angle, and the
+     *  diameter the member itself contributes (see `memberDiameterOf`). */
+    members: Array<{ id: string; kind: AttachmentKind; spanMm: number; angleDeg: number; diameterMm: number }>;
 }
 
 /** Input-side metrics from the island/overhang scan for the Forest Report. */

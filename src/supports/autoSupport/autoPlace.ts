@@ -12,6 +12,7 @@ import {
 import type { SupportCollectionKey, ShaftHostedMemberType, ShaftHostedMemberTypeId } from '../supportTypeRegistry';
 import type { SupportTypeId } from '../supportTypeRegistry';
 import { footprintX, footprintY, footprintZ } from '@/volumeAnalysis/Islands/voxelFootprint';
+import { memberShaftDiameterMm } from '../constants';
 import * as THREE from 'three';
 import { quantizeToScale } from '@/utils/math';
 
@@ -72,7 +73,7 @@ import { draftAddEntity, draftAddPrimitive, draftCommitSupport } from './support
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
-import { computeForestDiameterProfile } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
+import { computeForestDiameterProfile, memberDiameterOf } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
 import { buildLeafData } from '../SupportTypes/Leaf/leafBuilder';
 import { decideGridPlacement } from '../PlacementLogic/Grid/gridPlacement';
@@ -736,7 +737,7 @@ export function buildConsolidationBranch(args: {
             modelId,
             parentKnot,
             mesh,
-            shaftDiameterMm: band.shaftDiameterMm,
+            shaftDiameterMm: memberShaftDiameterMm(band.shaftDiameterMm, best.diameter),
             tipContactDiameterMm: band.tipContactDiameterMm,
             rootsDiameterMm: band.rootDiameterMm,
         });
@@ -1209,7 +1210,7 @@ function placeOneCandidate(
                         const band = activeSizingBand();
                         const { branch, supportData: sd } = buildBranchData({
                             tipPos, tipNormal, modelId: candidate.modelId, parentKnot, mesh,
-                            shaftDiameterMm: band.shaftDiameterMm,
+                            shaftDiameterMm: memberShaftDiameterMm(band.shaftDiameterMm, knotDiameter),
                             tipContactDiameterMm: band.tipContactDiameterMm,
                             rootsDiameterMm: band.rootDiameterMm,
                         });
@@ -2366,7 +2367,7 @@ export function fanLeafToHost(
                     modelId,
                     parentKnot,
                     mesh: mesh ?? undefined,
-                    shaftDiameterMm: band.shaftDiameterMm,
+                    shaftDiameterMm: memberShaftDiameterMm(band.shaftDiameterMm, sp.diameter),
                     tipContactDiameterMm: band.tipContactDiameterMm,
                     rootsDiameterMm: band.rootDiameterMm,
                 });
@@ -2486,7 +2487,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
         entryByEntity.set(entry.entityId, entry);
     }
 
-    const memberById = new Map<string, { id: string; kind: ShaftHostedMemberTypeId; spanMm: number; angleDeg: number }>();
+    const memberById = new Map<string, { id: string; kind: ShaftHostedMemberTypeId; spanMm: number; angleDeg: number; diameterMm: number }>();
     const membersByHost = new Map<string, ForestTree['members']>();
 
     // Knots reference their host SEGMENT (or the entity directly for legacy
@@ -2503,6 +2504,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
         hostShaftId: string,
         tipPos: { x: number; y: number; z: number } | undefined,
         knotPos: { x: number; y: number; z: number } | undefined,
+        diameterMm: number,
     ) => {
         const memberHostId = hostIdByShaftId.get(hostShaftId) ?? hostShaftId;
         const hDist = knotPos && tipPos ? Math.hypot(tipPos.x - knotPos.x, tipPos.y - knotPos.y) : 0;
@@ -2511,7 +2513,7 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
             ? Math.hypot(tipPos.x - knotPos.x, tipPos.y - knotPos.y, tipPos.z - knotPos.z)
             : 0;
         const angleDeg = vDist > 0.01 ? (Math.atan2(hDist, vDist) * 180) / Math.PI : 90;
-        const member = { id: displayByEntity.get(entityId) ?? entityId.slice(0, 8), kind, spanMm, angleDeg };
+        const member = { id: displayByEntity.get(entityId) ?? entityId.slice(0, 8), kind, spanMm, angleDeg, diameterMm };
         memberById.set(entityId, member);
         const list = membersByHost.get(memberHostId);
         if (list) list.push(member);
@@ -2521,11 +2523,19 @@ export function buildForestReport(draft: SupportState, ledger: ForestLedgerEntry
     // Registry walk order, which the member list depends on: a host's leaves
     // come before its branches, as they did when this named the two collections.
     for (const { typeId, knotField, collectionKey } of SHAFT_HOSTED_MEMBER_TYPES) {
+        const descriptor = getSupportTypeDescriptor(typeId);
         for (const member of Object.values(hostedMemberEntities(draft, collectionKey))) {
             const knotId = memberKnotId(member, knotField);
             const knot = knotId ? draft.knots[knotId] : undefined;
             if (!knot) continue;
-            pushMember(member.id, typeId, knot.parentShaftId, member.contactCone?.pos, knot.pos);
+            pushMember(
+                member.id,
+                typeId,
+                knot.parentShaftId,
+                member.contactCone?.pos,
+                knot.pos,
+                memberDiameterOf(descriptor, member as unknown as Record<string, unknown>),
+            );
         }
     }
 
@@ -2687,11 +2697,12 @@ export function forestReportToText(report: ForestReport): string {
                 `(grid.minBranchAngleDeg), so placement fans ≤${effectiveFan}° from vertical within 5mm ` +
                 `(2.5mm for grid hosts) and chunk-consolidation links ≤${effectiveLink}° within ` +
                 `${CONSOLIDATION_FAN_RADIUS_MM}mm; cap ${cap} members per host. ` +
+                `each member's own Ø (a branch's widest segment, a leaf's cone body) follows its span/angle; ` +
                 `spans/angles are post-resize knot→tip — drift can make a link read shallower than its placement gate)`);
         }
         for (const tree of report.trees) {
             const members = tree.members
-                .map((m) => `${m.id}(${typeWord(m.kind).charAt(0)} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}°)`)
+                .map((m) => `${m.id}(${typeWord(m.kind).charAt(0)} ${m.spanMm.toFixed(1)}mm/${m.angleDeg.toFixed(0)}° Ø${m.diameterMm.toFixed(2)})`)
                 .join(' ');
             lines.push(`  ${tree.hostId} @ Z=${tree.hostZ.toFixed(1)}mm Ø${tree.shaftDiameterMm.toFixed(2)}mm ` +
                 (tree.sizingNote ? `[${tree.sizingNote}] ` : '') +

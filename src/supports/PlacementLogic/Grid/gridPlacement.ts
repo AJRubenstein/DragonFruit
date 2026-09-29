@@ -18,6 +18,7 @@ import { isShaftBlocked } from '../CollisionAvoidance';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 import { buildLeafData } from '../../SupportTypes/Leaf/leafBuilder';
+import { memberShaftDiameterMm } from '../../constants';
 import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
 import {
     MAX_AUTO_LEAF_SPAN_MM,
@@ -651,6 +652,12 @@ function selectAttachmentDecision(args: {
                 modelId,
                 parentKnot: knot,
                 mesh,
+                // The host's own diameter, so the member is never a needle beside
+                // it; see `MEMBER_HOST_SHAFT_RATIO`.
+                shaftDiameterMm: memberShaftDiameterMm(
+                    settings.shaft.diameterMm,
+                    getHostDiameterMmFromKnot(knot, settings),
+                ),
             });
             perfMeasureWithSpike('grid:branch-build', 'branch:build');
             const firstJoint = branch.segments[0]?.topJoint?.pos;
