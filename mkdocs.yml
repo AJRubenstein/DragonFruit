@@ -93,6 +93,8 @@ nav:
       - Support Placement Modifiers: reference/support-placement-modifiers.md
       - Support Types: reference/support-types.md
       - File Formats: reference/file-formats.md
+      - Auto-Support Settings: reference/auto-support-settings.md
+      - Auto-Support Preset Format: reference/auto-support-preset-format.md
   - Troubleshooting:
       - Common Issues: troubleshooting/common-issues.md
   - Developer Guide:
@@ -120,6 +122,7 @@ nav:
           - System Notifications: dev/system-notifications.md
           - Support System: dev/support-system.md
           - Auto-Supports: dev/auto-supports.md
+          - Auto-Support Presets: dev/auto-support-presets.md
           - Auto-Support Metrics: dev/auto-support-metrics.md
           - Auto-Support Worker: dev/auto-support-worker.md
           - Auto-Orientation (Pre-Plan): dev/auto-orientation.md

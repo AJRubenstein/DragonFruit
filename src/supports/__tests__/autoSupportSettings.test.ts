@@ -24,6 +24,12 @@ test('defaults match constraints', () => {
     assert.equal(defaults.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.defaultValue);
     assert.equal(defaults.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.defaultValue);
     assert.equal(defaults.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue);
+    assert.equal(defaults.tipContactMarginScale, 0.9, 'measured tip contact margin');
+    assert.equal(defaults.memberHostShaftRatio, 0.7, 'measured member/host floor');
+    assert.equal(defaults.modelScaleEnabled, true, 'model-scale sizing on by default');
+    assert.equal(defaults.modelSizeFactorCap, 1.45, 'measured size-factor cap');
+    assert.equal(defaults.modelLoadFactorCap, 1.3, 'measured load-factor cap');
+    assert.equal(defaults.heightFactorCap, 1.35, 'measured height-factor cap');
     assert.equal(defaults.debugSkipAutoBracing, false);
 });
 
@@ -42,6 +48,34 @@ test('normalize clamps the new knobs', () => {
     assert.equal(normalized.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent.min);
     assert.equal(normalized.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.max);
     assert.equal(normalized.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.max);
+});
+
+test('normalize clamps the calibration knobs', () => {
+    const high = normalizeAutoSupportSettings({
+        tipContactMarginScale: 9,
+        memberHostShaftRatio: 9,
+        modelSizeFactorCap: 9,
+        modelLoadFactorCap: 9,
+        heightFactorCap: 9,
+    });
+    assert.equal(high.tipContactMarginScale, AUTO_SUPPORT_CONSTRAINTS.tipContactMarginScale.max);
+    assert.equal(high.memberHostShaftRatio, AUTO_SUPPORT_CONSTRAINTS.memberHostShaftRatio.max);
+    assert.equal(high.modelSizeFactorCap, AUTO_SUPPORT_CONSTRAINTS.modelSizeFactorCap.max);
+    assert.equal(high.modelLoadFactorCap, AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap.max);
+    assert.equal(high.heightFactorCap, AUTO_SUPPORT_CONSTRAINTS.heightFactorCap.max);
+
+    const low = normalizeAutoSupportSettings({
+        tipContactMarginScale: 0,
+        memberHostShaftRatio: 0,
+        modelSizeFactorCap: 0,
+        modelLoadFactorCap: 0,
+        heightFactorCap: 0,
+    });
+    assert.equal(low.tipContactMarginScale, AUTO_SUPPORT_CONSTRAINTS.tipContactMarginScale.min);
+    assert.equal(low.memberHostShaftRatio, AUTO_SUPPORT_CONSTRAINTS.memberHostShaftRatio.min);
+    assert.equal(low.modelSizeFactorCap, AUTO_SUPPORT_CONSTRAINTS.modelSizeFactorCap.min);
+    assert.equal(low.modelLoadFactorCap, AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap.min);
+    assert.equal(low.heightFactorCap, AUTO_SUPPORT_CONSTRAINTS.heightFactorCap.min);
 });
 
 test('normalize clamps high values', () => {

@@ -1,6 +1,7 @@
 import { clamp, round } from '@/utils/math';
 import type { CandidatePoint } from './types';
 import { getSettings } from '../Settings/state';
+import { AUTO_SUPPORT_CONSTRAINTS } from './settings';
 import type { SupportSettings } from '../Settings/types';
 
 // ---------------------------------------------------------------------------
@@ -160,17 +161,19 @@ const MAX_SHAFT_DIAMETER_MM = 2.0;
 /** Model extent (mm, bbox diagonal) at or below which supports are at band. */
 export const SIZE_REFERENCE_MM = 60;
 export const SIZE_EXPONENT = 0.3;
-export const SIZE_MAX_FACTOR = 1.45;
 
 /** Resin grams per support at or below which supports are at band. */
 export const SHARE_REFERENCE_G = 0.6;
 export const SHARE_EXPONENT = 0.25;
-export const SHARE_MAX_FACTOR = 1.3;
 
 /** Support height (mm) at or below which supports are at band. */
 export const HEIGHT_REFERENCE_MM = 20;
 export const HEIGHT_EXPONENT = 0.35;
-export const HEIGHT_MAX_FACTOR = 1.35;
+
+// The three caps are no longer constants: they are the `autoSupport`
+// `modelSizeFactorCap` / `modelLoadFactorCap` / `heightFactorCap` settings, so a
+// calibration has one home (`AUTO_SUPPORT_CONSTRAINTS` owns the defaults) and
+// cannot drift from a second literal here.
 
 /** Resin density (g/mm³) — 1.1 g/cm³. One figure for the sizing and its reports. */
 export const RESIN_DENSITY_G_PER_MM3 = 0.0011;
@@ -186,29 +189,42 @@ export interface ModelSizingFactors {
     sizeMm: number;
     /** Resin grams per support the load term read. */
     loadShareG: number;
-    /** Geometric scale of the print, ×1 … SIZE_MAX_FACTOR. */
+    /** Geometric scale of the print, ×1 … the configured size cap. */
     sizeFactor: number;
-    /** Mass one support carries, ×1 … SHARE_MAX_FACTOR. */
+    /** Mass one support carries, ×1 … the configured load cap. */
     loadFactor: number;
     /** sizeFactor × loadFactor — the run-level multiplier on shaft and roots. */
     trunkScale: number;
 }
 
+/** The live model-scale calibrations, read from the `autoSupport` settings. */
+function modelSizingConfig(): { enabled: boolean; sizeCap: number; loadCap: number; heightCap: number } {
+    const auto = getSettings().autoSupport;
+    return {
+        enabled: auto?.modelScaleEnabled ?? true,
+        sizeCap: auto?.modelSizeFactorCap ?? AUTO_SUPPORT_CONSTRAINTS.modelSizeFactorCap.defaultValue,
+        loadCap: auto?.modelLoadFactorCap ?? AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap.defaultValue,
+        heightCap: auto?.heightFactorCap ?? AUTO_SUPPORT_CONSTRAINTS.heightFactorCap.defaultValue,
+    };
+}
+
 /**
  * Resolve the run-level sizing terms from the model context. Absent context
  * (a bare `sizeParameters` call — tests, callers with no mesh) returns all
- * ones, so sizing is exactly the band.
+ * ones, so sizing is exactly the band. `autoSupport.modelScaleEnabled === false`
+ * pins every factor to ×1 the same way.
  */
 export function modelSizingFactors(ctx?: ModelSizingContext): ModelSizingFactors {
+    const { enabled, sizeCap, loadCap } = modelSizingConfig();
     const sizeMm = ctx?.modelSizeMm ?? 0;
     const shareG = ctx && ctx.totalCandidates > 0
         ? (ctx.modelVolumeMm3 * RESIN_DENSITY_G_PER_MM3) / ctx.totalCandidates
         : 0;
-    const sizeFactor = sizeMm > 0
-        ? powerFactor(sizeMm / SIZE_REFERENCE_MM, SIZE_EXPONENT, SIZE_MAX_FACTOR)
+    const sizeFactor = enabled && sizeMm > 0
+        ? powerFactor(sizeMm / SIZE_REFERENCE_MM, SIZE_EXPONENT, sizeCap)
         : 1;
-    const loadFactor = shareG > 0
-        ? powerFactor(shareG / SHARE_REFERENCE_G, SHARE_EXPONENT, SHARE_MAX_FACTOR)
+    const loadFactor = enabled && shareG > 0
+        ? powerFactor(shareG / SHARE_REFERENCE_G, SHARE_EXPONENT, loadCap)
         : 1;
     return {
         sizeMm,
@@ -313,9 +329,12 @@ export function sizeParameters(
     const zHeight = Math.max(candidate.zHeight, 1);
     // Height band: a column's buckling load falls with L², so the same contact
     // needs a thicker column the further it is from the plate. Monotone from
-    // the band at HEIGHT_REFERENCE_MM up to HEIGHT_MAX_FACTOR — a support
-    // shorter than the reference is at band, never below it.
-    const heightFactor = powerFactor(zHeight / HEIGHT_REFERENCE_MM, HEIGHT_EXPONENT, HEIGHT_MAX_FACTOR);
+    // the band at HEIGHT_REFERENCE_MM up to the configured `heightFactorCap` —
+    // a support shorter than the reference is at band, never below it.
+    const { enabled: modelScaleEnabled, heightCap } = modelSizingConfig();
+    const heightFactor = modelScaleEnabled
+        ? powerFactor(zHeight / HEIGHT_REFERENCE_MM, HEIGHT_EXPONENT, heightCap)
+        : 1;
     const trunkScale = modelSizingFactors(ctx).trunkScale;
     const shaftDiameterMm = round(
         clamp(

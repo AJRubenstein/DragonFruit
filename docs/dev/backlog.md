@@ -6,6 +6,26 @@ this page is the fleshed-out explanation. Add entries here when a rule is too
 long for `AGENTS.md`, is expected to be lifted once an upstream change lands,
 or is a known refactor we intend to do.
 
+## Decision: auto-support presets are their own system
+
+`src/supports/Settings/autoSupportPresets.ts` stores presets for the
+`autoSupport` block — the policy an automatic placement run follows. The Support
+Studio presets in `src/supports/Settings/presets.ts` stay what they are: the
+geometry of a *manually placed* support, which excludes `autoSupport` from what
+it saves. A Support Studio preset never carries auto-support settings, and an
+auto-support preset carries nothing else.
+
+They are separate **by design**, not pending a merge. They answer different
+questions ("how is a support built?" versus "what should this run do?"), and they
+have different lifecycles: slots, hotkeys and one selection driving the whole
+settings panel, against a policy picked per run and exported as its own file.
+One store owning both would make "preset" mean two things in the panel that
+shows them. So: no shared storage, no shared state, no shared ids, and no imports
+either way.
+
+**Temporary until:** nothing — this is a decision. See
+[`auto-support-presets.md`](auto-support-presets.md).
+
 ## Lingui + React Compiler: interpolating translations
 
 **Do not** add interpolating `msg` translations inline inside a React component

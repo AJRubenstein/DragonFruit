@@ -10,26 +10,10 @@ export const MAX_AUTO_LEAF_SPAN_MM = 2.5;
  *  instead of the active band contact — matches the detail preset boundary. */
 export const SMALL_ISLAND_TIP_AREA_MM2 = 0.15;
 
-/** Fraction of the local free width a contact tip may occupy. A tip must fit
- *  the feature it lands on: a 0.5 mm tooth cannot carry an active-band contact
- *  without the rendered disc spilling over its neighbours. Applied to BOTH
- *  candidate producers (island emission and the overhang lattice), because the
- *  lattice used to take the full band contact whatever it landed on.
- *
- *  **0.9 rather than 0.6.** The cap is a FIT rule, so it must not shrink a tip
- *  that already fits. At 0.6 it bound for every width under `bandTip / 0.6`
- *  (0.47 mm on the structure band) and floored a 0.28 mm band tip to 0.22 mm
- *  inside a 0.30–0.45 mm feature — 21% thinner for no fit benefit, which is the
- *  "tips read a little thin" report. At 0.9 a tip is left alone for every width
- *  ≥ `bandTip / 0.9` (0.31 mm on structure), so only a genuinely tighter feature
- *  shrinks it, and the disc still keeps a 5% margin inside the span rather than
- *  touching the silhouette edge — the same idea as `PERIMETER_CONTACT_INSET_MM`
- *  on the boundary ring. */
-export const CONTACT_MARGIN_SCALE = 0.9;
-
 /** Tangent-plane reach (mm) each side of the free-width probe looks out to.
- *  The cap only binds while the free width is under `bandTip / CONTACT_MARGIN_SCALE`
- *  (at the widest band, 0.4 / 0.9 ≈ 0.44 mm), so a 0.5 mm reach — above the
+ *  The cap only binds while the free width is under
+ *  `bandTip / autoSupport.tipContactMarginScale` (at the widest band,
+ *  0.4 / 0.9 ≈ 0.44 mm), so a 0.5 mm reach — above the
  *  widest width the cap can act on — covers it with headroom while staying
  *  short of the ~1 mm tooth/gap pitch a scalloped surface repeats at. A probe
  *  that reached across a whole pitch would read the next tooth as solid ground

@@ -8,7 +8,7 @@ import { generateGridCandidates } from '../autoSupport/gridPlacement';
 import { applyContactTipCap, localFreeWidthMm } from '../autoSupport/contactTipCap';
 import { sizeParameters, smallIslandTipDiameterMm, activeSizingBand } from '../autoSupport/parameterSizing';
 import { SDFCache } from '../PlacementLogic/Pathfinding/SDFCache';
-import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
+import { createDefaultAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS } from '../autoSupport/settings';
 import { setSettings, getSettings, updateAutoSupportSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
 import type { AutoSupportSettings } from '../autoSupport/settings';
@@ -168,4 +168,28 @@ test('a 0.3 mm tooth caps the anchor band to fit', () => {
         assert.equal(sizeParameters(candidate).tipContactDiameterMm, 0.27,
             'the anchor band contact renders at the capped width');
     });
+});
+
+test('tipContactMarginScale sets the fraction of free width the contact keeps', () => {
+    // An explicit 1.0 mm ceiling on a 0.6 mm-wide rib: the cap is the only
+    // binder, so the rendered contact is exactly `freeWidth × marginScale`.
+    const mesh = ribMesh(0.6);
+    const prev = getSettings().autoSupport;
+    try {
+        updateAutoSupportSettings({ tipContactMarginScale: AUTO_SUPPORT_CONSTRAINTS.tipContactMarginScale.defaultValue });
+        const defaulted = makeCandidate({ tipDiameterMm: 1.0 });
+        applyContactTipCap(defaulted, sdfFor(mesh));
+        assert.ok(Math.abs(defaulted.tipDiameterMm! - 0.54) < 0.03,
+            `0.9 x 0.6 mm rib → ~0.54, got ${defaulted.tipDiameterMm}`);
+
+        updateAutoSupportSettings({ tipContactMarginScale: 0.5 });
+        const tighter = makeCandidate({ tipDiameterMm: 1.0 });
+        applyContactTipCap(tighter, sdfFor(mesh));
+        assert.ok(Math.abs(tighter.tipDiameterMm! - 0.3) < 0.03,
+            `0.5 x 0.6 mm rib → ~0.30, got ${tighter.tipDiameterMm}`);
+        assert.ok(tighter.tipDiameterMm! < defaulted.tipDiameterMm!,
+            'a lower margin scale thins the capped contact');
+    } finally {
+        updateAutoSupportSettings({ ...prev });
+    }
 });

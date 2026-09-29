@@ -27,7 +27,7 @@ import { isLedgerKind } from './types';
 import type { Branch, Segment, SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
 import type { AutoPlaceTimings } from './types';
-import { normalizeAutoSupportSettings } from './settings';
+import { normalizeAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS } from './settings';
 import { activeSizingBand } from './parameterSizing';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates, shouldUseDensityGrid } from './gridPlacement';
@@ -698,7 +698,9 @@ function buildHostedBranch(
     hostDiameterMm: number,
     rejected: (built: BranchBuildResult) => boolean,
 ): BranchBuildResult | null {
-    const flooredShaftMm = memberShaftDiameterMm(bandShaftMm, hostDiameterMm);
+    const hostRatio = getSettings().autoSupport?.memberHostShaftRatio
+        ?? AUTO_SUPPORT_CONSTRAINTS.memberHostShaftRatio.defaultValue;
+    const flooredShaftMm = memberShaftDiameterMm(bandShaftMm, hostDiameterMm, hostRatio);
     const floored = buildBranchData({ ...input, shaftDiameterMm: flooredShaftMm });
     if (!rejected(floored)) return floored;
     if (flooredShaftMm <= bandShaftMm) return null;

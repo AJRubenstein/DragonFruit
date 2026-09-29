@@ -50,6 +50,37 @@ export interface AutoSupportSettings {
     /** Ring mesh minima (the first point of a section) with reinforcement
      *  contacts on their own flank (default on). */
     minimaReinforcementEnabled: boolean;
+    /** Fraction of the local free width a contact tip may occupy so the
+     *  rendered disc fits the feature it lands on. **Calibration, not a
+     *  preference**: 0.9 is measured — at 0.6 the cap shrank a 0.28 mm band tip
+     *  to 0.22 mm inside a 0.30–0.45 mm feature (the "tips read a little thin"
+     *  report) for no fit benefit, so the value here is the published middle.
+     *  Read by `applyContactTipCap`. */
+    tipContactMarginScale: number;
+    /** Least shaft diameter a hosted member takes, as a fraction of the host
+     *  shaft it sprouts from. **Calibration, not a preference**: 0.7 is measured
+     *  — at ×1.6 (host 1.62 mm) the member/host ratio ran 0.62 with no floor
+     *  (*a little thin*) and 0.80 with the first attempt (*a little thick*), so
+     *  0.7 sits between them. Read by `memberShaftDiameterMm`. */
+    memberHostShaftRatio: number;
+    /** Master switch for the run-level model-scale sizing (size × load ×
+     *  height factors). Off pins every one of them to ×1, so sizing is exactly
+     *  the active band plus the local terms. */
+    modelScaleEnabled: boolean;
+    /** Ceiling of the run-level size factor
+     *  `(bbox diagonal / SIZE_REFERENCE_MM)^SIZE_EXPONENT`. **Calibration, not a
+     *  preference** — the measured bound that keeps a large part's trunk growth
+     *  sub-linear. Read by `modelSizingFactors`. */
+    modelSizeFactorCap: number;
+    /** Ceiling of the run-level load factor
+     *  `(resin grams per support / SHARE_REFERENCE_G)^SHARE_EXPONENT`.
+     *  **Calibration, not a preference.** Read by `modelSizingFactors`. */
+    modelLoadFactorCap: number;
+    /** Ceiling of the height factor
+     *  `(zHeight / HEIGHT_REFERENCE_MM)^HEIGHT_EXPONENT` — a column's buckling
+     *  load falls with L², so the cap bounds how much a tall support thickens.
+     *  **Calibration, not a preference.** Read by `sizeParameters`. */
+    heightFactorCap: number;
 }
 
 export type NumericConstraint = {
@@ -73,7 +104,12 @@ export type NumericAutoSupportSettingKey =
         | 'suctionAreaExponent'
           | 'coverageTargetPercent'
     | 'leafFanRadiusMm'
-    | 'leafFanMaxAngleDeg';
+    | 'leafFanMaxAngleDeg'
+    | 'tipContactMarginScale'
+    | 'memberHostShaftRatio'
+    | 'modelSizeFactorCap'
+    | 'modelLoadFactorCap'
+    | 'heightFactorCap';
 
 export const AUTO_SUPPORT_CONSTRAINTS = {
     minIslandAreaMm2: { min: 0.01, max: 10, step: 0.01, defaultValue: 0.02 },
@@ -89,6 +125,11 @@ export const AUTO_SUPPORT_CONSTRAINTS = {
     coverageTargetPercent: { min: 75, max: 100, step: 5, defaultValue: 95, integer: true },
     leafFanRadiusMm: { min: MIN_LEAF_FAN_RADIUS_MM, max: 15, step: 0.5, defaultValue: MIN_LEAF_FAN_RADIUS_MM },
     leafFanMaxAngleDeg: { min: 20, max: 80, step: 5, defaultValue: 45, integer: true },
+    tipContactMarginScale: { min: 0.4, max: 1, step: 0.05, defaultValue: 0.9 },
+    memberHostShaftRatio: { min: 0.5, max: 1, step: 0.05, defaultValue: 0.7 },
+    modelSizeFactorCap: { min: 1, max: 2, step: 0.05, defaultValue: 1.45 },
+    modelLoadFactorCap: { min: 1, max: 2, step: 0.05, defaultValue: 1.3 },
+    heightFactorCap: { min: 1, max: 2, step: 0.05, defaultValue: 1.35 },
 } satisfies Record<NumericAutoSupportSettingKey, NumericConstraint>;
 
 function precisionFromStep(step: number): number {
@@ -138,6 +179,12 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
         sizingPreset: 'structure',
         leafFanRadiusMm: AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm.defaultValue,
         leafFanMaxAngleDeg: AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg.defaultValue,
+        tipContactMarginScale: AUTO_SUPPORT_CONSTRAINTS.tipContactMarginScale.defaultValue,
+        memberHostShaftRatio: AUTO_SUPPORT_CONSTRAINTS.memberHostShaftRatio.defaultValue,
+        modelScaleEnabled: true,
+        modelSizeFactorCap: AUTO_SUPPORT_CONSTRAINTS.modelSizeFactorCap.defaultValue,
+        modelLoadFactorCap: AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap.defaultValue,
+        heightFactorCap: AUTO_SUPPORT_CONSTRAINTS.heightFactorCap.defaultValue,
         debugSupportOriginColors: false,
         debugSkipAutoBracing: false,
         stabilizationEnabled: true,
@@ -168,6 +215,12 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
             : 'structure',
         leafFanRadiusMm: clampNumeric(source.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm),
         leafFanMaxAngleDeg: clampNumeric(source.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg),
+        tipContactMarginScale: clampNumeric(source.tipContactMarginScale, AUTO_SUPPORT_CONSTRAINTS.tipContactMarginScale),
+        memberHostShaftRatio: clampNumeric(source.memberHostShaftRatio, AUTO_SUPPORT_CONSTRAINTS.memberHostShaftRatio),
+        modelScaleEnabled: normalizeBoolean(source.modelScaleEnabled, defaults.modelScaleEnabled),
+        modelSizeFactorCap: clampNumeric(source.modelSizeFactorCap, AUTO_SUPPORT_CONSTRAINTS.modelSizeFactorCap),
+        modelLoadFactorCap: clampNumeric(source.modelLoadFactorCap, AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap),
+        heightFactorCap: clampNumeric(source.heightFactorCap, AUTO_SUPPORT_CONSTRAINTS.heightFactorCap),
         debugSupportOriginColors: normalizeBoolean(source.debugSupportOriginColors, defaults.debugSupportOriginColors),
         debugSkipAutoBracing: normalizeBoolean(source.debugSkipAutoBracing, defaults.debugSkipAutoBracing),
         stabilizationEnabled: normalizeBoolean(source.stabilizationEnabled, defaults.stabilizationEnabled),

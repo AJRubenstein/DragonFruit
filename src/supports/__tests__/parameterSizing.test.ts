@@ -5,15 +5,13 @@ import {
     sizeParameters,
     presetForArea,
     activeSizingBand,
-    HEIGHT_MAX_FACTOR,
     HEIGHT_REFERENCE_MM,
-    SHARE_MAX_FACTOR,
-    SIZE_MAX_FACTOR,
 } from '../autoSupport/parameterSizing';
 import type { ModelSizingContext } from '../autoSupport/parameterSizing';
 import { setSettings, getSettings, updateAutoSupportSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
 import type { CandidatePoint } from '../autoSupport/types';
+import { AUTO_SUPPORT_CONSTRAINTS } from '../autoSupport/settings';
 import type { AutoSupportSettings } from '../autoSupport/settings';
 
 function makeCandidate(over: Partial<CandidatePoint> = {}): CandidatePoint {
@@ -36,6 +34,17 @@ function makeCandidate(over: Partial<CandidatePoint> = {}): CandidatePoint {
 function withTier<T>(tier: 'detail' | 'structure' | 'anchor', fn: () => T): T {
     const prev = getSettings().autoSupport;
     updateAutoSupportSettings({ sizingPreset: tier } as Partial<AutoSupportSettings>);
+    try {
+        return fn();
+    } finally {
+        updateAutoSupportSettings({ ...prev });
+    }
+}
+
+/** Apply one `autoSupport` patch for the duration of a case, restoring after. */
+function withAutoSupport<T>(patch: Partial<AutoSupportSettings>, fn: () => T): T {
+    const prev = getSettings().autoSupport;
+    updateAutoSupportSettings(patch);
     try {
         return fn();
     } finally {
@@ -115,7 +124,7 @@ test('taller supports are thicker, floored at the band and capped', () => {
     assert.equal(at(10), band, 'below the height reference: band');
     assert.equal(at(HEIGHT_REFERENCE_MM), band, 'at the height reference: band');
     assert.ok(at(90) > at(40), 'longer → thicker');
-    assert.ok(at(90) <= band * HEIGHT_MAX_FACTOR + 1e-9, 'height cap holds');
+    assert.ok(at(90) <= band * AUTO_SUPPORT_CONSTRAINTS.heightFactorCap.defaultValue + 1e-9, 'height cap holds');
     assert.equal(at(90), at(400), 'saturates at the cap');
 });
 
@@ -131,7 +140,7 @@ test('a bigger print gets thicker trunks than a small one', () => {
     assert.ok(mid.shaftDiameterMm! > mini.shaftDiameterMm!, 'mid-size model is thicker');
     assert.ok(large.shaftDiameterMm! > mid.shaftDiameterMm!, 'larger model is thicker again');
     assert.ok(
-        large.shaftDiameterMm! <= mini.shaftDiameterMm! * SIZE_MAX_FACTOR * SHARE_MAX_FACTOR + 1e-9,
+        large.shaftDiameterMm! <= mini.shaftDiameterMm! * AUTO_SUPPORT_CONSTRAINTS.modelSizeFactorCap.defaultValue * AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap.defaultValue + 1e-9,
         'the factors bound the growth',
     );
     assert.ok(large.rootsDiameterMm! > mini.rootsDiameterMm!, 'the pad scales with the trunk');
@@ -146,7 +155,7 @@ test('a heavy share per support thickens, an easy one does not', () => {
     // 440 g over 4000 supports = 0.11 g each: below the reference, at band.
     assert.equal(share(4000).shaftDiameterMm, sizeParameters(candidate).shaftDiameterMm, 'easy share: band');
     assert.ok(share(400).shaftDiameterMm! > share(4000).shaftDiameterMm!, 'more mass each → thicker');
-    assert.ok(share(20).shaftDiameterMm! <= 1.0 * SHARE_MAX_FACTOR + 1e-9, 'share cap holds');
+    assert.ok(share(20).shaftDiameterMm! <= 1.0 * AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap.defaultValue + 1e-9, 'share cap holds');
 });
 
 test('sizing without a model context is exactly the band', () => {
@@ -198,4 +207,71 @@ test('per-point tip override bypasses band and floor', () => {
 test('absent override keeps band × angle with floor', () => {
     const s = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }));
     assert.ok(s.tipContactDiameterMm! >= s.shaftDiameterMm! * 0.3 - 1e-9, 'floor holds without override');
+});
+
+// ---------------------------------------------------------------------------
+// The advanced-calibration keys are READ, not decorative: each test below
+// changes exactly one `autoSupport` setting and shows the sized geometry move.
+// ---------------------------------------------------------------------------
+
+test('modelSizeFactorCap bounds the size factor', () => {
+    // Big model, no load share, height at band: the only live factor is size,
+    // which the default cap 1.45 pins; at cap 1.0 it collapses to the band.
+    const ctx: ModelSizingContext = { modelVolumeMm3: 27000, totalCandidates: 100, modelSizeMm: 400 };
+    const candidate = makeCandidate({ islandAreaMm2: 0.001, zHeight: 10 });
+    const band = activeSizingBand().shaftDiameterMm;
+
+    const defaulted = sizeParameters(candidate, 1, ctx)!;
+    assert.equal(defaulted.shaftDiameterMm, band * AUTO_SUPPORT_CONSTRAINTS.modelSizeFactorCap.defaultValue,
+        'default cap 1.45 is the sized size factor');
+
+    const capped = withAutoSupport({ modelSizeFactorCap: 1.0 }, () => sizeParameters(candidate, 1, ctx)!);
+    assert.equal(capped.shaftDiameterMm, band, 'cap 1.0 removes the size factor entirely');
+    assert.ok(capped.shaftDiameterMm! < defaulted.shaftDiameterMm!, 'lowering the cap thins the trunk');
+});
+
+test('modelLoadFactorCap bounds the load factor', () => {
+    // Model at the size reference (size factor ×1) but a heavy load share:
+    // the default cap 1.3 pins the load factor; at cap 1.0 it collapses.
+    const ctx: ModelSizingContext = { modelVolumeMm3: 400000, totalCandidates: 20, modelSizeMm: 60 };
+    const candidate = makeCandidate({ islandAreaMm2: 0.001, zHeight: 10 });
+    const band = activeSizingBand().shaftDiameterMm;
+
+    const defaulted = sizeParameters(candidate, 1, ctx)!;
+    assert.equal(defaulted.shaftDiameterMm, band * AUTO_SUPPORT_CONSTRAINTS.modelLoadFactorCap.defaultValue,
+        'default cap 1.3 is the sized load factor');
+
+    const capped = withAutoSupport({ modelLoadFactorCap: 1.0 }, () => sizeParameters(candidate, 1, ctx)!);
+    assert.equal(capped.shaftDiameterMm, band, 'cap 1.0 removes the load factor entirely');
+    assert.ok(capped.shaftDiameterMm! < defaulted.shaftDiameterMm!, 'lowering the cap thins the trunk');
+});
+
+test('heightFactorCap bounds the height factor', () => {
+    // A tall support saturates the height term; cap 1.0 pins it to the band.
+    const candidate = makeCandidate({ islandAreaMm2: 0.001, zHeight: 400 });
+    const band = activeSizingBand().shaftDiameterMm;
+
+    const defaulted = sizeParameters(candidate)!;
+    assert.equal(defaulted.shaftDiameterMm, band * AUTO_SUPPORT_CONSTRAINTS.heightFactorCap.defaultValue,
+        'default cap 1.35 is the saturated height factor');
+
+    const capped = withAutoSupport({ heightFactorCap: 1.0 }, () => sizeParameters(candidate)!);
+    assert.equal(capped.shaftDiameterMm, band, 'cap 1.0 removes the height factor entirely');
+    assert.ok(capped.shaftDiameterMm! < defaulted.shaftDiameterMm!, 'lowering the cap thins the trunk');
+});
+
+test('modelScaleEnabled off pins every model factor to ×1', () => {
+    // Every input is past its reference, so an enabled run would scale both
+    // the trunk (size × load) and the pad, and thicken on height.
+    const ctx: ModelSizingContext = { modelVolumeMm3: 400000, totalCandidates: 20, modelSizeMm: 400 };
+    const candidate = makeCandidate({ islandAreaMm2: 0.001, zHeight: 400 });
+    const band = activeSizingBand();
+
+    const enabled = sizeParameters(candidate, 1, ctx)!;
+    assert.ok(enabled.shaftDiameterMm! > band.shaftDiameterMm, 'enabled run scales past the band');
+    assert.ok(enabled.rootsDiameterMm! > band.rootDiameterMm, 'enabled run scales the pad');
+
+    const disabled = withAutoSupport({ modelScaleEnabled: false }, () => sizeParameters(candidate, 1, ctx)!);
+    assert.equal(disabled.shaftDiameterMm, band.shaftDiameterMm, 'off = height × size × load all ×1');
+    assert.equal(disabled.rootsDiameterMm, band.rootDiameterMm, 'off leaves the pad at band too');
 });

@@ -62,7 +62,7 @@ A third, and the one to watch before trusting a green `--check`: **the corpus
 models are small enough that every model-scale factor is ×1**. `modelSizingFactors`
 returns ×1 at or below `SIZE_REFERENCE_MM` (60 mm) and `SHARE_REFERENCE_G` (0.6 g),
 and the fixtures are 30–48 mm with no load share, so a rule keyed on the model
-scale — the member host-relative floor of `MEMBER_HOST_SHAFT_RATIO`, say — is a
+scale — the member host-relative floor of `memberHostShaftRatio`, say — is a
 **provable no-op** here and moves no baseline. Reproduce it by setting the
 `autoSupport.sizeScale` master multiplier instead: it rides the same trunk-only
 sizing path. Note that `--settings '{"sizeScale":…}'` does **not** do it — the

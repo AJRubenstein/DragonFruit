@@ -3,7 +3,9 @@ import { round } from '@/utils/math';
 import type { SDFCache } from '../PlacementLogic/Pathfinding/SDFCache';
 import { getOrCreateSDFCache } from '../PlacementLogic/Pathfinding/SDFCachePool';
 import type { CandidatePoint } from './types';
-import { CONTACT_MARGIN_SCALE, CONTACT_WIDTH_PROBE_MM } from './constants';
+import { CONTACT_WIDTH_PROBE_MM } from './constants';
+import { getSettings } from '../Settings/state';
+import { AUTO_SUPPORT_CONSTRAINTS } from './settings';
 import { activeSizingBand, smallIslandTipDiameterMm } from './parameterSizing';
 
 /**
@@ -116,7 +118,9 @@ export function applyContactTipCap(candidate: CandidatePoint, sdf: SDFCache): vo
         candidate.tipNormal,
     );
     if (freeWidthMm <= 0) return;
-    const targetMm = Math.max(Math.min(ceilingMm, freeWidthMm * CONTACT_MARGIN_SCALE), smallIslandTipDiameterMm());
+    const marginScale = getSettings().autoSupport?.tipContactMarginScale
+        ?? AUTO_SUPPORT_CONSTRAINTS.tipContactMarginScale.defaultValue;
+    const targetMm = Math.max(Math.min(ceilingMm, freeWidthMm * marginScale), smallIslandTipDiameterMm());
     if (targetMm >= ceilingMm) return;
     candidate.tipDiameterMm = round(targetMm, 3);
 }

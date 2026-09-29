@@ -242,7 +242,7 @@ function runSignature(gridEnabled: boolean): RunSignature {
  * `steep-flat-wedge` (coverage 40.4 → 41.0%) and `sloped-cantilever`.
  *
  * Re-recorded BACK to 149/23 for the cap's two corrections
- * (`CONTACT_MARGIN_SCALE` 0.6 → 0.9, and no cap when `localFreeWidthMm` returns
+ * (`autoSupport.tipContactMarginScale` 0.6 → 0.9, and no cap when `localFreeWidthMm` returns
  * 0 because the probe found no clearance either way). Both benches are now
  * **byte-identical to the pre-cap baselines on all seven fixtures in both
  * modes**: every contact the cap had been moving on the corpus read a zero

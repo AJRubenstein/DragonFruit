@@ -20,7 +20,6 @@ import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { initializeBVH, accelerateGeometry } from '../../utils/bvh';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createEmptySupportCollections } from '../supportTypeRegistry';
-import { MEMBER_HOST_SHAFT_RATIO } from '../constants';
 import type { Branch } from '../types';
 
 const GRID_SPACING_MM = 4;
@@ -356,13 +355,65 @@ test('decideGridPlacement sizes a branch from the host shaft it hangs from', () 
     assert.equal(decision.kind, 'place');
     const branch = decision.placed.entity as Branch;
     const shaftMm = Math.max(...branch.segments.map((segment) => segment.diameter));
+    const ratio = settings.autoSupport.memberHostShaftRatio;
     assert.ok(
-        shaftMm >= HOST_DIAMETER_MM * MEMBER_HOST_SHAFT_RATIO - 1e-6,
-        `branch shaft ${shaftMm} is thinner than ${MEMBER_HOST_SHAFT_RATIO} of its ${HOST_DIAMETER_MM} host`,
+        shaftMm >= HOST_DIAMETER_MM * ratio - 1e-6,
+        `branch shaft ${shaftMm} is thinner than ${ratio} of its ${HOST_DIAMETER_MM} host`,
     );
     assert.ok(
         shaftMm > settings.shaft.diameterMm,
         'the branch is thicker than the band because its host is',
+    );
+});
+
+test('decideGridPlacement reads memberHostShaftRatio from the settings', () => {
+    // At the 0.5 floor a 2.0 mm host floors to 1.0 mm — the band, i.e. the
+    // host-relative floor is a no-op, so the member comes out at the band. At
+    // the default 0.7 the same host floors it to 1.4 mm (covered above), so the
+    // setting is what moves the branch diameter.
+    const settings = makeSettings();
+    settings.autoSupport.memberHostShaftRatio = 0.5;
+    setSettings(settings);
+
+    const snapshot = makeEmptySnapshot();
+    const preferredHost = buildStraightFixture({
+        x: 0,
+        y: 0,
+        tipZ: 10,
+        socketZ: 9,
+    });
+    const HOST_DIAMETER_MM = 2.0;
+    preferredHost.build.trunk = {
+        ...preferredHost.build.trunk,
+        segments: preferredHost.build.trunk.segments.map((segment) => ({
+            ...segment,
+            diameter: HOST_DIAMETER_MM,
+        })),
+    };
+    addTrunkBuild(snapshot, preferredHost);
+
+    const candidate = buildStraightFixture({
+        x: 1.9,
+        y: 0,
+        tipZ: 16,
+        socketZ: 15,
+    });
+
+    const decision = decideGridPlacement({
+        settings,
+        snapshot,
+        candidate: candidate.build,
+        tipPos: candidate.input.tipPos,
+        tipNormal: candidate.input.tipNormal,
+        modelId: MODEL_ID,
+    });
+
+    assert.equal(decision.kind, 'place');
+    const branch = decision.placed.entity as Branch;
+    const shaftMm = Math.max(...branch.segments.map((segment) => segment.diameter));
+    assert.ok(
+        Math.abs(shaftMm - settings.shaft.diameterMm) < 1e-6,
+        `ratio 0.5 x ${HOST_DIAMETER_MM} mm host → band ${settings.shaft.diameterMm}, got ${shaftMm}`,
     );
 });
 

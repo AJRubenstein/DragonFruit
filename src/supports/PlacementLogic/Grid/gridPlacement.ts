@@ -648,7 +648,7 @@ function selectAttachmentDecision(args: {
             perfMark('grid:branch-build');
             const bandShaftMm = settings.shaft.diameterMm;
             const hostDiameterMm = getHostDiameterMmFromKnot(knot, settings);
-            const flooredShaftMm = memberShaftDiameterMm(bandShaftMm, hostDiameterMm);
+            const flooredShaftMm = memberShaftDiameterMm(bandShaftMm, hostDiameterMm, settings.autoSupport.memberHostShaftRatio);
             const buildAt = (shaftMm: number) => buildBranchData({
                 tipPos,
                 tipNormal,

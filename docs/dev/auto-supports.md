@@ -169,10 +169,11 @@ the row. `applyContactTipCaps` (`contactTipCap.ts`) runs in the shared candidate
 path — both `generateCandidates` (island emission) and `generateGridCandidates`
 (the overhang lattice, which used to take the full band contact whatever it
 landed on) — and sets `tipDiameterMm` to
-`clamp(min(existing ?? band tip, W × CONTACT_MARGIN_SCALE), floor = smallIslandTipDiameterMm())`,
+`clamp(min(existing ?? band tip, W × autoSupport.tipContactMarginScale), floor = smallIslandTipDiameterMm())`,
 where `W` is the local free width at the contact: the width of the free span
 there, i.e. the diameter of the largest sphere that fits in the plane the tip
-lands on. `CONTACT_MARGIN_SCALE` is **0.9** — the disc keeps a *marginal* 5%
+lands on. `tipContactMarginScale` is a setting (**default 0.9**) — the disc keeps
+a *marginal* 5%
 stand inside the feature, but the cap is a FIT rule and must not shrink a tip
 that already fits: at the old 0.6 it bound for every width under `bandTip / 0.6`
 (0.47 mm on the structure band) and floored a 0.28 mm band tip to 0.22 mm inside
@@ -221,9 +222,9 @@ same three apply to Roots, which keep their ratio to the shaft they carry:
 
 | Factor | Input | Curve |
 | ------ | ----- | ----- |
-| size | model bbox diagonal (`modelSizeMm`) | `(size / SIZE_REFERENCE_MM)^SIZE_EXPONENT`, ×1 → `SIZE_MAX_FACTOR` |
-| load | model weight / support count | `(share / SHARE_REFERENCE_G)^SHARE_EXPONENT`, ×1 → `SHARE_MAX_FACTOR` |
-| height | the support's own `zHeight` | `(z / HEIGHT_REFERENCE_MM)^HEIGHT_EXPONENT`, ×1 → `HEIGHT_MAX_FACTOR` |
+| size | model bbox diagonal (`modelSizeMm`) | `(size / SIZE_REFERENCE_MM)^SIZE_EXPONENT`, ×1 → `autoSupport.modelSizeFactorCap` (default 1.45) |
+| load | model weight / support count | `(share / SHARE_REFERENCE_G)^SHARE_EXPONENT`, ×1 → `autoSupport.modelLoadFactorCap` (default 1.3) |
+| height | the support's own `zHeight` | `(z / HEIGHT_REFERENCE_MM)^HEIGHT_EXPONENT`, ×1 → `autoSupport.heightFactorCap` (default 1.35) |
 
 All three are monotone in their own input and **floored at ×1**: no factor can
 thin a support below its band, so the light end — the tier that already works —
@@ -232,7 +233,10 @@ one on the same input. That is the property the removed area-derived curve
 lacked (see the warning above). Direction is physical — a bigger print is a
 longer lever, a column's buckling load falls with L², mass per support is a
 load share — but every exponent and cap is calibration, not a calculation, and
-nothing here reads a force.
+nothing here reads a force. The three caps are **settings, not constants** (the
+`SIZE_REFERENCE_MM`/`SIZE_EXPONENT` pair and their load/height siblings stay
+internal), and `autoSupport.modelScaleEnabled = false` pins all three factors to
+×1 — the band exactly — for a caller that wants the local sizing alone.
 
 `ModelSizingContext` is optional on `sizeParameters`: a caller with no mesh gets
 the band exactly, which is why the unit tests and the manual-placement paths are
@@ -256,7 +260,7 @@ Every builder the run calls takes the band through `SizeOverrides` — trunk, br
 
 ### A hosted member is never a needle beside its host
 
-The three model factors above ride on the **trunk**, which is built from the candidate's own `sizeParameters` overrides; the hosted members are handed the plain tier band. On a part big enough to scale (`size × load × height` up to ×1.85) that left a 1.0 mm branch hanging off a 1.5–2.0 mm trunk — the "supports read a little thin next to their hosts" report. Every member build now takes its shaft from `memberShaftDiameterMm(band, hostShaftMm)`, which is the band floored at `MEMBER_HOST_SHAFT_RATIO` (**0.7**) of the host shaft it sprouts from (`src/supports/constants.ts`): the two meet at the knot, so a step is right — a member carries a fraction of the host's load — but not a needle. The floor is a maximum with the band, so a host at the band (the whole light end, and every corpus fixture) is provably untouched; it binds once the host is scaled past `1 / 0.7` (≈1.43 × band).
+The three model factors above ride on the **trunk**, which is built from the candidate's own `sizeParameters` overrides; the hosted members are handed the plain tier band. On a part big enough to scale (`size × load × height` up to ×1.85) that left a 1.0 mm branch hanging off a 1.5–2.0 mm trunk — the "supports read a little thin next to their hosts" report. Every member build now takes its shaft from `memberShaftDiameterMm(band, hostShaftMm, autoSupport.memberHostShaftRatio)`, which is the band floored at `memberHostShaftRatio` (**default 0.7**, a setting, not a constant) of the host shaft it sprouts from (`src/supports/constants.ts`): the two meet at the knot, so a step is right — a member carries a fraction of the host's load — but not a needle. The floor is a maximum with the band, so a host at the band (the whole light end, and every corpus fixture) is provably untouched; it binds once the host is scaled past `1 / 0.7` (≈1.43 × band).
 
 **0.7 is a measured middle, not a guess.** On the scaled harness (×1.6, host 1.62 mm) the member/host ratio in absolute diameters is: 0.62 with no floor at all (called a *little thin*), 0.65 → branch 1.05 mm, 0.70 → 1.13 mm, 0.80 → 1.30 mm (called *a little thick*). Only ratios that bind need anything else; 0.60 is a no-op because `0.6 × 1.62 < 1.0`, which is exactly why the pre-floor ratio was 0.62. So 0.70 is the point between the two complaints, and it leaves the same ~30 % taper at every host size:
 
@@ -268,7 +272,7 @@ The three model factors above ride on the **trunk**, which is built from the can
 
 All five branch sites carry it — the merge path, `fanLeafToHost`, `buildConsolidationBranch`, the coverage-stub branch, and the grid attach in `PlacementLogic/Grid/gridPlacement.ts` (which also uses the floored radius for its own clearance check before falling back). A leaf needs nothing: its cone body already **is** the host shaft, by `syncContactConeDiameters`.
 
-This is the member-side counterpart of the forest resize, which runs the other way: the resize thickens a **host** to match its fattest member, the floor thickens a **member** to stay within `MEMBER_HOST_SHAFT_RATIO` of its host. Neither can feed the other — a member at 0.7 of its host is never the fattest thing on it, and the host diameter measured identical with the floor on and off.
+This is the member-side counterpart of the forest resize, which runs the other way: the resize thickens a **host** to match its fattest member, the floor thickens a **member** to stay within `memberHostShaftRatio` of its host. Neither can feed the other — a member at 0.7 of its host is never the fattest thing on it, and the host diameter measured identical with the floor on and off.
 
 **Where the thickness actually comes from (finding, not tuned here).** The floor is relative, so it cannot make a forest chunky by itself — it only tracks a host that is already thick. The host's own diameter is the model-scale term: at ×1.6 the harness hosts sit at 1.62 mm against a 1.0 mm band, and with the model terms at ×1 they sit at 1.01 mm (measured: sizeScale 1 → 1.01, 1.25 → 1.27, 1.6 → 1.62, 2.0 → 2.03). A `base Ø1.00 · h1.25 → Ø1.93mm` note is therefore ~×1.55 of model factor, not height alone (the note prints only `h`; see the two findings in the forest-report section). `MAX_SHAFT_DIAMETER_MM` is not the binder anywhere near the reported sizes: at ×2.0 every harness host reads 2.03 mm and none at ×1.6 does — and that ×2.0 is the user's own `sizeScale`, which is allowed past the cap by design. Retuning those factors is a separate decision.
 
@@ -414,6 +418,32 @@ Every run logs where its time went, one line plus a detail line:
 ## Settings and reporting
 
 `settings.ts` declares roughly twenty knobs with `AUTO_SUPPORT_CONSTRAINTS` giving each a min/max/step/default — including two debug switches (`debugSupportOriginColors`, `debugSkipAutoBracing`, the latter for faster iteration). Use `normalizeAutoSupportSettings` / `applyAutoSupportSettingsPatch` rather than building the object by hand.
+
+### The settings panel, by question
+
+The panel is organized by the question a user is asking, not by pipeline phase, and the tabs are frozen in this order: `Detection` — `Distribution` — `Density & Sizing` — `Stability` — `Post-processing` — `Presets` — `Debug & Advanced`. Three files hold that contract:
+
+- `src/components/controls/AutoSupportPanel.tsx` is the shell: the run button, the island counts, the density tier row, and the dialogs.
+- `src/components/controls/autoSupport/AutoSupportSettingsBody.tsx` is the dialog body — the tab row and the seven panels. It is deliberately store-free: it takes the draft it edits plus the last run's diagnostics as props, which is also what makes it testable without a DOM.
+- `src/components/controls/autoSupport/autoSupportPanelTabs.ts` is the catalogue: `AUTO_SUPPORT_TABS`, `KNOBS_BY_TAB` and `TOGGLES_BY_TAB` are the single place the control-to-tab mapping is written down, and `measuredCalibrationDefaults()` is the Advanced group's Reset. Move or add a control there, never by editing a tab's JSX.
+
+| Tab | The question | Settings it owns |
+| --- | --- | --- |
+| Detection | what needs support, and how tightly detections merge | `enabled`, `prioritizeIntersection`, `minIslandAreaMm2`, `tipInfluenceRadiusMm` |
+| Distribution | where a region's contacts land, and how far members fan from a trunk | `leafFanRadiusMm`, `leafFanMaxAngleDeg` |
+| Density & Sizing | how many, and how thick | `areaPerSupportMm2`, `sizeScale`, `gridAreaThresholdMm2`, `flatDensityBoost`, `slopeRelaxFactor`, `suctionAreaExponent` |
+| Stability | will the part stay put and stay straight | `overhangSelfSupportAngleDeg`, `stabilizationEnabled`, `minimaReinforcementEnabled` |
+| Post-processing | the passes after placement | `maxAttachmentsPerTrunk` (which also caps chunk consolidation), `coverageTargetPercent` |
+| Presets | which saved policy the next run follows | the whole `autoSupport` block, through the preset store |
+| Debug & Advanced | debug switches, run diagnostics, calibration | `debugSupportOriginColors`, `debugSkipAutoBracing`, `debugSimpleSupportRender` (a top-level `SupportSettings` key, not under `autoSupport`, toggled through `updateDebugSimpleSupportRender`), and the six calibration keys |
+
+`Debug & Advanced` holds every debug switch and every diagnostic — the Sizing Debug expander and the Forest Report button live there, not in the panel body — so nothing debug sits in a tab a user reaches for to change how supports are made. Its `Advanced (calibration)` group carries a visible warning (`ADVANCED_CALIBRATION_WARNING`), the six measured constants as `ADVANCED_CALIBRATION_KNOBS` plus `ADVANCED_CALIBRATION_TOGGLE`, each with its measured default shown, and one action that resets them through `measuredCalibrationDefaults()` — the values come from `AUTO_SUPPORT_CONSTRAINTS`, so the documented measurement and the Reset button cannot drift apart.
+
+### Presets are the run policy, and a separate system from Support Studio
+
+The `Presets` tab is the UI for `src/supports/Settings/autoSupportPresets.ts` (see [Auto-Support Presets](auto-support-presets.md)): the panel's tier row, `AutoSupportPresetsTab`, and the store all go through `setActiveAutoSupportPreset`, so the tier a button highlights is the store's active id and not a match against the live block. Selecting applies the whole block immediately — that is the store's contract — and the applied block is copied into the dialog's draft so the other tabs show it; the rest of the dialog stays draft-until-`Apply`.
+
+Support Studio's presets (`src/supports/Settings/presets.ts`) are a **different system**: they describe how a manually placed support is built and exclude `autoSupport` entirely. Neither store reads the other, and the panel must not present one as a lifecycle stage of the other.
 
 A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` renders it for the placement summary. The report is the primary debugging surface — every decision includes a *why*.
 
