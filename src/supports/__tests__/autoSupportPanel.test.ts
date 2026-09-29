@@ -7,7 +7,7 @@ import { I18nProvider } from '@lingui/react';
 import { i18n } from '../../i18n';
 import type { AutoSupportSettings, ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
 import type { AutoSupportSettingsBodyProps } from '@/components/controls/autoSupport/AutoSupportSettingsBody';
-import type { AutoSupportTabKey } from '@/components/controls/autoSupport/autoSupportPanelTabs';
+import type { AutoSupportSectionDef } from '@/components/controls/autoSupport/autoSupportPanelTabs';
 import { getSettings } from '@/supports/Settings/state';
 import {
   getActiveAutoSupportPresetId,
@@ -18,14 +18,14 @@ import {
 /**
  * The panel's settings dialog, mounted without a DOM.
  *
- * `AutoSupportSettingsBody` is the dialog's whole body (tab row + tab panels),
- * so rendering it per tab is the panel's settings surface under test. There is
- * no jsdom in this repo — component tests render to static markup — which the
- * body supports by construction: it is store-free, taking the draft it edits
- * plus the last run's diagnostics as props.
+ * `AutoSupportSettingsBody` is the dialog's whole surface (the preset strip, the
+ * field cards, the disclosure and the footer), so rendering it is the panel's
+ * settings surface under test. There is no jsdom in this repo — component tests
+ * render to static markup — which the body supports by construction: it is
+ * store-free, taking the draft it edits plus the last run's diagnostics as props.
  *
  * The macro resolve hook has to be registered before anything that calls `msg`
- * is *evaluated*, which is why the three panel modules arrive through a dynamic
+ * is *evaluated*, which is why the panel modules arrive through a dynamic
  * `import()` in the `before` hook and why nothing here statically imports a
  * `.tsx` from the panel. See `linguiMacroStub.mjs`.
  */
@@ -39,21 +39,30 @@ registerHooks({
 });
 
 let AutoSupportSettingsBody: React.ComponentType<AutoSupportSettingsBodyProps>;
+let AutoSupportPresetManagerSurface: React.ComponentType<{
+  draft: AutoSupportSettings;
+  setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
+  onRestoreFactoryPresets: () => void;
+}>;
 let selectAutoSupportPreset: (id: string, setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
-let autoSupportTabs: ReadonlyArray<{ key: AutoSupportTabKey; label: { message?: string } }>;
+let autoSupportSections: ReadonlyArray<AutoSupportSectionDef>;
+let policySections: ReadonlyArray<AutoSupportSectionDef>;
 
 // Dynamic on purpose: these modules call `msg`, so the resolve hook above must
 // already be registered — a static import would be evaluated first.
 before(async () => {
   ({ AutoSupportSettingsBody } = await import('@/components/controls/autoSupport/AutoSupportSettingsBody'));
-  ({ selectAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresetsTab'));
-  ({ AUTO_SUPPORT_TABS: autoSupportTabs } = await import('@/components/controls/autoSupport/autoSupportPanelTabs'));
+  ({ AutoSupportPresetManagerSurface, selectAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresets'));
+  ({
+    AUTO_SUPPORT_SECTIONS: autoSupportSections,
+    AUTO_SUPPORT_POLICY_SECTIONS: policySections,
+  } = await import('@/components/controls/autoSupport/autoSupportPanelTabs'));
 });
 
-/** The tabs that hold ordinary settings — everything but Presets and Debug. */
-const NORMAL_TAB_KEYS: AutoSupportTabKey[] = ['detection', 'distribution', 'density', 'stability', 'postProcessing'];
-
-/** Labels that only the Debug & Advanced tab may render. */
+/**
+ * Labels that belong to the Debug & Advanced surface. They are all inside the
+ * disclosure, so none of them may appear before it in the markup.
+ */
 const DEBUG_ONLY_MARKERS = [
   'Origin Colors',
   'No Brace',
@@ -81,14 +90,15 @@ const SIZING_DEBUG: SizingDebugInfo = {
 };
 
 const BODY_PROPS = {
-  onTabChange: () => {},
   setDraft: () => {},
   debugSimpleRender: false,
   onToggleDebugSimpleRender: () => {},
   sizingDebug: null,
   forestReport: null,
   onShowForestReport: () => {},
-} satisfies Omit<AutoSupportSettingsBodyProps, 'tab' | 'draft'>;
+  onCancel: () => {},
+  onApply: () => {},
+} satisfies Omit<AutoSupportSettingsBodyProps, 'draft'>;
 
 const FOREST_REPORT = {
   hostCount: 56,
@@ -97,7 +107,7 @@ const FOREST_REPORT = {
   trees: [{}, {}],
 } as unknown as ForestReport;
 
-function renderBody(tab: AutoSupportTabKey, diagnostics: { sizingDebug?: SizingDebugInfo } = {}): string {
+function renderBody(diagnostics: { sizingDebug?: SizingDebugInfo } = {}): string {
   // `createElement` rather than JSX so this stays a `.ts` file, which is the
   // glob the supports suite is run with.
   const markup = renderToStaticMarkup(
@@ -106,10 +116,9 @@ function renderBody(tab: AutoSupportTabKey, diagnostics: { sizingDebug?: SizingD
       { i18n },
       React.createElement(AutoSupportSettingsBody, {
         ...BODY_PROPS,
-        tab,
         draft: getSettings().autoSupport,
         sizingDebug: diagnostics.sizingDebug ?? null,
-        forestReport: tab === 'debug' ? FOREST_REPORT : null,
+        forestReport: FOREST_REPORT,
       }),
     ),
   );
@@ -117,60 +126,106 @@ function renderBody(tab: AutoSupportTabKey, diagnostics: { sizingDebug?: SizingD
   return markup.replace(/&amp;/g, '&');
 }
 
-test('the settings body renders every tab, and no debug control in a normal tab', () => {
-  const detection = renderBody('detection');
+test('the dialog renders every section, and no debug control outside the closed disclosure', () => {
+  const markup = renderBody({ sizingDebug: SIZING_DEBUG });
 
-  for (const entry of autoSupportTabs) {
-    const label = String(entry.label.message);
-    assert.ok(detection.includes(label), `tab row is missing "${label}"`);
+  for (const section of autoSupportSections) {
+    assert.ok(markup.includes(String(section.label.message)), `the dialog is missing the "${section.label.message}" section`);
+  }
+  for (const section of policySections) {
+    assert.ok(markup.includes(String(section.subtitle.message)), `the "${section.label.message}" card is missing its one-liner`);
   }
 
-  for (const tab of NORMAL_TAB_KEYS) {
-    const markup = renderBody(tab, { sizingDebug: SIZING_DEBUG });
-    for (const marker of DEBUG_ONLY_MARKERS) {
-      assert.ok(
-        !markup.includes(marker),
-        `"${marker}" renders in the ${tab} tab, which is not the Debug & Advanced tab`,
-      );
-    }
-  }
+  // Debug & Advanced is a `<details>` with no `open` attribute: closed by
+  // default, and every debug control is inside it.
+  const disclosureIndex = markup.indexOf('<details');
+  assert.ok(disclosureIndex > 0, 'the Debug & Advanced disclosure is not rendered');
+  assert.ok(!/<details[^>]*\sopen(=|>|\s)/.test(markup), 'the Debug & Advanced disclosure renders open');
 
-  // The Presets tab is a tab of its own, and never carries the debug surface.
-  const presetsTab = renderBody('presets', { sizingDebug: SIZING_DEBUG });
+  const policyMarkup = markup.slice(0, disclosureIndex);
   for (const marker of DEBUG_ONLY_MARKERS) {
-    assert.ok(!presetsTab.includes(marker), `"${marker}" renders in the Presets tab`);
+    assert.ok(
+      !policyMarkup.includes(marker),
+      `"${marker}" renders above the Debug & Advanced disclosure, in the policy surface`,
+    );
   }
 
-  // Every debug control — including the diagnostics — is in Debug & Advanced.
-  const debugTab = renderBody('debug', { sizingDebug: SIZING_DEBUG });
-  assert.ok(debugTab.includes('Origin Colors'));
-  assert.ok(debugTab.includes('No Brace'));
-  assert.ok(debugTab.includes('Simplified'));
-  assert.ok(debugTab.includes('Sizing Debug'));
-  assert.ok(debugTab.includes('Forest Report'));
-  assert.ok(debugTab.includes('56H 70L 12B'));
-  assert.ok(debugTab.includes('Model-Scale Sizing'));
-  assert.ok(debugTab.includes('Advanced (calibration)'));
-  assert.ok(debugTab.includes('Tip Fit Margin'));
-  assert.ok(debugTab.includes('measured'));
-  assert.ok(debugTab.includes('Reset to measured defaults'));
+  // Every debug control — including the diagnostics and the calibration fields —
+  // is inside the disclosure.
+  const disclosureMarkup = markup.slice(disclosureIndex);
+  assert.ok(disclosureMarkup.includes('Origin Colors'));
+  assert.ok(disclosureMarkup.includes('No Brace'));
+  assert.ok(disclosureMarkup.includes('Simplified'));
+  assert.ok(disclosureMarkup.includes('Sizing Debug'));
+  assert.ok(disclosureMarkup.includes('Forest Report'));
+  assert.ok(disclosureMarkup.includes('56H 70L 12B'));
+  assert.ok(disclosureMarkup.includes('Model-Scale Sizing'));
+  assert.ok(disclosureMarkup.includes('Advanced (calibration)'));
+  assert.ok(disclosureMarkup.includes('Tip Fit Margin'));
+  assert.ok(disclosureMarkup.includes('measured'));
+  assert.ok(disclosureMarkup.includes('Reset to measured defaults'));
   // The calibration warning states what breaks, not just that something might.
-  assert.ok(debugTab.includes('Calibration, not preferences.'));
+  assert.ok(disclosureMarkup.includes('Calibration, not preferences.'));
 });
 
-test('the Presets tab lists the built-ins first and offers the whole preset lifecycle', () => {
-  const markup = renderBody('presets');
+test('a numeric knob is a labelled field with its unit and a stepper, never a slider', () => {
+  const markup = renderBody();
+
+  // No slider survives anywhere in the dialog.
+  assert.ok(!markup.includes('type="range"'), 'a slider is still rendered');
+
+  // The label carries the unit, the way the material editor's fields do.
+  assert.ok(markup.includes('Min Island Size (mm²)'));
+  assert.ok(markup.includes('Self-Support Angle (°)'));
+  assert.ok(markup.includes('Coverage Target (%)'));
+  // The stepper is the field's own, and its two carets name the field.
+  assert.ok(markup.includes('aria-label="Increase Min Island Size (mm²)"'));
+  assert.ok(markup.includes('aria-label="Decrease Min Island Size (mm²)"'));
+
+  // A toggle is the pill the material editor's switches use, not a slider.
+  assert.ok(markup.includes('role="switch"'));
+  assert.ok(markup.includes('aria-checked="true"'));
+});
+
+test('the preset selector and the manager surface cover the whole preset lifecycle', () => {
+  const markup = renderBody();
+
+  // The selector sits above the fields, with the two actions that resolve the
+  // dirty state and the way into the collection.
+  assert.ok(markup.includes('Preset'));
+  assert.ok(markup.includes('Save'));
+  assert.ok(markup.includes('Revert'));
+  assert.ok(markup.includes('aria-label="Manage presets"'));
+  assert.ok(markup.indexOf('Manage presets') < markup.indexOf('Min Island Size'), 'the preset strip must sit above the fields');
+
+  // The manager is a surface of its own (a portal in the app), so it is rendered
+  // directly here.
+  const managerMarkup = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      { i18n },
+      React.createElement(AutoSupportPresetManagerSurface, {
+        draft: getSettings().autoSupport,
+        setDraft: () => {},
+        onRestoreFactoryPresets: () => {},
+      }),
+    ),
+  );
+
+  for (const column of ['Name', 'Tier', 'Status']) {
+    assert.ok(managerMarkup.includes(column), `the preset list is missing the "${column}" column`);
+  }
 
   const builtIns = getAutoSupportPresets().filter((preset) => preset.isBuiltIn);
   assert.deepEqual(builtIns.map((preset) => preset.id), ['light', 'medium', 'heavy']);
   for (const preset of builtIns) {
-    assert.ok(markup.includes(preset.name), `preset list is missing the built-in "${preset.name}"`);
+    assert.ok(managerMarkup.includes(preset.name), `preset list is missing the built-in "${preset.name}"`);
   }
   // Built-ins first: the list renders before the "New" control that follows it.
-  assert.ok(markup.indexOf('Light') < markup.indexOf('New'));
+  assert.ok(managerMarkup.indexOf('Light') < managerMarkup.indexOf('New'));
 
-  for (const action of ['New', 'Save', 'Revert', 'Rename', 'Duplicate', 'Delete', 'Restore factory presets', 'Export', 'Import']) {
-    assert.ok(markup.includes(action), `preset tab is missing the "${action}" action`);
+  for (const action of ['New', 'Save', 'Rename', 'Duplicate', 'Delete', 'Restore factory presets', 'Export', 'Import']) {
+    assert.ok(managerMarkup.includes(action), `the preset manager is missing the "${action}" action`);
   }
 });
 

@@ -1,22 +1,18 @@
 /**
- * The Auto Support settings panel, read as questions rather than as pipeline
+ * The Auto Support settings dialog, read as questions rather than as pipeline
  * phases.
  *
- * Every control lives in exactly one tab, and the tab is the question the user
- * is asking when they reach for it — what counts as a surface that needs
- * support, how supports scatter, how dense and thick they are, whether the part
- * stays put, what runs afterwards, which saved policy to use, or debugging.
+ * This module is the catalogue: the sections a control belongs to, the label and
+ * tooltip of every control, and the two derived tables the dialog renders from.
+ * It is the single place the control-to-section mapping is written down — move or
+ * add a control here, never by editing the dialog's JSX.
  *
- * This module is the single place that mapping is written down: the panel body
- * renders from these tables and `docs/dev/auto-supports.md` documents them, so
- * a control moved between tabs is one edit here instead of a hunt through JSX.
- *
- * Message descriptors are module scope on purpose: React Compiler renames
- * locals inside components before the Lingui macro derives a message id.
+ * It imports nothing from React and nothing from the store, which is what lets a
+ * component test read the same tables the dialog renders.
  */
+import type { CSSProperties } from 'react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import type { CSSProperties } from 'react';
 import {
   AUTO_SUPPORT_CONSTRAINTS,
   createDefaultAutoSupportSettings,
@@ -24,69 +20,89 @@ import {
   type NumericAutoSupportSettingKey,
 } from '@/supports/autoSupport/settings';
 
-/** The panel's inset card, shared by the floating panel and the settings body. */
+/** The panel's inset card, shared by the floating panel and the settings dialog. */
 export const AUTO_SUPPORT_SECTION_CARD: CSSProperties = {
   borderColor: 'var(--border-subtle)',
   background: 'var(--surface-1)',
 };
 
-/** Shown on the settings dialog's tab row. `presets` and `debug` are the last two. */
-export type AutoSupportTabKey =
+/**
+ * The dialog's sections, in reading order. `debug` is the last one and renders
+ * as a collapsed disclosure, so a user changing how supports are made never
+ * scrolls past a debug switch to reach the fields they came for.
+ */
+export type AutoSupportSectionKey =
   | 'detection'
   | 'distribution'
   | 'density'
   | 'stability'
   | 'postProcessing'
-  | 'presets'
   | 'debug';
 
-/** The tabs that hold settings, in row order. */
-export const AUTO_SUPPORT_TABS: ReadonlyArray<{
-  key: AutoSupportTabKey;
+export type AutoSupportSectionDef = {
+  key: AutoSupportSectionKey;
   label: MessageDescriptor;
+  /** The card's one-line description, under the uppercase header. */
+  subtitle: MessageDescriptor;
+  /** The long form of the subtitle, kept as the header's `title`. */
   hint: MessageDescriptor;
-}> = [
+};
+
+/** The sections that hold the ordinary run policy, in reading order. */
+const POLICY_SECTIONS: ReadonlyArray<AutoSupportSectionDef> = [
   {
     key: 'detection',
     label: msg`Detection`,
+    subtitle: msg`What needs support, and how close is too close`,
     hint: msg`What counts as a support-needing surface, and how tightly neighbouring detections merge`,
   },
   {
     key: 'distribution',
     label: msg`Distribution`,
+    subtitle: msg`Where contacts land, and how far members fan`,
     hint: msg`How a region's contacts scatter across it, and how far leaves fan out from a trunk`,
   },
   {
     key: 'density',
     label: msg`Density & Sizing`,
+    subtitle: msg`How many supports, and how thick`,
     hint: msg`How dense and how thick the supports are`,
   },
   {
     key: 'stability',
     label: msg`Stability`,
+    subtitle: msg`Held against toppling and peel`,
     hint: msg`How the part is held against toppling and peel — self-support angle, stabilization anchors and minima reinforcement`,
   },
   {
     key: 'postProcessing',
     label: msg`Post-processing`,
+    subtitle: msg`The passes after placement`,
     hint: msg`Passes that run after placement — how much one trunk may carry, and the coverage the gap-filler must reach`,
-  },
-  {
-    key: 'presets',
-    label: msg`Presets`,
-    hint: msg`Saved auto-support policies: pick one, tweak and save it, or share it as a file`,
-  },
-  {
-    key: 'debug',
-    label: msg`Debug & Advanced`,
-    hint: msg`Debug switches, run diagnostics, and the measured calibration constants behind sizing`,
   },
 ];
 
+/** The Debug & Advanced section — the disclosure, last in the dialog. */
+export const AUTO_SUPPORT_ADVANCED_SECTION: AutoSupportSectionDef = {
+  key: 'debug',
+  label: msg`Debug & Advanced`,
+  subtitle: msg`Debug switches, run diagnostics, calibration`,
+  hint: msg`Debug switches, run diagnostics, and the measured calibration constants behind sizing`,
+};
+
+/** Every section, in reading order — the policy cards, then the disclosure. */
+export const AUTO_SUPPORT_SECTIONS: ReadonlyArray<AutoSupportSectionDef> = [
+  ...POLICY_SECTIONS,
+  AUTO_SUPPORT_ADVANCED_SECTION,
+];
+
+/** The policy sections the dialog renders as field cards, in reading order. */
+export const AUTO_SUPPORT_POLICY_SECTIONS = POLICY_SECTIONS;
+
 export type KnobDef = {
   key: NumericAutoSupportSettingKey;
-  /** Which tab answers the question this knob belongs to. */
-  tab: AutoSupportTabKey;
+  /** Which section answers the question this knob belongs to. */
+  section: AutoSupportSectionKey;
   label: MessageDescriptor;
   min: number;
   max: number;
@@ -99,12 +115,12 @@ export type KnobDef = {
 
 export type ToggleDef = {
   key: BooleanAutoSupportSettingKey;
-  tab: AutoSupportTabKey;
+  section: AutoSupportSectionKey;
   label: MessageDescriptor;
   hint: MessageDescriptor;
 };
 
-/** The `autoSupport` block's boolean keys the panel exposes. */
+/** The `autoSupport` block's boolean keys the dialog exposes. */
 export type BooleanAutoSupportSettingKey =
   | 'enabled'
   | 'prioritizeIntersection'
@@ -125,27 +141,27 @@ export const ADVANCED_CALIBRATION_NUMERIC_KEYS = [
 
 const KNOBS: readonly KnobDef[] = [
   // Detection — what needs support.
-  { key: 'minIslandAreaMm2', tab: 'detection', label: msg`Min Island Size`, min: 0.01, max: 2, step: 0.01, unit: 'mm²', hint: msg`Skip detected areas smaller than this — tiny specks rarely need supports` },
-  { key: 'tipInfluenceRadiusMm', tab: 'detection', label: msg`Merge Radius`, min: 0.1, max: 10, step: 0.1, unit: 'mm', hint: msg`A candidate within this 3D distance of an existing support merges into it instead of starting a new trunk` },
+  { key: 'minIslandAreaMm2', section: 'detection', label: msg`Min Island Size`, min: 0.01, max: 2, step: 0.01, unit: 'mm²', hint: msg`Skip detected areas smaller than this — tiny specks rarely need supports` },
+  { key: 'tipInfluenceRadiusMm', section: 'detection', label: msg`Merge Radius`, min: 0.1, max: 10, step: 0.1, unit: 'mm', hint: msg`A candidate within this 3D distance of an existing support merges into it instead of starting a new trunk` },
   // Distribution — where contacts land and how members fan out.
-  { key: 'leafFanRadiusMm', tab: 'distribution', label: msg`Fan Reach`, min: 2, max: 15, step: 0.5, unit: 'mm', hint: msg`Max horizontal distance a fan-out leaf may span from a trunk shaft` },
-  { key: 'leafFanMaxAngleDeg', tab: 'distribution', label: msg`Fan Angle`, min: 20, max: 80, step: 5, unit: '°', hint: msg`Max angle from vertical for fan-out leaves` },
+  { key: 'leafFanRadiusMm', section: 'distribution', label: msg`Fan Reach`, min: 2, max: 15, step: 0.5, unit: 'mm', hint: msg`Max horizontal distance a fan-out leaf may span from a trunk shaft` },
+  { key: 'leafFanMaxAngleDeg', section: 'distribution', label: msg`Fan Angle`, min: 20, max: 80, step: 5, unit: '°', hint: msg`Max angle from vertical for fan-out leaves` },
   // Density & Sizing — how many and how thick.
-  { key: 'areaPerSupportMm2', tab: 'density', label: msg`Support Density`, min: 1, max: 30, step: 0.5, unit: 'mm²', hint: msg`Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)` },
-  { key: 'sizeScale', tab: 'density', label: msg`Support Size`, min: 0.5, max: 2, step: 0.05, unit: '×', hint: msg`Master multiplier over the preset sizing bands — thicker or thinner everywhere` },
-  { key: 'gridAreaThresholdMm2', tab: 'density', label: msg`Grid Threshold`, min: 5, max: 200, step: 5, unit: 'mm²', hint: msg`Flat regions at/above this area get a full grid; smaller regions get a single support` },
-  { key: 'flatDensityBoost', tab: 'density', label: msg`Flat Boost`, min: 0.5, max: 1, step: 0.05, unit: '×', hint: msg`Grid spacing on flat ceilings — lower = denser supports on anchor surfaces (0.7 = ~2× the supports)` },
-  { key: 'slopeRelaxFactor', tab: 'density', label: msg`Slope Relax`, min: 1, max: 2, step: 0.1, unit: '×', hint: msg`Grid spacing on slopes at the self-support angle — higher = sparser` },
-  { key: 'suctionAreaExponent', tab: 'density', label: msg`Suction Scale`, min: 0, max: 0.4, step: 0.05, unit: '', hint: msg`How strongly flat density grows with region area — large shallow ceilings carry more peel. 0 = off` },
+  { key: 'areaPerSupportMm2', section: 'density', label: msg`Support Density`, min: 1, max: 30, step: 0.5, unit: 'mm²', hint: msg`Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)` },
+  { key: 'sizeScale', section: 'density', label: msg`Support Size`, min: 0.5, max: 2, step: 0.05, unit: '×', hint: msg`Master multiplier over the preset sizing bands — thicker or thinner everywhere` },
+  { key: 'gridAreaThresholdMm2', section: 'density', label: msg`Grid Threshold`, min: 5, max: 200, step: 5, unit: 'mm²', hint: msg`Flat regions at/above this area get a full grid; smaller regions get a single support` },
+  { key: 'flatDensityBoost', section: 'density', label: msg`Flat Boost`, min: 0.5, max: 1, step: 0.05, unit: '×', hint: msg`Grid spacing on flat ceilings — lower = denser supports on anchor surfaces (0.7 = ~2× the supports)` },
+  { key: 'slopeRelaxFactor', section: 'density', label: msg`Slope Relax`, min: 1, max: 2, step: 0.1, unit: '×', hint: msg`Grid spacing on slopes at the self-support angle — higher = sparser` },
+  { key: 'suctionAreaExponent', section: 'density', label: msg`Suction Scale`, min: 0, max: 0.4, step: 0.05, unit: '', hint: msg`How strongly flat density grows with region area — large shallow ceilings carry more peel. 0 = off` },
   // Stability — will it stay put, and stay straight.
-  { key: 'overhangSelfSupportAngleDeg', tab: 'stability', label: msg`Self-Support Angle`, min: 20, max: 75, step: 5, unit: '°', hint: msg`Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts.` },
+  { key: 'overhangSelfSupportAngleDeg', section: 'stability', label: msg`Self-Support Angle`, min: 20, max: 75, step: 5, unit: '°', hint: msg`Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts.` },
   // Post-processing — the passes after placement.
-  { key: 'maxAttachmentsPerTrunk', tab: 'postProcessing', label: msg`Branches per Column`, min: 2, max: 50, step: 1, unit: '', hint: msg`Max branches + leaves one trunk may carry before new trunks are started — the cap on chunk consolidation` },
-  { key: 'coverageTargetPercent', tab: 'postProcessing', label: msg`Coverage Target`, min: 75, max: 100, step: 5, unit: '%', hint: msg`How much of each region's footprint the grid must cover before gap-filling stops` },
+  { key: 'maxAttachmentsPerTrunk', section: 'postProcessing', label: msg`Branches per Column`, min: 2, max: 50, step: 1, unit: '', hint: msg`Max branches + leaves one trunk may carry before new trunks are started — the cap on chunk consolidation` },
+  { key: 'coverageTargetPercent', section: 'postProcessing', label: msg`Coverage Target`, min: 75, max: 100, step: 5, unit: '%', hint: msg`How much of each region's footprint the grid must cover before gap-filling stops` },
 ];
 
 /**
- * The Advanced (calibration) sliders. Bounds and the measured default both come
+ * The Advanced (calibration) fields. Bounds and the measured default both come
  * from `AUTO_SUPPORT_CONSTRAINTS`, so the number the engine was tuned with and
  * the number the Reset button restores cannot drift apart.
  */
@@ -165,7 +181,7 @@ export const ADVANCED_CALIBRATION_KNOBS: readonly KnobDef[] = CALIBRATION_KNOB_S
   const constraint = AUTO_SUPPORT_CONSTRAINTS[knob.key];
   return {
     ...knob,
-    tab: 'debug' as const,
+    section: 'debug' as const,
     min: constraint.min,
     max: constraint.max,
     step: constraint.step,
@@ -175,12 +191,12 @@ export const ADVANCED_CALIBRATION_KNOBS: readonly KnobDef[] = CALIBRATION_KNOB_S
 });
 
 const TOGGLES: readonly ToggleDef[] = [
-  { key: 'enabled', tab: 'detection', label: msg`Enabled`, hint: msg`Generate supports automatically on scan` },
-  { key: 'prioritizeIntersection', tab: 'detection', label: msg`Prioritize Dual`, hint: msg`Islands found by BOTH the slice and mesh scans are placed first (they are the most certain)` },
-  { key: 'stabilizationEnabled', tab: 'stability', label: msg`Stabilization Anchors`, hint: msg`Add contacts along the edge or corner a pose bears on, so a leaning part is held against toppling and peel (default on)` },
-  { key: 'minimaReinforcementEnabled', tab: 'stability', label: msg`Minima Reinforcement`, hint: msg`Ring each mesh minima with contacts on its own flank, so a section starts on a base instead of a needle (default on)` },
-  { key: 'debugSupportOriginColors', tab: 'debug', label: msg`Origin Colors`, hint: msg`Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple), reinforcement (teal)` },
-  { key: 'debugSkipAutoBracing', tab: 'debug', label: msg`No Brace`, hint: msg`Debug: skip automatic bracing for this run` },
+  { key: 'enabled', section: 'detection', label: msg`Enabled`, hint: msg`Generate supports automatically on scan` },
+  { key: 'prioritizeIntersection', section: 'detection', label: msg`Prioritize Dual`, hint: msg`Islands found by BOTH the slice and mesh scans are placed first (they are the most certain)` },
+  { key: 'stabilizationEnabled', section: 'stability', label: msg`Stabilization Anchors`, hint: msg`Add contacts along the edge or corner a pose bears on, so a leaning part is held against toppling and peel (default on)` },
+  { key: 'minimaReinforcementEnabled', section: 'stability', label: msg`Minima Reinforcement`, hint: msg`Ring each mesh minima with contacts on its own flank, so a section starts on a base instead of a needle (default on)` },
+  { key: 'debugSupportOriginColors', section: 'debug', label: msg`Origin Colors`, hint: msg`Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple), reinforcement (teal)` },
+  { key: 'debugSkipAutoBracing', section: 'debug', label: msg`No Brace`, hint: msg`Debug: skip automatic bracing for this run` },
 ];
 
 /**
@@ -190,7 +206,7 @@ const TOGGLES: readonly ToggleDef[] = [
  */
 export const ADVANCED_CALIBRATION_TOGGLE: ToggleDef = {
   key: 'modelScaleEnabled',
-  tab: 'debug',
+  section: 'debug',
   label: msg`Model-Scale Sizing`,
   hint: msg`Master switch for the run-level size, load and height factors. Off pins all three to ×1, so sizing is the active band plus the local terms alone (measured default: on).`,
 };
@@ -207,17 +223,17 @@ export function measuredCalibrationDefaults(): Partial<AutoSupportSettings> {
   };
 }
 
-/** The controls of one tab, in table order, with every tab key present. */
-function groupByTab<T extends { tab: AutoSupportTabKey }>(items: readonly T[]): Record<AutoSupportTabKey, T[]> {
+/** The controls of one section, in table order, with every section key present. */
+function groupBySection<T extends { section: AutoSupportSectionKey }>(items: readonly T[]): Record<AutoSupportSectionKey, T[]> {
   const grouped = Object.fromEntries(
-    AUTO_SUPPORT_TABS.map((tab) => [tab.key, [] as T[]]),
-  ) as Record<AutoSupportTabKey, T[]>;
-  for (const item of items) grouped[item.tab].push(item);
+    AUTO_SUPPORT_SECTIONS.map((section) => [section.key, [] as T[]]),
+  ) as Record<AutoSupportSectionKey, T[]>;
+  for (const item of items) grouped[item.section].push(item);
   return grouped;
 }
 
-export const KNOBS_BY_TAB = groupByTab(KNOBS);
-export const TOGGLES_BY_TAB = groupByTab(TOGGLES);
+export const KNOBS_BY_SECTION = groupBySection(KNOBS);
+export const TOGGLES_BY_SECTION = groupBySection(TOGGLES);
 
 /**
  * The visible warning over the Advanced calibration group. It says what breaks,
@@ -226,9 +242,44 @@ export const TOGGLES_BY_TAB = groupByTab(TOGGLES);
  */
 export const ADVANCED_CALIBRATION_WARNING = msg`Calibration, not preferences. These six values were measured against the printed result, and they back the fit guarantee: a tip fits the feature it lands on, a hosted member is not a needle beside its host, and run-level factors only thicken (never thin) a support below its band. Change one and that guarantee no longer holds — reset them to the measured defaults before reporting a sizing problem.`;
 
-/** Tooltips for the tier row, by built-in id (the built-ins the store ships). */
+/** The Advanced (calibration) card's header, inside the Debug & Advanced disclosure. */
+export const ADVANCED_CALIBRATION_HEADING = msg`Advanced (calibration)`;
+
+/** The diagnostics card's header — the debug switches and the last run's report. */
+export const DEBUG_DIAGNOSTICS_HEADING = msg`Diagnostics`;
+
+/** Tooltips for the tier row, by built-in preset id (the built-ins the store ships). */
 export const TIER_HINTS: Record<string, MessageDescriptor> = {
   light: msg`Sparse supports — the detail sizing band`,
   medium: msg`Balanced supports — the structure sizing band`,
   heavy: msg`Dense supports — the anchor sizing band`,
 };
+
+/** The sizing band a run builds every shaft, tip and root from. */
+export type AutoSupportSizingTier = AutoSupportSettings['sizingPreset'];
+
+/**
+ * The tier segmented control's options. The three bands are the same three the
+ * built-in presets carry (`light`/`medium`/`heavy`), so the tooltips are the
+ * tier row's own text rather than a second copy of it.
+ */
+export const SIZING_TIER_OPTIONS: ReadonlyArray<{
+  value: AutoSupportSizingTier;
+  label: MessageDescriptor;
+  hint: MessageDescriptor;
+}> = [
+  { value: 'detail', label: msg`Detail`, hint: TIER_HINTS.light },
+  { value: 'structure', label: msg`Structure`, hint: TIER_HINTS.medium },
+  { value: 'anchor', label: msg`Anchor`, hint: TIER_HINTS.heavy },
+];
+
+/** The segmented control's own label and tooltip. */
+export const SIZING_TIER_FIELD = {
+  label: msg`Sizing Tier`,
+  hint: msg`The band every shaft, tip and root is sized from. The model-scale factors and Support Size ride on top of it.`,
+} as const;
+
+/** The tier of a stored preset, for the preset list's Tier column. */
+export const SIZING_TIER_LABELS: Record<AutoSupportSizingTier, MessageDescriptor> = Object.fromEntries(
+  SIZING_TIER_OPTIONS.map((option) => [option.value, option.label]),
+) as Record<AutoSupportSizingTier, MessageDescriptor>;

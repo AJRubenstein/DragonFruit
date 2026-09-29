@@ -4,22 +4,27 @@ The gear button on the **Auto Supports** card opens the settings dialog. It is
 organized by the question you are asking, so you do not need to know how the
 placement pipeline is built:
 
-| Tab | Answers |
+| Section | Answers |
 | --- | --- |
 | **Detection** | What counts as a surface needing support, and how close two detections may be before they merge |
 | **Distribution** | Where contacts land on a region, and how far a leaf may fan out from its trunk |
-| **Density & Sizing** | How many supports, and how thick |
+| **Density & Sizing** | How many supports, how thick, and which sizing band they are built from |
 | **Stability** | How the part is held against toppling and peel |
 | **Post-processing** | What happens after placement: how much one trunk may carry, and how completely gaps are filled |
-| **Presets** | Which saved policy the run follows — see below |
 | **Debug & Advanced** | Debug switches, the last run's diagnostics, and the measured calibration values |
 
-Every control has a tooltip; hover the label or the control itself.
+Every section is a card of fields on one scrolling page — there is no tab to
+switch to, and the whole policy fits without one. Every field has a label, a ⓘ
+with its help text, and its own tooltip on hover. Numbers are typed or stepped
+with the field's own carets rather than dragged on a slider, and each one carries
+its unit in the label (`Min Island Size (mm²)`, `Fan Angle (°)`, `Coverage Target
+(%)`). A switch is a pill; the sizing band is the three-way **Detail /
+Structure / Anchor** control at the top of **Density & Sizing**.
 
-**Edits are staged.** Changing a knob or toggle in the dialog does nothing until
-you press **Apply**; **Cancel** discards the edits. Selecting a *preset* is the
-exception, and it is deliberate: picking a preset is choosing a policy for the
-next run, so it applies immediately.
+**Edits are staged.** Changing a field or a switch in the dialog does nothing
+until you press **Apply**; **Cancel** discards the edits. Selecting a *preset* is
+the exception, and it is deliberate: picking a preset is choosing a policy for
+the next run, so it applies immediately.
 
 ## Presets
 
@@ -32,22 +37,31 @@ the app:
 - **Heavy** — dense supports, anchor sizing.
 
 They are also the three buttons on the Auto Supports card, so the quick-select
-and the Presets tab are the same policy under the same names.
+and the preset selector are the same policy under the same names.
 
-In the Presets tab you can:
+The selector sits at the top of the dialog and shows the preset your settings
+are. Beside it:
+
+- **Save**: overwrite the selected preset with the settings shown here.
+- **Revert**: reload the selected preset, discarding your edits.
+- **Manage presets**: open the collection.
+
+When your settings no longer match the selected preset, the strip says so.
+Editing a field never rewrites the preset by itself.
+
+### Managing presets
+
+**Manage presets** opens the collection as its own panel, with a **Name**, **Tier**
+and **Status** column per preset. There you can:
 
 - **Select** a preset: apply it to the current settings.
 - **New**: save the current settings as a new preset and select it.
-- **Save**: overwrite the selected preset with the current settings.
-- **Revert**: reload the selected preset, discarding your edits.
-- **Rename** and **Duplicate**, and **Delete** a preset you made.
+- **Rename** (or double-click a name) and **Duplicate**.
+- **Delete** a preset you made — the rightmost action in the bar.
 - **Restore factory presets**: put the three built-ins back to their factory
-  settings. Your own presets and your current settings are left alone.
+  settings. Your own presets and your current settings are left alone. The
+  dialog's footer carries the same action.
 - **Export** the selected preset to a JSON file, and **Import** one from a file.
-
-When your settings no longer match the selected preset, the tab says so and
-offers **Save** and **Revert**. Editing a knob never rewrites the preset by
-itself.
 
 The built-in presets cannot be renamed or deleted: their names are translated and
 the file format is defined in terms of them. They *can* be saved over, which is
@@ -66,9 +80,10 @@ does not change the other. See [Support Placement](../workflows/support-placemen
 
 ## Advanced (calibration)
 
-The **Debug & Advanced** tab ends with the calibration group. These six values
-are not preferences — they were measured against the printed result, and they
-back the fit guarantee:
+**Debug & Advanced** is the closed section at the bottom of the dialog — click it
+to open it. It holds the debug switches and the last run's diagnostics, and it
+ends with the calibration group. These six values are not preferences — they were
+measured against the printed result, and they back the fit guarantee:
 
 !!! warning "Calibration, not preferences"
     These six values were measured against the printed result, and they back the
@@ -77,10 +92,10 @@ back the fit guarantee:
     support below its band. Change one and that guarantee no longer holds — reset
     them to the measured defaults before reporting a sizing problem.
 
-Each slider shows the measured value it ships with, so you can always tell what
-you changed. **Reset to measured defaults** puts all six back. The defaults come
-from the same table the engine is built with, so the number shown is the number
-the engine was tuned with.
+Each field shows the measured value it ships with underneath it, so you can
+always tell what you changed. **Reset to measured defaults** puts all six back.
+The defaults come from the same table the engine is built with, so the number
+shown is the number the engine was tuned with.
 
 ## Related
 

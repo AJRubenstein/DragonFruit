@@ -125,7 +125,13 @@ export function FieldTagChip({ tag, color, compact = false }: FieldTagChipProps)
 
 // ─── LabeledInput ─────────────────────────────────────────────────────────────
 
-function FieldHelpTooltip({ label, help }: { label: string; help: string }) {
+/**
+ * The ⓘ affordance a labelled field puts beside its label: the field's help
+ * text, on a hover/focus-only popover. Exported so a control that is not one of
+ * the labelled inputs below (a segmented row) carries the same affordance
+ * instead of a second one.
+ */
+export function FieldHelpTooltip({ label, help }: { label: string; help: string }) {
     const [hovered, setHovered] = React.useState(false);
 
     return (
@@ -216,10 +222,13 @@ type LabeledNumberInputProps = {
     value: number;
     step?: number;
     precision?: number;
+    /** Native tooltip on the input itself, for callers that show the same help
+     *  text as a `title` as well as through the ⓘ affordance. */
+    title?: string;
     onChange: (value: number) => void;
 };
 
-export function LabeledNumberInput({ label, helpText, tag, color, disabled = false, value, step: propStep, precision, onChange }: LabeledNumberInputProps) {
+export function LabeledNumberInput({ label, helpText, tag, color, disabled = false, value, step: propStep, precision, title, onChange }: LabeledNumberInputProps) {
     const safeValue = clampNonNegativeNumber(value);
     const formatVal = React.useCallback((val: number) => {
         if (precision !== undefined) return val.toFixed(precision);
@@ -278,6 +287,7 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
                     type="text"
                     disabled={disabled}
                     value={localValue}
+                    title={title}
                     onChange={(event) => {
                         if (event.target.value.includes('-')) return;
                         setLocalValue(event.target.value);
@@ -475,9 +485,11 @@ type LabeledToggleInputProps = {
     checked: boolean;
     onChange: (value: boolean) => void;
     disabled?: boolean;
+    /** Native tooltip on the switch itself, beside the ⓘ affordance. */
+    title?: string;
 };
 
-export function LabeledToggleInput({ label, helpText, checked, onChange, disabled = false }: LabeledToggleInputProps) {
+export function LabeledToggleInput({ label, helpText, checked, onChange, disabled = false, title }: LabeledToggleInputProps) {
     return (
         <label className="space-y-1 block">
             <span className="ui-label font-medium inline-flex items-center gap-1.5">
@@ -488,6 +500,7 @@ export function LabeledToggleInput({ label, helpText, checked, onChange, disable
                 type="button"
                 role="switch"
                 aria-checked={checked}
+                title={title}
                 onClick={() => {
                     if (disabled) return;
                     onChange(!checked);

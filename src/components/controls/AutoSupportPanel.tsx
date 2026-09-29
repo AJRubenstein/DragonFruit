@@ -1,11 +1,13 @@
 "use client";
 
 import React from 'react';
-import { Settings } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Settings, Settings2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { forestReportToText, runAutoPlaceInWorker } from '@/supports/autoSupport';
@@ -23,8 +25,8 @@ import { getSnapshot, setSnapshot } from '@/supports/state';
 import { knotHostId, coneKnotHostType, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import type { Knot } from '@/supports/types';
 import { AutoSupportSettingsBody } from './autoSupport/AutoSupportSettingsBody';
-import { selectAutoSupportPreset } from './autoSupport/AutoSupportPresetsTab';
-import { AUTO_SUPPORT_SECTION_CARD, TIER_HINTS, type AutoSupportTabKey } from './autoSupport/autoSupportPanelTabs';
+import { selectAutoSupportPreset } from './autoSupport/AutoSupportPresets';
+import { AUTO_SUPPORT_SECTION_CARD, TIER_HINTS } from './autoSupport/autoSupportPanelTabs';
 /** Set to true while auto-support is busy (scanning or placing).
  *  Page-level overlay reads this to show the "Generating Supports"
  *  full-screen modal, matching the native island-scan modal style. */
@@ -87,7 +89,6 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
-  const [settingsTab, setSettingsTab] = React.useState<AutoSupportTabKey>('detection');
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
   const [showForestReport, setShowForestReport] = React.useState(false);
@@ -109,9 +110,12 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
 
   const openSettings = React.useCallback(() => {
     setDraft(getSettings().autoSupport);
-    setSettingsTab('detection');
     setShowSettings(true);
   }, []);
+
+  const closeSettings = React.useCallback(() => setShowSettings(false), []);
+  // The dialog is the panel's own overlay, so it registers for Escape itself.
+  useEscapeToClose(showSettings, closeSettings);
 
   const applySettings = React.useCallback(() => {
     updateAutoSupportSettings(draft);
@@ -500,53 +504,66 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
         )}
       </StructuredDialogModal>
 
-      <StructuredDialogModal
-        open={showSettings}
-        ariaLabel={_(msg`Auto-support settings`)}
-        title={_(msg`Auto Supports (Beta) Settings`)}
-        subtitle={_(msg`Detected surfaces, density and sizing, stability, and the saved presets a run follows`)}
-        iconTone="neutral"
-        maxWidthClassName="max-w-3xl"
-        onClose={() => setShowSettings(false)}
-        onBackdropClick={() => setShowSettings(false)}
-        actions={
-          <>
-            <button
-              type="button"
-              onClick={() => setShowSettings(false)}
-              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
-              title={_(msg`Close without applying the edits made in this dialog`)}
-            >
-              {_(msg`Cancel`)}
-            </button>
-            <button
-              type="button"
-              onClick={applySettings}
-              title={_(msg`Write the edits made in this dialog to the auto-support settings`)}
-              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
-              style={{
-                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
-                color: 'var(--accent)',
-              }}
-            >
-              {_(msg`Apply`)}
-            </button>
-          </>
-        }
-      >
-        <AutoSupportSettingsBody
-          tab={settingsTab}
-          onTabChange={setSettingsTab}
-          draft={draft}
-          setDraft={setDraft}
-          debugSimpleRender={debugSimpleRender}
-          onToggleDebugSimpleRender={() => updateDebugSimpleSupportRender(!debugSimpleRender)}
-          sizingDebug={sizingDebug}
-          forestReport={forestReport}
-          onShowForestReport={() => setShowForestReport(true)}
-        />
-      </StructuredDialogModal>
+      {showSettings && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/58 backdrop-blur-sm p-5 ui-modal-backdrop-enter"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeSettings();
+          }}
+        >
+          <div
+            className="w-full max-w-[1120px] h-full flex flex-col rounded-xl border shadow-2xl overflow-hidden ui-modal-panel-enter"
+            style={{ background: 'var(--surface-0)', borderColor: 'var(--border-strong)' }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={_(msg`Auto-support settings`)}
+          >
+            <div className="flex items-center justify-between gap-4 px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
+                  style={{
+                    borderColor: 'var(--border-subtle)',
+                    background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent), var(--surface-1) 84%), color-mix(in srgb, var(--accent-secondary), var(--surface-1) 90%))',
+                  }}
+                >
+                  <Settings2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold" style={{ color: 'var(--text-strong)' }}>
+                    {_(msg`Auto Supports (Beta) Settings`)}
+                  </h2>
+                  <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+                    {_(msg`Detected surfaces, density and sizing, stability, and the saved presets a run follows`)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeSettings}
+                className="ui-button ui-button-secondary inline-flex h-8 w-8 shrink-0 items-center justify-center leading-none !p-0"
+                aria-label={_(msg`Close dialog`)}
+                title={_(msg`Close without applying the edits made in this dialog`)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <AutoSupportSettingsBody
+              draft={draft}
+              setDraft={setDraft}
+              debugSimpleRender={debugSimpleRender}
+              onToggleDebugSimpleRender={() => updateDebugSimpleSupportRender(!debugSimpleRender)}
+              sizingDebug={sizingDebug}
+              forestReport={forestReport}
+              onShowForestReport={() => setShowForestReport(true)}
+              onCancel={closeSettings}
+              onApply={applySettings}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
 
       <StructuredDialogModal
         open={showReplaceDialog}

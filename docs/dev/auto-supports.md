@@ -419,29 +419,45 @@ Every run logs where its time went, one line plus a detail line:
 
 `settings.ts` declares roughly twenty knobs with `AUTO_SUPPORT_CONSTRAINTS` giving each a min/max/step/default — including two debug switches (`debugSupportOriginColors`, `debugSkipAutoBracing`, the latter for faster iteration). Use `normalizeAutoSupportSettings` / `applyAutoSupportSettingsPatch` rather than building the object by hand.
 
-### The settings panel, by question
+### The settings dialog, by question
 
-The panel is organized by the question a user is asking, not by pipeline phase, and the tabs are frozen in this order: `Detection` — `Distribution` — `Density & Sizing` — `Stability` — `Post-processing` — `Presets` — `Debug & Advanced`. Three files hold that contract:
+The dialog is organized by the question a user is asking, not by pipeline phase. It is **one scrolling surface** — there is no tab row and no rail — with the policy sections as field cards in reading order: `Detection` — `Distribution` — `Density & Sizing` — `Stability` — `Post-processing`, and `Debug & Advanced` last as a **closed disclosure**. Compact fields are what make that possible: with a labelled input per knob instead of a slider, the whole policy fits in one scroll, so a second navigation surface would only be another way to reach something already on screen. Three files hold the contract:
 
-- `src/components/controls/AutoSupportPanel.tsx` is the shell: the run button, the island counts, the density tier row, and the dialogs.
-- `src/components/controls/autoSupport/AutoSupportSettingsBody.tsx` is the dialog body — the tab row and the seven panels. It is deliberately store-free: it takes the draft it edits plus the last run's diagnostics as props, which is also what makes it testable without a DOM.
-- `src/components/controls/autoSupport/autoSupportPanelTabs.ts` is the catalogue: `AUTO_SUPPORT_TABS`, `KNOBS_BY_TAB` and `TOGGLES_BY_TAB` are the single place the control-to-tab mapping is written down, and `measuredCalibrationDefaults()` is the Advanced group's Reset. Move or add a control there, never by editing a tab's JSX.
+- `src/components/controls/AutoSupportPanel.tsx` is the shell: the run button, the island counts, the density tier row, and the dialog's chrome (backdrop, panel, header, Escape registration).
+- `src/components/controls/autoSupport/AutoSupportSettingsBody.tsx` is the dialog body — the preset strip, the field cards, the disclosure and the footer. It is deliberately store-free: it takes the draft it edits plus the last run's diagnostics as props, which is also what makes it testable without a DOM. Its only store reads are the preset strip's and the footer's restore action.
+- `src/components/controls/autoSupport/autoSupportPanelTabs.ts` is the catalogue: `AUTO_SUPPORT_SECTIONS` (and `AUTO_SUPPORT_POLICY_SECTIONS` for the cards, `AUTO_SUPPORT_ADVANCED_SECTION` for the disclosure), plus `KNOBS_BY_SECTION` and `TOGGLES_BY_SECTION`, are the single place the control-to-section mapping is written down, and `measuredCalibrationDefaults()` is the calibration Reset. Move or add a control there, never by editing the body's JSX.
 
-| Tab | The question | Settings it owns |
+#### The field idiom
+
+Every control is a field of the same shape, the one the material editor's cards use:
+
+- a card per section, with an **uppercase header** (`ui-meta font-semibold uppercase tracking-wide`) carrying the long tooltip as its `title`, and a one-line description under it;
+- a **label + ⓘ row** — the ⓘ is `FieldHelpTooltip`, and the same help text is also the field's own `title`;
+- a **2-column grid of full-width fields**, so a section's controls read as a block;
+- **no sliders anywhere**. A numeric knob is `LabeledNumberInput` (the material editor's stepper field, up/down carets), with its unit in the label — `Min Island Size (mm²)`, `Fan Angle (°)`, `Support Size (×)`; a boolean is `LabeledToggleInput` (the pill switch); the enum knob `sizingPreset` is the three-way segmented control `SIZING_TIER_OPTIONS` renders, the shape the Settings modal uses for `Off / Line / Solid`;
+- the panel's own clamp: `AUTO_SUPPORT_CONSTRAINTS` is what the store enforces on write, but the field offers the range the slider used to, rounded to the decimals its step implies, so a typed number cannot land somewhere the dialog would never have offered.
+
+| Section | The question | Settings it owns |
 | --- | --- | --- |
 | Detection | what needs support, and how tightly detections merge | `enabled`, `prioritizeIntersection`, `minIslandAreaMm2`, `tipInfluenceRadiusMm` |
 | Distribution | where a region's contacts land, and how far members fan from a trunk | `leafFanRadiusMm`, `leafFanMaxAngleDeg` |
-| Density & Sizing | how many, and how thick | `areaPerSupportMm2`, `sizeScale`, `gridAreaThresholdMm2`, `flatDensityBoost`, `slopeRelaxFactor`, `suctionAreaExponent` |
+| Density & Sizing | how many, and how thick | `sizingPreset`, `areaPerSupportMm2`, `sizeScale`, `gridAreaThresholdMm2`, `flatDensityBoost`, `slopeRelaxFactor`, `suctionAreaExponent` |
 | Stability | will the part stay put and stay straight | `overhangSelfSupportAngleDeg`, `stabilizationEnabled`, `minimaReinforcementEnabled` |
 | Post-processing | the passes after placement | `maxAttachmentsPerTrunk` (which also caps chunk consolidation), `coverageTargetPercent` |
-| Presets | which saved policy the next run follows | the whole `autoSupport` block, through the preset store |
 | Debug & Advanced | debug switches, run diagnostics, calibration | `debugSupportOriginColors`, `debugSkipAutoBracing`, `debugSimpleSupportRender` (a top-level `SupportSettings` key, not under `autoSupport`, toggled through `updateDebugSimpleSupportRender`), and the six calibration keys |
 
-`Debug & Advanced` holds every debug switch and every diagnostic — the Sizing Debug expander and the Forest Report button live there, not in the panel body — so nothing debug sits in a tab a user reaches for to change how supports are made. Its `Advanced (calibration)` group carries a visible warning (`ADVANCED_CALIBRATION_WARNING`), the six measured constants as `ADVANCED_CALIBRATION_KNOBS` plus `ADVANCED_CALIBRATION_TOGGLE`, each with its measured default shown, and one action that resets them through `measuredCalibrationDefaults()` — the values come from `AUTO_SUPPORT_CONSTRAINTS`, so the documented measurement and the Reset button cannot drift apart.
+`Debug & Advanced` holds every debug switch and every diagnostic — the Sizing Debug expander and the Forest Report button live there, not in the policy cards — so nothing debug sits between a user and the fields they came for. It is a `<details>` with no `open` attribute: closed on every open of the dialog, and its contents stay in the markup either way (which is what the panel test asserts against). Inside it, the `Diagnostics` card holds the debug switches and the last run's report, and the `Advanced (calibration)` card carries the visible warning (`ADVANCED_CALIBRATION_WARNING`), the six measured constants as `ADVANCED_CALIBRATION_KNOBS` plus `ADVANCED_CALIBRATION_TOGGLE`, each field showing its measured default underneath, and one action that resets them through `measuredCalibrationDefaults()` — the values come from `AUTO_SUPPORT_CONSTRAINTS`, so the documented measurement and the Reset button cannot drift apart.
+
+#### React Compiler and the store getters
+
+The store getters that take no argument (`getActiveAutoSupportPresetId`, `isAutoSupportPresetDirty`) **must be read through `useSyncExternalStore`**, never called straight from render: React Compiler treats a bare call to an imported function as pure and evaluates it once, which freezes the value at whatever it was when the component mounted. That is a frozen preset name in the selector and a dirty strip that never clears — and it looks like a store bug. The settings snapshot the flag depends on needs its own subscription beside it, since a knob edit is what changes the answer.
 
 ### Presets are the run policy, and a separate system from Support Studio
 
-The `Presets` tab is the UI for `src/supports/Settings/autoSupportPresets.ts` (see [Auto-Support Presets](auto-support-presets.md)): the panel's tier row, `AutoSupportPresetsTab`, and the store all go through `setActiveAutoSupportPreset`, so the tier a button highlights is the store's active id and not a match against the live block. Selecting applies the whole block immediately — that is the store's contract — and the applied block is copied into the dialog's draft so the other tabs show it; the rest of the dialog stays draft-until-`Apply`.
+The preset UI is the UI for `src/supports/Settings/autoSupportPresets.ts` (see [Auto-Support Presets](auto-support-presets.md)), in `src/components/controls/autoSupport/AutoSupportPresets.tsx`. Two surfaces, one store:
+
+- `AutoSupportPresetSelector` is the strip at the top of the dialog — a `SelectDropdown` of the collection plus `Save`, `Revert` and the manage button, following the LUT curve editor's selector shape (`LutCurveSelector`). The dropdown applies a preset on select, which is the store's contract; `Save` writes the dialog's draft into the active preset, so it captures edits staged in the fields too.
+- `AutoSupportPresetManagerModal` is the collection as a sub-modal over the dialog (the material editor's shape: a list with `Name` / `Tier` / `Status` columns, inline rename, and an action bar whose only destructive action sits alone on the right). Its list, the selector and the panel's tier row all go through `setActiveAutoSupportPreset`, so the tier a button highlights is the store's active id and not a match against the live block. Selecting applies the whole block immediately, and the applied block is copied into the dialog's draft so the fields show it; the rest of the dialog stays draft-until-`Apply`.
 
 Support Studio's presets (`src/supports/Settings/presets.ts`) are a **different system**: they describe how a manually placed support is built and exclude `autoSupport` entirely. Neither store reads the other, and the panel must not present one as a lifecycle stage of the other.
 
