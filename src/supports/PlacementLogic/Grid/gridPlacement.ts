@@ -646,19 +646,26 @@ function selectAttachmentDecision(args: {
             // whose shaft holds 45 degrees wins outright; otherwise the
             // steepest built shaft below takes the fallback.
             perfMark('grid:branch-build');
-            const { branch, supportData } = buildBranchData({
+            const bandShaftMm = settings.shaft.diameterMm;
+            const hostDiameterMm = getHostDiameterMmFromKnot(knot, settings);
+            const flooredShaftMm = memberShaftDiameterMm(bandShaftMm, hostDiameterMm);
+            const buildAt = (shaftMm: number) => buildBranchData({
                 tipPos,
                 tipNormal,
                 modelId,
                 parentKnot: knot,
                 mesh,
-                // The host's own diameter, so the member is never a needle beside
-                // it; see `MEMBER_HOST_SHAFT_RATIO`.
-                shaftDiameterMm: memberShaftDiameterMm(
-                    settings.shaft.diameterMm,
-                    getHostDiameterMmFromKnot(knot, settings),
-                ),
+                shaftDiameterMm: shaftMm,
             });
+            let { branch, supportData } = buildAt(flooredShaftMm);
+            // The floor is a fit rule for the step at the knot, not a licence to
+            // lose a graft: when the thicker member does not clear where the band
+            // one did, fall back to the band — the member the pre-floor run placed.
+            if (flooredShaftMm > bandShaftMm
+                && mesh
+                && branchCollidesWithMesh(knot, tipPos, tipNormal, modelId, mesh, flooredShaftMm)) {
+                ({ branch, supportData } = buildAt(bandShaftMm));
+            }
             perfMeasureWithSpike('grid:branch-build', 'branch:build');
             const firstJoint = branch.segments[0]?.topJoint?.pos;
             const departureDeg = firstJoint

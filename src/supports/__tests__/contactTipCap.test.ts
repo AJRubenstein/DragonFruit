@@ -104,15 +104,15 @@ test('localFreeWidthMm reads the feature width across a contact', () => {
 });
 
 test('a tip is capped to fit the narrow rib it lands on', () => {
-    const mesh = ribMesh(0.4);
+    const mesh = ribMesh(0.26);
     const candidate = makeCandidate();
     applyContactTipCap(candidate, sdfFor(mesh));
-    assert.equal(candidate.tipDiameterMm, 0.24, '0.6 x the 0.4 mm rib, above the 0.22 floor');
+    assert.equal(candidate.tipDiameterMm, 0.234, '0.9 x the 0.26 mm rib, above the 0.22 floor');
 
     // The cap is what the builders read: the contact that renders comes out of
     // sizeParameters, so assert the effective tip, not just the field.
     const size = sizeParameters(candidate);
-    assert.equal(size.tipContactDiameterMm, 0.24);
+    assert.equal(size.tipContactDiameterMm, 0.234);
     const uncapped = sizeParameters({ ...candidate, tipDiameterMm: undefined });
     assert.ok(uncapped.tipContactDiameterMm! > size.tipContactDiameterMm!,
         `the band contact was wider than the capped one (${uncapped.tipContactDiameterMm})`);
@@ -122,13 +122,13 @@ test('every lattice contact on a narrow rib comes out capped', () => {
     // Thinner than one lattice cell, so the ring carries the region — the same
     // shape the reported scalloped roof has.
     const settings = createDefaultAutoSupportSettings();
-    const candidates = generateGridCandidates([ribIsland(24, 0.4)], settings, ribMesh(0.4), 'narrow-rib');
+    const candidates = generateGridCandidates([ribIsland(24, 0.3)], settings, ribMesh(0.3), 'narrow-rib');
     assert.ok(candidates.length > 0, 'the narrow rib still gets contacts');
 
     const bandTip = activeSizingBand().tipContactDiameterMm;
     for (const candidate of candidates) {
         assert.ok(candidate.tipDiameterMm !== undefined, `${candidate.id} carries a capped tip`);
-        assert.ok(candidate.tipDiameterMm! <= 0.24 + 1e-9, `${candidate.id}: must fit 0.6 x 0.4 mm`);
+        assert.ok(candidate.tipDiameterMm! <= 0.27 + 1e-9, `${candidate.id}: must fit 0.9 x 0.3 mm`);
         assert.ok(candidate.tipDiameterMm! >= smallIslandTipDiameterMm(), `${candidate.id} floors at the detail band`);
         assert.ok(candidate.tipDiameterMm! < bandTip, `${candidate.id} is below the full band contact`);
     }
@@ -160,12 +160,12 @@ test('the cap never grows an already-small tip', () => {
         'a tip already below the floor is left alone');
 });
 
-test('a 0.5 mm tooth caps the anchor band to fit', () => {
+test('a 0.3 mm tooth caps the anchor band to fit', () => {
     withTier('anchor', () => {
         const candidate = makeCandidate();
-        applyContactTipCap(candidate, sdfFor(ribMesh(0.5)));
-        assert.equal(candidate.tipDiameterMm, 0.3, '0.6 x 0.5 mm, above the 0.22 floor');
-        assert.equal(sizeParameters(candidate).tipContactDiameterMm, 0.3,
+        applyContactTipCap(candidate, sdfFor(ribMesh(0.3)));
+        assert.equal(candidate.tipDiameterMm, 0.27, '0.9 x 0.3 mm, above the 0.22 floor');
+        assert.equal(sizeParameters(candidate).tipContactDiameterMm, 0.27,
             'the anchor band contact renders at the capped width');
     });
 });

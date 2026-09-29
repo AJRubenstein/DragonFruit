@@ -172,9 +172,23 @@ landed on) — and sets `tipDiameterMm` to
 `clamp(min(existing ?? band tip, W × CONTACT_MARGIN_SCALE), floor = smallIslandTipDiameterMm())`,
 where `W` is the local free width at the contact: the width of the free span
 there, i.e. the diameter of the largest sphere that fits in the plane the tip
-lands on. `CONTACT_MARGIN_SCALE` is **0.6** — the disc keeps a standing margin
-inside the feature rather than touching its silhouette edge, the same idea as
-`PERIMETER_CONTACT_INSET_MM` on the boundary ring.
+lands on. `CONTACT_MARGIN_SCALE` is **0.9** — the disc keeps a *marginal* 5%
+stand inside the feature, but the cap is a FIT rule and must not shrink a tip
+that already fits: at the old 0.6 it bound for every width under `bandTip / 0.6`
+(0.47 mm on the structure band) and floored a 0.28 mm band tip to 0.22 mm inside
+a 0.30–0.45 mm feature, a 21% thinner contact for no fit benefit — the other
+half of the "supports read a little thin" report. At 0.9 nothing shrinks above
+`bandTip / 0.9` (0.31 mm on structure), so the cap only moves tips on features
+that are genuinely tighter than the band tip. The margin is the same idea as
+`PERIMETER_CONTACT_INSET_MM` on the boundary ring, just less of it.
+
+**A zero reading does not cap.** `localFreeWidthMm` returns 0 when both sides of
+the narrower tangent axis read free space beyond the probe reach — a ridge, a
+crease or a rim seen edge-on, which is *inconclusive*, not narrow. Capping on it
+floored the band tip on evidence the probe does not have (measured: 159 of the
+`steep-flat-wedge`/`sloped-cantilever` contacts at a scaled band, every one of
+them a 0.5 mm contact dropping to 0.22 mm). `applyContactTipCap` now returns
+early on `freeWidthMm <= 0` and only a measured, non-zero width caps.
 
 The width is read from the same `SDFCache` distance field the routers already
 use — no second geometry source. The query cannot be made *at* the contact
@@ -242,9 +256,21 @@ Every builder the run calls takes the band through `SizeOverrides` — trunk, br
 
 ### A hosted member is never a needle beside its host
 
-The three model factors above ride on the **trunk**, which is built from the candidate's own `sizeParameters` overrides; the hosted members are handed the plain tier band. On a part big enough to scale (`size × load × height` up to ×1.85) that left a 1.0 mm branch hanging off a 1.5–2.0 mm trunk — the "supports read a little thin next to their hosts" report. Every member build now takes its shaft from `memberShaftDiameterMm(band, hostShaftMm)`, which is the band floored at `MEMBER_HOST_SHAFT_RATIO` (**0.8**) of the host shaft it sprouts from (`src/supports/constants.ts`): the two meet at the knot, so a step is right — a member carries a fraction of the host's load — but not a needle. The floor is a maximum with the band, so a host at the band (the whole light end, and every corpus fixture) is provably untouched; it only binds once the host is scaled past `1 / 0.8`. All four branch sites carry it — the merge path and `fanLeafToHost` (host sample diameter), `buildConsolidationBranch`, and the grid attach in `PlacementLogic/Grid/gridPlacement.ts` (the host knot's diameter). A leaf needs nothing: its cone body already **is** the host shaft, by `syncContactConeDiameters`.
+The three model factors above ride on the **trunk**, which is built from the candidate's own `sizeParameters` overrides; the hosted members are handed the plain tier band. On a part big enough to scale (`size × load × height` up to ×1.85) that left a 1.0 mm branch hanging off a 1.5–2.0 mm trunk — the "supports read a little thin next to their hosts" report. Every member build now takes its shaft from `memberShaftDiameterMm(band, hostShaftMm)`, which is the band floored at `MEMBER_HOST_SHAFT_RATIO` (**0.7**) of the host shaft it sprouts from (`src/supports/constants.ts`): the two meet at the knot, so a step is right — a member carries a fraction of the host's load — but not a needle. The floor is a maximum with the band, so a host at the band (the whole light end, and every corpus fixture) is provably untouched; it binds once the host is scaled past `1 / 0.7` (≈1.43 × band).
 
-This is the member-side counterpart of the forest resize, which runs the other way: the resize thickens a **host** to match its fattest member, the floor thickens a **member** to stay within `MEMBER_HOST_SHAFT_RATIO` of its host. Neither can feed the other — a member at 0.8 of its host is never the fattest thing on it.
+**0.7 is a measured middle, not a guess.** On the scaled harness (×1.6, host 1.62 mm) the member/host ratio in absolute diameters is: 0.62 with no floor at all (called a *little thin*), 0.65 → branch 1.05 mm, 0.70 → 1.13 mm, 0.80 → 1.30 mm (called *a little thick*). Only ratios that bind need anything else; 0.60 is a no-op because `0.6 × 1.62 < 1.0`, which is exactly why the pre-floor ratio was 0.62. So 0.70 is the point between the two complaints, and it leaves the same ~30 % taper at every host size:
+
+| host Ø at ×1.6 | member Ø, no floor | 0.65 | 0.70 | 0.80 |
+| --- | --- | --- | --- | --- |
+| 1.62 | 1.00 (0.62×) | 1.05 (0.65×) | 1.13 (0.70×) | 1.30 (0.80×) |
+
+**The floor never costs a placement.** A thicker member can fail the clearance test its band diameter passed, and the first version of this change did exactly that: on the scaled harness it turned 5 consolidation links into `blocked` refusals and cost 2 branches and 1 trunk (a refused candidate degrades to a standalone pillar, which on a real part then culls as `hostBlocked` and strands its members as `missingHost` — the "went sideways" report). `buildHostedBranch` (`autoPlace.ts`) therefore builds at the floor first and, **only if the built member is rejected by the site's clearance gate**, rebuilds at `band.shaftDiameterMm` — the member the pre-floor run placed. The predicate is deliberately the clearance gate alone (build error, SDF collision): the departure angle, the cross check and the host capacity are properties of the chord and the snapshot, identical at either diameter, so they stay where they were. Measured on the scaled harness with the fallback in place, floor-on and floor-off differ in **exactly nothing** but the member diameters — same entities, same fan/merge/consolidation refusals, same orphan counts, same host diameters. Without it the same harness loses 2 branches, 1 trunk and 7 refusals at 0.65, 0.70 and 0.80.
+
+All five branch sites carry it — the merge path, `fanLeafToHost`, `buildConsolidationBranch`, the coverage-stub branch, and the grid attach in `PlacementLogic/Grid/gridPlacement.ts` (which also uses the floored radius for its own clearance check before falling back). A leaf needs nothing: its cone body already **is** the host shaft, by `syncContactConeDiameters`.
+
+This is the member-side counterpart of the forest resize, which runs the other way: the resize thickens a **host** to match its fattest member, the floor thickens a **member** to stay within `MEMBER_HOST_SHAFT_RATIO` of its host. Neither can feed the other — a member at 0.7 of its host is never the fattest thing on it, and the host diameter measured identical with the floor on and off.
+
+**Where the thickness actually comes from (finding, not tuned here).** The floor is relative, so it cannot make a forest chunky by itself — it only tracks a host that is already thick. The host's own diameter is the model-scale term: at ×1.6 the harness hosts sit at 1.62 mm against a 1.0 mm band, and with the model terms at ×1 they sit at 1.01 mm (measured: sizeScale 1 → 1.01, 1.25 → 1.27, 1.6 → 1.62, 2.0 → 2.03). A `base Ø1.00 · h1.25 → Ø1.93mm` note is therefore ~×1.55 of model factor, not height alone (the note prints only `h`; see the two findings in the forest-report section). `MAX_SHAFT_DIAMETER_MM` is not the binder anywhere near the reported sizes: at ×2.0 every harness host reads 2.03 mm and none at ×1.6 does — and that ×2.0 is the user's own `sizeScale`, which is allowed past the cap by design. Retuning those factors is a separate decision.
 
 ## Rules worth knowing before you change placement
 
@@ -407,6 +433,7 @@ A run returns `AutoPlaceAnalytics` and a `ForestReport`; `forestReportToText` re
 - **Counts** — `56 trunks · 70 leaves … | 16 trees, 40 bare` — `trees` are hosts with members, `bare` are 1:1 pillars.
 - **FAN-OUT GROUPS** — `v115 @ Z=26.6mm Ø1.03mm [area 0.53mm² …] → 12: v116(L 2.8mm/20° Ø1.03) …`, headed by the gates that admitted its members: placement fans `≤leafFanMaxAngleDeg` within `LEAF_FAN_RADIUS_MM` (`GRID_HOST_FAN_RADIUS_MM` for grid hosts), chunk-consolidation links `≤CONSOLIDATION_MAX_ANGLE_DEG` within `CONSOLIDATION_FAN_RADIUS_MM`, and the `maxAttachmentsPerTrunk` cap in force — so a group is readable without re-deriving which pass attached each member. `spanMm`/`angleDeg` are `knot→tip` distance and angle from vertical, measured **after** the resize/orphan passes: segment splits and rehosting can drift a knot down its host, so a link can read shallower than the gate that admitted it. Each member's own `Ø` follows the angle — the diameter the member contributes, from `memberDiameterOf`, the same number the resize demand reads (a branch's widest segment; a leaf's cone body, which `syncContactConeDiameters` matches to its host) — so the member-vs-host ratio is readable off one line instead of inferred from the render.
 - **STANDALONE TRUNKS** — `grid-o0-… @ Z=5.1mm Ø1.21mm [area 10mm² …]` plus `— region ring + grid infill` or `— standalone voxel/minima (below threshold or consolidated)` based on `id` prefix.
+- **Two things the report still cannot show** (surfaced, not fixed). (1) The bracket note's arithmetic does not reconcile: `forestSizingNote` prints `base Ø{bandShaftMm} · h{heightFactor} → Ø{post-resize diameter}`, but the diameter in the arrow is the trunk's final segment, which also carries the model factors (`modelSizingFactors().trunkScale`, i.e. `sizeFactor × loadFactor`) the note never prints — so `base Ø1.00 · h1.25 → Ø1.93mm` multiplies out to 1.25, not 1.93. (2) The line prints the host's **shaft**; nothing prints a contact's tip, so the free-width cap's own effect (the thing that made tips read thin) is invisible here — the tip is only visible in the rendered support.
 
 **Orphan reporting:** post-resize `rehostLegacyKnots` + `validateAndCullOrphans` cull `drift`/`missingHost`/`missingSegment` (orphan knot >0.5 mm off its host segment) and report `cross`/`blocked` without culling. `ForestReport.orphans[]` (`OrphanInfo`) and `forestReportToText` `ORPHANS CULLED` surface them. Drift is the "leaf attached to nowhere" case — host segment split rehost failed or knot was placed on a trunk that later split.
 

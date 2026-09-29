@@ -99,6 +99,11 @@ export function localFreeWidthMm(
  * room keeps the band sizing it had (shaft floor, angle factor and all) and
  * the change is a no-op wherever the tip already fits. Floored at
  * {@link smallIslandTipDiameterMm} so a capped tip stays a printable contact.
+ *
+ * A `localFreeWidthMm` of 0 is the probe finding no clearance in EITHER tangent
+ * direction — a ridge, a crease or a rim read edge-on — which is inconclusive
+ * rather than narrow, and capping on it floors the band tip on evidence the
+ * probe does not have. Only a measured, non-zero width caps.
  */
 export function applyContactTipCap(candidate: CandidatePoint, sdf: SDFCache): void {
     const ceilingMm = candidate.tipDiameterMm ?? activeSizingBand().tipContactDiameterMm;
@@ -110,6 +115,7 @@ export function applyContactTipCap(candidate: CandidatePoint, sdf: SDFCache): vo
         candidate.tipPos.z,
         candidate.tipNormal,
     );
+    if (freeWidthMm <= 0) return;
     const targetMm = Math.max(Math.min(ceilingMm, freeWidthMm * CONTACT_MARGIN_SCALE), smallIslandTipDiameterMm());
     if (targetMm >= ceilingMm) return;
     candidate.tipDiameterMm = round(targetMm, 3);

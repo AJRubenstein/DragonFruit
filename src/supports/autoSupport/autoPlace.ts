@@ -75,6 +75,7 @@ import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
 import { computeForestDiameterProfile, memberDiameterOf } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
+import type { BranchBuildInput, BranchBuildResult } from '../SupportTypes/Branch/branchBuilder';
 import { buildLeafData } from '../SupportTypes/Leaf/leafBuilder';
 import { decideGridPlacement } from '../PlacementLogic/Grid/gridPlacement';
 import { calculateSmoothedNormal } from '../PlacementLogic/PlacementUtils';
@@ -677,6 +678,34 @@ export function findMergeHost(
     return best;
 }
 
+/**
+ * Build a hosted branch at the host-relative floor, retrying at the profile
+ * band when the thicker member is refused.
+ *
+ * `memberShaftDiameterMm` is a fit rule for the visible step at the knot, not a
+ * licence to lose a link: a member that clears the site's gates at its band
+ * diameter is placed exactly as it was before the floor existed, and one that
+ * clears thick keeps the floor. `rejected` is the site's *clearance* gate (build
+ * error, SDF collision) — the only one the shaft diameter can move: the
+ * departure angle, the cross check and the host capacity are properties of the
+ * chord and the snapshot, identical at either diameter, so they stay where they
+ * were, after the build. Evaluated twice at most. Returns null when neither
+ * diameter passes — the site's own refusal, unchanged.
+ */
+function buildHostedBranch(
+    input: Omit<BranchBuildInput, 'shaftDiameterMm'>,
+    bandShaftMm: number,
+    hostDiameterMm: number,
+    rejected: (built: BranchBuildResult) => boolean,
+): BranchBuildResult | null {
+    const flooredShaftMm = memberShaftDiameterMm(bandShaftMm, hostDiameterMm);
+    const floored = buildBranchData({ ...input, shaftDiameterMm: flooredShaftMm });
+    if (!rejected(floored)) return floored;
+    if (flooredShaftMm <= bandShaftMm) return null;
+    const atBand = buildBranchData({ ...input, shaftDiameterMm: bandShaftMm });
+    return rejected(atBand) ? null : atBand;
+}
+
 /** Consolidation fallback: when the straight fan leaf is blocked by the
  *  model (or another support), attach the standalone trunk to the steepest
  *  eligible host sample as a ROUTED BRANCH — its shaft and cone
@@ -731,26 +760,30 @@ export function buildConsolidationBranch(args: {
 
     try {
         const band = activeSizingBand();
-        const { branch, supportData: sd } = buildBranchData({
-            tipPos: tip,
-            tipNormal,
-            modelId,
-            parentKnot,
-            mesh,
-            shaftDiameterMm: memberShaftDiameterMm(band.shaftDiameterMm, best.diameter),
-            tipContactDiameterMm: band.tipContactDiameterMm,
-            rootsDiameterMm: band.rootDiameterMm,
-        });
-        if (sd.error) return null;
-        if (mesh && branchCollidesWithSDF(branch, mesh)) return null;
-        if (branchDepartureAngleDeg(branch, parentKnot.pos) > memberMaxAngleFromVerticalDeg()) return null;
-        if (leafPathCrossesSupports(parentKnot.pos, branch.contactCone?.pos ?? tip, 0.25, pruned, best.hostId)) return null;
+        const built = buildHostedBranch(
+            {
+                tipPos: tip,
+                tipNormal,
+                modelId,
+                parentKnot,
+                mesh,
+                tipContactDiameterMm: band.tipContactDiameterMm,
+                rootsDiameterMm: band.rootDiameterMm,
+            },
+            band.shaftDiameterMm,
+            best.diameter,
+            (attempt) => Boolean(attempt.supportData.error)
+                || Boolean(mesh && branchCollidesWithSDF(attempt.branch, mesh)),
+        );
+        if (!built) return null;
+        if (branchDepartureAngleDeg(built.branch, parentKnot.pos) > memberMaxAngleFromVerticalDeg()) return null;
+        if (leafPathCrossesSupports(parentKnot.pos, built.branch.contactCone?.pos ?? tip, 0.25, pruned, best.hostId)) return null;
 
         let d = draftAddPrimitive(pruned, 'knots', parentKnot);
-        branch.origin = 'overhang';
-        const memberTypeId = builtMemberTypeId(branch);
-        d = draftAddEntity(d, memberTypeId, branch);
-        return { draft: d, branchId: branch.id, kind: memberTypeId };
+        built.branch.origin = 'overhang';
+        const memberTypeId = builtMemberTypeId(built.branch);
+        d = draftAddEntity(d, memberTypeId, built.branch);
+        return { draft: d, branchId: built.branch.id, kind: memberTypeId };
     } catch {
         return null;
     }
@@ -1208,19 +1241,23 @@ function placeOneCandidate(
                             `Merge skip ${candidate.id}: angle too shallow (${mergeAngleDeg.toFixed(0)}° from vertical > 50°) span=${leafSpanMm.toFixed(1)}mm`);
                     } else try {
                         const band = activeSizingBand();
-                        const { branch, supportData: sd } = buildBranchData({
-                            tipPos, tipNormal, modelId: candidate.modelId, parentKnot, mesh,
-                            shaftDiameterMm: memberShaftDiameterMm(band.shaftDiameterMm, knotDiameter),
-                            tipContactDiameterMm: band.tipContactDiameterMm,
-                            rootsDiameterMm: band.rootDiameterMm,
-                        });
-                        const collides = sd.error || (mesh && branchCollidesWithSDF(branch, mesh));
-                        if (collides) {
+                        const built = buildHostedBranch(
+                            {
+                                tipPos, tipNormal, modelId: candidate.modelId, parentKnot, mesh,
+                                tipContactDiameterMm: band.tipContactDiameterMm,
+                                rootsDiameterMm: band.rootDiameterMm,
+                            },
+                            band.shaftDiameterMm,
+                            knotDiameter,
+                            (attempt) => Boolean(attempt.supportData.error)
+                                || Boolean(mesh && branchCollidesWithSDF(attempt.branch, mesh)),
+                        );
+                        if (!built) {
                             logPlacement(`Branch (merge) ${candidate.id}: collision, falling back`);
-                        } else if (branchDepartureAngleDeg(branch, knotPos) > memberMaxAngleFromVerticalDeg()) {
+                        } else if (branchDepartureAngleDeg(built.branch, knotPos) > memberMaxAngleFromVerticalDeg()) {
                             logPlacement(
                                 `Merge skip ${candidate.id}: shaft leaves the host too flat ` +
-                                `(${branchDepartureAngleDeg(branch, knotPos).toFixed(0)}° from vertical) span=${leafSpanMm.toFixed(1)}mm`);
+                                `(${branchDepartureAngleDeg(built.branch, knotPos).toFixed(0)}° from vertical) span=${leafSpanMm.toFixed(1)}mm`);
                         } else {
                             const cap = supportSettings.autoSupport?.maxAttachmentsPerTrunk ?? 12;
                             if (isHostAtAttachmentCapacity(host.hostTypeId, host.hostId, cap, draft)) {
@@ -1229,14 +1266,14 @@ function placeOneCandidate(
                                 // fall through to standalone trunk
                             } else {
                                 d = draftAddPrimitive(d, 'knots', parentKnot);
-                                branch.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
-                                const memberTypeId = builtMemberTypeId(branch);
-                                d = draftAddEntity(d, memberTypeId, branch);
+                                built.branch.origin = candidate.source === 'overhang' ? 'overhang' : 'island';
+                                const memberTypeId = builtMemberTypeId(built.branch);
+                                d = draftAddEntity(d, memberTypeId, built.branch);
                                 const ma = (Math.atan2(hDist2, vDist2) * 180) / Math.PI;
                                 logPlacement(
                                     `Branch (merge) ${candidate.id} → ${typeWord(host.hostTypeId).toLowerCase()} ${host.hostId} ` +
                                     `span=${leafSpanMm.toFixed(1)}mm angle=${ma.toFixed(0)}° kZ=${knotPos.z.toFixed(1)}`);
-                                return { kind: memberTypeId, preset, draft: d, entityId: branch.id };
+                                return { kind: memberTypeId, preset, draft: d, entityId: built.branch.id };
                             }
                         }
                     } catch (e) {
@@ -2361,18 +2398,22 @@ export function fanLeafToHost(
         if (Math.sqrt(dist2) > MAX_LEAF_SPAN_BEFORE_BRANCH_MM) {
             try {
                 const band = activeSizingBand();
-                const built = buildBranchData({
-                    tipPos: resolved.point,
-                    tipNormal: resolved.normal,
-                    modelId,
-                    parentKnot,
-                    mesh: mesh ?? undefined,
-                    shaftDiameterMm: memberShaftDiameterMm(band.shaftDiameterMm, sp.diameter),
-                    tipContactDiameterMm: band.tipContactDiameterMm,
-                    rootsDiameterMm: band.rootDiameterMm,
-                });
-                const collides = built.supportData.error || (mesh && branchCollidesWithSDF(built.branch, mesh));
-                if (collides) {
+                const built = buildHostedBranch(
+                    {
+                        tipPos: resolved.point,
+                        tipNormal: resolved.normal,
+                        modelId,
+                        parentKnot,
+                        mesh: mesh ?? undefined,
+                        tipContactDiameterMm: band.tipContactDiameterMm,
+                        rootsDiameterMm: band.rootDiameterMm,
+                    },
+                    band.shaftDiameterMm,
+                    sp.diameter,
+                    (attempt) => Boolean(attempt.supportData.error)
+                        || Boolean(mesh && branchCollidesWithSDF(attempt.branch, mesh)),
+                );
+                if (!built) {
                     lastBlockedReason = 'blocked';
                     continue;
                 }
@@ -3660,27 +3701,28 @@ export function computeAutoSupportPlan(
                         diameter: host.diameter + 0.1,
                     };
                     const bm: THREE.Mesh | undefined = resolvedMesh ?? undefined;
-                    const { branch, supportData: sd } = buildBranchData({
-                        tipPos: resolved.point,
-                        tipNormal: resolved.normal,
-                        modelId,
-                        parentKnot,
-                        mesh: bm,
-                        shaftDiameterMm: activeSizingBand().shaftDiameterMm,
-                        tipContactDiameterMm: activeSizingBand().tipContactDiameterMm,
-                        rootsDiameterMm: activeSizingBand().rootDiameterMm,
-                    });
-                    if (sd.error) continue;
-                    // Every other member-creating path refuses geometry that
-                    // pierces the model; this pass used to stamp it and let
-                    // the validator flag it afterwards (blocked members are
-                    // reported, not culled).
-                    if (bm && branchCollidesWithSDF(branch, bm)) continue;
+                    const band = activeSizingBand();
+                    const built = buildHostedBranch(
+                        {
+                            tipPos: resolved.point,
+                            tipNormal: resolved.normal,
+                            modelId,
+                            parentKnot,
+                            mesh: bm,
+                            tipContactDiameterMm: band.tipContactDiameterMm,
+                            rootsDiameterMm: band.rootDiameterMm,
+                        },
+                        band.shaftDiameterMm,
+                        host.diameter,
+                        (attempt) => Boolean(attempt.supportData.error)
+                            || Boolean(bm && branchCollidesWithSDF(attempt.branch, bm)),
+                    );
+                    if (!built) continue;
                     // The tips are voxel-island footprints — island origin.
-                    branch.origin = 'island';
-                    const memberTypeId = builtMemberTypeId(branch);
+                    built.branch.origin = 'island';
+                    const memberTypeId = builtMemberTypeId(built.branch);
                     draft = draftAddPrimitive(draft, 'knots', parentKnot);
-                    draft = draftAddEntity(draft, memberTypeId, branch);
+                    draft = draftAddEntity(draft, memberTypeId, built.branch);
                     overhangSupportsPlaced++;
                     placed[memberTypeId]++;
                 } catch {
