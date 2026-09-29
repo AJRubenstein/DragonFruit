@@ -193,3 +193,23 @@ export function isBoundsOutsideVolume(bounds: THREE.Box3, volume: THREE.Box3, ep
     || bounds.max.z > (volume.max.z + epsilonMm)
   );
 }
+
+/**
+ * True when `bounds` and `volume` share no space on any axis, so nothing inside
+ * the bounds can print.
+ *
+ * Distinct from `isBoundsOutsideVolume`, which asks whether the bounds leave the
+ * volume at all: a model that merely straddles a plate edge fails that test but
+ * is not disjoint, and slicing keeps the overlapping part (staging clips
+ * geometry to the plate footprint).
+ */
+export function isBoundsDisjointFromVolume(bounds: THREE.Box3, volume: THREE.Box3, epsilonMm: number): boolean {
+  return (
+    bounds.max.x < (volume.min.x - epsilonMm)
+    || bounds.min.x > (volume.max.x + epsilonMm)
+    || bounds.max.y < (volume.min.y - epsilonMm)
+    || bounds.min.y > (volume.max.y + epsilonMm)
+    || bounds.max.z < (volume.min.z - epsilonMm)
+    || bounds.min.z > (volume.max.z + epsilonMm)
+  );
+}

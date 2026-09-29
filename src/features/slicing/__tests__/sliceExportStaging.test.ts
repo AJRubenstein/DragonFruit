@@ -247,3 +247,89 @@ test('slice input excludes models marked outside the build volume', async () => 
     outside.geometry.geometry.dispose();
   }
 });
+
+test('a model straddling the plate edge is clipped to the build volume, not dropped', async () => {
+  // Geometry coordinates are plate millimetres here: the harness pivots each
+  // model on its own centre, so local coordinates are what gets sliced. This one
+  // reaches 6mm past the x = 10 edge of a 20mm plate.
+  const straddling = modelFromPositions('straddling', new Float32Array([
+    8, -2, 0,
+    16, -2, 0,
+    9, 2, 0,
+  ]));
+  // Entirely past the plate: it must contribute no triangles at all.
+  const farOutside = modelFromPositions('far-outside', new Float32Array([
+    30, -2, 0,
+    38, -2, 0,
+    34, 2, 0,
+  ]));
+
+  let staged = new Uint8Array(0);
+  let captured: { bytes: Uint8Array; modelCount: number; totalLayers: number } | undefined;
+  const reachedSlicer = new Error('captured clipped native slice input');
+  const invoke = async (command: string, args?: unknown): Promise<unknown> => {
+    switch (command) {
+      case 'stage_mesh_binary_set':
+        staged = new Uint8Array(args as Uint8Array);
+        return {};
+      case 'plugin:event|listen':
+        return 1;
+      case 'plugin:event|unlisten':
+        return;
+      case 'slice_solid_native_to_temp_path': {
+        const metadata = JSON.parse((args as { jobJson: string }).jobJson);
+        captured = {
+          bytes: staged.slice(),
+          modelCount: metadata.model_triangle_count,
+          totalLayers: metadata.total_layers,
+        };
+        throw reachedSlicer;
+      }
+      default:
+        throw new Error(`Unexpected native command: ${command}`);
+    }
+  };
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      dispatchEvent: () => true,
+      __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
+      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
+    },
+  });
+
+  try {
+    await assert.rejects(runSliceExportOrchestrator({
+      models: [straddling, farOutside],
+      printerProfile: {
+        id: 'clip-printer', name: 'Clip printer',
+        buildVolumeMm: { width: 20, depth: 20, height: 20 },
+        display: { resolutionX: 64, resolutionY: 64, outputFormat: '.ctb' },
+      } as PrinterProfile,
+      materialProfile: { id: 'clip-material', name: 'Clip material', layerHeightMm: 0.05 } as MaterialProfile,
+      filenameBase: 'plate-clip-regression',
+      outputMode: 'return',
+    }), reachedSlicer);
+  } finally {
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
+    straddling.geometry.geometry.dispose();
+    farOutside.geometry.geometry.dispose();
+  }
+
+  assert.ok(captured);
+  // The straddling triangle is cut into two; the model past the plate is gone.
+  assert.equal(captured.bytes.length, 36, 'the cut triangle reaches the slicer as two triangles');
+  assert.equal(captured.modelCount, 2, 'the native model/support split must match the staged buffer');
+  assert.equal(captured.totalLayers, 1);
+
+  const quantized = Array.from(new Uint16Array(captured.bytes.buffer, captured.bytes.byteOffset, captured.bytes.length / 2));
+  // Quantized against the same plate box the slicer maps to its raster.
+  const stagedMm = quantized.map((value) => -10 + (value / 65535) * 20);
+  const xs = stagedMm.filter((_, index) => index % 3 === 0);
+  const ys = stagedMm.filter((_, index) => index % 3 === 1);
+  for (const x of xs) assert.ok(x <= 10 + 1e-3 && x >= -10 - 1e-3, `staged x ${x} left the plate`);
+  for (const y of ys) assert.ok(y <= 10 + 1e-3 && y >= -10 - 1e-3, `staged y ${y} left the plate`);
+  assert.ok(Math.max(...xs) > 9.9, `expected geometry up to the plate edge, max staged x ${Math.max(...xs)}`);
+});

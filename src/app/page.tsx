@@ -125,6 +125,7 @@ import { initializeBVH } from '@/utils/bvh';
 import {
   computeApproxModelWorldBounds,
   computePreciseModelWorldBounds,
+  isBoundsDisjointFromVolume,
   isBoundsOutsideVolume,
   shouldUsePreciseBoundsForTransform,
 } from '@/utils/modelBounds';
@@ -2781,6 +2782,41 @@ export default function Home() {
     }
 
     return inBoundsModelIds;
+  }, [
+    resinBuildVolumeBounds,
+    scene.models,
+  ]);
+
+  /**
+   * Models that contribute to a slice. A model that only partly overlaps the
+   * build volume still prints the overlapping part — staging clips its geometry
+   * to the plate footprint — so exclusion is for models with no overlap at all.
+   */
+  const sliceableModelIdSet = React.useMemo(() => {
+    const visibleModels = scene.models.filter((model) => model.visible);
+    if (visibleModels.length === 0) return new Set<string>();
+    if (!resinBuildVolumeBounds) return new Set(visibleModels.map((model) => model.id));
+
+    const BUILD_VOLUME_BOUNDS_EPS_MM = 0.01;
+    const sliceableModelIds = new Set<string>();
+
+    for (const model of visibleModels) {
+      const approxBounds = computeApproxModelWorldBounds(model.geometry, model.transform);
+      // Only the (slightly oversized) approx bounds can justify skipping a
+      // model; the precise bounds decide when they say it overlaps.
+      const disjoint = isBoundsDisjointFromVolume(approxBounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)
+        ? isBoundsDisjointFromVolume(
+          computePreciseModelWorldBounds(model.geometry, model.transform),
+          resinBuildVolumeBounds,
+          BUILD_VOLUME_BOUNDS_EPS_MM,
+        )
+        : false;
+      if (!disjoint) {
+        sliceableModelIds.add(model.id);
+      }
+    }
+
+    return sliceableModelIds;
   }, [
     resinBuildVolumeBounds,
     scene.models,
@@ -6385,14 +6421,14 @@ export default function Home() {
   }, [hasAnyEntries, raftSettingsSnapshot.bottomMode, supportStateSnapshot]);
 
   const slicingModels = React.useMemo(
-    () => scene.models.filter((model) => model.visible && resinInBoundsModelIdSet.has(model.id)),
-    [resinInBoundsModelIdSet, scene.models],
+    () => scene.models.filter((model) => model.visible && sliceableModelIdSet.has(model.id)),
+    [scene.models, sliceableModelIdSet],
   );
   const excludedSliceModelIds = React.useMemo(
     () => scene.models
-      .filter((model) => model.visible && !resinInBoundsModelIdSet.has(model.id))
+      .filter((model) => model.visible && !sliceableModelIdSet.has(model.id))
       .map((model) => model.id),
-    [resinInBoundsModelIdSet, scene.models],
+    [scene.models, sliceableModelIdSet],
   );
 
   // For non-printing workflows, avoid expensive world-triangle projection work by default.

@@ -25,6 +25,12 @@ import { resolveSegmentEndpoints, type ShaftEntity } from '@/supports/SupportPri
 import { resolveSlicingFormatDefinition } from '@/features/slicing/formats/registry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
+import {
+  clipTriangleToBuildVolume,
+  resolveBuildVolumeFootprintMm,
+  type BuildVolumeFootprintMm,
+  type ClippedTriangleSink,
+} from './clipTrianglesToBuildVolume';
 
 const MAX_CANVAS_PIXELS = 24_000_000;
 const DEFAULT_MESH_CHUNK_TARGET_BYTES = 64 * 1024 * 1024;
@@ -543,6 +549,45 @@ function pushWorldTriangle(
   const zMin = Math.min(az, bz, cz);
   const zMax = Math.max(az, bz, cz);
   triangles.push({ ax, ay, az, bx, by, bz, cx, cy, cz, zMin, zMax });
+}
+
+/**
+ * TriangleFloatCollector that clips every triangle to the build volume footprint
+ * before storing it, so a model sitting past the plate edge only contributes its
+ * printable part to the staged mesh. Cutting preserves vertex order and winding,
+ * so the native side's model/support split by triangle count is unchanged apart
+ * from the triangles a cut adds.
+ */
+class BuildVolumeClippedTriangleCollector extends TriangleFloatCollector {
+  private readonly footprint: BuildVolumeFootprintMm;
+
+  private readonly emitClippedTriangle: ClippedTriangleSink = (ax, ay, az, bx, by, bz, cx, cy, cz) => {
+    super.pushTriangle(ax, ay, az, bx, by, bz, cx, cy, cz);
+  };
+
+  constructor(
+    initialTriangleCapacity: number,
+    flushCallback: ((chunk: Uint8Array) => Promise<void>) | undefined,
+    chunkTargetBytes: number | undefined,
+    footprint: BuildVolumeFootprintMm,
+  ) {
+    super(initialTriangleCapacity, flushCallback, chunkTargetBytes);
+    this.footprint = footprint;
+  }
+
+  override pushTriangle(
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+    cx: number,
+    cy: number,
+    cz: number,
+  ): void {
+    clipTriangleToBuildVolume(ax, ay, az, bx, by, bz, cx, cy, cz, this.footprint, this.emitClippedTriangle);
+  }
 }
 
 type TriangleSink = WorldTriangle[] | TriangleFloatCollector;
@@ -2261,7 +2306,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
   const settings = resolveEffectiveSettings(options);
   const perfSettings = getSavedSlicingPerformanceSettings();
 
-  const modelTriangleCount = countModelWorldTriangles(visibleModels);
+  const modelTriangleEstimate = countModelWorldTriangles(visibleModels);
   console.warn('[SupportAA] collector input partitions', {
     models: visibleModels.map((model) => {
       const totalTriangles = getModelTriangleCount(model);
@@ -2281,12 +2326,17 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
         scale: model.transform.scale.toArray(),
       };
     }),
-    modelTriangleCount,
+    modelTriangleEstimate,
   });
-  const collector = new TriangleFloatCollector(
-    modelTriangleCount + 4096,
+  // Clipping happens before staging: the quantizer saturates every coordinate
+  // onto the plate box, so an out-of-volume vertex used to be squashed onto the
+  // plate edge and rasterized there instead of being ignored.
+  const clipFootprintMm = resolveBuildVolumeFootprintMm(options.printerProfile);
+  const collector = new BuildVolumeClippedTriangleCollector(
+    modelTriangleEstimate + 4096,
     options.flushBinaryMeshChunk,
     options.meshChunkTargetBytes,
+    clipFootprintMm,
   );
 
   // Push model-only triangles first (across all models), then support-only.
@@ -2297,6 +2347,11 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
       appendModelTrianglesInRange(model, collector, 0, modelTriCount);
     }
   }
+  // A triangle cut at the plate edge fans into more than one, so the staged
+  // model triangle count is only known once every model has contributed. The
+  // native side splits model from support geometry by this count, and the
+  // support-classified triangles below are pushed after it.
+  const modelTriangleCount = collector.triangleCount;
   for (const model of visibleModels) {
     const totalTris = getModelTriangleCount(model);
     const modelTriCount = effectiveModelTriangleCount(model);
@@ -2305,7 +2360,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     }
   }
   emitMeshPrepDiagnostic('Mesh prep: models', 1, 4, {
-    modelTriangleEstimate: modelTriangleCount,
+    modelTriangleEstimate,
     triangleCountAfterModels: collector.triangleCount,
   });
 

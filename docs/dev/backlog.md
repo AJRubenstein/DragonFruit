@@ -277,3 +277,21 @@ key … but the IPC call used a bytes payload"*). That is fine for this rule —
 geometry in, values out — but it means any option has to travel in a request
 header or stay a Rust constant. It cost a round trip to learn here, which is why
 it is in `dev/tauri-ipc-bridge.md` under *Conventions to respect* too.
+
+## Staged mesh must be clipped to the build volume before quantization
+`quantizeMeshChunkToUint16` (`src/features/slicing/sliceExportOrchestrator.ts`)
+encodes each coordinate as a fraction of the build volume box and **saturates**
+everything outside it onto the nearest face. Geometry that intentionally reaches
+past the plate — a model dragged over the edge, or a mesh larger than the plate —
+therefore reached the rasterizer as footprint-edge geometry: the out-of-volume
+part was not ignored, it was squashed onto the boundary and rasterized there.
+Whole-model exclusion was the only defence, and it also discarded the part that
+was printable.
+
+**Rule:** anything that stages mesh bytes through the quantizer clips to the plate
+footprint first, in scene millimetres. `buildSolidSliceMeshForWasm` does this in
+`src/features/slicing/clipTrianglesToBuildVolume.ts` (see also
+`isBoundsDisjointFromVolume` in `src/utils/modelBounds.ts`, which is what decides
+that a straddling model is still sliceable). After clipping, saturation is a no-op
+for X and Y. Z is deliberately not clipped: build height is bounded by the layer
+count instead.
