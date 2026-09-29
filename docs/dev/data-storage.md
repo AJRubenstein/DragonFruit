@@ -23,6 +23,35 @@ This page is the developer-facing source of truth for client-side persistence us
 | `support-presets-v1`          | localStorage | Preset definitions + active preset metadata                              |
 | `support-active-preset-id-v1` | localStorage | Legacy active preset key (redundant with `support-presets-v1`)           |
 
+### Support presets (`support-presets-v1`)
+
+`src/supports/Settings/presets.ts` owns the store: `byId`, `allIds` and
+`activePresetId`. Two facts about it are load-bearing, because both are user
+arrangement that has to survive a reload:
+
+- **`allIds` is the rail's order.** The list of unpinned presets renders in that
+  order, so `movePresetBefore` is the reorder entry point and the loader restores
+  the stored array rather than rebuilding it from `byId` (JSON key order is
+  creation order, which silently discarded a reorder). Pinned order comes from
+  the slot number, not from `allIds`.
+- **A slot holds one preset.** `pinnedSlot` is 1-6, or `null` for unpinned.
+  `null` is stored explicitly, not omitted: an absent key is a record from before
+  slots existed, where the factory preset's own slot still applies, and treating
+  the two the same brought an unpinned factory preset back on the next load. The
+  loader also drops the second claimant of a slot it finds.
+
+The rail's drag is pointer events (`onPointerDown` + `setPointerCapture` +
+`elementFromPoint` hit testing), not HTML5 drag and drop. Tauri leaves
+`dragDropEnabled` on because the window takes OS file drops, and on Windows that
+makes the webview reject page-level drags outright: the cursor becomes the
+no-drop one and no `dragstart` is delivered. See `PresetSelector.tsx`.
+
+The same drag is the rail's delete gesture: released outside the Support Studio
+panel (the element carrying `data-support-studio-panel`) it asks to delete the
+dragged preset, or the whole selection when the dragged row is part of one. The
+pointer turns into a trash can there, from the `body.preset-drag-delete` rule in
+`src/app/globals.css`.
+
 ## Profiles and plugin keys
 
 | Key                                              | Medium                        | Purpose                                            |
@@ -50,21 +79,23 @@ This page is the developer-facing source of truth for client-side persistence us
 | Key                                      | Medium       | Purpose                                                 |
 | ---------------------------------------- | ------------ | ------------------------------------------------------- |
 | `app-recent-opened-files`                | localStorage | Recent files index (metadata only)                      |
-| `mesh-appearance-settings`               | localStorage | Shader, color, and mesh appearance preferences          |
+| `mesh-appearance-settings`               | localStorage | Shader, mesh color, and tint-strength preferences       |
 | `import-defaults-v1`                     | localStorage | Default import behavior (raft mode, wall/root defaults) |
-| `dragonfruit-scene-autosave:settings-v1` | localStorage | Scene autosave settings                                 |
+| `dragonfruit-scene-autosave:settings-v1` | localStorage | Scene autosave enable, debounce, cooldown, cap and recovery prompt settings |
+
+Autosave timing is stored in milliseconds: `debounceMs` defaults to `45_000` (45 seconds), `cooldownMs` to `180_000` (180 seconds; allowed `15_000`–`900_000`), and the maximum interval `capMs` to `300_000` (5 minutes). The settings UI displays debounce and cooldown in seconds and cap in minutes. After a save attempt, automatic requests wait until the cooldown expires; explicit flushes do not. Existing saved values remain in effect; a missing cooldown gets the new default, and `capMs` is normalized to at least the debounce and cooldown durations.
 
 ## UI/theme/layout keys
 
-| Key                                    | Medium       | Purpose                                    |
-| -------------------------------------- | ------------ | ------------------------------------------ |
-| `app-theme-preference`                 | localStorage | Theme mode preference                      |
-| `app-theme-colors`                     | localStorage | Active theme color overrides               |
-| `app-theme-preset`                     | localStorage | Selected theme preset                      |
-| `app-theme-custom-profiles`            | localStorage | User custom theme profiles                 |
-| `lumenslicer:floating-panel-layout:v4` | localStorage | Floating panel coordinates/sizing          |
-| `app-floating-layout-persistence`      | localStorage | Enable/disable floating layout persistence |
-| `app-debug-primitives-panel-visible`   | localStorage | Debug panel visibility (non-user-critical) |
+| Key                                    | Medium       | Purpose                                                   |
+| -------------------------------------- | ------------ | --------------------------------------------------------- |
+| `app-theme-preference`                 | localStorage | Theme mode preference                                     |
+| `app-theme-colors`                     | localStorage | Active theme color overrides (incl. mesh selection/hover) |
+| `app-theme-preset`                     | localStorage | Selected theme preset                                     |
+| `app-theme-custom-profiles`            | localStorage | User custom theme profiles                                |
+| `lumenslicer:floating-panel-layout:v4` | localStorage | Floating panel coordinates/sizing                         |
+| `app-floating-layout-persistence`      | localStorage | Enable/disable floating layout persistence                |
+| `app-debug-primitives-panel-visible`   | localStorage | Debug panel visibility (non-user-critical)                |
 
 ## Camera and view keys
 

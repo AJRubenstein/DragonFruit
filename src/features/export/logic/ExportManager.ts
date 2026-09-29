@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { STLExporter } from 'three-stdlib';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
+import type { MeshHealthReport } from '@/utils/meshRepair';
 import { resolveModelMeshModifiers } from '@/features/mesh-modifiers/meshModifierStore';
 import { KNOWN_SOURCE_EXTENSION_STRIP_RE } from '@/features/plugins/pluginFileTypeExtensions';
 import { buildSupportExportFromStores, serializeVoxlDocumentV2, serializeVoxlDocumentV2Streaming, VoxlSizeLimitError, VoxlUnchangedError, type PrecompressedChunk, type VoxlChunkCache, type VoxlChunkReportEntry } from '@/features/scene/voxl';
@@ -10,6 +11,7 @@ import { buildScopedSupportExportDocument, buildScopedSupportGeometryGroup } fro
 import { allocateMeshStagePath, exportMeshFile, pickSavePathWithNativeDialog, writeChunkedToNativePath, writeFileAtomicToNativePath, writeFileAtomicStreamedToNativePath } from '@/features/slicing/tauri/nativeSlicerBridge';
 import { info as logInfo } from '@tauri-apps/plugin-log';
 import { getSnapshot } from '@/supports/state';
+import { SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
 import { getRaftSettings, getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
 import { generateChamferedBase } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBase';
@@ -1188,15 +1190,10 @@ export class ExportManager {
         );
 
     if (!options.includeSupports) {
-      supports.roots = [];
-      supports.trunks = [];
-      supports.branches = [];
-      supports.leaves = [];
-      supports.twigs = [];
-      supports.sticks = [];
-      supports.braces = [];
-      supports.knots = [];
-      supports.kickstands = [];
+      // Every collection the format declares, walked rather than listed, so an
+      // export asked to leave supports out leaves out all of them.
+      const emptyDocument = supports as unknown as Record<string, unknown>;
+      for (const key of SUPPORT_COLLECTION_KEYS) emptyDocument[key] = [];
     }
 
     // Post-C the writer is fed from the chunk store, so `meshBytesMap` stays
@@ -1238,6 +1235,7 @@ export class ExportManager {
             meshModifiers?: ModelMeshModifiers;
             isSupportGeometry?: boolean;
             linkGroupId?: string;
+            classification?: MeshHealthReport;
             mesh: {
               mode: 'embedded-file';
               fileName: string;
@@ -1261,6 +1259,15 @@ export class ExportManager {
               });
               if (resolvedChunk.stale) staleModelIds.add(model.id);
             }
+
+            // Baked mesh classification (VOXL V2.4): the model/support split the
+            // session already knows, persisted so a reload does not re-run the
+            // classifier over the same triangles. Omitted for a stale chunk —
+            // those bytes are one bake behind the geometry the report describes,
+            // so its boundary would not address them.
+            const classification = staleModelIds.has(model.id)
+              ? undefined
+              : model.geometry.meshDefects?.nativeRepairReport;
 
             const origChunk = meshChunkStore.lastCommitted(model.id, 'original');
             if (origChunk) {
@@ -1321,6 +1328,7 @@ export class ExportManager {
               meshModifiers: resolveModelMeshModifiers(model),
               isSupportGeometry: model.isSupportGeometry,
               linkGroupId: model.linkGroupId,
+              classification,
               mesh: {
                 mode: 'embedded-file',
                 fileName: `${this.normalizeExportFilenameBase(model.name || 'model')}.stl`,

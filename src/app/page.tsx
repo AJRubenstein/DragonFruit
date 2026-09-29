@@ -28,9 +28,14 @@ import { PrintingModals } from '@/components/organisms/modals/PrintingModals';
 import { SceneFileModals } from '@/components/organisms/modals/SceneFileModals';
 import { ModifierModals } from '@/components/organisms/modals/ModifierModals';
 import { MeshRepairModals } from '@/components/organisms/modals/MeshRepairModals';
+import {
+  getThemeMeshHighlightColors,
+  subscribeToThemeMeshHighlightColors,
+} from '@/components/settings/themeCustomizations';
 import { useMirrorManager } from '@/features/mirror/useMirrorManager';
 import { useArrangeManager } from '@/features/scene/arrange/useArrangeManager';
 import { useHolePunchManager } from '@/features/hole-punching/useHolePunchManager';
+import { type MeshShaderType } from '@/features/shaders/mesh';
 import { useHollowingManager } from '@/features/hollowing/useHollowingManager';
 import type { HollowingManagerDeps } from '@/features/hollowing/useHollowingManager';
 import { useModifierApplyOverlay } from '@/features/hollowing/useModifierApplyOverlay';
@@ -58,7 +63,7 @@ import {
 } from '@/components/controls/ArrangePanel';
 import { DuplicatePanel, type DuplicateLayoutMode } from '../components/controls/DuplicatePanel';
 import { VisualSettingsPanel } from '@/components/controls/VisualSettingsPanel';
-import { contactEndpointsFor, countSupportCollections, getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, updateSupportEntity, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
+import { contactEndpointsFor, countSupportCollections, knotHostId, spanKnotHostType, getSupportTypeDescriptor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, updateSupportEntity, type SupportCollectionKey, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { LayerSlider } from '@/components/controls/LayerSlider';
 import { PrintingLayerGpuPreview } from '@/components/controls/PrintingLayerGpuPreview';
 import { SupportSidebar } from '@/supports/Settings/SupportSidebar';
@@ -229,6 +234,7 @@ import {
 // Domain Features
 import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
+import { useNativeSpaceMouseLifecycle } from '@/components/scene/camera/useNativeSpaceMouseLifecycle';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
 import { useIslandManager } from '@/volumeAnalysis/IslandScan/useIslandManager';
@@ -324,10 +330,10 @@ import {
   getSavedUvToolsSettings,
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
-import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
+import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, resolveDeclaredHosts, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitSupportShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
-import { resolveSegmentEndpoints } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
+import { resolveSegmentEndpoints, type ShaftEntity } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
 import { knotFields } from '@/supports/interaction/shared/selection/selectedIdsByType';
 import type { KnotSplitRemap } from '@/supports/SupportPrimitives/Knot/knotUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
@@ -358,7 +364,6 @@ import { getSupportsForModel, modelIdOfParentShaft } from '@/supports/PlacementL
 import { buildProjectedCrossSectionZRange } from '@/features/slicing/rasterLayerZipExport';
 import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 
-import { type MeshShaderType } from '@/features/shaders/mesh';
 import type { ModelTransform, TransformMode } from '@/hooks/useModelTransform';
 import type { Segment, SupportMode } from '@/supports/types';
 import { VoxlSizeLimitError } from '@/features/scene/voxl';
@@ -611,6 +616,9 @@ export default function Home() {
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
   // render branch happens to be mounted.
   useSupportHistoryHandlers();
+  // The navlib session is process-wide and must outlive the camera controllers
+  // (which unmount for the intro and every Home reset) — see the hook.
+  useNativeSpaceMouseLifecycle();
   // Applies the user's saved UI scale via native webview zoom (no-op in browser).
   useUiScale();
   // 1. Scene & Geometry (Multi-Model)
@@ -661,6 +669,13 @@ export default function Home() {
     getWorkspaceCameraSettingsSnapshot,
     getWorkspaceCameraSettingsServerSnapshot,
   );
+  // Selection/hover tint is a theme setting now, so the viewport follows the
+  // applied theme instead of a scene-level appearance override.
+  const themeMeshHighlightColors = React.useSyncExternalStore(
+    subscribeToThemeMeshHighlightColors,
+    getThemeMeshHighlightColors,
+    getThemeMeshHighlightColors,
+  );
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
   const activeMaterialProfile = React.useMemo(() => getActiveMaterialProfile(profileState), [profileState]);
   const hasActivePrinterProfile = Boolean(activePrinterProfile);
@@ -687,7 +702,6 @@ export default function Home() {
     persistActiveModelModifiers: () => {},
     setPendingModifierResetAction: () => {},
     setInteriorView: () => {},
-    setSessionShaderOverride: () => {},
     computeAutoHolePunchDepthMmForGeometry: () => 0,
     setHolePunchState: () => {},
     setHolePunchPlacements: () => {},
@@ -944,6 +958,7 @@ export default function Home() {
     selectedModelIds: scene.selectedModelIds,
     enabled: sceneAutosaveEnabled,
     debounceMs: sceneAutosaveSettings.debounceMs,
+    cooldownMs: sceneAutosaveSettings.cooldownMs,
     capMs: sceneAutosaveSettings.capMs,
     // **Finding N3.** This used to read `preferredOverwriteScenePathRef.current`
     // — a ref, read during render. Mutating a ref does not re-render, so the
@@ -1062,7 +1077,6 @@ export default function Home() {
     sceneImportReport: scene.sceneImportReport,
   });
 
-  const [sessionShaderOverride, setSessionShaderOverride] = React.useState<MeshShaderType | null>(null);
   const [interiorView, setInteriorView] = React.useState(false);
   const isSupportSpotlightHoldActive = useActionActive('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
   const [allowPrepareWithoutPrinter, setAllowPrepareWithoutPrinter] = React.useState(false);
@@ -2024,7 +2038,7 @@ export default function Home() {
         : null,
       braceSnapKind: snapTarget?.kind ?? null,
       braceSnapSegmentId: snappedSegmentId,
-      braceSnapLeafId: snapTarget?.kind === 'leaf' ? (snapTarget.leafId ?? null) : null,
+      braceSnapPrimitiveId: snapTarget?.entityId ?? null,
       previewStart: preview?.start ?? null,
       previewEnd: preview?.end ?? null,
       hoveredVsSnapMismatch,
@@ -2062,8 +2076,8 @@ export default function Home() {
   // stub in support mode (trackSupportCollectionsInHome), so counting from it
   // would silently report zero exactly where orient needs the truth. In
   // prepare mode the stub mirrors the store, so existing callers are unaffected.
-  // Summed over every modelId-bearing collection: a hand-written list left
-  // anchors uncounted, so a model carrying only anchors skipped the warning.
+  // Summed over every modelId-bearing collection, so a model carrying only one
+  // type still reports its supports.
   const getSupportPrimitiveCountForModel = React.useCallback((modelId: string | null | undefined) => {
     if (!modelId) return 0;
 
@@ -2977,16 +2991,14 @@ export default function Home() {
       addRootVolume(root);
     }
 
-    // Every shafted type, by its declared segments and contacts. Written out
-    // per type this covered six of the eight and left anchors uncounted.
+    // Every type with segments or contacts, by its declared segments and
+    // contacts. A brace has neither (its shaft is a curve between two knots),
+    // so the guard below skips it and it is summed on its own below.
     for (const descriptor of SUPPORT_TYPES) {
       if (!descriptor.hasSegments && descriptor.contactFields.length === 0) continue;
-      // A brace spans two knots along a curve instead of carrying segments; it
-      // is summed on its own below.
-      if (descriptor.id === 'brace') continue;
 
       const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as Record<string, {
-        id: string; modelId: string; segments?: Segment[]; rootId?: string; parentKnotId?: string; hostKnotId?: string;
+        id: string; typeId?: SupportTypeId; modelId: string; segments?: Segment[]; rootId?: string; parentKnotId?: string; hostKnotId?: string;
       }>;
 
       for (const entity of Object.values(collection ?? {})) {
@@ -2999,7 +3011,7 @@ export default function Home() {
 
         const segments = entity.segments ?? [];
         for (let i = 0; i < segments.length; i += 1) {
-          const endpoints = resolveSegmentEndpoints(descriptor.id, entity as never, segments[i], i, hosts);
+          const endpoints = resolveSegmentEndpoints(entity as ShaftEntity, segments[i], i, hosts);
           if (!endpoints) continue;
           supportMl += segmentVolumeMl(segments[i], endpoints.start, endpoints.end);
         }
@@ -5745,7 +5757,7 @@ export default function Home() {
         if (state.selectedCategory === 'segment' && state.selectedId) {
           toggleSegmentCurve(state.selectedId);
         } else if (state.selectedId && state.braces[state.selectedId]) {
-          toggleSegmentCurve(`braceSegment:${state.selectedId}`);
+          toggleSegmentCurve(knotHostId(spanKnotHostType(), state.selectedId));
         }
         break;
       }
@@ -5759,19 +5771,16 @@ export default function Home() {
         const beforeSnapshot = captureSupportEditSnapshot();
 
         const owner = findShaftOwnerOfSegment(segmentId);
-        const entity = owner ? getSupportEntity(owner.typeId, owner.id) as { segments: Segment[] } | null : null;
+        const entity = owner ? getSupportEntity(owner.typeId, owner.id) as ShaftEntity | null : null;
         if (owner && entity) {
           const segmentIndex = entity.segments.findIndex((segment) => segment.id === segmentId);
           const segment = entity.segments[segmentIndex];
           if (segment) {
             const descriptor = getSupportTypeDescriptor(owner.typeId);
-            const hosts = {
-              root: descriptor.ownsRoot ? state.roots[(entity as { rootId?: string }).rootId ?? ''] : undefined,
-              hostKnot: descriptor.lower.kind === 'knot'
-                ? state.knots[(entity as { parentKnotId?: string }).parentKnotId ?? '']
-                : undefined,
-            };
-            const endpoints = resolveSegmentEndpoints(owner.typeId, entity, segment, segmentIndex, hosts);
+            // Read off the declared edges: a kickstand's knot is at its upper
+            // end, so `lower.kind` would hand it none.
+            const hosts = resolveDeclaredHosts(owner.typeId, entity as unknown as Record<string, unknown>);
+            const endpoints = resolveSegmentEndpoints(entity, segment, segmentIndex, hosts);
 
             if (endpoints) {
               const { start, end } = endpoints;
@@ -5779,7 +5788,7 @@ export default function Home() {
                 ? projectBezierSplitPoint(start, segment.controlPoint1, segment.controlPoint2, end, splitTargetPoint)
                 : projectSplitPoint(start, end, splitTargetPoint);
               const { entity: updated, knotRemaps } = splitSupportShaft(
-                owner.typeId, entity, segmentId, projected.point, projected.t, hosts, state.knots,
+                entity, segmentId, projected.point, projected.t, hosts, state.knots,
               );
               applyJointSplitKnotRemaps(knotRemaps);
               updateSupportEntity(owner.typeId, updated);
@@ -6369,7 +6378,7 @@ export default function Home() {
     return false;
   }, []);
 
-  // Every collection, so a scene holding only anchors is not reported empty.
+  // Every collection, so a scene holding only one type is not reported empty.
   const hasSupportOrRaftGeometry = React.useMemo(() => {
     if (raftSettingsSnapshot.bottomMode !== 'off') return true;
     return SUPPORT_COLLECTION_KEYS.some((key) => hasAnyEntries(supportStateSnapshot[key]));
@@ -7221,8 +7230,7 @@ export default function Home() {
       }
     }
 
-    // Every type's joints and declared contacts. Written out per type this
-    // covered six of the eight, so an anchor never grew the bounds.
+    // Every type's joints and declared contacts, so each one grows the bounds.
     for (const descriptor of SUPPORT_TYPES) {
       const collection = supportStateSnapshot[descriptor.location.key as SupportCollectionKey] as unknown as
         Record<string, { modelId?: string; segments?: Segment[] }>;
@@ -9239,7 +9247,22 @@ export default function Home() {
     && !scene.activeModel?.meshModifiers?.hollowing?.bakedIntoGeometry;
   const effectiveShaderType = (shouldForceHollowingXray || hollowPreview)
     ? 'xray'
-    : (sessionShaderOverride ?? scene.shaderType);
+    : scene.shaderType;
+
+  // The Overhangs quick toggle remembers what it interrupted, so turning it off
+  // puts the viewport back where it was rather than on an arbitrary mode.
+  const preOverhangViewTypeRef = React.useRef<MeshShaderType>('soft_clay');
+  const toggleOverhangView = React.useCallback((next: boolean) => {
+    if (next) {
+      if (scene.shaderType !== 'overhang_heatmap') {
+        preOverhangViewTypeRef.current = scene.shaderType;
+      }
+      scene.setShaderType('overhang_heatmap');
+      return;
+    }
+    const previous = preOverhangViewTypeRef.current;
+    scene.setShaderType(previous === 'overhang_heatmap' ? 'soft_clay' : previous);
+  }, [scene.shaderType, scene.setShaderType]);
 
   // Populate the hollowing manager deps now that the hole-punch manager and
   // shared callbacks exist (breaks the TDZ/dependency cycle).
@@ -9252,7 +9275,6 @@ export default function Home() {
     persistActiveModelModifiers,
     setPendingModifierResetAction,
     setInteriorView,
-    setSessionShaderOverride,
     computeAutoHolePunchDepthMmForGeometry,
     setHolePunchState,
     setHolePunchPlacements,
@@ -9778,24 +9800,20 @@ export default function Home() {
       <TopBar
         meshColor={scene.meshColor}
         onMeshColorChange={scene.setMeshColor}
-        selectionColor={scene.selectionColor}
-        onSelectionColorChange={scene.setSelectionColor}
-        hoverColor={scene.hoverColor}
-        onHoverColorChange={scene.setHoverColor}
-        shaderType={scene.shaderType}
-        onShaderTypeChange={scene.setShaderType}
+        configuredShaderType={scene.configuredShaderType}
+        onConfiguredShaderTypeChange={scene.setConfiguredShaderType}
         matcapVariant={scene.matcapVariant}
         onMatcapVariantChange={scene.setMatcapVariant}
         flatUseVertexColors={scene.flatUseVertexColors}
         onFlatUseVertexColorsChange={scene.setFlatUseVertexColors}
-        toonSteps={scene.toonSteps}
-        onToonStepsChange={scene.setToonSteps}
         ambientIntensity={scene.ambientIntensity}
         onAmbientIntensityChange={scene.setAmbientIntensity}
         directionalIntensity={scene.directionalIntensity}
         onDirectionalIntensityChange={scene.setDirectionalIntensity}
         materialRoughness={scene.materialRoughness}
         onMaterialRoughnessChange={scene.setMaterialRoughness}
+        bakedAoIntensity={scene.bakedAoIntensity}
+        onBakedAoIntensityChange={scene.setBakedAoIntensity}
         xrayOpacity={scene.xrayOpacity}
         onXrayOpacityChange={scene.setXrayOpacity}
         heatmapMinAngle={scene.heatmapMinAngle}
@@ -9821,11 +9839,10 @@ export default function Home() {
         onModeChange={handleModeChange}
         hasModels={scene.models.length > 0}
         hasPrintingData={hasPrintingWorkspaceData}
-        viewTypeOverride={sessionShaderOverride}
-        onViewTypeOverrideChange={setSessionShaderOverride}
-        interiorView={interiorView}
-        onInteriorViewChange={setInteriorView}
-        interiorViewAvailable={hasCavityGeometry}
+        viewType={scene.shaderType}
+        onViewTypeChange={scene.setShaderType}
+        overhangViewActive={scene.shaderType === 'overhang_heatmap'}
+        onOverhangViewChange={toggleOverhangView}
         hideWorkflowControls={onboardingMounted && wizardActive}
         heatmapColors={scene.heatmapColors}
         onHeatmapColorChange={scene.onHeatmapColorChange}
@@ -9938,7 +9955,7 @@ export default function Home() {
 
         ) : scene.mode === 'support' ? (
           <>
-            <SupportSidebar key="support-settings" />
+            <SupportSidebar key="support-settings" activeModelId={scene.activeModelId} />
             {autoSupportsExperimentEnabled && (
               <AutoSupportPanel
                 key="support-auto"
@@ -10138,8 +10155,7 @@ export default function Home() {
             shaderType={effectiveShaderType}
             matcapVariant={scene.matcapVariant}
             flatUseVertexColors={scene.flatUseVertexColors}
-            toonSteps={scene.toonSteps}
-            xrayOpacity={scene.xrayOpacity}
+                xrayOpacity={scene.xrayOpacity}
             heatmapMinAngle={scene.heatmapMinAngle}
             heatmapMaxAngle={scene.heatmapMaxAngle}
             heatmapColors={scene.heatmapColors}
@@ -10154,6 +10170,11 @@ export default function Home() {
                 ? islandsPoc.islandMarkers
                 : (islands.overlayEnabled ? islands.islandMarkers : [])
             }
+            islandInstances={
+              scene.mode === 'support'
+                ? islandsPoc.islandInstances
+                : (islands.overlayEnabled ? islands.islandInstances : null)
+            }
             overhangIslands={
               scene.mode === 'support' ? islandsPoc.overhangIslands : []
             }
@@ -10167,6 +10188,7 @@ export default function Home() {
             ambientIntensity={scene.ambientIntensity}
             directionalIntensity={scene.directionalIntensity}
             materialRoughness={scene.materialRoughness}
+            bakedAoIntensity={scene.bakedAoIntensity}
             scanResults={islands.scanData}
             layerHeightMm={slicing.layerHeightMm}
             scanBBox={islands.scanBBox}
@@ -10229,10 +10251,7 @@ export default function Home() {
             onMarqueeSelectionChange={handleSceneMarqueeSelection}
             placementPreviews={supports.placementPreviews}
             blockSupportPlacement={supports.isPlacementHardDisabled}
-            isBranchPlacementActive={supports.branchPlacement.isActive}
-            isLeafPlacementActive={supports.leafPlacement.isActive}
-            isBracePlacementActive={supports.bracePlacement.isActive}
-            isKickstandPlacementActive={supports.kickstandPlacement.isActive}
+            placementActive={supports.placementActive}
             branchTipPosition={supports.branchPlacement.tipPosition}
             branchHoverPosition={supports.branchPlacement.hoverPosition}
             leafTipPosition={supports.leafPlacement.tipPosition}
@@ -10241,8 +10260,8 @@ export default function Home() {
             selectionHighlightMode={effectiveSelectionHighlightMode}
             higherContrastModelEdges={workspaceCameraSettings.higherContrastModelEdges}
             blockerEditMode={hollowingEditMode}
-            selectionColor={scene.selectionColor}
-            hoverColor={scene.hoverColor}
+            selectionColor={themeMeshHighlightColors.selection}
+            hoverColor={themeMeshHighlightColors.hover}
             hoverTintStrength={effectiveHoverTintStrengthForScene}
             selectedTintStrength={effectiveSelectedTintStrengthForScene}
             supportsRef={supportsRef}
@@ -10333,7 +10352,7 @@ export default function Home() {
             deferCameraIntro={holdEmptyStateSceneImportUi}
             freezeViewportActive={isSlicingBusy && scene.mode === 'export'}
             indicatorPlaneZ={scene.mode === 'printing' ? printingCurrentHeightMm : null}
-            indicatorPlaneColor={scene.selectionColor || '#ec2a77'}
+            indicatorPlaneColor={themeMeshHighlightColors.selection || '#ec2a77'}
             onNewDeviceDetected={handleNewDeviceDetected}
           >
             {scene.mode === 'prepare' && transformMgr.transformMode === 'smoothing' && (

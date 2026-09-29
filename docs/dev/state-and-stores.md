@@ -52,6 +52,17 @@ backup/legacy keys, sanitize-on-read, `setState → sanitize → persist → not
 and active-material sidecar keys. Minimal examples: `printerReachabilityStore.ts`,
 `src/volumeAnalysis/Islands/hoverStore.ts`.
 
+One store splits its two channels on purpose.
+`src/components/scene/SceneCanvas/supportPlacementGuideStore.ts` holds the
+support placement guide plane, which follows the pointer continuously: it
+notifies on the boolean "is the plane set" (that flips on enter and leave, and is
+what `SceneCanvas` subscribes to in order to mount the overlay) and exposes the Z
+itself through a plain getter, read every frame by the guide's material. A value
+that moves every frame is not a snapshot — subscribing to it would re-render the
+scene per pointer move, and throttling it is what made the line step on shallow
+faces. Reach for this shape only when a consumer genuinely needs the live value
+outside render.
+
 ## The support store
 
 `src/supports/state.ts` is the largest module store here and departs from the
@@ -104,6 +115,19 @@ export function subscribeToMySettings(listener: () => void): () => void { /* 'st
 
 The Experiments registry (`src/features/experiments/experimentsRegistry.ts`)
 follows this pattern with a JSON-value envelope.
+
+## Theme colors
+
+`src/components/settings/themeCustomizations.ts` owns the theme palette.
+`applyThemeCustomColors` writes it to the document as CSS variables, so DOM
+styling needs no subscription. Consumers that cannot read CSS variables — the
+3D viewport's mesh selection/hover tint — subscribe to the applied palette with
+`subscribeToThemeMeshHighlightColors` / `getThemeMeshHighlightColors` and
+`useSyncExternalStore`; `src/app/page.tsx` is the only reader and forwards the
+colors to the canvas. Both are theme entries (`meshSelectionColor`,
+`meshHoverColor`), edited from the UI & Theme tab's **Mesh Highlights** sub-tab
+and from the Mesh tab's Selection & Hover section, which mirrors them rather
+than holding an override.
 
 ## Which pattern to use
 
