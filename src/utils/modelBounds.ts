@@ -200,8 +200,8 @@ export function isBoundsOutsideVolume(bounds: THREE.Box3, volume: THREE.Box3, ep
  *
  * Distinct from `isBoundsOutsideVolume`, which asks whether the bounds leave the
  * volume at all: a model that merely straddles a plate edge fails that test but
- * is not disjoint, and slicing keeps the overlapping part (staging clips
- * geometry to the plate footprint).
+ * is not disjoint. Slicing retains its closed surface and limits raster output
+ * to the printable footprint.
  */
 export function isBoundsDisjointFromVolume(bounds: THREE.Box3, volume: THREE.Box3, epsilonMm: number): boolean {
   return (

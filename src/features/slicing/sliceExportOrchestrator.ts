@@ -1,5 +1,7 @@
 import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profileStore';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
+import { Box3, Vector3 } from 'three';
+import { computeApproxModelWorldBounds, computePreciseModelWorldBounds, isBoundsDisjointFromVolume } from '@/utils/modelBounds';
 import { buildSolidSliceMeshForWasm } from './rasterLayerZipExport';
 import { attachJobMetadataPayloads, getJobMetadataPayloadDeclarations } from './jobMetadataPayloads';
 import { clampSliceJobNumber } from './sliceJobLimits';
@@ -61,7 +63,7 @@ const STAGE_MESH_SINGLE_SHOT_MAX_BYTES = 256 * 1024 * 1024;
 // File-backed staging incurs an additional disk write + read pass, so keep it as a
 // high-watermark fallback for very large meshes where in-memory staging becomes risky.
 const STAGE_MESH_FILE_BACKED_MIN_BYTES = 2 * 1024 * 1024 * 1024;
-const MESH_TRANSPORT_ENCODING = 'quantized_u16' as const;
+const MESH_TRANSPORT_ENCODING = 'raw_f32' as const;
 const STAGE_PROGRESS_UPDATE_MIN_INTERVAL_MS = 250;
 const STAGE_PROGRESS_UPDATE_MIN_BYTES = 64 * 1024 * 1024;
 
@@ -109,55 +111,6 @@ function resolveMeshChunkTargetBytes(initialMeshStagingBytes: number): number {
         STAGING_CHUNK_TARGET_MIN_BYTES,
         Math.min(STAGING_CHUNK_TARGET_MAX_BYTES, dynamicTarget),
     );
-}
-
-function resolveMeshTransportQuantizationBounds(printerProfile: PrinterProfile) {
-    const widthMm = Math.max(1, Number(printerProfile.buildVolumeMm.width) || 1);
-    const depthMm = Math.max(1, Number(printerProfile.buildVolumeMm.depth) || 1);
-    const heightMm = Math.max(1, Number(printerProfile.buildVolumeMm.height) || 1);
-
-    return {
-        minX: -widthMm * 0.5,
-        minY: -depthMm * 0.5,
-        minZ: 0,
-        maxX: widthMm * 0.5,
-        maxY: depthMm * 0.5,
-        maxZ: heightMm,
-    };
-}
-
-function quantizeMeshChunkToUint16(chunk: Uint8Array, bounds: ReturnType<typeof resolveMeshTransportQuantizationBounds>): Uint8Array {
-    if (chunk.byteLength === 0) return chunk;
-    if (chunk.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0) {
-        throw new Error(`Mesh chunk byte length ${chunk.byteLength} is not aligned to f32 boundaries.`);
-    }
-
-    const floats = new Float32Array(chunk.buffer, chunk.byteOffset, chunk.byteLength / Float32Array.BYTES_PER_ELEMENT);
-    const quantized = new Uint16Array(floats.length);
-
-    const spans = [
-        Math.max(0, bounds.maxX - bounds.minX),
-        Math.max(0, bounds.maxY - bounds.minY),
-        Math.max(0, bounds.maxZ - bounds.minZ),
-    ];
-    const mins = [bounds.minX, bounds.minY, bounds.minZ];
-    const maxValue = 65535;
-
-    for (let i = 0; i < floats.length; i += 1) {
-        const axis = i % 3;
-        const span = spans[axis];
-        if (!Number.isFinite(span) || span <= 0) {
-            quantized[i] = 0;
-            continue;
-        }
-
-        const value = floats[i];
-        const normalized = (value - mins[axis]) / span;
-        const clamped = Math.max(0, Math.min(1, normalized));
-        quantized[i] = Math.round(clamped * maxValue);
-    }
-
-    return new Uint8Array(quantized.buffer);
 }
 
 export type SliceExportOrchestratorOptions = {
@@ -290,7 +243,7 @@ export type SliceExportResult = {
                 maxX: number;
                 maxY: number;
                 maxZ: number;
-            };
+            } | null;
             meshTransferMode: 'single-shot' | 'streamed' | 'file-backed';
             meshStageFilePath: string | null;
         };
@@ -454,9 +407,23 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
     };
 
     const excludedModelIdSet = new Set(options.excludedModelIds ?? []);
-    const visibleModels = options.models.filter(
-        (model) => model.visible && !excludedModelIdSet.has(model.id),
-    );
+    const halfWidth = Math.max(1, Number(options.printerProfile.buildVolumeMm.width) || 1) * 0.5;
+    const halfDepth = Math.max(1, Number(options.printerProfile.buildVolumeMm.depth) || 1) * 0.5;
+    const buildHeight = Math.max(1, Number(options.printerProfile.buildVolumeMm.height) || 1);
+    const buildVolume = new Box3(new Vector3(-halfWidth, -halfDepth, 0), new Vector3(halfWidth, halfDepth, buildHeight));
+    const visibleModels = options.models.filter((model) => {
+        if (!model.visible || excludedModelIdSet.has(model.id)) return false;
+        const approximate = computeApproxModelWorldBounds(model.geometry, model.transform);
+        if (buildVolume.containsBox(approximate)) return true;
+        // An enclosing box that misses the volume cannot contribute any pixels.
+        // For rotated boxes that overlap, use the actual transformed vertices.
+        if (isBoundsDisjointFromVolume(approximate, buildVolume, 0.01)) return false;
+        return !isBoundsDisjointFromVolume(
+            computePreciseModelWorldBounds(model.geometry, model.transform),
+            buildVolume,
+            0.01,
+        );
+    });
     if (visibleModels.length === 0) {
         throw new Error('No in-bounds visible models available for slicing.');
     }
@@ -497,9 +464,12 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
     });
 
     const initialMeshStagingBytes = estimateInitialMeshStagingBytes(visibleModels);
-    const meshTransportBytesEstimate = Math.ceil(initialMeshStagingBytes / 2);
-    const meshTransportEncoding: 'raw_f32' | 'quantized_u16' = MESH_TRANSPORT_ENCODING;
-    const meshTransportQuantization = resolveMeshTransportQuantizationBounds(options.printerProfile);
+    // Keep outside crossings and closed surfaces intact. Plate-box quantization
+    // clamps those coordinates; surface clipping removes the closing crossings.
+    // The rasterizer alone crops the filled spans to the printable dimensions.
+    const meshTransportBytesEstimate = initialMeshStagingBytes;
+    const meshTransportEncoding = MESH_TRANSPORT_ENCODING;
+    const meshTransportQuantization = null;
     const meshChunkTargetBytes = resolveMeshChunkTargetBytes(meshTransportBytesEstimate);
     const meshTransferMode: 'single-shot' | 'streamed' | 'file-backed' = meshTransportBytesEstimate >= STAGE_MESH_FILE_BACKED_MIN_BYTES
         ? 'file-backed'
@@ -532,16 +502,13 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
 
     const handleMeshChunk = async (chunk: Uint8Array) => {
         throwIfAborted(options.abortSignal);
-        const transportChunk = meshTransportEncoding === 'quantized_u16'
-            ? quantizeMeshChunkToUint16(chunk, meshTransportQuantization)
-            : chunk;
 
-        cumulativeBytesStage += transportChunk.byteLength;
+        cumulativeBytesStage += chunk.byteLength;
         stageMeshChunkCount += 1;
         maybeEmitStageProgress();
 
         const chunkInvokeStart = performance.now();
-        const chunkAck = await invoke<StageMeshChunkAck>('stage_mesh_binary_chunk', transportChunk, {
+        const chunkAck = await invoke<StageMeshChunkAck>('stage_mesh_binary_chunk', chunk, {
             headers: { 'Content-Type': 'application/octet-stream' },
         });
 
@@ -563,19 +530,15 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
             throw new Error('Mesh stage file path was not allocated before chunk append.');
         }
 
-        const transportChunk = meshTransportEncoding === 'quantized_u16'
-            ? quantizeMeshChunkToUint16(chunk, meshTransportQuantization)
-            : chunk;
-
-        cumulativeBytesStage += transportChunk.byteLength;
+        cumulativeBytesStage += chunk.byteLength;
         stageMeshChunkCount += 1;
         maybeEmitStageProgress();
 
         const chunkOffset = meshStageFileOffset;
-        meshStageFileOffset += transportChunk.byteLength;
+        meshStageFileOffset += chunk.byteLength;
 
         const appendStart = performance.now();
-        const appendedLen = await invoke<number>('append_mesh_stage_chunk', transportChunk, {
+        const appendedLen = await invoke<number>('append_mesh_stage_chunk', chunk, {
             headers: {
                 'Content-Type': 'application/octet-stream',
                 'x-mesh-stage-path': meshStageFilePath,
@@ -623,7 +586,7 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
     try {
         if (meshTransferMode === 'streamed') {
             // Modifier baking leaves raw f32 output in the shared native stage.
-            // Reset it before appending the quantized scene, never before baking.
+            // Reset it before appending the prepared scene, never before baking.
             await invoke('stage_mesh_binary_start', { totalBytes: meshTransportBytesEstimate });
         } else if (meshTransferMode === 'file-backed') {
             meshStageFilePath = await invoke<string>('allocate_mesh_stage_path');
@@ -662,19 +625,16 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
             solidMesh.trianglesXYZ.byteOffset,
             solidMesh.trianglesXYZ.byteLength,
         );
-        const transportBytes = meshTransportEncoding === 'quantized_u16'
-            ? quantizeMeshChunkToUint16(meshBytes, meshTransportQuantization)
-            : meshBytes;
-        const mb = Math.round(transportBytes.byteLength / (1024 * 1024));
+        const mb = Math.round(meshBytes.byteLength / (1024 * 1024));
         options.onProgress?.(0, 1, `Transferring Mesh (${mb} MB)`);
 
         const chunkInvokeStart = performance.now();
-        const chunkAck = await invoke<StageMeshChunkAck>('stage_mesh_binary_set', transportBytes, {
+        const chunkAck = await invoke<StageMeshChunkAck>('stage_mesh_binary_set', meshBytes, {
             headers: { 'Content-Type': 'application/octet-stream' },
         });
 
         stageMeshIpcMs += performance.now() - chunkInvokeStart;
-        cumulativeBytesStage = chunkAck.totalBytes > 0 ? chunkAck.totalBytes : transportBytes.byteLength;
+        cumulativeBytesStage = chunkAck.totalBytes > 0 ? chunkAck.totalBytes : meshBytes.byteLength;
         stageMeshChunkCount = chunkAck.chunksReceived > 0 ? chunkAck.chunksReceived : 1;
         stageMeshAckAppendNsTotal = Math.max(stageMeshAckAppendNsTotal, chunkAck.appendNsTotal ?? 0);
         stageMeshCapacityMaxBytes = Math.max(stageMeshCapacityMaxBytes, chunkAck.capacityBytes ?? 0);

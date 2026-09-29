@@ -2789,8 +2789,8 @@ export default function Home() {
 
   /**
    * Models that contribute to a slice. A model that only partly overlaps the
-   * build volume still prints the overlapping part — staging clips its geometry
-   * to the plate footprint — so exclusion is for models with no overlap at all.
+   * build volume keeps its closed surface; the raster crops the filled spans.
+   * Exclusion is only for models with no overlap at all.
    */
   const sliceableModelIdSet = React.useMemo(() => {
     const visibleModels = scene.models.filter((model) => model.visible);
@@ -2802,16 +2802,12 @@ export default function Home() {
 
     for (const model of visibleModels) {
       const approxBounds = computeApproxModelWorldBounds(model.geometry, model.transform);
-      // Only the (slightly oversized) approx bounds can justify skipping a
-      // model; the precise bounds decide when they say it overlaps.
-      const disjoint = isBoundsDisjointFromVolume(approxBounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)
-        ? isBoundsDisjointFromVolume(
-          computePreciseModelWorldBounds(model.geometry, model.transform),
-          resinBuildVolumeBounds,
-          BUILD_VOLUME_BOUNDS_EPS_MM,
-        )
-        : false;
-      if (!disjoint) {
+      if (isBoundsDisjointFromVolume(approxBounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)) continue;
+      // Rotated bounding boxes can overlap even when the actual mesh does not.
+      const bounds = isBoundsOutsideVolume(approxBounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)
+        ? computePreciseModelWorldBounds(model.geometry, model.transform)
+        : approxBounds;
+      if (!isBoundsDisjointFromVolume(bounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)) {
         sliceableModelIds.add(model.id);
       }
     }
