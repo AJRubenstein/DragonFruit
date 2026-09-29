@@ -202,7 +202,7 @@ export function IslandOverhangOverlay({
         const covered = steepFlatNeedsCoverage(region.surfaceAreaMm2, toppleCoverage);
         const into = covered ? topplePositions : mutedPositions;
         const shares = covered ? toppleShares : mutedShares;
-        into.push(...arr);
+        for (let i = 0; i < arr.length; i++) into.push(arr[i]);
         for (let t = 0; t < ids.length; t++) shares.push(share);
         continue;
       }
