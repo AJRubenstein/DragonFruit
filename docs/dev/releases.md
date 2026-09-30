@@ -217,21 +217,18 @@ closes it as part of that release, or closes it by hand. RC builds on `dev`
 or `main` don't trigger this job — only a final version bump does, so labels
 land once per train stop rather than once per commit.
 
-## Branch preview builds (`build-nightly.yml`)
+## Branch preview builds (`build-preview.yml`)
 
-We are dropping the `nightly` codeword in favor of `preview` or
-`branch-preview`, as the former has a very specific meaning in software.
+Separate from all of the above: `build-preview.yml` builds an arbitrary branch
+on demand (`workflow_dispatch`, or a `/preview` comment on a pull request) and
+publishes a rolling `preview_{branch}` prerelease, so a reviewer can download
+and try an exact commit.
 
-Until we drop the term, the reality is this: Separate from all of the above:
-`build-nightly.yml` builds an arbitrary branch on demand (`workflow_dispatch`
-or a `/preview` PR comment — `/nightly` still works but is deprecated) and
-publishes a rolling `nightly_{branch}`
-prerelease so a reviewer can download and try an exact commit. It is **not**
-a scheduled build of `dev`, doesn't participate in the versioning/channel
-model above, and isn't wired to the auto-updater at all. The name is
-inherited from an older convention and is somewhat misleading given it isn't
-on any schedule — treat it as a branch/PR preview mechanism, not a "nightly
-channel."
+It is **not** a scheduled build of `dev`, doesn't participate in the
+versioning/channel model above, and isn't wired to the auto-updater at all.
+These builds used to be called *nightly*, which was misleading on both counts:
+nothing about them is nightly, and nothing is on a schedule. Treat them as a
+branch or pull-request preview mechanism.
 
 ### External (fork) pull requests
 

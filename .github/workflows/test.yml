@@ -110,3 +110,79 @@ jobs:
       # (node-snapped placement, and the fallback for tips the lattice refuses).
       - name: Compare grid-mode auto-support metrics with the grid baseline
         run: npm run bench:auto-supports -- --grid --baseline scripts/bench/auto-support-baseline-grid.json --check
+
+  cargo-locks:
+    name: Cargo lockfiles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # The engine depends on plugins/lumen by path, so resolution
+          # fails without the submodules for reasons unrelated to the locks.
+          submodules: recursive
+
+      - name: Install the pinned Rust toolchain
+        # Same cargo as rust-toolchain.toml, minus the macOS targets it
+        # lists: resolving a lockfile needs neither.
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+
+      - name: Check every Cargo.lock matches its manifest
+        # `cargo update --workspace` only touches entries the manifests no
+        # longer match, so without --locked it is also the minimal fix.
+        run: |
+          fail=0
+          for lock in $(git ls-files '*Cargo.lock'); do
+            m="${lock%.lock}.toml"
+            if ! err=$(cargo update --workspace --locked --manifest-path "$m" 2>&1 >/dev/null); then
+              if grep -q -- '--locked was passed' <<<"$err"; then
+                echo "::error file=$lock,title=Cargo.lock out of date::Run: cargo update --workspace --manifest-path $m"
+              else
+                echo "::error file=$lock,title=Cargo.lock could not be resolved::$(grep -m1 '^error' <<<"$err")"
+              fi
+              fail=1
+            fi
+          done
+          exit $fail
+
+  crate-versions:
+    name: Crate versions
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # Needed to tell which plugins the engine compiles in.
+          submodules: recursive
+
+      - name: Warn when a crate changes without a version bump
+        # A warning, not an error: refactors, tests and changes that leave
+        # the output alone don't need a bump.
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          pkg_version() {
+            awk '/^\[/ { in_pkg = ($0 == "[package]") }
+                 in_pkg && /^version *=/ { gsub(/[" ]/, ""); sub(/^version=/, ""); print; exit }'
+          }
+          # Plugin encoders are #[path]-included into the engine, so a change
+          # to one (or a bump of its submodule) is a change to the engine.
+          engine_plugins=()
+          for f in plugins/*/slicing/rust/encoder_impl.rs; do
+            [ -e "$f" ] && engine_plugins+=("${f%/slicing/rust/encoder_impl.rs}")
+          done
+          for toml in $(git ls-files 'rust/*/Cargo.toml'); do
+            dir="${toml%/Cargo.toml}"
+            old=$(git show "$BASE:$toml" 2>/dev/null | pkg_version || true)
+            [ -n "$old" ] || continue  # crate is new in this PR
+            [ "$old" = "$(pkg_version < "$toml")" ] || continue
+            paths=("$dir/src")
+            [ "$dir" = rust/dragonfruit-slicing-engine ] && paths+=("${engine_plugins[@]}")
+            git diff --quiet "$BASE"...HEAD -- "${paths[@]}" && continue
+            echo "::warning file=$toml,title=Crate version unchanged::$dir changed but is still $old. Bump it if its behaviour changed; the Cargo lockfiles check will then list the locks to refresh."
+          done
