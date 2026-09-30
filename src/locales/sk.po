@@ -79,7 +79,7 @@ msgstr ""
 msgid "{downloaded} / {total} ({pct}%)"
 msgstr ""
 
-#: src/app/page.tsx:472
+#: src/app/page.tsx:473
 #: src/components/controls/ModelStatsCard.tsx:209
 msgid "{hours} h {minutes} min"
 msgstr "{hours} h {minutes} min"
@@ -97,11 +97,11 @@ msgstr ""
 msgid "{islandCount, plural, one {# island detected} other {# islands detected}}"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:143
+#: src/features/slicing/components/SlicingPanel.tsx:145
 msgid "{materialId} (Remote ID)"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:139
+#: src/features/slicing/components/SlicingPanel.tsx:141
 msgid "{materialName} ({sourceName})"
 msgstr ""
 
@@ -109,8 +109,8 @@ msgstr ""
 msgid "{minutes} min"
 msgstr "{minutes} min"
 
-#: src/app/page.tsx:464
-#: src/app/page.tsx:473
+#: src/app/page.tsx:465
+#: src/app/page.tsx:474
 #: src/components/controls/ModelStatsCard.tsx:210
 msgid "{minutes} min {seconds} s"
 msgstr ""
@@ -119,15 +119,15 @@ msgstr ""
 msgid "{pct}%"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:131
+#: src/features/slicing/components/SlicingPanel.tsx:133
 msgid "{pixels}px Edge Blur"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:127
+#: src/features/slicing/components/SlicingPanel.tsx:129
 msgid "{pixels}px XY · {layers}L Z"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:211
+#: src/features/slicing/components/SlicingPanel.tsx:213
 msgid "{rate} layers/s"
 msgstr ""
 
@@ -144,11 +144,11 @@ msgstr ""
 msgid "{shells, plural, one {# shell} other {# shells}}"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:123
+#: src/features/slicing/components/SlicingPanel.tsx:125
 msgid "{steps}x Coverage"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:119
+#: src/features/slicing/components/SlicingPanel.tsx:121
 msgid "{steps}x ZAA Samples"
 msgstr ""
 
@@ -158,16 +158,16 @@ msgid "< 1 min"
 msgstr "< 1 min"
 
 #. Approximate estimated print time (the "~" marks it as a rough estimate). {hours}/{mins} are whole-number quantities.
-#: src/app/page.tsx:456
+#: src/app/page.tsx:457
 msgid "~{hours} h {mins} min"
 msgstr "~{hours} h {mins} min"
 
 #. Approximate estimated print time under an hour (the "~" marks it as a rough estimate).
-#: src/app/page.tsx:457
+#: src/app/page.tsx:458
 msgid "~{mins} min"
 msgstr "~{mins} min"
 
-#: src/features/slicing/components/SlicingPanel.tsx:1593
+#: src/features/slicing/components/SlicingPanel.tsx:1621
 msgid "2D Blur"
 msgstr ""
 
@@ -203,7 +203,7 @@ msgstr ""
 #. Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").
 #: src/components/controls/IslandListCard.tsx:144
 #: src/components/layout/TopBar.tsx:1010
-#: src/features/slicing/components/SlicingPanel.tsx:2825
+#: src/features/slicing/components/SlicingPanel.tsx:2857
 msgid "Active"
 msgstr "Aktívne"
 
@@ -244,7 +244,7 @@ msgstr ""
 msgid "Add contacts along the edge or corner a pose bears on, so a leaning part is held against toppling and peel (default on)"
 msgstr ""
 
-#: src/app/page.tsx:2239
+#: src/app/page.tsx:2240
 msgid "Add joint"
 msgstr "Pridať Kĺb"
 
@@ -262,7 +262,7 @@ msgstr "Pridať tlačiareň"
 msgid "Add Printer"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:641
+#: src/components/controls/AutoSupportPanel.tsx:656
 msgid "Add to existing"
 msgstr ""
 
@@ -290,6 +290,10 @@ msgstr ""
 msgid "After updating .env, restart the app, then click “I configured it”."
 msgstr ""
 
+#: src/features/slicing/components/SlicingPanel.tsx:2094
+msgid "All visible models are outside the build volume."
+msgstr ""
+
 #: src/components/organisms/NotificationStack.tsx:10
 msgid "Already optimal for this goal."
 msgstr ""
@@ -307,7 +311,7 @@ msgstr ""
 msgid "Anchor"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2647
+#: src/features/slicing/components/SlicingPanel.tsx:2679
 msgid "Anti-Aliasing"
 msgstr ""
 
@@ -320,11 +324,11 @@ msgstr "Anti-aliasing: nič sa nedá anti-aliasovať."
 msgid "Apply"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3908
+#: src/features/slicing/components/SlicingPanel.tsx:3940
 msgid "Apply for Session"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:451
+#: src/components/controls/AutoSupportPanel.tsx:456
 msgid "Apply this preset to the auto-support settings"
 msgstr ""
 
@@ -346,7 +350,7 @@ msgid "Authorize DragonFruit so backups can be saved into your private repositor
 msgstr ""
 
 #: src/components/printers/SetupMethodChooser.tsx:25
-#: src/features/slicing/components/SlicingPanel.tsx:2653
+#: src/features/slicing/components/SlicingPanel.tsx:2685
 msgid "Auto"
 msgstr ""
 
@@ -358,7 +362,7 @@ msgstr ""
 msgid "Auto Brace failed. Check console for details."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2648
+#: src/features/slicing/components/SlicingPanel.tsx:2680
 msgid "Auto derives slice settings from your printer resolution and material layer height. Expert lets you jump to material AA settings or apply a temporary session override."
 msgstr ""
 
@@ -378,11 +382,11 @@ msgstr ""
 msgid "Auto Supports"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:390
+#: src/components/controls/AutoSupportPanel.tsx:395
 msgid "Auto Supports (Beta)"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:540
+#: src/components/controls/AutoSupportPanel.tsx:556
 msgid "Auto Supports (Beta) Settings"
 msgstr ""
 
@@ -427,8 +431,8 @@ msgstr ""
 msgid "Auto-support preset, modified"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:394
-#: src/components/controls/AutoSupportPanel.tsx:525
+#: src/components/controls/AutoSupportPanel.tsx:399
+#: src/components/controls/AutoSupportPanel.tsx:541
 msgid "Auto-support settings"
 msgstr ""
 
@@ -473,7 +477,7 @@ msgstr ""
 msgid "Autosave idle delay"
 msgstr ""
 
-#: src/app/page.tsx:1021
+#: src/app/page.tsx:1022
 msgid "Autosave is not working"
 msgstr ""
 
@@ -497,7 +501,7 @@ msgstr ""
 msgid "Autosaving…"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:208
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:67
 msgid "Avg island area"
 msgstr ""
 
@@ -512,7 +516,7 @@ msgstr ""
 msgid "Back to setup step"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3944
+#: src/features/slicing/components/SlicingPanel.tsx:3976
 msgid "Background Pipeline"
 msgstr ""
 
@@ -581,7 +585,7 @@ msgstr ""
 msgid "Backups are stored in your own private GitHub repository. DragonFruit does not run a central backup server and does not keep a copy of your backup data outside your repository."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:782
+#: src/features/slicing/components/SlicingPanel.tsx:784
 msgid "Balanced"
 msgstr ""
 
@@ -601,7 +605,7 @@ msgstr ""
 msgid "Bias (Bottom - Top)"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1578
+#: src/features/slicing/components/SlicingPanel.tsx:1606
 msgid "Binary Base"
 msgstr ""
 
@@ -613,7 +617,7 @@ msgstr ""
 msgid "Blockers"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2761
+#: src/features/slicing/components/SlicingPanel.tsx:2793
 msgid "Blur"
 msgstr ""
 
@@ -685,7 +689,7 @@ msgstr ""
 msgid "Built-in presets cannot be deleted"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2807
+#: src/features/slicing/components/SlicingPanel.tsx:2839
 msgid "Bypassed"
 msgstr ""
 
@@ -694,7 +698,7 @@ msgstr ""
 msgid "cached"
 msgstr "kešované"
 
-#: src/features/slicing/components/SlicingPanel.tsx:2747
+#: src/features/slicing/components/SlicingPanel.tsx:2779
 msgid "Calculating AA profile…"
 msgstr ""
 
@@ -708,13 +712,14 @@ msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:638
-#: src/components/controls/AutoSupportPanel.tsx:633
+#: src/components/controls/AutoSupportPanel.tsx:648
 #: src/components/controls/IslandScanCard.tsx:198
 #: src/components/controls/IslandsPanel.tsx:319
 #: src/components/printers/PrinterVariantPickerModal.tsx:701
 #: src/components/settings/FleetManagement.tsx:436
 #: src/components/settings/LocalBackupsSettingsTab.tsx:1004
 #: src/components/settings/LocalBackupsSettingsTab.tsx:1101
+#: src/features/slicing/components/SlicingPanel.tsx:4124
 #: src/features/updater/UpdateCheckerSection.tsx:258
 #: src/supports/Settings/components/PresetSelector.tsx:745
 #: src/supports/Settings/components/PresetSelector.tsx:791
@@ -738,20 +743,20 @@ msgstr ""
 msgid "Cancel restore"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:4054
+#: src/features/slicing/components/SlicingPanel.tsx:4086
 msgid "Cancel Slicing"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:158
-#: src/features/slicing/components/SlicingPanel.tsx:3976
+#: src/features/slicing/components/SlicingPanel.tsx:160
+#: src/features/slicing/components/SlicingPanel.tsx:4008
 msgid "Cancelled"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:159
+#: src/features/slicing/components/SlicingPanel.tsx:161
 msgid "Cancelling"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:203
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:62
 msgid "Candidates"
 msgstr ""
 
@@ -820,7 +825,7 @@ msgstr ""
 msgid "Choose Folder"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3695
+#: src/features/slicing/components/SlicingPanel.tsx:3727
 msgid "Choose slice action"
 msgstr ""
 
@@ -854,7 +859,7 @@ msgstr ""
 
 #: src/components/controls/AutoRotationPanel.tsx:71
 #: src/components/layout/EmptySceneState.tsx:627
-#: src/features/slicing/components/SlicingPanel.tsx:1059
+#: src/features/slicing/components/SlicingPanel.tsx:1064
 #: src/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard.tsx:876
 msgid "Clear"
 msgstr ""
@@ -867,7 +872,7 @@ msgstr ""
 msgid "Clear All failed. Check console for details."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3882
+#: src/features/slicing/components/SlicingPanel.tsx:3914
 msgid "Clear Override"
 msgstr ""
 
@@ -875,7 +880,7 @@ msgstr ""
 msgid "Clear Selection"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2845
+#: src/features/slicing/components/SlicingPanel.tsx:2877
 msgid "Clear Session Override"
 msgstr ""
 
@@ -896,17 +901,17 @@ msgstr ""
 msgid "Client ID"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:496
+#: src/components/controls/AutoSupportPanel.tsx:512
 #: src/components/layout/TopBar.tsx:1223
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
 msgid "Close"
 msgstr "Zatvoriť"
 
-#: src/components/controls/AutoSupportPanel.tsx:551
+#: src/components/controls/AutoSupportPanel.tsx:567
 msgid "Close dialog"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3778
+#: src/features/slicing/components/SlicingPanel.tsx:3810
 msgid "Close material anti-aliasing settings"
 msgstr ""
 
@@ -918,7 +923,7 @@ msgstr ""
 msgid "Close OAuth setup"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:4063
+#: src/features/slicing/components/SlicingPanel.tsx:4095
 msgid "Close Plate"
 msgstr ""
 
@@ -926,7 +931,7 @@ msgstr ""
 msgid "Close program"
 msgstr "Zatvoriť Program"
 
-#: src/features/slicing/components/SlicingPanel.tsx:3849
+#: src/features/slicing/components/SlicingPanel.tsx:3881
 msgid "Close session anti-aliasing override"
 msgstr ""
 
@@ -935,11 +940,11 @@ msgstr ""
 msgid "Close snapshot details"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:605
+#: src/components/controls/AutoSupportPanel.tsx:620
 msgid "Close the dialog and discard the edits"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:494
+#: src/components/controls/AutoSupportPanel.tsx:510
 msgid "Close the report"
 msgstr ""
 
@@ -951,11 +956,11 @@ msgstr "Zatvoriť varovanie"
 msgid "Close window"
 msgstr "Zatvoriť okno"
 
-#: src/components/controls/AutoSupportPanel.tsx:552
+#: src/components/controls/AutoSupportPanel.tsx:568
 msgid "Close without applying the edits made in this dialog"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:613
+#: src/components/controls/AutoSupportPanel.tsx:628
 msgid "Closing now leaves the auto-support settings as they are. Save in the dialog's footer writes them."
 msgstr ""
 
@@ -973,10 +978,10 @@ msgid "Coincident"
 msgstr ""
 
 #: src/components/controls/AutoRotationPanel.tsx:197
-#: src/components/controls/AutoSupportPanel.tsx:377
+#: src/components/controls/AutoSupportPanel.tsx:382
 #: src/components/controls/ModelManagerPanel.tsx:379
-#: src/features/slicing/components/SlicingPanel.tsx:2480
-#: src/features/slicing/components/SlicingPanel.tsx:2517
+#: src/features/slicing/components/SlicingPanel.tsx:2512
+#: src/features/slicing/components/SlicingPanel.tsx:2549
 #: src/supports/Settings/SupportSidebar.tsx:1198
 msgid "Collapse card"
 msgstr ""
@@ -1132,7 +1137,7 @@ msgstr "Pokračovať"
 msgid "Contoured regions"
 msgstr ""
 
-#: src/app/page.tsx:7969
+#: src/app/page.tsx:8009
 msgid "Converting support data and model metadata"
 msgstr ""
 
@@ -1141,7 +1146,7 @@ msgstr ""
 msgid "Cool"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:488
+#: src/components/controls/AutoSupportPanel.tsx:504
 #: src/components/ui/EditorContextMenu.tsx:82
 msgid "Copy"
 msgstr "Kopírovať"
@@ -1158,7 +1163,7 @@ msgstr ""
 msgid "Copy the selected preset under a new name"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:486
+#: src/components/controls/AutoSupportPanel.tsx:502
 msgid "Copy the whole report to the clipboard"
 msgstr ""
 
@@ -1186,7 +1191,7 @@ msgstr ""
 msgid "Count"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1592
+#: src/features/slicing/components/SlicingPanel.tsx:1620
 msgid "Coverage"
 msgstr ""
 
@@ -1238,11 +1243,11 @@ msgstr ""
 msgid "Creating new repository: {repoName}"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:781
+#: src/features/slicing/components/SlicingPanel.tsx:783
 msgid "Crisp text and details."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3841
+#: src/features/slicing/components/SlicingPanel.tsx:3873
 msgid "Current material"
 msgstr ""
 
@@ -1278,11 +1283,19 @@ msgstr "Vystrihnúť"
 msgid "Dark"
 msgstr ""
 
+#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:180
+msgid "Debug Mode"
+msgstr ""
+
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:197
 msgid "Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple), reinforcement (teal)"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:162
+#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:157
+msgid "Debug: show the last run's sizing factors and forest report in the panel"
+msgstr ""
+
+#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:156
 msgid "Debug: simplified support render — contact disks/cones plus line vectors instead of full shafts"
 msgstr ""
 
@@ -1290,7 +1303,7 @@ msgstr ""
 msgid "Debug: skip automatic bracing for this run"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2629
+#: src/features/slicing/components/SlicingPanel.tsx:2661
 msgid "Decrease offline layer height"
 msgstr ""
 
@@ -1356,7 +1369,7 @@ msgstr ""
 msgid "Delete this backup snapshot from GitHub history? This cannot be undone."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:646
+#: src/components/controls/AutoSupportPanel.tsx:661
 msgid "Delete this model's existing supports and place the new ones"
 msgstr ""
 
@@ -1386,7 +1399,7 @@ msgstr ""
 msgid "Detected a {bitsLabel} screen that doesn't match any known variant of {presetName}."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:543
+#: src/components/controls/AutoSupportPanel.tsx:559
 msgid "Detected surfaces, density and sizing, stability, and the saved presets a run follows"
 msgstr ""
 
@@ -1413,20 +1426,20 @@ msgstr ""
 msgid "Diameter"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:780
+#: src/features/slicing/components/SlicingPanel.tsx:782
 msgid "Disabled"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:607
+#: src/components/controls/AutoSupportPanel.tsx:622
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:153
 msgid "Discard"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:575
+#: src/components/controls/AutoSupportPanel.tsx:590
 msgid "Discard auto-support settings changes"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:576
+#: src/components/controls/AutoSupportPanel.tsx:591
 msgid "Discard Changes?"
 msgstr ""
 
@@ -1540,7 +1553,7 @@ msgstr ""
 msgid "Drop supported files"
 msgstr "Hoď podporované súbory"
 
-#: src/app/page.tsx:10137
+#: src/app/page.tsx:10178
 msgid "Drop supported files to import"
 msgstr ""
 
@@ -1560,19 +1573,19 @@ msgstr ""
 msgid "Edge Chamfer Angle"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2807
+#: src/features/slicing/components/SlicingPanel.tsx:2839
 msgid "Edit"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2565
+#: src/features/slicing/components/SlicingPanel.tsx:2597
 msgid "Edit material profile"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2547
+#: src/features/slicing/components/SlicingPanel.tsx:2579
 msgid "Edit printer profile"
 msgstr ""
 
-#: src/app/page.tsx:2245
+#: src/app/page.tsx:2246
 #: src/components/ui/EditorContextMenu.tsx:126
 msgid "Editor"
 msgstr "Editor"
@@ -1581,7 +1594,7 @@ msgstr "Editor"
 msgid "Editor context menu"
 msgstr "Kontextové menu editoru"
 
-#: src/features/slicing/components/SlicingPanel.tsx:4043
+#: src/features/slicing/components/SlicingPanel.tsx:4075
 msgid "Elapsed {slicingElapsedLabel}"
 msgstr ""
 
@@ -1616,15 +1629,15 @@ msgstr ""
 msgid "Enabled"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1235
+#: src/features/slicing/components/SlicingPanel.tsx:1240
 msgid "Encoded Layers"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:155
+#: src/features/slicing/components/SlicingPanel.tsx:157
 msgid "Encoding"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2603
+#: src/features/slicing/components/SlicingPanel.tsx:2635
 msgid "Engine"
 msgstr ""
 
@@ -1641,7 +1654,7 @@ msgstr ""
 msgid "Est. {estimatedTimeLabel} • {usedMaterialLabel}"
 msgstr "Est. {estimatedTimeLabel} • {usedMaterialLabel}"
 
-#: src/features/slicing/components/SlicingPanel.tsx:2593
+#: src/features/slicing/components/SlicingPanel.tsx:2625
 msgid "Est. Print Time"
 msgstr ""
 
@@ -1655,11 +1668,11 @@ msgstr ""
 msgid "Est. resin:"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2589
+#: src/features/slicing/components/SlicingPanel.tsx:2621
 msgid "Est. Volume"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:202
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:61
 msgid "Est. weight"
 msgstr ""
 
@@ -1667,8 +1680,8 @@ msgstr ""
 msgid "Every great print starts with an empty scene."
 msgstr "Každý skvelý výtlačok začína prázdnou scénou."
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:224
-#: src/components/controls/AutoSupportPanel.tsx:471
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:83
+#: src/components/controls/AutoSupportPanel.tsx:487
 msgid "Every placed support with its size and fan-out groups"
 msgstr ""
 
@@ -1676,19 +1689,19 @@ msgstr ""
 msgid "Existing backup repository detected"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:619
+#: src/components/controls/AutoSupportPanel.tsx:634
 msgid "Existing supports detected"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:620
+#: src/components/controls/AutoSupportPanel.tsx:635
 msgid "Existing Supports Detected"
 msgstr ""
 
 #: src/components/controls/AutoRotationPanel.tsx:197
-#: src/components/controls/AutoSupportPanel.tsx:377
+#: src/components/controls/AutoSupportPanel.tsx:382
 #: src/components/controls/ModelManagerPanel.tsx:379
-#: src/features/slicing/components/SlicingPanel.tsx:2480
-#: src/features/slicing/components/SlicingPanel.tsx:2517
+#: src/features/slicing/components/SlicingPanel.tsx:2512
+#: src/features/slicing/components/SlicingPanel.tsx:2549
 #: src/supports/Settings/SupportSidebar.tsx:1198
 msgid "Expand card"
 msgstr ""
@@ -1718,7 +1731,7 @@ msgstr ""
 msgid "Experiments disclaimer"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2653
+#: src/features/slicing/components/SlicingPanel.tsx:2685
 msgid "Expert"
 msgstr ""
 
@@ -1739,7 +1752,7 @@ msgstr ""
 msgid "Factory presets will be reset and user presets will be unpinned."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3977
+#: src/features/slicing/components/SlicingPanel.tsx:4009
 msgid "Failed"
 msgstr ""
 
@@ -1856,7 +1869,7 @@ msgstr ""
 msgid "Fine supports for delicate features"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:4054
+#: src/features/slicing/components/SlicingPanel.tsx:4086
 msgid "Finishing…"
 msgstr ""
 
@@ -1894,12 +1907,11 @@ msgstr ""
 msgid "Force Push Local"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:469
+#: src/components/controls/AutoSupportPanel.tsx:485
 msgid "Forest report"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:228
-#: src/components/controls/AutoSupportPanel.tsx:470
+#: src/components/controls/AutoSupportPanel.tsx:486
 msgid "Forest Report"
 msgstr ""
 
@@ -1938,7 +1950,7 @@ msgstr ""
 msgid "Generate a secret…"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:416
+#: src/components/controls/AutoSupportPanel.tsx:421
 msgid "Generate Supports"
 msgstr ""
 
@@ -1958,11 +1970,11 @@ msgstr ""
 msgid "GitHub OAuth popup opened."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:588
+#: src/components/controls/AutoSupportPanel.tsx:603
 msgid "Go back to the settings dialog"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2762
+#: src/features/slicing/components/SlicingPanel.tsx:2794
 msgid "Grey"
 msgstr ""
 
@@ -1971,7 +1983,7 @@ msgstr ""
 msgid "Grid"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:210
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:69
 msgid "Grid infill trunks"
 msgstr ""
 
@@ -2102,7 +2114,7 @@ msgstr ""
 msgid "ID {0}"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:153
+#: src/features/slicing/components/SlicingPanel.tsx:155
 msgid "Idle"
 msgstr ""
 
@@ -2156,7 +2168,7 @@ msgstr "Importujem tvoj súbor…"
 msgid "In space, no one can hear you slice."
 msgstr "Vo vesmíre ťa nikdo nebude počuť sekať."
 
-#: src/features/slicing/components/SlicingPanel.tsx:2630
+#: src/features/slicing/components/SlicingPanel.tsx:2662
 msgid "Increase offline layer height"
 msgstr ""
 
@@ -2254,7 +2266,7 @@ msgstr "Pridaj sa k Open Resin Alliance!"
 msgid "JSON loaded. Now select the original STL file."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3669
+#: src/features/slicing/components/SlicingPanel.tsx:3701
 msgid "Just Slice"
 msgstr ""
 
@@ -2263,7 +2275,7 @@ msgstr ""
 msgid "Keep current profiles"
 msgstr "Ponechať Terajšie Profily"
 
-#: src/components/controls/AutoSupportPanel.tsx:590
+#: src/components/controls/AutoSupportPanel.tsx:605
 msgid "Keep Editing"
 msgstr ""
 
@@ -2271,11 +2283,11 @@ msgstr ""
 msgid "Keep going without a printer. You can add one later."
 msgstr "Pokračuj bez tlačiarne. Môžeš ju pridať neskôr."
 
-#: src/components/controls/AutoSupportPanel.tsx:631
+#: src/components/controls/AutoSupportPanel.tsx:646
 msgid "Keep the existing supports and do nothing"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:639
+#: src/components/controls/AutoSupportPanel.tsx:654
 msgid "Keep the existing supports and place the new ones around them"
 msgstr ""
 
@@ -2324,7 +2336,7 @@ msgid "Last remote backup"
 msgstr ""
 
 #. {timestamp} is a locale-formatted date and time.
-#: src/app/page.tsx:607
+#: src/app/page.tsx:608
 msgid "Last successful autosave: {timestamp}. Save your project manually."
 msgstr ""
 
@@ -2337,7 +2349,7 @@ msgstr ""
 msgid "Layer {0} mm • Normal {1}s • Bottom {2}s × {3}"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:147
+#: src/features/slicing/components/SlicingPanel.tsx:149
 msgid "Layer {layer} preview"
 msgstr ""
 
@@ -2345,7 +2357,7 @@ msgstr ""
 msgid "Layer 0 of 0. Living dangerously."
 msgstr "Vrstva 0 z 0. Žiješ na hrane."
 
-#: src/features/slicing/components/SlicingPanel.tsx:2583
+#: src/features/slicing/components/SlicingPanel.tsx:2615
 msgid "Layer Height"
 msgstr ""
 
@@ -2355,7 +2367,7 @@ msgstr ""
 
 #. Sort order for the island list: by layer span. One of three narrow buttons (ID / Volume / Layers).
 #: src/components/controls/IslandListCard.tsx:186
-#: src/features/slicing/components/SlicingPanel.tsx:2579
+#: src/features/slicing/components/SlicingPanel.tsx:2611
 msgid "Layers"
 msgstr ""
 
@@ -2384,7 +2396,7 @@ msgstr ""
 msgid "Length"
 msgstr ""
 
-#: src/app/page.tsx:8009
+#: src/app/page.tsx:8049
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr ""
 
@@ -2411,7 +2423,7 @@ msgstr ""
 msgid "Line Width"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:460
+#: src/components/controls/AutoSupportPanel.tsx:476
 msgid "Load a model and scan for islands."
 msgstr ""
 
@@ -2427,7 +2439,7 @@ msgstr ""
 msgid "Load Mesh"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:206
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:65
 msgid "Load share"
 msgstr ""
 
@@ -2456,18 +2468,18 @@ msgstr ""
 msgid "Loading Mesh Files…"
 msgstr ""
 
-#: src/app/page.tsx:7959
+#: src/app/page.tsx:7999
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1913
+#: src/features/slicing/components/SlicingPanel.tsx:1941
 msgid "Loading remote material…"
 msgstr ""
 
-#: src/app/page.tsx:4237
-#: src/app/page.tsx:7959
-#: src/app/page.tsx:7968
+#: src/app/page.tsx:4269
+#: src/app/page.tsx:7999
+#: src/app/page.tsx:8008
 msgid "Loading Scene…"
 msgstr ""
 
@@ -2542,7 +2554,7 @@ msgstr ""
 msgid "Low-glare surfaces for late-night printing."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:135
+#: src/features/slicing/components/SlicingPanel.tsx:137
 msgid "LUT: {curveName}"
 msgstr ""
 
@@ -2588,19 +2600,19 @@ msgstr ""
 msgid "Master switch for the run-level size, load and height factors. Off pins all three to ×1, so sizing is the active band plus the local terms alone (default: on)."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2568
+#: src/features/slicing/components/SlicingPanel.tsx:2600
 msgid "Material"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3762
+#: src/features/slicing/components/SlicingPanel.tsx:3794
 msgid "Material anti-aliasing settings"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3767
+#: src/features/slicing/components/SlicingPanel.tsx:3799
 msgid "Material Anti-Aliasing Settings"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2805
+#: src/features/slicing/components/SlicingPanel.tsx:2837
 msgid "Material Profile Settings"
 msgstr ""
 
@@ -2707,7 +2719,7 @@ msgstr ""
 msgid "Min Overlap: 4"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:424
+#: src/components/controls/AutoSupportPanel.tsx:429
 #: src/components/controls/IslandsPanel.tsx:212
 #: src/components/controls/IslandsPanel.tsx:274
 msgid "Minima"
@@ -2741,7 +2753,7 @@ msgstr "Zrkadliť"
 msgid "Mirror across X, Y, or Z"
 msgstr "Zrkadliť podľa X, Y alebo Z"
 
-#: src/features/slicing/components/SlicingPanel.tsx:2759
+#: src/features/slicing/components/SlicingPanel.tsx:2791
 msgid "Mode"
 msgstr ""
 
@@ -2757,7 +2769,7 @@ msgstr ""
 msgid "Model Load Cap"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:204
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:63
 msgid "Model size"
 msgstr ""
 
@@ -2765,7 +2777,7 @@ msgstr ""
 msgid "Model Size Cap"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:201
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:59
 msgid "Model volume"
 msgstr ""
 
@@ -2782,6 +2794,10 @@ msgstr ""
 
 #: src/components/controls/ModelManagerPanel.tsx:731
 msgid "Models context menu"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:4109
+msgid "Models Outside Build Volume"
 msgstr ""
 
 #: src/components/controls/TransformToolbar.tsx:30
@@ -2830,7 +2846,7 @@ msgstr ""
 msgid "Network Settings"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2635
+#: src/features/slicing/components/SlicingPanel.tsx:2667
 msgid "Network unavailable."
 msgstr ""
 
@@ -2870,7 +2886,7 @@ msgstr ""
 msgid "No {presetName} printers found on the network."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1576
+#: src/features/slicing/components/SlicingPanel.tsx:1604
 msgid "No AA"
 msgstr ""
 
@@ -2880,7 +2896,7 @@ msgstr ""
 msgid "No active printer"
 msgstr "Žiadne aktívne tlačiarne"
 
-#: src/app/page.tsx:1025
+#: src/app/page.tsx:1026
 msgid "No autosave has succeeded this session. Save your project manually."
 msgstr ""
 
@@ -2896,8 +2912,8 @@ msgstr ""
 msgid "No braces to remove on this model."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1583
-#: src/features/slicing/components/SlicingPanel.tsx:1585
+#: src/features/slicing/components/SlicingPanel.tsx:1611
+#: src/features/slicing/components/SlicingPanel.tsx:1613
 msgid "No Edge Blur"
 msgstr ""
 
@@ -2909,7 +2925,7 @@ msgstr ""
 msgid "No experiments are available in this build."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1595
+#: src/features/slicing/components/SlicingPanel.tsx:1623
 msgid "No Gray Map"
 msgstr ""
 
@@ -2930,7 +2946,7 @@ msgstr "Žiadna IP"
 msgid "No LocalStorage keys found."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1921
+#: src/features/slicing/components/SlicingPanel.tsx:1949
 msgid "No material selected"
 msgstr ""
 
@@ -2939,7 +2955,7 @@ msgstr ""
 msgid "No materials linked to this printer."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2502
+#: src/features/slicing/components/SlicingPanel.tsx:2534
 msgid "No meshes loaded yet. Import a model first, then return to Slicing."
 msgstr ""
 
@@ -2961,8 +2977,8 @@ msgstr ""
 msgid "No printer profiles."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2551
-#: src/features/slicing/components/SlicingPanel.tsx:2552
+#: src/features/slicing/components/SlicingPanel.tsx:2583
+#: src/features/slicing/components/SlicingPanel.tsx:2584
 msgid "No printer selected"
 msgstr ""
 
@@ -2995,7 +3011,7 @@ msgstr "Prázdna scéna nepotrebuje žiadne podpery."
 msgid "No update available"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2066
+#: src/features/slicing/components/SlicingPanel.tsx:2095
 msgid "No visible models available for slicing."
 msgstr ""
 
@@ -3076,11 +3092,11 @@ msgstr ""
 msgid "Offline"
 msgstr "Offline"
 
-#: src/features/slicing/components/SlicingPanel.tsx:2614
+#: src/features/slicing/components/SlicingPanel.tsx:2646
 msgid "Offline Layer Height"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2628
+#: src/features/slicing/components/SlicingPanel.tsx:2660
 msgid "Offline layer height override in micrometers"
 msgstr ""
 
@@ -3128,18 +3144,26 @@ msgstr ""
 msgid "One does not simply import a mesh... or actually, you just click a button."
 msgstr "Jeden proste nevloží mesh… alebo, proste stlač tlačítko."
 
+#: src/features/slicing/components/SlicingPanel.tsx:4137
+msgid "One visible model outside the build volume will be excluded from this slice."
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:1005
 #: src/components/settings/FleetManagement.tsx:179
 #: src/components/settings/FleetManagement.tsx:192
 msgid "Online"
 msgstr "Online"
 
+#: src/features/slicing/components/SlicingPanel.tsx:4110
+msgid "Only printable models will be sliced"
+msgstr ""
+
 #: src/components/controls/IslandOverlayControls.tsx:172
 #: src/components/controls/IslandVoxelControls.tsx:117
 msgid "Opacity"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1059
+#: src/features/slicing/components/SlicingPanel.tsx:1064
 msgid "Opaque"
 msgstr ""
 
@@ -3161,7 +3185,7 @@ msgid "Open GitHub Developer Settings and create a new OAuth App."
 msgstr ""
 
 #: src/components/controls/ModelStatsCard.tsx:523
-#: src/features/slicing/components/SlicingPanel.tsx:2566
+#: src/features/slicing/components/SlicingPanel.tsx:2598
 msgid "Open material profiles"
 msgstr ""
 
@@ -3175,7 +3199,7 @@ msgid "Open printer monitor"
 msgstr "Otvoriť monitor tlačiarne"
 
 #: src/components/controls/ModelStatsCard.tsx:508
-#: src/features/slicing/components/SlicingPanel.tsx:2548
+#: src/features/slicing/components/SlicingPanel.tsx:2580
 msgid "Open printer profiles"
 msgstr ""
 
@@ -3183,11 +3207,11 @@ msgstr ""
 msgid "Open scene…"
 msgstr "Otvoriť scénu…"
 
-#: src/features/slicing/components/SlicingPanel.tsx:157
+#: src/features/slicing/components/SlicingPanel.tsx:159
 msgid "Opening"
 msgstr ""
 
-#: src/app/page.tsx:8006
+#: src/app/page.tsx:8046
 msgid "Opening scene…"
 msgstr ""
 
@@ -3203,7 +3227,7 @@ msgstr ""
 msgid "Origin Colors"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2597
+#: src/features/slicing/components/SlicingPanel.tsx:2629
 msgid "Output"
 msgstr ""
 
@@ -3237,7 +3261,7 @@ msgstr ""
 msgid "Overlap Radius: 1"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2807
+#: src/features/slicing/components/SlicingPanel.tsx:2839
 msgid "Override On"
 msgstr ""
 
@@ -3283,11 +3307,11 @@ msgstr ""
 msgid "Pin to Slot"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3984
+#: src/features/slicing/components/SlicingPanel.tsx:4016
 msgid "Pipeline Stage"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1236
+#: src/features/slicing/components/SlicingPanel.tsx:1241
 msgid "Pipeline Units"
 msgstr ""
 
@@ -3303,7 +3327,7 @@ msgstr ""
 msgid "Placing supports"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:4008
+#: src/features/slicing/components/SlicingPanel.tsx:4040
 msgid "Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}"
 msgstr ""
 
@@ -3335,7 +3359,7 @@ msgstr ""
 msgid "Prepare"
 msgstr "Pripraviť"
 
-#: src/features/slicing/components/SlicingPanel.tsx:154
+#: src/features/slicing/components/SlicingPanel.tsx:156
 msgid "Preparing"
 msgstr ""
 
@@ -3364,7 +3388,7 @@ msgstr ""
 msgid "Preset name"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:4027
+#: src/features/slicing/components/SlicingPanel.tsx:4059
 msgid "Preview for this layer is not available."
 msgstr ""
 
@@ -3378,7 +3402,7 @@ msgstr ""
 
 #. Static field-label shown above the printer name in the topbar badge (like "Printer: <name>"), not an instruction. Only shown when a profile has a single printer, so there is no fleet to pick from.
 #: src/components/layout/TopBar.tsx:514
-#: src/features/slicing/components/SlicingPanel.tsx:2550
+#: src/features/slicing/components/SlicingPanel.tsx:2582
 msgid "Printer"
 msgstr "Tlačiareň"
 
@@ -3426,7 +3450,7 @@ msgstr "Profil tlačiarne: {profileName} • Aktívna tlačiareň: {printerName}
 msgid "Printer Profiles ({0})"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:782
+#: src/features/slicing/components/SlicingPanel.tsx:784
 msgid "Printer-aware smoothing."
 msgstr ""
 
@@ -3459,11 +3483,11 @@ msgstr ""
 msgid "Profiles"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3684
+#: src/features/slicing/components/SlicingPanel.tsx:3716
 msgid "Profiling AA…"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3994
+#: src/features/slicing/components/SlicingPanel.tsx:4026
 msgid "Progress"
 msgstr ""
 
@@ -3502,7 +3526,7 @@ msgstr ""
 msgid "Raw JSON"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:780
+#: src/features/slicing/components/SlicingPanel.tsx:782
 msgid "Raw masks only."
 msgstr ""
 
@@ -3515,12 +3539,12 @@ msgstr ""
 msgid "Re-slice required after profile change"
 msgstr "Znovu nasekanie je potrebné po zmene v profile"
 
-#: src/app/page.tsx:4238
+#: src/app/page.tsx:4270
 msgid "Reading autosaved scene…"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:156
-#: src/features/slicing/components/SlicingPanel.tsx:3974
+#: src/features/slicing/components/SlicingPanel.tsx:158
+#: src/features/slicing/components/SlicingPanel.tsx:4006
 msgid "Ready"
 msgstr ""
 
@@ -3592,7 +3616,7 @@ msgstr ""
 msgid "Remind me later"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1914
+#: src/features/slicing/components/SlicingPanel.tsx:1942
 msgid "Remote"
 msgstr ""
 
@@ -3604,7 +3628,7 @@ msgstr ""
 msgid "Remote backup is newer. Choose restore or force sync."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2617
+#: src/features/slicing/components/SlicingPanel.tsx:2649
 msgid "Remote material unavailable."
 msgstr ""
 
@@ -3676,7 +3700,7 @@ msgstr ""
 msgid "Repeat Interval"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:654
+#: src/components/controls/AutoSupportPanel.tsx:669
 msgid "Replace all"
 msgstr ""
 
@@ -3739,8 +3763,8 @@ msgstr ""
 msgid "Restore Factory Defaults?"
 msgstr ""
 
-#: src/app/page.tsx:4269
-#: src/app/page.tsx:4280
+#: src/app/page.tsx:4301
+#: src/app/page.tsx:4312
 msgid "Restore Failed"
 msgstr ""
 
@@ -3831,15 +3855,15 @@ msgstr "Spusťi sekanie v Exporte aby si odomkol preview tlače"
 msgid "Run TypeScript scanline scan"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3972
+#: src/features/slicing/components/SlicingPanel.tsx:4004
 msgid "Running"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:416
+#: src/components/controls/AutoSupportPanel.tsx:421
 msgid "Running…"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2760
+#: src/features/slicing/components/SlicingPanel.tsx:2792
 msgid "Samples"
 msgstr ""
 
@@ -3860,7 +3884,7 @@ msgstr ""
 msgid "Save failed"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3814
+#: src/features/slicing/components/SlicingPanel.tsx:3846
 msgid "Save Material"
 msgstr ""
 
@@ -3909,7 +3933,7 @@ msgstr ""
 msgid "Scan again"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:408
+#: src/components/controls/AutoSupportPanel.tsx:413
 msgid "Scan for islands if needed, then place automatic supports on this model"
 msgstr ""
 
@@ -4004,15 +4028,15 @@ msgstr ""
 msgid "Select a LocalStorage key from the left to view its value."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2636
+#: src/features/slicing/components/SlicingPanel.tsx:2668
 msgid "Select a matching material during import instead."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2060
+#: src/features/slicing/components/SlicingPanel.tsx:2088
 msgid "Select a material profile first."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2055
+#: src/features/slicing/components/SlicingPanel.tsx:2083
 msgid "Select a printer profile first."
 msgstr ""
 
@@ -4083,7 +4107,7 @@ msgstr ""
 msgid "Send sliced files to UVTools for analysis"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3668
+#: src/features/slicing/components/SlicingPanel.tsx:3700
 msgid "Send to UVTools"
 msgstr ""
 
@@ -4091,19 +4115,19 @@ msgstr ""
 msgid "Separating model and support geometry…"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3833
+#: src/features/slicing/components/SlicingPanel.tsx:3865
 msgid "Session anti-aliasing override"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3838
+#: src/features/slicing/components/SlicingPanel.tsx:3870
 msgid "Session Anti-Aliasing Override"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1064
+#: src/features/slicing/components/SlicingPanel.tsx:1069
 msgid "Session Override active"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2823
+#: src/features/slicing/components/SlicingPanel.tsx:2855
 msgid "Session Overrides"
 msgstr ""
 
@@ -4141,7 +4165,7 @@ msgstr ""
 msgid "Shaft"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:212
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:71
 msgid "Shaft Ø range"
 msgstr ""
 
@@ -4149,7 +4173,7 @@ msgstr ""
 msgid "Shallow surfaces detected by the mesh-normal classifier (the surfaces auto-supports grid)"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:781
+#: src/features/slicing/components/SlicingPanel.tsx:783
 msgid "Sharp"
 msgstr ""
 
@@ -4177,6 +4201,10 @@ msgstr ""
 
 #: src/supports/Rafts/Crenelated/components/RaftSettingsCard.tsx:259
 msgid "Show Footprint Border"
+msgstr ""
+
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:87
+msgid "Show Forest Report"
 msgstr ""
 
 #: src/supports/Settings/SupportSidebar.tsx:1222
@@ -4216,15 +4244,15 @@ msgstr ""
 msgid "Shows the Voxels, Minima, Coincident, and Overhangs layer toggles."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:174
+#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:169
 msgid "Simplified"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:193
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:50
 msgid "Sizing Debug"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:207
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:66
 msgid "Sizing factors"
 msgstr ""
 
@@ -4236,26 +4264,30 @@ msgstr ""
 msgid "Skip detected areas smaller than this — tiny specks rarely need supports"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3667
+#: src/features/slicing/components/SlicingPanel.tsx:3699
 msgid "Slice & Print"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3666
+#: src/features/slicing/components/SlicingPanel.tsx:3698
 msgid "Slice & Upload"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3665
+#: src/features/slicing/components/SlicingPanel.tsx:4130
+msgid "Slice Printable Models"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:3697
 msgid "Slice to File"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1233
+#: src/features/slicing/components/SlicingPanel.tsx:1238
 msgid "Sliced Layers"
 msgstr ""
 
 #: src/components/scene/scanProgressMessages.ts:20
 #: src/components/settings/SettingsModal.tsx:1182
-#: src/features/slicing/components/SlicingPanel.tsx:2496
-#: src/features/slicing/components/SlicingPanel.tsx:2533
+#: src/features/slicing/components/SlicingPanel.tsx:2528
+#: src/features/slicing/components/SlicingPanel.tsx:2565
 msgid "Slicing"
 msgstr ""
 
@@ -4267,15 +4299,15 @@ msgstr "Momentálne sekám. Akcie vo vrchnej lište sú momentálne vypnuté."
 msgid "Slicing islands and suspended areas detected from layer contours"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3947
+#: src/features/slicing/components/SlicingPanel.tsx:3979
 msgid "Slicing Plate"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3928
+#: src/features/slicing/components/SlicingPanel.tsx:3960
 msgid "Slicing progress"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3684
+#: src/features/slicing/components/SlicingPanel.tsx:3716
 msgid "Slicing…"
 msgstr ""
 
@@ -4288,7 +4320,7 @@ msgid "Slot {slot}"
 msgstr ""
 
 #: src/components/controls/TransformToolbar.tsx:35
-#: src/features/slicing/components/SlicingPanel.tsx:783
+#: src/features/slicing/components/SlicingPanel.tsx:785
 msgid "Smooth"
 msgstr "Vyhladiť"
 
@@ -4312,7 +4344,7 @@ msgstr ""
 msgid "Snapshot restored to current local backup state."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:783
+#: src/features/slicing/components/SlicingPanel.tsx:785
 msgid "Soft organic curves."
 msgstr ""
 
@@ -4325,7 +4357,7 @@ msgstr ""
 msgid "Sparse supports — the detail sizing band"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3999
+#: src/features/slicing/components/SlicingPanel.tsx:4031
 msgid "Speed"
 msgstr ""
 
@@ -4359,7 +4391,7 @@ msgstr ""
 msgid "Stabilization Anchors"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:209
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:68
 msgid "Standalone trunks"
 msgstr ""
 
@@ -4454,7 +4486,7 @@ msgstr ""
 msgid "Supported: {extensions}"
 msgstr ""
 
-#: src/app/page.tsx:2245
+#: src/app/page.tsx:2246
 msgid "Supports"
 msgstr "Podpery"
 
@@ -4488,7 +4520,7 @@ msgstr ""
 msgid "Taper"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2825
+#: src/features/slicing/components/SlicingPanel.tsx:2857
 msgid "Temporary"
 msgstr ""
 
@@ -4496,16 +4528,16 @@ msgstr ""
 msgid "Tension"
 msgstr ""
 
-#: src/app/page.tsx:4282
+#: src/app/page.tsx:4314
 msgid "The autosave recovery file could not be found."
 msgstr ""
 
-#: src/app/page.tsx:4270
-#: src/app/page.tsx:4283
+#: src/app/page.tsx:4302
+#: src/app/page.tsx:4315
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr ""
 
-#: src/app/page.tsx:1022
+#: src/app/page.tsx:1023
 msgid "The background recovery save failed repeatedly."
 msgstr ""
 
@@ -4521,11 +4553,11 @@ msgstr "Chýbaš pracovnému priestoru."
 msgid "The current settings are saved under this name, and it becomes the selected preset."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:577
+#: src/components/controls/AutoSupportPanel.tsx:592
 msgid "The edits made in this dialog have not been saved."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:189
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:46
 msgid "The inputs and factors the last run sized the supports with"
 msgstr ""
 
@@ -4554,11 +4586,11 @@ msgstr "Živica je pripravená. Si ty?"
 msgid "The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you save."
 msgstr ""
 
-#: src/app/page.tsx:4271
+#: src/app/page.tsx:4303
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3653
+#: src/features/slicing/components/SlicingPanel.tsx:3685
 msgid "The selected Machine does not support AA at this time."
 msgstr ""
 
@@ -4609,7 +4641,7 @@ msgstr ""
 msgid "This cannot be undone."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:621
+#: src/components/controls/AutoSupportPanel.tsx:636
 msgid "This model already has supports. How would you like to proceed?"
 msgstr ""
 
@@ -4658,7 +4690,7 @@ msgstr ""
 msgid "Tip Fit Margin"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:214
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:73
 msgid "Tip Ø range"
 msgstr ""
 
@@ -4670,7 +4702,7 @@ msgstr ""
 msgid "to reset all,"
 msgstr ""
 
-#: src/app/page.tsx:2234
+#: src/app/page.tsx:2235
 msgid "Toggle curve"
 msgstr "Prepnúť Krivku"
 
@@ -4691,7 +4723,7 @@ msgstr ""
 msgid "Top"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:425
+#: src/components/controls/AutoSupportPanel.tsx:430
 msgid "Total"
 msgstr ""
 
@@ -4777,7 +4809,7 @@ msgstr ""
 msgid "Unsaved Scene Found"
 msgstr ""
 
-#: src/app/page.tsx:10137
+#: src/app/page.tsx:10178
 msgid "Unsupported file format"
 msgstr ""
 
@@ -4853,7 +4885,7 @@ msgstr ""
 msgid "Using existing repository: {repoName}"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:1066
+#: src/features/slicing/components/SlicingPanel.tsx:1071
 msgid "Using Material Settings"
 msgstr ""
 
@@ -4918,6 +4950,10 @@ msgstr ""
 msgid "View, restore, or delete older snapshots from your private repository."
 msgstr ""
 
+#: src/features/slicing/components/SlicingPanel.tsx:4141
+msgid "visible models outside the build volume will be excluded from this slice."
+msgstr ""
+
 #: src/components/controls/IslandVoxelControls.tsx:144
 msgid "Visualizes isolated grid-aligned islands."
 msgstr ""
@@ -4931,7 +4967,7 @@ msgstr ""
 msgid "Volume"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:423
+#: src/components/controls/AutoSupportPanel.tsx:428
 msgid "Voxel"
 msgstr ""
 
@@ -5004,7 +5040,7 @@ msgstr ""
 msgid "We're gonna need a bigger build plate."
 msgstr "Budeme potrebovať väčšiu pracovnú plochu."
 
-#: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:205
+#: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:64
 msgid "Weight / support"
 msgstr ""
 
@@ -5080,7 +5116,7 @@ msgstr "Môžeš pokračovať v úprave profilov, ale bude potrebné znovu nasek
 msgid "You can disconnect GitHub at any time. OAuth access is used only for repository checks and syncing backup files."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:661
+#: src/components/controls/AutoSupportPanel.tsx:676
 msgid "You can replace all existing supports with auto-placed ones, or incorporate your existing supports and fill in the gaps."
 msgstr ""
 

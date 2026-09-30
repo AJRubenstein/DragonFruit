@@ -23,10 +23,9 @@
 import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { ChevronDown } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { LabeledNumberInput, LabeledToggleInput } from '@/components/settings/profileFormAtoms';
-import type { AutoSupportSettings, ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
+import type { AutoSupportSettings } from '@/supports/autoSupport';
 import { AutoSupportPresetSelector, AutoSupportSettingsFooterActions } from './AutoSupportPresets';
 import { AutoSupportSizingTierField } from './AutoSupportSizingTierField';
 import {
@@ -136,30 +135,26 @@ function FieldCard({ section, children }: { section: AutoSupportSectionDef; chil
   );
 }
 
-/** The diagnostics card: the debug switches, then the last run's report. */
+/** The diagnostics card: the debug switches, and the switch that puts the last
+ *  run's report on the panel. */
 function DiagnosticsCard({
   draft,
   setDraft,
   debugSimpleRender,
   onToggleDebugSimpleRender,
-  sizingDebug,
-  forestReport,
-  onShowForestReport,
-  showSizingDebug,
-  onToggleSizingDebug,
+  debugMode,
+  onToggleDebugMode,
 }: {
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
   debugSimpleRender: boolean;
   onToggleDebugSimpleRender: () => void;
-  sizingDebug: SizingDebugInfo | null;
-  forestReport: ForestReport | null;
-  onShowForestReport: () => void;
-  showSizingDebug: boolean;
-  onToggleSizingDebug: () => void;
+  debugMode: boolean;
+  onToggleDebugMode: () => void;
 }) {
   const { _ } = useLingui();
   const simplifiedHint = _(msg`Debug: simplified support render — contact disks/cones plus line vectors instead of full shafts`);
+  const debugModeHint = _(msg`Debug: show the last run's sizing factors and forest report in the panel`);
 
   return (
     <section className="rounded-xl border p-3" style={FIELD_CARD_STYLE}>
@@ -177,60 +172,17 @@ function DiagnosticsCard({
           checked={debugSimpleRender}
           onChange={onToggleDebugSimpleRender}
         />
-      </div>
-
-      {/* The last run's report, directly on the card: no container of its own. */}
-      <div className="mt-3 space-y-1.5">
-        {sizingDebug && (
-          <>
-            <button
-              type="button"
-              onClick={onToggleSizingDebug}
-              title={_(msg`The inputs and factors the last run sized the supports with`)}
-              className="w-full flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              <span>{_(msg`Sizing Debug`)}</span>
-              <ChevronDown
-                className="w-3 h-3 transition-transform"
-                style={{ transform: showSizingDebug ? 'rotate(180deg)' : 'rotate(0deg)' }}
-              />
-            </button>
-            {showSizingDebug && (
-              <div className="space-y-1 text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                <div className="flex justify-between"><span>{_(msg`Model volume`)}</span><span style={{ color: 'var(--text-strong)' }}>{(sizingDebug.modelVolumeMm3 / 1000).toFixed(1)} cm³</span></div>
-                <div className="flex justify-between"><span>{_(msg`Est. weight`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.estimatedWeightG.toFixed(1)} g</span></div>
-                <div className="flex justify-between"><span>{_(msg`Candidates`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.totalCandidates}</span></div>
-                <div className="flex justify-between"><span>{_(msg`Model size`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.modelSizeMm.toFixed(0)} mm</span></div>
-                <div className="flex justify-between"><span>{_(msg`Weight / support`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.weightPerSupportG.toFixed(2)} g</span></div>
-                <div className="flex justify-between"><span>{_(msg`Load share`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.loadShareG.toFixed(2)} g</span></div>
-                <div className="flex justify-between"><span>{_(msg`Sizing factors`)}</span><span style={{ color: 'var(--text-strong)' }}>×{sizingDebug.sizeFactor.toFixed(2)} size · ×{sizingDebug.loadFactor.toFixed(2)} load</span></div>
-                <div className="flex justify-between"><span>{_(msg`Avg island area`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.avgIslandAreaMm2.toFixed(2)} mm²</span></div>
-                <div className="flex justify-between"><span>{_(msg`Standalone trunks`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.standaloneHosts}</span></div>
-                <div className="flex justify-between"><span>{_(msg`Grid infill trunks`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.gridInfillHosts}</span></div>
-                <div className="flex justify-between" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 2, marginTop: 2 }}>
-                  <span>{_(msg`Shaft Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.shaftDiameterRange.min.toFixed(2)}–{sizingDebug.shaftDiameterRange.max.toFixed(2)} mm</span>
-                </div>
-                <div className="flex justify-between"><span>{_(msg`Tip Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.tipContactRange.min.toFixed(2)}–{sizingDebug.tipContactRange.max.toFixed(2)} mm</span></div>
-              </div>
-            )}
-          </>
-        )}
-
-        {forestReport && (
-          <button
-            type="button"
-            onClick={onShowForestReport}
-            title={_(msg`Every placed support with its size and fan-out groups`)}
-            className="ui-button ui-button-secondary !h-7 w-full px-2 text-[10px] font-semibold uppercase tracking-wide inline-flex items-center justify-between"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <span>{_(msg`Forest Report`)}</span>
-            <span className="text-[9px] normal-case tracking-normal">
-              {forestReport.hostCount}H {forestReport.leafCount}L {forestReport.branchCount}B · {forestReport.trees.length} trees
-            </span>
-          </button>
-        )}
+        {/* The report's own switch, beside the switches it belongs with. The
+            report itself is read on the panel, where a run is started, so this
+            toggle is all the dialog carries of it. Session state, not a setting:
+            a view switch the panel owns, like the Debug button it replaces. */}
+        <LabeledToggleInput
+          label={_(msg`Debug Mode`)}
+          helpText={debugModeHint}
+          title={debugModeHint}
+          checked={debugMode}
+          onChange={onToggleDebugMode}
+        />
       </div>
     </section>
   );
@@ -259,9 +211,9 @@ export type AutoSupportSettingsBodyProps = {
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
   debugSimpleRender: boolean;
   onToggleDebugSimpleRender: () => void;
-  sizingDebug: SizingDebugInfo | null;
-  forestReport: ForestReport | null;
-  onShowForestReport: () => void;
+  /** Whether the panel shows the last run's diagnostics. Session state the panel owns. */
+  debugMode: boolean;
+  onToggleDebugMode: () => void;
   /** Called once the footer's Save has written the draft, so the shell can close. */
   onCommitted: () => void;
 };
@@ -271,13 +223,11 @@ export function AutoSupportSettingsBody({
   setDraft,
   debugSimpleRender,
   onToggleDebugSimpleRender,
-  sizingDebug,
-  forestReport,
-  onShowForestReport,
+  debugMode,
+  onToggleDebugMode,
   onCommitted,
 }: AutoSupportSettingsBodyProps) {
   const { _ } = useLingui();
-  const [showSizingDebug, setShowSizingDebug] = React.useState(false);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -301,18 +251,15 @@ export function AutoSupportSettingsBody({
             </FieldCard>
           ))}
 
-          {/* Diagnostics is a card like the others: the switches and the last run's
-              report are always on screen, not behind a disclosure. */}
+          {/* Diagnostics is a card like the others: the switches are always on
+              screen, not behind a disclosure. */}
           <DiagnosticsCard
             draft={draft}
             setDraft={setDraft}
             debugSimpleRender={debugSimpleRender}
             onToggleDebugSimpleRender={onToggleDebugSimpleRender}
-            sizingDebug={sizingDebug}
-            forestReport={forestReport}
-            onShowForestReport={onShowForestReport}
-            showSizingDebug={showSizingDebug}
-            onToggleSizingDebug={() => setShowSizingDebug((current) => !current)}
+            debugMode={debugMode}
+            onToggleDebugMode={onToggleDebugMode}
           />
 
           {/* Advanced (calibration) is always visible too, but framed in the

@@ -25,6 +25,7 @@ import { getSnapshot, setSnapshot } from '@/supports/state';
 import { knotHostId, coneKnotHostType, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import type { Knot } from '@/supports/types';
 import { AutoSupportSettingsBody } from './autoSupport/AutoSupportSettingsBody';
+import { AutoSupportRunDiagnostics } from './autoSupport/AutoSupportRunDiagnostics';
 import { selectAutoSupportPreset, useAutoSupportDialogChanges } from './autoSupport/AutoSupportPresets';
 import { AUTO_SUPPORT_SECTION_CARD, TIER_HINTS } from './autoSupport/autoSupportPanelTabs';
 /** Set to true while auto-support is busy (scanning or placing).
@@ -91,6 +92,10 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
   const [showSettings, setShowSettings] = React.useState(false);
   const [showDiscardSettingsDialog, setShowDiscardSettingsDialog] = React.useState(false);
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
+  // The last run's diagnostics are a view switch, not a setting: Debug mode in
+  // the settings dialog is what shows them here, where a run is started. Panel
+  // state, like the Debug button that used to sit in the debug row.
+  const [debugMode, setDebugMode] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
   const [showForestReport, setShowForestReport] = React.useState(false);
   const [forestReport, setForestReportState] = React.useState<ForestReport | null>(null);
@@ -455,6 +460,17 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               ))}
             </div>
 
+            {/* The last run's diagnostics, behind Debug mode in the settings
+                dialog: the panel is where a run is started, so it is where its
+                report is read. */}
+            {debugMode && (
+              <AutoSupportRunDiagnostics
+                sizingDebug={sizingDebug}
+                forestReport={forestReport}
+                onShowForestReport={() => setShowForestReport(true)}
+              />
+            )}
+
             {!hasGeometry && (
               <div className="text-[10px] italic text-center" style={{ color: 'var(--text-muted)' }}>
                 {_(msg`Load a model and scan for islands.`)}
@@ -560,9 +576,8 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               setDraft={setDraft}
               debugSimpleRender={debugSimpleRender}
               onToggleDebugSimpleRender={() => updateDebugSimpleSupportRender(!debugSimpleRender)}
-              sizingDebug={sizingDebug}
-              forestReport={forestReport}
-              onShowForestReport={() => setShowForestReport(true)}
+              debugMode={debugMode}
+              onToggleDebugMode={() => setDebugMode((current) => !current)}
               onCommitted={closeSettings}
             />
           </div>

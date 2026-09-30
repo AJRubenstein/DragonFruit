@@ -7,6 +7,7 @@ import { I18nProvider } from '@lingui/react';
 import { i18n } from '../../i18n';
 import type { AutoSupportSettings, ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
 import type { AutoSupportSettingsBodyProps } from '@/components/controls/autoSupport/AutoSupportSettingsBody';
+import type { AutoSupportRunDiagnosticsProps } from '@/components/controls/autoSupport/AutoSupportRunDiagnostics';
 import type { AutoSupportSectionDef } from '@/components/controls/autoSupport/autoSupportPanelTabs';
 import { getSettings, updateAutoSupportSettings } from '@/supports/Settings/state';
 import {
@@ -40,6 +41,7 @@ registerHooks({
 });
 
 let AutoSupportSettingsBody: React.ComponentType<AutoSupportSettingsBodyProps>;
+let AutoSupportRunDiagnostics: React.ComponentType<AutoSupportRunDiagnosticsProps>;
 let selectAutoSupportPreset: (id: string, setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
 let deleteActiveAutoSupportPreset: (setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
 let autoSupportSections: ReadonlyArray<AutoSupportSectionDef>;
@@ -49,6 +51,7 @@ let policySections: ReadonlyArray<AutoSupportSectionDef>;
 // already be registered — a static import would be evaluated first.
 before(async () => {
   ({ AutoSupportSettingsBody } = await import('@/components/controls/autoSupport/AutoSupportSettingsBody'));
+  ({ AutoSupportRunDiagnostics } = await import('@/components/controls/autoSupport/AutoSupportRunDiagnostics'));
   ({ selectAutoSupportPreset, deleteActiveAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresets'));
   ({
     AUTO_SUPPORT_SECTIONS: autoSupportSections,
@@ -65,13 +68,12 @@ const CALIBRATION_MARKERS = [
   'The default, 0.9',
 ];
 
-/** The diagnostics surface, always on screen as a card of its own. */
+/** The diagnostics card: the debug switches, and the switch that shows the run's report. */
 const DIAGNOSTICS_MARKERS = [
   'Origin Colors',
   'No Brace',
   'Simplified',
-  'Sizing Debug',
-  'Forest Report',
+  'Debug Mode',
 ];
 
 const SIZING_DEBUG: SizingDebugInfo = {
@@ -94,12 +96,12 @@ const BODY_PROPS = {
   setDraft: () => {},
   debugSimpleRender: false,
   onToggleDebugSimpleRender: () => {},
-  sizingDebug: null,
-  forestReport: null,
-  onShowForestReport: () => {},
+  debugMode: false,
+  onToggleDebugMode: () => {},
   onCommitted: () => {},
 } satisfies Omit<AutoSupportSettingsBodyProps, 'draft'>;
 
+/** What a run hands the panel's diagnostics. */
 const FOREST_REPORT = {
   hostCount: 56,
   leafCount: 70,
@@ -108,7 +110,6 @@ const FOREST_REPORT = {
 } as unknown as ForestReport;
 
 function renderBody(
-  diagnostics: { sizingDebug?: SizingDebugInfo } = {},
   draft: AutoSupportSettings = getSettings().autoSupport,
 ): string {
   // `createElement` rather than JSX so this stays a `.ts` file, which is the
@@ -117,20 +118,34 @@ function renderBody(
     React.createElement(
       I18nProvider,
       { i18n },
-      React.createElement(AutoSupportSettingsBody, {
-        ...BODY_PROPS,
-        draft,
-        sizingDebug: diagnostics.sizingDebug ?? null,
-        forestReport: FOREST_REPORT,
-      }),
+      React.createElement(AutoSupportSettingsBody, { ...BODY_PROPS, draft }),
     ),
   );
   // Static markup escapes text ("Density &amp; Sizing"); the assertions read labels.
   return markup.replace(/&amp;/g, '&');
 }
 
+function renderRunDiagnostics(
+  // Defaults, not `??`: an explicit `null` is the "no run yet" case.
+  sizingDebug: SizingDebugInfo | null = SIZING_DEBUG,
+  forestReport: ForestReport | null = FOREST_REPORT,
+): string {
+  const markup = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      { i18n },
+      React.createElement(AutoSupportRunDiagnostics, {
+        sizingDebug,
+        forestReport,
+        onShowForestReport: () => {},
+      }),
+    ),
+  );
+  return markup.replace(/&amp;/g, '&');
+}
+
 test('every card renders, all of them visible, with calibration framed as a warning', () => {
-  const markup = renderBody({ sizingDebug: SIZING_DEBUG });
+  const markup = renderBody();
 
   for (const section of autoSupportSections) {
     assert.ok(markup.includes(String(section.label.message)), `the dialog is missing the "${section.label.message}" section`);
@@ -146,7 +161,23 @@ test('every card renders, all of them visible, with calibration framed as a warn
   for (const marker of DIAGNOSTICS_MARKERS) {
     assert.ok(markup.includes(marker), `"${marker}" must be on screen`);
   }
-  assert.ok(markup.includes('56H 70L 12B'), 'the forest report of the last run is on screen');
+
+  // The last run's report is the *panel's*, not the dialog's: the card here
+  // carries the switch that shows it and nothing of the report itself.
+  assert.ok(!markup.includes('Sizing Debug'), 'the dialog must not carry the sizing debug disclosure');
+  assert.ok(!markup.includes('Show Forest Report'), 'the dialog must not carry the report button');
+
+  // `Debug Mode` is a cell of the switches' own grid, the one beside
+  // `Simplified`, not a row of its own further down the card.
+  assert.ok(
+    markup.indexOf('Simplified') < markup.indexOf('Debug Mode'),
+    'the debug switch must sit beside the Simplified toggle',
+  );
+  assert.ok(
+    markup.indexOf('Debug Mode') < markup.indexOf('Advanced (calibration)'),
+    'the debug switch must sit in the diagnostics card, not past the calibration card',
+  );
+
   for (const marker of CALIBRATION_MARKERS) {
     assert.ok(markup.includes(marker), `"${marker}" must be on screen`);
   }
@@ -161,6 +192,25 @@ test('every card renders, all of them visible, with calibration framed as a warn
   assert.ok(!markup.includes('measured'));
   assert.ok(!markup.includes('Reset to measured defaults'));
   assert.ok(!markup.includes('Calibration, not preferences'));
+});
+
+test('the run diagnostics are the panel\'s: the sizing inputs and the report button', () => {
+  const markup = renderRunDiagnostics();
+
+  // Both halves of the last run's report, where the run was started.
+  assert.ok(markup.includes('Sizing Debug'), 'the sizing inputs must be on the panel');
+  assert.ok(markup.includes('Show Forest Report'), 'the report button must be on the panel');
+  assert.ok(markup.includes('56H 70L 12B · 2 trees'), 'the report button must carry the last run tally');
+
+  // Disclosed, not dumped: the sizing numbers are behind the caret until it opens.
+  assert.ok(!markup.includes('Model volume'), 'the sizing inputs must start disclosed, not open');
+
+  // Nothing run yet renders neither, rather than two empty frames.
+  assert.equal(
+    renderRunDiagnostics(null, null),
+    '',
+    'a panel with no run yet must render no diagnostics',
+  );
 });
 
 test('a numeric knob is a labelled field with its unit and a stepper, never a slider', () => {
@@ -221,7 +271,7 @@ test('the modified marker rides on the dirty preset name, and only when it is di
 
   // A knob edit staged in the draft — the store is still clean — marks the name,
   // because that is what a user means by "this preset is modified".
-  const edited = renderBody({}, { ...getSettings().autoSupport, areaPerSupportMm2: 7 });
+  const edited = renderBody({ ...getSettings().autoSupport, areaPerSupportMm2: 7 });
   assert.ok(edited.includes('Light *'), 'a staged knob edit must mark the preset name');
   assert.ok(
     edited.includes('aria-label="Auto-support preset, modified"'),
