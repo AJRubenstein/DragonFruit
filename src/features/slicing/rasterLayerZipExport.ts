@@ -2261,7 +2261,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
   const settings = resolveEffectiveSettings(options);
   const perfSettings = getSavedSlicingPerformanceSettings();
 
-  const modelTriangleCount = countModelWorldTriangles(visibleModels);
+  const modelTriangleEstimate = countModelWorldTriangles(visibleModels);
   console.warn('[SupportAA] collector input partitions', {
     models: visibleModels.map((model) => {
       const totalTriangles = getModelTriangleCount(model);
@@ -2281,10 +2281,12 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
         scale: model.transform.scale.toArray(),
       };
     }),
-    modelTriangleCount,
+    modelTriangleEstimate,
   });
+  // Preserve closed surfaces, including their out-of-volume portions. The
+  // rasterizer needs those crossings to determine winding at the plate edge.
   const collector = new TriangleFloatCollector(
-    modelTriangleCount + 4096,
+    modelTriangleEstimate + 4096,
     options.flushBinaryMeshChunk,
     options.meshChunkTargetBytes,
   );
@@ -2297,6 +2299,9 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
       appendModelTrianglesInRange(model, collector, 0, modelTriCount);
     }
   }
+  // The native side splits the buffer here, before support-classified meshes
+  // and generated support/raft geometry are appended.
+  const modelTriangleCount = collector.triangleCount;
   for (const model of visibleModels) {
     const totalTris = getModelTriangleCount(model);
     const modelTriCount = effectiveModelTriangleCount(model);
@@ -2305,7 +2310,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     }
   }
   emitMeshPrepDiagnostic('Mesh prep: models', 1, 4, {
-    modelTriangleEstimate: modelTriangleCount,
+    modelTriangleEstimate,
     triangleCountAfterModels: collector.triangleCount,
   });
 
