@@ -23,6 +23,8 @@ import type { SupportSettings } from '../Settings/types';
 import type { SupportState } from '../types';
 import { registerMeshForAutoBrace } from '../autoBracing/meshGeometryStore';
 import { computeAutoSupportPlan } from './autoPlace';
+import { setResolvedSizingBands } from './parameterSizing';
+import type { SizingBand } from './settings';
 import { setModelMesh } from './meshStore';
 import type { AutoSupportSettings } from './settings';
 import type { AutoSupportPlan } from './types';
@@ -57,6 +59,12 @@ export type SerializedIsland = Omit<DetectedIsland, 'contact'> & {
 };
 
 export type AutoPlaceWorkerPayload = {
+    /**
+     * The sizing bands this run may resolve, by Support Studio preset id, resolved
+     * on the main thread — the worker has no storage and cannot see a preset the
+     * user made. See `resolvedSizingBandsForRun`.
+     */
+    sizingBands?: Record<string, SizingBand>;
     modelId: string;
     islands: SerializedIsland[];
     settingsOverride?: Partial<AutoSupportSettings>;
@@ -178,6 +186,10 @@ export function seedAutoPlaceEnvironment(payload: AutoPlaceWorkerPayload): THREE
     initializeBVH();
     setSettings(payload.appSettings);
     setSnapshot(payload.baseState);
+    // This thread has no storage, so it cannot resolve a Support Studio preset the
+    // user made: the main thread resolves every band the run can name and the
+    // worker sizes with those numbers verbatim.
+    setResolvedSizingBands(payload.sizingBands ?? null);
 
     if (!payload.mesh) return undefined;
 

@@ -3,9 +3,8 @@ import test from 'node:test';
 import { createRequire } from 'node:module';
 
 import { ANCHOR_PRESET, DETAIL_PRESET, STRUCTURE_PRESET } from '../Settings/presets';
-import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
+import { createDefaultAutoSupportSettings, SIZING_BANDS } from '../autoSupport/settings';
 import { getAutoSupportSettings, updateAutoSupportSettings } from '../Settings/state';
-import type { AutoSupportPresetSettings } from '../Settings/autoSupportPresets';
 import type * as AutoSupportPresetStore from '../Settings/autoSupportPresets';
 
 type Store = typeof AutoSupportPresetStore;
@@ -87,6 +86,37 @@ test('built-in presets are the Auto Support panel light/medium/heavy tiers, sett
     assert.equal(store.getActiveAutoSupportPresetId(), null);
 });
 
+test('a preset payload that predates a key reads clean, and a knob edit reads dirty', () => {
+    // Two records a build before `sizingBand` would have written: one whose block
+    // simply has no band, and one still carrying the legacy `sizingPreset`. Both
+    // must read clean, or every preset shows as modified forever — the comparison
+    // normalizes both sides, so a payload missing a key (or holding a legacy one)
+    // fills the same defaults the live block does.
+    const withoutTier = { ...createDefaultAutoSupportSettings() } as Record<string, unknown>;
+    delete withoutTier.sizingPreset;
+    // A block from the band-as-data build: it carries the seven numbers and no id.
+    const bandEra = {
+        ...createDefaultAutoSupportSettings(),
+        sizingBand: { ...SIZING_BANDS.detail },
+    } as Record<string, unknown>;
+    delete bandEra.sizingPreset;
+
+    for (const [label, settings] of [['no tier', withoutTier], ['band era', bandEra]] as const) {
+        const { store } = loadStoreWith({
+            [PRESETS_KEY]: JSON.stringify({
+                byId: { light: { id: 'light', name: 'Light', isBuiltIn: true, settings } },
+                allIds: ['light'],
+            }),
+            [ACTIVE_KEY]: 'light',
+        });
+        store.setActiveAutoSupportPreset('light');
+        assert.equal(store.isAutoSupportPresetDirty(), false, `${label}: an untouched stored preset reads clean`);
+
+        updateAutoSupportSettings({ areaPerSupportMm2: 7 });
+        assert.equal(store.isAutoSupportPresetDirty(), true, `${label}: a knob edit reads dirty`);
+    }
+});
+
 test('create, rename, duplicate and delete persist, and built-ins are not renamed or deleted', () => {
     updateAutoSupportSettings(createDefaultAutoSupportSettings());
     const { store, storage } = loadStoreWith();
@@ -141,7 +171,7 @@ test('create, rename, duplicate and delete persist, and built-ins are not rename
     assert.equal(JSON.parse(storage.get(PRESETS_KEY)!).allIds.length, 3);
 });
 
-test('a knob edit dirties the active preset; save and revert are the two exits', () => {
+test('a knob edit dirties the active preset; save and reset are the two exits', () => {
     updateAutoSupportSettings(createDefaultAutoSupportSettings());
     const { store, storage } = loadStoreWith();
 
@@ -159,18 +189,27 @@ test('a knob edit dirties the active preset; save and revert are the two exits',
     assert.equal(getAutoSupportSettings().areaPerSupportMm2, 16);
     assert.equal(store.isAutoSupportPresetDirty(), false);
 
+    // A built-in refuses the save: its block is the factory's, so Duplicate is the
+    // way to keep an edit. The live block keeps the edit and stays dirty.
     updateAutoSupportSettings({ sizeScale: 1.2 });
-    assert.equal(store.isAutoSupportPresetDirty(), true);
     store.saveAutoSupportPreset('light');
-    assert.equal(store.getAutoSupportPreset('light')!.settings.sizeScale, 1.2);
-    assert.equal(store.isAutoSupportPresetDirty(), false);
-
-    // Factory restore puts the built-in back but leaves the live block for the user.
-    store.restoreAutoSupportFactoryDefaults();
     assert.equal(store.getAutoSupportPreset('light')!.settings.sizeScale, 1);
     assert.equal(store.isAutoSupportPresetDirty(), true);
+
+    // Factory restore is a no-op on a block that was never saved over, and Reset
+    // is still the way to accept the factory's.
+    store.restoreAutoSupportFactoryDefaults();
+    assert.equal(store.getAutoSupportPreset('light')!.settings.sizeScale, 1);
     store.resetToActivePreset();
     assert.equal(getAutoSupportSettings().sizeScale, 1);
+    assert.equal(store.isAutoSupportPresetDirty(), false);
+
+    // A preset of the user's own takes the save.
+    const mine = store.createAutoSupportPreset('Mine');
+    updateAutoSupportSettings({ sizeScale: 1.3 });
+    assert.equal(store.isAutoSupportPresetDirty(), true);
+    store.saveAutoSupportPreset(mine.id);
+    assert.equal(store.getAutoSupportPreset(mine.id)!.settings.sizeScale, 1.3);
     assert.equal(store.isAutoSupportPresetDirty(), false);
 
     // With nothing selected there is nothing to be dirty about.
@@ -259,6 +298,7 @@ test('a partial document is completed from the defaults, so importing it is not 
 
     // The named keys win, everything else comes from the defaults.
     assert.equal(getAutoSupportSettings().areaPerSupportMm2, 7);
+    // The payload names a tier: it survives as the preset id the run resolves.
     assert.equal(getAutoSupportSettings().sizingPreset, 'detail');
     assert.equal(getAutoSupportSettings().overhangSelfSupportAngleDeg, defaults.overhangSelfSupportAngleDeg);
     assert.equal(getAutoSupportSettings().tipContactMarginScale, defaults.tipContactMarginScale);

@@ -1,80 +1,33 @@
 import { clamp, round } from '@/utils/math';
 import type { CandidatePoint } from './types';
 import { getSettings } from '../Settings/state';
-import { AUTO_SUPPORT_CONSTRAINTS } from './settings';
+import { getPresetById } from '../Settings/presets';
+import { AUTO_SUPPORT_CONSTRAINTS, SIZING_BANDS } from './settings';
+import type { SizingBand, SizingPreset } from './settings';
 import type { SupportSettings } from '../Settings/types';
 
 // ---------------------------------------------------------------------------
 // Empirical sizing (locked: no physics pretense)
 // ---------------------------------------------------------------------------
 //
-// Light / Medium / Heavy are HARDCODED profiles: switching a profile loads
-// the hardcoded settings block, and the sizing follows that block. The old
-// area-derived shaft curve inverted the profiles — a light 16 mm² cell sized
-// THICKER (1.28 mm) than a heavy 5 mm² cell (1.12 mm) because the curve
-// rose with the cell area. The band now comes from the active settings
-// (detail ≈ 0.8 / structure ≈ 1.0 / anchor ≈ 1.2 shafts); session overrides
-// apply until the next profile switch; the merged-cluster tail, the height
-// factor and the model factor (print scale × mass per support) ride on top of
-// the profile band, all three floored at ×1 so the light end is untouched.
+// The band is BORROWED from a Support Studio preset: `autoSupport.sizingPreset`
+// names it, and `activeSizingBand()` resolves that id on every run (a deleted
+// preset falls back to the factory `structure` band). The old area-derived shaft
+// curve inverted the profiles — a light 16 mm² cell sized THICKER (1.28 mm) than
+// a heavy 5 mm² cell (1.12 mm) because the curve rose with the cell area — so
+// sizing reads the resolved band, never a tier name. The
+// merged-cluster tail, the height factor and the model factor (print scale ×
+// mass per support) ride on top of the band, all three floored at ×1 so the
+// light end is untouched.
 //
-// Tip contact: profile band × underside angle (flat ceilings get the full
-// contact, steeper slopes less), floored at 30% of the shaft so a thick
-// shaft keeps a proportional tip. Roots ride with the shaft; tip length and
-// penetration are the profile band, flat.
+// Tip contact: band × underside angle (flat ceilings get the full contact,
+// steeper slopes less), floored at 30% of the shaft so a thick shaft keeps a
+// proportional tip. Roots ride with the shaft; tip length and penetration are
+// the band, flat.
 //
 // The forest resize pass (post-placement, before commit) thickens trunks
 // that actually carry branches — a trunk with four branches gets thicker, a
 // lone trunk stays at its placed diameter.
-
-export type SizingPreset = 'detail' | 'structure' | 'anchor';
-
-interface SizingBand {
-    shaftDiameterMm: number;
-    tipContactDiameterMm: number;
-    tipLengthMm: number;
-    tipPenetrationMm: number;
-    rootDiameterMm: number;
-    rootDiskHeightMm: number;
-    rootConeHeightMm: number;
-}
-
-/** Hardcoded auto-support bands. Auto supports are sized by THEIR OWN tier
- *  (autoSupport.sizingPreset, set by the panel's light/medium/heavy
- *  quick-select) — NEVER by the active trunk preset. Trunk presets are for
- *  manual placement; selecting Detail in Support Studio must not thin the
- *  next auto run. Values mirror the factory trunk presets' shaft/tip/roots
- *  bands so the tiers stay visually consistent with their manual
- *  counterparts. */
-const SIZING_BANDS: Record<SizingPreset, SizingBand> = {
-    detail: {
-        shaftDiameterMm: 0.8,
-        tipContactDiameterMm: 0.22,
-        tipLengthMm: 2.5,
-        tipPenetrationMm: 0,
-        rootDiameterMm: 2.0,
-        rootDiskHeightMm: 0.5,
-        rootConeHeightMm: 1.0,
-    },
-    structure: {
-        shaftDiameterMm: 1.0,
-        tipContactDiameterMm: 0.28,
-        tipLengthMm: 2.5,
-        tipPenetrationMm: 0,
-        rootDiameterMm: 2.0,
-        rootDiskHeightMm: 0.5,
-        rootConeHeightMm: 1.0,
-    },
-    anchor: {
-        shaftDiameterMm: 1.4,
-        tipContactDiameterMm: 0.4,
-        tipLengthMm: 2.5,
-        tipPenetrationMm: 0,
-        rootDiameterMm: 2.3,
-        rootDiskHeightMm: 0.5,
-        rootConeHeightMm: 1.0,
-    },
-};
 
 /** Merge sizing overrides into a settings snapshot. The settingsCodeHex
  *  stamped on a placed support must describe the geometry ACTUALLY built
@@ -108,37 +61,81 @@ export function applySizingOverridesToSettings(
     };
 }
 
-/** The auto-support tier's band. */
+/** The band a Support Studio preset carries: its tip, shaft and roots, read as
+ *  the seven numbers the sizing paths use. Pure read — the preset is never
+ *  written here. */
+function sizingBandOfPreset(id: string | null | undefined): SizingBand | null {
+    const preset = id ? getPresetById(id) : undefined;
+    if (!preset) return null;
+    const { tip, shaft, roots } = preset.settings;
+    return {
+        shaftDiameterMm: shaft.diameterMm,
+        tipContactDiameterMm: tip.contactDiameterMm,
+        tipLengthMm: tip.lengthMm,
+        tipPenetrationMm: tip.penetrationMm,
+        rootDiameterMm: roots.diameterMm,
+        rootDiskHeightMm: roots.diskHeightMm,
+        rootConeHeightMm: roots.coneHeightMm,
+    };
+}
+
 /**
- * The band a preset sizes with. Exported so callers that must weigh a band
- * against the others (the load budget credits a support by its band's
- * cross-section) read the same table the sizing does.
+ * The band table a worker run resolves against, set from the payload it is handed.
+ *
+ * The worker has no storage, so it has no Support Studio presets beyond the
+ * factory ones: a run naming a preset the user made would fall back to
+ * `structure` there while the app resolved the user's own numbers. The main
+ * thread therefore resolves every id the run can name and hands the numbers over,
+ * and the worker reads them verbatim.
  */
-export function sizingBandFor(preset: SizingPreset): SizingBand {
-    return SIZING_BANDS[preset];
+let resolvedSizingBands: Record<string, SizingBand> | null = null;
+
+export function setResolvedSizingBands(bands: Record<string, SizingBand> | null): void {
+    resolvedSizingBands = bands;
 }
 
+/**
+ * The bands a worker run may resolve, by Support Studio preset id: the run's own
+ * tier plus the three analytic tiers the load budget weighs against. Called on the
+ * thread that can reach the preset table, before the run is handed to a worker.
+ */
+export function resolvedSizingBandsForRun(id: string | null | undefined): Record<string, SizingBand> {
+    const ids = new Set(['detail', 'structure', 'anchor', id ?? 'structure']);
+    return Object.fromEntries([...ids].map((presetId) => [presetId, resolveSizingBand(presetId)]));
+}
+
+/**
+ * The band a tier id resolves to: the band this thread was handed (a worker run),
+ * else the Support Studio preset's own numbers, else the factory `structure` band.
+ * Never throws — a user can delete a preset an auto-support block still names, and
+ * the run has to size with something.
+ */
+export function resolveSizingBand(id: string | null | undefined): SizingBand {
+    return (id ? resolvedSizingBands?.[id] : undefined) ?? sizingBandOfPreset(id) ?? SIZING_BANDS.structure;
+}
+
+/** The band the run sizes with: the Support Studio preset the live settings name. */
 export function activeSizingBand(): SizingBand {
-    const preset = getSettings().autoSupport?.sizingPreset ?? 'structure';
-    return SIZING_BANDS[preset];
+    return resolveSizingBand(getSettings().autoSupport?.sizingPreset);
 }
 
-/** Tip contact for small-island candidates (detail band): fine detail gets a
- *  shrunk tip without dragging the shaft down to the detail band. */
+/** Tip contact for small-island candidates: the factory `detail` tier's tip,
+ *  resolved the same way, so fine detail gets a shrunk tip without dragging the
+ *  shaft down to the detail band. */
 export function smallIslandTipDiameterMm(): number {
-    return SIZING_BANDS.detail.tipContactDiameterMm;
+    return resolveSizingBand('detail').tipContactDiameterMm;
 }
 
 /** Area a merged cluster must exceed before the shaft tail engages (mm²).
- *  Grid cells sit FLAT at the profile band — the lattice reads exactly the
- *  profile, whatever its density. */
+ *  Grid cells sit FLAT at the band — the lattice reads exactly the band,
+ *  whatever its density. */
 const CELL_REFERENCE_AREA_MM2 = 8;
 
 /** Maximum shaft diameter (mm) for very large single supports. */
 const MAX_SHAFT_DIAMETER_MM = 2.0;
 
 // ---------------------------------------------------------------------------
-// Model-scale sizing: the three factors that ride ON TOP of the profile band
+// Model-scale sizing: the three factors that ride ON TOP of the settings band
 // (and under the user's `sizeScale` master multiplier).
 //
 // Direction is physical, values are calibration — the same deal the bands
@@ -235,16 +232,18 @@ export function modelSizingFactors(ctx?: ModelSizingContext): ModelSizingFactors
     };
 }
 
-/** The preset band for a supported area (mm²) — tip/root band + analytics. */
+/** The tier a supported area (mm²) falls in — the factory bands' own label,
+ *  used by the forest ledger and the load budget's relative weighting. Sizing
+ *  does NOT read it: the band is the settings' `sizingBand`. */
 export function presetForArea(areaMm2: number): SizingPreset {
     if (areaMm2 <= 0.15) return 'detail';
     if (areaMm2 <= 0.5) return 'structure';
     return 'anchor';
 }
 
-/** Shaft diameter: the profile band, then a gentle log tail beyond the cell
+/** Shaft diameter: the band, then a gentle log tail beyond the cell
  *  reference for merged clusters (sub-linear — strength grows with the
- *  cross-section, not the area). A grid cell is FLAT at the profile band.
+ *  cross-section, not the area). A grid cell is FLAT at the band.
  *  The anchor girth multiplier is declared on the descriptor but not applied
  *  here — see docs/dev/support-registry-findings.md. */
 function shaftDiameterForArea(baseDiameterMm: number, areaMm2: number): number {
@@ -289,21 +288,21 @@ export interface ModelSizingContext {
 /**
  * Empirical sizing for an auto-support candidate.
  *
- * - Shaft: the ACTIVE PROFILE's band (hardcoded profile / session override)
- *   × height factor × model factor, then the candidate's OWN island area
+ * - Shaft: the active settings band (`autoSupport.sizingBand`) × height
+ *   factor × model factor, then the candidate's OWN island area
  *   rides a gentle log tail above that (sub-linear — strength grows with the
  *   cross-section, not the area), capped at MAX_SHAFT_DIAMETER_MM.
  * - Model factor (`modelSizingFactors`): the run-level geometric scale of the
  *   print and the resin mass one support carries. Absent context = ×1, so a
  *   caller with no mesh gets the band exactly.
- * - Tip contact: profile band × angle factor — a flat ceiling (normal
- *   straight down, |z| ≈ 1) gets the full preset contact; a steep slope is
+ * - Tip contact: band × angle factor — a flat ceiling (normal
+ *   straight down, |z| ≈ 1) gets the full band contact; a steep slope is
  *   closer to self-supporting and gets a smaller one (down to 60%). Floored
  *   at 30% of the shaft — unless the candidate carries a per-point
  *   tipDiameterMm (small-island shrunk tip), which bypasses band and floor.
  * - Roots: the band, scaled with the trunk. The pad keeps its ratio to the
  *   shaft it carries; a 2 mm shaft on a 2 mm pad has no flare and no grip.
- * - Tip length / penetration: profile band, flat.
+ * - Tip length / penetration: the band, flat.
  *
  * `sizeScale` (the user's master multiplier) rides on top of all of it, and is
  * the only term allowed past MAX_SHAFT_DIAMETER_MM — it is an explicit
@@ -344,7 +343,7 @@ export function sizeParameters(
         ) * sizeScale,
     3);
     // Underside normal z = cos(angle from straight-down). Flat ceilings
-    // (|nz| ≈ 1) peel hardest → full preset contact; steep slopes are closer
+    // (|nz| ≈ 1) peel hardest → full band contact; steep slopes are closer
     // to self-supporting → smaller contact. Bounded to [0.6, 1.0]× band.
     const nz = Math.abs(candidate.tipNormal?.z ?? -1);
     const angleFactor = clamp(0.6 + 0.4 * nz, 0.6, 1.0);

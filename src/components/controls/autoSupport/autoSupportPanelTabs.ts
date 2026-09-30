@@ -15,8 +15,6 @@ import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import {
   AUTO_SUPPORT_CONSTRAINTS,
-  createDefaultAutoSupportSettings,
-  type AutoSupportSettings,
   type NumericAutoSupportSettingKey,
 } from '@/supports/autoSupport/settings';
 
@@ -42,8 +40,9 @@ export type AutoSupportSectionKey =
 export type AutoSupportSectionDef = {
   key: AutoSupportSectionKey;
   label: MessageDescriptor;
-  /** The card's one-line description, under the uppercase header. */
-  subtitle: MessageDescriptor;
+  /** The card's one-line description, under the uppercase header. Optional: the
+   *  calibration card carries none. */
+  subtitle?: MessageDescriptor;
   /** The long form of the subtitle, kept as the header's `title`. */
   hint: MessageDescriptor;
 };
@@ -82,12 +81,15 @@ const POLICY_SECTIONS: ReadonlyArray<AutoSupportSectionDef> = [
   },
 ];
 
-/** The Debug & Advanced section — the disclosure, last in the dialog. */
+/**
+ * The calibration group — the last card in the dialog, framed in the warning tone
+ * rather than hidden. The debug switches and the run diagnostics are a card of
+ * their own (`DEBUG_DIAGNOSTICS_HEADING`); this is the sizing constants.
+ */
 export const AUTO_SUPPORT_ADVANCED_SECTION: AutoSupportSectionDef = {
   key: 'debug',
-  label: msg`Debug & Advanced`,
-  subtitle: msg`Debug switches, run diagnostics, calibration`,
-  hint: msg`Debug switches, run diagnostics, and the measured calibration constants behind sizing`,
+  label: msg`Advanced (calibration)`,
+  hint: msg`The sizing constants the engine ships with. They are stored per preset.`,
 };
 
 /** Every section, in reading order — the policy cards, then the disclosure. */
@@ -109,8 +111,6 @@ export type KnobDef = {
   step: number;
   unit: string;
   hint: MessageDescriptor;
-  /** Advanced group only: the measured value the engine was tuned with. */
-  measuredDefault?: number;
 };
 
 export type ToggleDef = {
@@ -161,20 +161,20 @@ const KNOBS: readonly KnobDef[] = [
 ];
 
 /**
- * The Advanced (calibration) fields. Bounds and the measured default both come
- * from `AUTO_SUPPORT_CONSTRAINTS`, so the number the engine was tuned with and
- * the number the Reset button restores cannot drift apart.
+ * The Advanced (calibration) fields. Bounds come from `AUTO_SUPPORT_CONSTRAINTS`,
+ * and each field's tooltip names the value the engine ships with, so the number a
+ * reader sees and the number the engine reads cannot drift apart.
  */
 const CALIBRATION_KNOB_SOURCE: ReadonlyArray<{
   key: NumericAutoSupportSettingKey;
   label: MessageDescriptor;
   hint: MessageDescriptor;
 }> = [
-  { key: 'tipContactMarginScale', label: msg`Tip Fit Margin`, hint: msg`How much of the free width a contact tip may occupy. Measured 0.9 keeps the disc just inside the feature it lands on; lower values shrink every tip on a feature narrower than the band tip.` },
-  { key: 'memberHostShaftRatio', label: msg`Member / Host Ratio`, hint: msg`Least diameter a branch or leaf takes as a fraction of the trunk it grows from. Measured 0.7 keeps a hosted member a step below its host instead of a needle beside it.` },
-  { key: 'modelSizeFactorCap', label: msg`Model Size Cap`, hint: msg`Ceiling of the size factor derived from the model's bounding-box diagonal. Measured 1.45 bounds how much a large part's shafts thicken.` },
-  { key: 'modelLoadFactorCap', label: msg`Model Load Cap`, hint: msg`Ceiling of the load factor derived from resin mass per support. Measured 1.3 bounds how much a heavy part's shafts thicken.` },
-  { key: 'heightFactorCap', label: msg`Height Factor Cap`, hint: msg`Ceiling of the height factor for a tall column, whose buckling load falls with height. Measured 1.35 bounds how much a tall support thickens.` },
+  { key: 'tipContactMarginScale', label: msg`Tip Fit Margin`, hint: msg`How much of the free width a contact tip may occupy. The default, 0.9, keeps the disc just inside the feature it lands on; lower values shrink every tip on a feature narrower than the band tip.` },
+  { key: 'memberHostShaftRatio', label: msg`Member / Host Ratio`, hint: msg`Least diameter a branch or leaf takes as a fraction of the trunk it grows from. The default, 0.7, keeps a hosted member a step below its host instead of a needle beside it.` },
+  { key: 'modelSizeFactorCap', label: msg`Model Size Cap`, hint: msg`Ceiling of the size factor derived from the model's bounding-box diagonal. The default, 1.45, bounds how much a large part's shafts thicken.` },
+  { key: 'modelLoadFactorCap', label: msg`Model Load Cap`, hint: msg`Ceiling of the load factor derived from resin mass per support. The default, 1.3, bounds how much a heavy part's shafts thicken.` },
+  { key: 'heightFactorCap', label: msg`Height Factor Cap`, hint: msg`Ceiling of the height factor for a tall column, whose buckling load falls with height. The default, 1.35, bounds how much a tall support thickens.` },
 ];
 
 export const ADVANCED_CALIBRATION_KNOBS: readonly KnobDef[] = CALIBRATION_KNOB_SOURCE.map((knob) => {
@@ -186,7 +186,6 @@ export const ADVANCED_CALIBRATION_KNOBS: readonly KnobDef[] = CALIBRATION_KNOB_S
     max: constraint.max,
     step: constraint.step,
     unit: '',
-    measuredDefault: constraint.defaultValue,
   };
 });
 
@@ -208,20 +207,8 @@ export const ADVANCED_CALIBRATION_TOGGLE: ToggleDef = {
   key: 'modelScaleEnabled',
   section: 'debug',
   label: msg`Model-Scale Sizing`,
-  hint: msg`Master switch for the run-level size, load and height factors. Off pins all three to ×1, so sizing is the active band plus the local terms alone (measured default: on).`,
+  hint: msg`Master switch for the run-level size, load and height factors. Off pins all three to ×1, so sizing is the active band plus the local terms alone (default: on).`,
 };
-
-/** The six calibration keys as `AUTO_SUPPORT_CONSTRAINTS` defaults, plus the boolean master switch. */
-export function measuredCalibrationDefaults(): Partial<AutoSupportSettings> {
-  const advanced = Object.fromEntries(
-    ADVANCED_CALIBRATION_NUMERIC_KEYS.map((key) => [key, AUTO_SUPPORT_CONSTRAINTS[key].defaultValue]),
-  ) as Record<(typeof ADVANCED_CALIBRATION_NUMERIC_KEYS)[number], number>;
-
-  return {
-    ...advanced,
-    modelScaleEnabled: createDefaultAutoSupportSettings().modelScaleEnabled,
-  };
-}
 
 /** The controls of one section, in table order, with every section key present. */
 function groupBySection<T extends { section: AutoSupportSectionKey }>(items: readonly T[]): Record<AutoSupportSectionKey, T[]> {
@@ -235,16 +222,6 @@ function groupBySection<T extends { section: AutoSupportSectionKey }>(items: rea
 export const KNOBS_BY_SECTION = groupBySection(KNOBS);
 export const TOGGLES_BY_SECTION = groupBySection(TOGGLES);
 
-/**
- * The visible warning over the Advanced calibration group. It says what breaks,
- * not just that something might: an edited constant is exactly the state a
- * sizing complaint arrives in, and it has to be readable as such.
- */
-export const ADVANCED_CALIBRATION_WARNING = msg`Calibration, not preferences. These six values were measured against the printed result, and they back the fit guarantee: a tip fits the feature it lands on, a hosted member is not a needle beside its host, and run-level factors only thicken (never thin) a support below its band. Change one and that guarantee no longer holds — reset them to the measured defaults before reporting a sizing problem.`;
-
-/** The Advanced (calibration) card's header, inside the Debug & Advanced disclosure. */
-export const ADVANCED_CALIBRATION_HEADING = msg`Advanced (calibration)`;
-
 /** The diagnostics card's header — the debug switches and the last run's report. */
 export const DEBUG_DIAGNOSTICS_HEADING = msg`Diagnostics`;
 
@@ -255,31 +232,8 @@ export const TIER_HINTS: Record<string, MessageDescriptor> = {
   heavy: msg`Dense supports — the anchor sizing band`,
 };
 
-/** The sizing band a run builds every shaft, tip and root from. */
-export type AutoSupportSizingTier = AutoSupportSettings['sizingPreset'];
-
-/**
- * The tier segmented control's options. The three bands are the same three the
- * built-in presets carry (`light`/`medium`/`heavy`), so the tooltips are the
- * tier row's own text rather than a second copy of it.
- */
-export const SIZING_TIER_OPTIONS: ReadonlyArray<{
-  value: AutoSupportSizingTier;
-  label: MessageDescriptor;
-  hint: MessageDescriptor;
-}> = [
-  { value: 'detail', label: msg`Detail`, hint: TIER_HINTS.light },
-  { value: 'structure', label: msg`Structure`, hint: TIER_HINTS.medium },
-  { value: 'anchor', label: msg`Anchor`, hint: TIER_HINTS.heavy },
-];
-
-/** The segmented control's own label and tooltip. */
+/** The Sizing Tier control's own label and tooltip. */
 export const SIZING_TIER_FIELD = {
   label: msg`Sizing Tier`,
-  hint: msg`The band every shaft, tip and root is sized from. The model-scale factors and Support Size ride on top of it.`,
+  hint: msg`The Support Studio preset whose tip, shaft and root numbers size this run. Editing that preset changes what auto-support prints — Duplicate it first if you only want to change the run.`,
 } as const;
-
-/** The tier of a stored preset, for the preset list's Tier column. */
-export const SIZING_TIER_LABELS: Record<AutoSupportSizingTier, MessageDescriptor> = Object.fromEntries(
-  SIZING_TIER_OPTIONS.map((option) => [option.value, option.label]),
-) as Record<AutoSupportSizingTier, MessageDescriptor>;

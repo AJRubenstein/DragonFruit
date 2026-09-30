@@ -8,8 +8,9 @@ import { i18n } from '../../i18n';
 import type { AutoSupportSettings, ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
 import type { AutoSupportSettingsBodyProps } from '@/components/controls/autoSupport/AutoSupportSettingsBody';
 import type { AutoSupportSectionDef } from '@/components/controls/autoSupport/autoSupportPanelTabs';
-import { getSettings } from '@/supports/Settings/state';
+import { getSettings, updateAutoSupportSettings } from '@/supports/Settings/state';
 import {
+  createAutoSupportPreset,
   getActiveAutoSupportPresetId,
   getAutoSupportPreset,
   getAutoSupportPresets,
@@ -40,6 +41,7 @@ registerHooks({
 
 let AutoSupportSettingsBody: React.ComponentType<AutoSupportSettingsBodyProps>;
 let selectAutoSupportPreset: (id: string, setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
+let deleteActiveAutoSupportPreset: (setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
 let autoSupportSections: ReadonlyArray<AutoSupportSectionDef>;
 let policySections: ReadonlyArray<AutoSupportSectionDef>;
 
@@ -47,25 +49,29 @@ let policySections: ReadonlyArray<AutoSupportSectionDef>;
 // already be registered — a static import would be evaluated first.
 before(async () => {
   ({ AutoSupportSettingsBody } = await import('@/components/controls/autoSupport/AutoSupportSettingsBody'));
-  ({ selectAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresets'));
+  ({ selectAutoSupportPreset, deleteActiveAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresets'));
   ({
     AUTO_SUPPORT_SECTIONS: autoSupportSections,
     AUTO_SUPPORT_POLICY_SECTIONS: policySections,
   } = await import('@/components/controls/autoSupport/autoSupportPanelTabs'));
 });
 
-/**
- * Labels that belong to the Debug & Advanced surface. They are all inside the
- * disclosure, so none of them may appear before it in the markup.
- */
-const DEBUG_ONLY_MARKERS = [
+/** The calibration surface, which is the one thing behind a disclosure. */
+const CALIBRATION_MARKERS = [
+  'Advanced (calibration)',
+  'Model-Scale Sizing',
+  'Tip Fit Margin',
+  // The tooltip names the value the engine ships with; there is no sub-label.
+  'The default, 0.9',
+];
+
+/** The diagnostics surface, always on screen as a card of its own. */
+const DIAGNOSTICS_MARKERS = [
   'Origin Colors',
   'No Brace',
   'Simplified',
   'Sizing Debug',
   'Forest Report',
-  'Advanced (calibration)',
-  'Calibration, not preferences.',
 ];
 
 const SIZING_DEBUG: SizingDebugInfo = {
@@ -91,8 +97,7 @@ const BODY_PROPS = {
   sizingDebug: null,
   forestReport: null,
   onShowForestReport: () => {},
-  onCancel: () => {},
-  onApply: () => {},
+  onCommitted: () => {},
 } satisfies Omit<AutoSupportSettingsBodyProps, 'draft'>;
 
 const FOREST_REPORT = {
@@ -102,7 +107,10 @@ const FOREST_REPORT = {
   trees: [{}, {}],
 } as unknown as ForestReport;
 
-function renderBody(diagnostics: { sizingDebug?: SizingDebugInfo } = {}): string {
+function renderBody(
+  diagnostics: { sizingDebug?: SizingDebugInfo } = {},
+  draft: AutoSupportSettings = getSettings().autoSupport,
+): string {
   // `createElement` rather than JSX so this stays a `.ts` file, which is the
   // glob the supports suite is run with.
   const markup = renderToStaticMarkup(
@@ -111,7 +119,7 @@ function renderBody(diagnostics: { sizingDebug?: SizingDebugInfo } = {}): string
       { i18n },
       React.createElement(AutoSupportSettingsBody, {
         ...BODY_PROPS,
-        draft: getSettings().autoSupport,
+        draft,
         sizingDebug: diagnostics.sizingDebug ?? null,
         forestReport: FOREST_REPORT,
       }),
@@ -121,46 +129,38 @@ function renderBody(diagnostics: { sizingDebug?: SizingDebugInfo } = {}): string
   return markup.replace(/&amp;/g, '&');
 }
 
-test('the dialog renders every section, and no debug control outside the closed disclosure', () => {
+test('every card renders, all of them visible, with calibration framed as a warning', () => {
   const markup = renderBody({ sizingDebug: SIZING_DEBUG });
 
   for (const section of autoSupportSections) {
     assert.ok(markup.includes(String(section.label.message)), `the dialog is missing the "${section.label.message}" section`);
   }
   for (const section of policySections) {
+    assert.ok(section.subtitle, `the "${section.label.message}" card is missing its one-liner`);
     assert.ok(markup.includes(String(section.subtitle.message)), `the "${section.label.message}" card is missing its one-liner`);
   }
 
-  // Debug & Advanced is a `<details>` with no `open` attribute: closed by
-  // default, and every debug control is inside it.
-  const disclosureIndex = markup.indexOf('<details');
-  assert.ok(disclosureIndex > 0, 'the Debug & Advanced disclosure is not rendered');
-  assert.ok(!/<details[^>]*\sopen(=|>|\s)/.test(markup), 'the Debug & Advanced disclosure renders open');
+  // Nothing is behind a disclosure any more: every control is on screen.
+  assert.ok(!markup.includes('<details'), 'the dialog still has a disclosure');
 
-  const policyMarkup = markup.slice(0, disclosureIndex);
-  for (const marker of DEBUG_ONLY_MARKERS) {
-    assert.ok(
-      !policyMarkup.includes(marker),
-      `"${marker}" renders above the Debug & Advanced disclosure, in the policy surface`,
-    );
+  for (const marker of DIAGNOSTICS_MARKERS) {
+    assert.ok(markup.includes(marker), `"${marker}" must be on screen`);
+  }
+  assert.ok(markup.includes('56H 70L 12B'), 'the forest report of the last run is on screen');
+  for (const marker of CALIBRATION_MARKERS) {
+    assert.ok(markup.includes(marker), `"${marker}" must be on screen`);
   }
 
-  // Every debug control — including the diagnostics and the calibration fields —
-  // is inside the disclosure.
-  const disclosureMarkup = markup.slice(disclosureIndex);
-  assert.ok(disclosureMarkup.includes('Origin Colors'));
-  assert.ok(disclosureMarkup.includes('No Brace'));
-  assert.ok(disclosureMarkup.includes('Simplified'));
-  assert.ok(disclosureMarkup.includes('Sizing Debug'));
-  assert.ok(disclosureMarkup.includes('Forest Report'));
-  assert.ok(disclosureMarkup.includes('56H 70L 12B'));
-  assert.ok(disclosureMarkup.includes('Model-Scale Sizing'));
-  assert.ok(disclosureMarkup.includes('Advanced (calibration)'));
-  assert.ok(disclosureMarkup.includes('Tip Fit Margin'));
-  assert.ok(disclosureMarkup.includes('measured'));
-  assert.ok(disclosureMarkup.includes('Reset to measured defaults'));
-  // The calibration warning states what breaks, not just that something might.
-  assert.ok(disclosureMarkup.includes('Calibration, not preferences.'));
+  // The calibration card carries the warning tone instead of a callout: the amber
+  // border/background the material modal's warning banner uses.
+  assert.ok(markup.includes('color-mix(in srgb, #d97706, var(--border-subtle) 36%)'), 'no warning-toned border');
+  assert.ok(markup.includes('color-mix(in srgb, #d97706, var(--surface-1) 92%)'), 'no warning-toned surface');
+
+  // No callout text, no "measured" claim, no reset action: the tooltips carry the
+  // explanation of what each value does.
+  assert.ok(!markup.includes('measured'));
+  assert.ok(!markup.includes('Reset to measured defaults'));
+  assert.ok(!markup.includes('Calibration, not preferences'));
 });
 
 test('a numeric knob is a labelled field with its unit and a stepper, never a slider', () => {
@@ -182,44 +182,108 @@ test('a numeric knob is a labelled field with its unit and a stepper, never a sl
   assert.ok(markup.includes('aria-checked="true"'));
 });
 
-test('the preset selector and its action row carry the whole preset lifecycle', () => {
+test('the preset strip carries the reference actions, and the footer the commit pair', () => {
   const markup = renderBody();
-
-  // The selector sits above the fields, with the two apply actions beside it.
-  assert.ok(markup.includes('Preset'));
-  assert.ok(markup.includes('Save'));
-  assert.ok(markup.includes('Revert'));
-  assert.ok(markup.includes('aria-label="Auto-support preset"'));
-  assert.ok(markup.indexOf('Auto-support preset') < markup.indexOf('Min Island Size'), 'the preset strip must sit above the fields');
-
-  // The collection's action bar is a row of its own under the selector — no
-  // management surface to open, and nothing hidden inside the menu.
   const visibleText = markup.replace(/<[^>]*>/g, ' ');
-  for (const action of ['New', 'Rename', 'Duplicate', 'Import', 'Export', 'Restore factory presets', 'Delete']) {
-    assert.ok(visibleText.includes(action), `the preset action row is missing the "${action}" action`);
-  }
-  assert.ok(markup.indexOf('Restore factory presets') < markup.indexOf('Detection'), 'the action row sits with the preset strip, above the sections');
 
-  // The dialog footer is the commit bar: the collection actions are not repeated there.
-  const footer = markup.slice(markup.lastIndexOf('border-top'));
-  assert.ok(footer.includes('Cancel'));
-  assert.ok(footer.includes('Apply'));
-  assert.ok(!footer.includes('Restore factory presets'), 'the footer repeats the preset row');
+  // The strip sits above the fields: the selector, then exactly the three
+  // actions the reference keeps beside it.
+  assert.ok(markup.includes('aria-label="Auto-support preset"'));
+  assert.ok(markup.indexOf('Auto-support preset') < markup.indexOf('Detection'), 'the preset strip must sit above the sections');
+  for (const action of ['Rename', 'Duplicate', 'Export', 'Import']) {
+    assert.ok(visibleText.includes(action), `the preset strip is missing the "${action}" action`);
+  }
+
+  // `New` is the dropdown's own menu entry, not a button in the strip; there is no
+  // second row of collection actions and no factory restore.
+  assert.ok(!visibleText.includes('New'), 'the strip still shows a New control');
+  assert.ok(!visibleText.includes('Restore factory presets'), 'the dropped restore action is still rendered');
+
+  // The footer is the reference's: Delete on the left, Reset + Save on the right,
+  // with no separate Apply.
+  for (const action of ['Delete', 'Reset', 'Save']) {
+    assert.ok(visibleText.includes(action), `the dialog footer is missing the "${action}" action`);
+  }
+  assert.ok(!visibleText.includes('Apply'), 'the footer still shows an Apply action');
+  assert.ok(!visibleText.includes('unsaved changes'), 'the removed dirty strip is still rendered');
 
   const builtIns = getAutoSupportPresets().filter((preset) => preset.isBuiltIn);
   assert.deepEqual(builtIns.map((preset) => preset.id), ['light', 'medium', 'heavy']);
 });
 
-test('selecting a preset applies its block to the settings and to the dialog draft', () => {
-  const applied = getAutoSupportPreset('light');
-  assert.ok(applied);
+test('the modified marker rides on the dirty preset name, and only when it is dirty', () => {
+  // Clean: a preset applied and untouched is not marked.
+  selectAutoSupportPreset('light', () => {});
+  const clean = renderBody();
+  assert.ok(clean.includes('aria-label="Auto-support preset"'), 'a clean preset must not be announced as modified');
+  assert.ok(!clean.includes('aria-label="Auto-support preset, modified"'));
+  assert.ok(!clean.includes('Light *'), 'a clean preset must not carry the star');
+
+  // A knob edit staged in the draft — the store is still clean — marks the name,
+  // because that is what a user means by "this preset is modified".
+  const edited = renderBody({}, { ...getSettings().autoSupport, areaPerSupportMm2: 7 });
+  assert.ok(edited.includes('Light *'), 'a staged knob edit must mark the preset name');
+  assert.ok(
+    edited.includes('aria-label="Auto-support preset, modified"'),
+    'the modified state must be exposed to assistive tech',
+  );
+  assert.ok(edited.includes('The settings no longer match this preset'), 'the trigger must explain the marker');
+
+  // And so does a live block that has drifted from the preset.
+  updateAutoSupportSettings({ areaPerSupportMm2: 8 });
+  const drifted = renderBody();
+  assert.ok(drifted.includes('Light *'), 'a drifted live block must mark the preset name');
+});
+
+
+test('selecting a preset applies it to the settings and to the dialog draft', () => {
+  assert.ok(getAutoSupportPreset('light'));
 
   let draft = getSettings().autoSupport;
   selectAutoSupportPreset('light', (next) => {
     draft = typeof next === 'function' ? next(draft) : next;
   });
 
+  // The store's own contract — the applied block, normalized — is its tests';
+  // what matters here is that the dialog's draft is what was just applied, so
+  // the fields show it.
   assert.equal(getActiveAutoSupportPresetId(), 'light');
-  assert.deepEqual(getSettings().autoSupport, applied.settings);
   assert.deepEqual(draft, getSettings().autoSupport);
+});
+
+test('deleting the selected preset falls back to the balanced built-in', () => {
+  const mine = createAutoSupportPreset('Mine');
+  assert.equal(getActiveAutoSupportPresetId(), mine.id);
+
+  deleteActiveAutoSupportPreset(() => {});
+
+  // The store's own contract is "nothing selected"; the dialog's fallback is what
+  // keeps a run policy on screen, so it is what is asserted here.
+  assert.equal(getActiveAutoSupportPresetId(), 'medium');
+  assert.ok(!getAutoSupportPresets().some((preset) => preset.id === mine.id), 'the deleted preset is gone');
+});
+
+test('Save refuses a built-in preset and is offered for a custom one', () => {
+  const saveButton = (markup: string) => {
+    const end = markup.indexOf('>Save</button>');
+    if (end < 0) return '';
+    return markup.slice(markup.lastIndexOf('<button', end), end);
+  };
+
+  // Something to save either way, so the preset's kind is the only difference.
+  selectAutoSupportPreset('light', () => {});
+  updateAutoSupportSettings({ areaPerSupportMm2: 7 });
+
+  const builtIn = renderBody();
+  assert.ok(saveButton(builtIn).includes('disabled=""'), 'Save must be refused while a built-in is selected');
+  assert.ok(
+    builtIn.includes('A built-in preset cannot be saved over'),
+    'the refusal must say how to keep the edits',
+  );
+
+  createAutoSupportPreset('Mine');
+  updateAutoSupportSettings({ areaPerSupportMm2: 8 });
+
+  const custom = renderBody();
+  assert.ok(!saveButton(custom).includes('disabled=""'), 'Save must be offered for a custom preset');
 });

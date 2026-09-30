@@ -1,12 +1,29 @@
 "use client";
 
 /**
- * The Auto Support settings dialog's preset UI: the selector strip at the top of
- * the dialog, and the management row under it.
+ * The Auto Support settings dialog's preset UI: the strip at the top of the
+ * dialog and the actions in its footer, both modelled on the LUT curve editor
+ * (`src/features/slicing/components/LutCurveEditor.tsx`).
  *
  * A preset is a named `autoSupport` block: the whole run policy. The collection,
  * the active selection and the file format belong to
  * `@/supports/Settings/autoSupportPresets`; this file is only its UI.
+ *
+ * The LUT editor's shape, which this copies:
+ *
+ * - `Rename` / `Export` / `Import` sit beside the selector, and nothing else
+ *   does (`LutCurveEditor` 1375-1398).
+ * - `New` is the selector's own menu entry — `menuFooterAction` with a plus icon
+ *   and the accent tone (1359-1364, and the same idiom in
+ *   `src/components/settings/UISettingsTab.tsx` 297-301). It is the only thing in
+ *   the menu besides the presets themselves; `Rename`, `Duplicate`, `Export` and
+ *   `Import` sit in the row beside the trigger.
+ * - The footer is `Delete` alone on the left (in the LUT's own filled-danger
+ *   treatment, 1498-1511) and `Reset` + `Save` on the right (1498-1532). The LUT's `Reset` restores the draft from the snapshot taken
+ *   when the editor opened (`handleResetDraft`, 1043-1052) — it discards
+ *   uncommitted changes, it is not a factory restore — and its `Save` commits the
+ *   draft (`handleSave`, 1035-1041). Both are disabled until there is something
+ *   to discard or commit (`disabled={!isDirty}`).
  *
  * Two behaviours worth knowing before changing it:
  *
@@ -19,19 +36,16 @@
  *   those ids). A built-in *is* savable over — that is how a user keeps a
  *   tweaked tier.
  *
- * Two rows, and the split is deliberate:
+ * Modified state is the store's `isAutoSupportPresetDirty` and nothing else: the
+ * name the trigger shows carries a trailing `*` while it is set, and the trigger's
+ * `aria-label` and `title` say so too. There is no notice row to repeat it.
  *
- * - The first holds the selector and the two **apply** actions (`Save`, `Revert`)
- *   with the dirty strip under them: they are about the settings on screen.
- * - The second is the **collection's** action bar, the material manager's
- *   arrangement: `New` through `Restore factory presets`, with `Delete` alone on
- *   the right in the danger colour.
- *
- * The dropdown itself lists presets and nothing else. Its row styling and right
- * labels follow `LutCurveSelector` (`src/features/slicing/components/LutCurveEditor.tsx`)
- * and the theme profile dropdown (`src/components/settings/UISettingsTab.tsx`) —
- * those were the inspiration for how a preset row *reads*, not for holding
- * actions in the menu.
+ * Two refusals are deliberate. A built-in cannot be saved over (its name and its
+ * block are the factory's; Duplicate is the way to make one yours), so `Save` is
+ * disabled while one is selected; and a built-in cannot be deleted, so `Delete`
+ * greys out. Deleting the preset you are on falls back to the balanced built-in
+ * rather than leaving the dialog with no policy at all — the store's own contract
+ * (no selection) is unchanged; the fallback is this UI's.
  */
 import React from 'react';
 import { useLingui } from '@lingui/react';
@@ -40,8 +54,7 @@ import type { MessageDescriptor } from '@lingui/core';
 import { Check, Copy, Download, PenLine, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
-import { FieldHelpTooltip } from '@/components/settings/profileFormAtoms';
-import { normalizeAutoSupportSettings, type AutoSupportSettings } from '@/supports/autoSupport';
+import type { AutoSupportSettings } from '@/supports/autoSupport';
 import {
   createAutoSupportPreset,
   deleteAutoSupportPreset,
@@ -55,7 +68,6 @@ import {
   isAutoSupportPresetDirty,
   renameAutoSupportPreset,
   resetToActivePreset,
-  restoreAutoSupportFactoryDefaults,
   saveAutoSupportPreset,
   setActiveAutoSupportPreset,
   subscribeToAutoSupportPresets,
@@ -73,7 +85,7 @@ import {
   readPrintArtifactBytesFromPath,
   savePrintArtifactWithNativeDialog,
 } from '@/features/slicing/tauri/nativeSlicerBridge';
-import { SIZING_TIER_LABELS } from './autoSupportPanelTabs';
+import { sizingTierName, useSupportStudioPresets } from './AutoSupportSizingTierField';
 
 type Translate = (descriptor: MessageDescriptor) => string;
 
@@ -83,15 +95,42 @@ const NEW_PRESET_NAME = msg`New Preset`;
 /** What the selector shows before the user has ever picked a preset. */
 const NO_ACTIVE_PRESET_LABEL = msg`Custom — not a preset`;
 
+/** The selector's "add one" entry — the references' `New Curve` / `+ New Theme`. */
+const NEW_PRESET_ENTRY = msg`New preset…`;
+
+/** The strip's buttons: the LUT editor's quiet outline row button. */
+const STRIP_BUTTON = 'ui-button ui-button-secondary !h-8 !px-2.5 !py-0 text-[11px] inline-flex items-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed';
+
+/** The footer's buttons: the LUT editor's footer treatment. */
+const FOOTER_BUTTON = 'ui-button ui-button-secondary inline-flex items-center gap-1.5 !h-9 px-3 text-[12px] disabled:opacity-45 disabled:cursor-not-allowed';
+
+/** The LUT's `Save`: the accent-secondary action token, filled. */
+const SAVE_STYLE = {
+  borderColor: 'var(--accent-secondary-action-border)',
+  background: 'var(--accent-secondary-action-bg-92)',
+  color: 'var(--accent-secondary-action-color)',
+} as const;
+
+/**
+ * The LUT's `Delete Curve`: a filled danger action. It is applied only while the
+ * button can act — an inline background/border/colour wins over the stylesheet, so
+ * leaving it on a disabled button keeps it red and it reads as clickable. Disabled,
+ * the button falls back to `.ui-button:disabled` (the app's muted treatment:
+ * `color-mix(surface-1, black 8%)` fill, `color-mix(border-subtle, black 10%)`
+ * border, `color-mix(text-muted, surface-2 18%)` text), the way the material
+ * editor's own destructive action does.
+ */
+const DANGER_DELETE_STYLE = {
+  borderColor: 'color-mix(in srgb, #ef4444, var(--border-subtle) 45%)',
+  background: 'color-mix(in srgb, #ef4444, var(--surface-1) 86%)',
+  color: 'var(--danger)',
+} as const;
+
 /**
  * Interpolating `msg` templates live at module scope: React Compiler renames the
  * interpolated locals inside a component, which desyncs the message id from the
  * compiled catalog in production (see AGENTS.md).
  */
-function formatDirtyNotice(presetName: string, translate: Translate): string {
-  return translate(msg`"${presetName}" has unsaved changes — Save overwrites it, Revert reloads it.`);
-}
-
 /** Interpolating template — module scope for the same reason as above. */
 function formatDeletePresetTitle(presetName: string, translate: Translate): string {
   return translate(msg`Delete "${presetName}"?`);
@@ -113,19 +152,19 @@ export function selectAutoSupportPreset(
 }
 
 /**
- * Overwrites the selected preset with the settings the dialog is showing. The
- * draft goes to the live settings first: Save is the one action that means "make
- * these edits the policy", so it has to carry edits staged in the fields too.
+ * Deletes the selected preset and falls back to `medium`.
+ *
+ * The store's contract after deleting the active preset is "nothing is selected",
+ * and that stays as it is; the dialog is not a place to leave a user with no run
+ * policy at all, so the UI picks the balanced built-in for them.
  */
-function saveDraftIntoActivePreset(
-  draft: AutoSupportSettings,
+export function deleteActiveAutoSupportPreset(
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>,
 ): void {
   const activeId = getActiveAutoSupportPresetId();
   if (!activeId) return;
-  updateAutoSupportSettings(draft);
-  saveAutoSupportPreset(activeId);
-  setDraft(getSettings().autoSupport);
+  deleteAutoSupportPreset(activeId);
+  selectAutoSupportPreset('medium', setDraft);
 }
 
 /**
@@ -172,13 +211,14 @@ async function exportPresetToFile(id: string): Promise<void> {
  * read through a subscription of its own. React Compiler treats a bare call to
  * an imported function as pure and evaluates it once, which would otherwise
  * freeze both at whatever they were when the component mounted — a selection
- * that never updates and a dirty strip that never clears.
+ * that never updates and a footer whose Save never enables.
  */
 function useAutoSupportPresetState(): {
   presets: readonly AutoSupportPreset[];
   activeId: string | null;
   activePreset: AutoSupportPreset | undefined;
   dirty: boolean;
+  live: AutoSupportSettings;
 } {
   const presets = React.useSyncExternalStore(
     subscribeToAutoSupportPresets,
@@ -195,37 +235,42 @@ function useAutoSupportPresetState(): {
     isAutoSupportPresetDirty,
     isAutoSupportPresetDirty,
   );
-  // The dirty flag is a fact about the live settings too: this is the
-  // subscription that makes a knob edit re-read it.
-  React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
+  const live = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings).autoSupport;
 
   return {
     presets,
     activeId,
     activePreset: React.useMemo(() => (activeId ? getAutoSupportPreset(activeId) : undefined), [activeId]),
     dirty,
+    live,
   };
 }
 
 type AutoSupportPresetSelectorProps = {
-  /** The dialog's draft, so a selection can be reflected in the fields. */
+  /** The dialog's draft: what the modified marker is measured against. */
   draft: AutoSupportSettings;
+  /** The dialog's draft setter, so a selection can be reflected in the fields. */
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
 };
 
 /**
- * The dialog's top strip. The first row is which preset the settings are and the
- * two actions that resolve that; the second is the collection's own action bar.
+ * The dialog's top strip: the selector, the three actions the reference keeps
+ * beside it, and the dirty notice. Managing the collection is the selector's own
+ * menu — there is no second surface to open.
  */
 export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPresetSelectorProps) {
   const { _ } = useLingui();
-  const { presets, activeId, activePreset, dirty } = useAutoSupportPresetState();
+  const { presets, activeId, activePreset } = useAutoSupportPresetState();
+  // The tier a preset names lives in Support Studio's collection, so the rows
+  // resolve it from there — a renamed manual preset renames the row here too.
+  const supportStudioPresets = useSupportStudioPresets();
+  // "Modified" is everything uncommitted — a knob edit staged in the draft counts,
+  // which is the case a user means when they say the preset is modified.
+  const modified = useAutoSupportDialogChanges(draft);
 
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
   /** The name dialog, in the two modes the references' own dialog has. */
   const [nameDialog, setNameDialog] = React.useState<{ mode: 'create' | 'rename'; name: string } | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
-  const [showRestoreFactory, setShowRestoreFactory] = React.useState(false);
   /** Import/export failures of any kind; the store's messages are shown verbatim. */
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
@@ -233,13 +278,15 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
 
   const presetOptions = presets.map((preset) => ({
     value: preset.id,
-    label: translateAutoSupportPresetName(preset, _),
+    // The trigger shows this label, so the modified marker rides on the name of
+    // the preset that is actually dirty — and nowhere else.
+    label: `${translateAutoSupportPresetName(preset, _)}${preset.id === activeId && modified ? ' *' : ''}`,
     // The active preset is the one the trigger is showing; the dropdown tints the
     // selected row, and the check names it in a list of same-shaped rows.
     icon: preset.id === activeId ? <Check className="h-3.5 w-3.5" /> : undefined,
-    // The references label the type on the right (`Built-in` / `Custom`); a
-    // preset's tier is the other fact a user picks by, so both ride there.
-    rightContent: `${_(SIZING_TIER_LABELS[normalizeAutoSupportSettings(preset.settings).sizingPreset])} · ${preset.isBuiltIn ? _(msg`Built-in`) : _(msg`Custom`)}`,
+    // The references label the type on the right (`Built-in` / `Custom`); the tier
+    // the preset sizes with is the other fact a user picks by, so both ride there.
+    rightContent: `${sizingTierName(preset.settings.sizingPreset, supportStudioPresets)} · ${preset.isBuiltIn ? _(msg`Built-in`) : _(msg`Custom`)}`,
   }));
 
   const applyImportedText = (text: string) => {
@@ -285,74 +332,38 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
     setDraft(getSettings().autoSupport);
   };
 
-  const pendingDeletePreset = pendingDeleteId ? getAutoSupportPreset(pendingDeleteId) : undefined;
-
   return (
     <section
       className="rounded-xl border p-3"
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className="ui-label font-medium inline-flex shrink-0 items-center gap-1.5"
-          style={{ color: 'var(--text-strong)' }}
-        >
-          {_(msg`Preset`)}
-          <FieldHelpTooltip
-            label={_(msg`Preset`)}
-            help={_(msg`The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you press Apply.`)}
-          />
-        </span>
-
-        <div className="min-w-[14rem] flex-1">
+      {/* One row: the selector, then the three actions the reference keeps
+          beside it. `New` is the menu's own entry. */}
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
           <SelectDropdown
             value={activeId ?? ''}
             options={activeId
               ? presetOptions
               : [{ value: '', label: _(NO_ACTIVE_PRESET_LABEL), disabled: true }, ...presetOptions]}
             onChange={(id) => selectAutoSupportPreset(id, setDraft)}
-            ariaLabel={_(msg`Auto-support preset`)}
+            ariaLabel={modified ? _(msg`Auto-support preset, modified`) : _(msg`Auto-support preset`)}
+            title={modified
+              ? _(msg`The settings no longer match this preset. Save overwrites it; Reset reloads it.`)
+              : _(msg`The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you save.`)}
             className="space-y-0"
-            selectClassName="w-full h-[36px] px-2.5 pr-10 leading-tight text-sm"
+            selectClassName="w-full !h-8 pl-2.5 pr-10 leading-tight text-[12px]"
             menuClassName="max-w-[26rem]"
+            menuFooterAction={{
+              label: _(NEW_PRESET_ENTRY),
+              icon: <Plus className="h-3.5 w-3.5" />,
+              tone: 'accent',
+              onClick: () => setNameDialog({ mode: 'create', name: _(NEW_PRESET_NAME) }),
+            }}
+
           />
         </div>
 
-        <button
-          type="button"
-          onClick={() => saveDraftIntoActivePreset(draft, setDraft)}
-          disabled={!activeId}
-          className="ui-button ui-button-secondary !h-9 shrink-0 px-3 text-xs disabled:opacity-40"
-          title={_(msg`Overwrite the selected preset with the current settings`)}
-        >
-          {_(msg`Save`)}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            resetToActivePreset();
-            setDraft(getSettings().autoSupport);
-          }}
-          disabled={!activePreset || !dirty}
-          className="ui-button ui-button-secondary !h-9 shrink-0 px-3 text-xs disabled:opacity-40"
-          title={_(msg`Reload the selected preset over the current settings, discarding the edits`)}
-        >
-          {_(msg`Revert`)}
-        </button>
-      </div>
-
-      {/* The collection's action bar, the material manager's arrangement: every
-          action named, and the destructive one alone on the right. */}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setNameDialog({ mode: 'create', name: _(NEW_PRESET_NAME) })}
-          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5"
-          title={_(msg`Create a preset from the current settings and select it`)}
-        >
-          <Plus className="h-3.5 w-3.5 shrink-0" />
-          {_(msg`New`)}
-        </button>
         <button
           type="button"
           onClick={() => {
@@ -361,12 +372,12 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
             }
           }}
           disabled={!activePreset || isBuiltIn}
-          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
+          className={STRIP_BUTTON}
           title={isBuiltIn
             ? _(msg`A built-in's name is translated and cannot be renamed`)
             : _(msg`Rename the selected preset`)}
         >
-          <PenLine className="h-3.5 w-3.5 shrink-0" />
+          <PenLine className="h-3.5 w-3.5" />
           {_(msg`Rename`)}
         </button>
         <button
@@ -375,26 +386,11 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
             if (activeId) duplicateAutoSupportPreset(activeId);
           }}
           disabled={!activeId}
-          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
+          className={STRIP_BUTTON}
           title={_(msg`Copy the selected preset under a new name`)}
         >
-          <Copy className="h-3.5 w-3.5 shrink-0" />
+          <Copy className="h-3.5 w-3.5" />
           {_(msg`Duplicate`)}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (isTauriRuntime()) {
-              void importFromNativeDialog();
-              return;
-            }
-            importInputRef.current?.click();
-          }}
-          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5"
-          title={_(msg`Import a preset from a JSON file, and apply it`)}
-        >
-          <Upload className="h-3.5 w-3.5 shrink-0" />
-          {_(msg`Import`)}
         </button>
         <button
           type="button"
@@ -405,38 +401,26 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
             });
           }}
           disabled={!activeId}
-          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
+          className={STRIP_BUTTON}
           title={_(msg`Export the selected preset as a JSON file`)}
         >
-          <Download className="h-3.5 w-3.5 shrink-0" />
+          <Download className="h-3.5 w-3.5" />
           {_(msg`Export`)}
         </button>
         <button
           type="button"
-          onClick={() => setShowRestoreFactory(true)}
-          className="ui-button ui-button-secondary !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5"
-          title={_(msg`Put the built-in presets back to their factory settings; your own presets are left alone`)}
-        >
-          <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-          {_(msg`Restore factory presets`)}
-        </button>
-        <button
-          type="button"
           onClick={() => {
-            if (activePreset && !activePreset.isBuiltIn) setPendingDeleteId(activePreset.id);
+            if (isTauriRuntime()) {
+              void importFromNativeDialog();
+              return;
+            }
+            importInputRef.current?.click();
           }}
-          disabled={!activePreset || isBuiltIn}
-          className="ui-button ui-button-secondary !ml-auto !h-8 px-2.5 text-[11px] inline-flex items-center gap-1.5 disabled:opacity-40"
-          style={{
-            color: !activePreset || isBuiltIn ? 'var(--text-muted)' : 'var(--danger)',
-            borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 55%)',
-          }}
-          title={isBuiltIn
-            ? _(msg`Built-in presets cannot be deleted`)
-            : _(msg`Delete the selected preset`)}
+          className={STRIP_BUTTON}
+          title={_(msg`Import a preset from a JSON file, and apply it`)}
         >
-          <Trash2 className="h-3.5 w-3.5 shrink-0" />
-          {_(msg`Delete`)}
+          <Upload className="h-3.5 w-3.5" />
+          {_(msg`Import`)}
         </button>
         <input
           ref={importInputRef}
@@ -447,22 +431,6 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
           aria-label={_(msg`Auto-support preset file`)}
         />
       </div>
-
-      {/* Dirty state: the live block no longer matches the active preset. */}
-      {activePreset && dirty && (
-        <div
-          className="mt-2 flex items-center gap-2 rounded-md border px-2 py-1.5"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 45%)',
-            background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 90%)',
-          }}
-        >
-          <PenLine className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-secondary)' }} />
-          <span className="text-[10px] leading-snug" style={{ color: 'var(--text-strong)' }}>
-            {formatDirtyNotice(translateAutoSupportPresetName(activePreset, _), _)}
-          </span>
-        </div>
-      )}
 
       {errorMessage && (
         <div
@@ -504,11 +472,7 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
               onClick={confirmNameDialog}
               disabled={(nameDialog?.name.trim().length ?? 0) === 0}
               className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
-              style={{
-                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
-                color: 'var(--accent)',
-              }}
+              style={SAVE_STYLE}
               title={nameDialog?.mode === 'create'
                 ? _(msg`Create the preset and select it`)
                 : _(msg`Rename the selected preset`)}
@@ -542,20 +506,132 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
           />
         </div>
       </StructuredDialogModal>
+    </section>
+  );
+}
+
+/**
+ * Whether the dialog holds anything uncommitted: the live settings have drifted
+ * from the active preset, or the draft differs from the live settings — a knob
+ * edit lives in the draft until Save writes it, so the preset's own dirty flag is
+ * not the whole question.
+ *
+ * Exported because the shell's close path asks the same question before it
+ * discards the draft, and the footer's Save/Reset key off it.
+ */
+export function useAutoSupportDialogChanges(draft: AutoSupportSettings): boolean {
+  const { dirty, live } = useAutoSupportPresetState();
+  const draftDiffersFromLive = React.useMemo(
+    () => (Object.keys(live) as (keyof AutoSupportSettings)[])
+      .some((key) => JSON.stringify(draft[key]) !== JSON.stringify(live[key])),
+    [draft, live],
+  );
+  return dirty || draftDiffersFromLive;
+}
+
+type AutoSupportSettingsFooterActionsProps = {
+  /** The dialog's draft — what Save commits and Reset discards. */
+  draft: AutoSupportSettings;
+  setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
+  /** Called once the draft has been written, so the dialog can close. */
+  onCommitted: () => void;
+};
+
+/**
+ * The dialog footer's actions, in the reference's arrangement: the destructive
+ * one alone on the left, `Reset` and `Save` on the right.
+ *
+ * `Save` is the dialog's commit — it writes the settings and, when the preset has
+ * drifted, saves the active preset over them, the way the material editor's
+ * `Save Material` commits its own draft. `Reset` is the LUT's: it discards the
+ * dialog's uncommitted changes by reloading the active preset. Both are enabled
+ * only when there is something to commit or discard, which includes an edit that
+ * is staged in the draft but not yet written anywhere.
+ */
+export function AutoSupportSettingsFooterActions({
+  draft,
+  setDraft,
+  onCommitted,
+}: AutoSupportSettingsFooterActionsProps) {
+  const { _ } = useLingui();
+  const { activeId, activePreset, dirty } = useAutoSupportPresetState();
+  const [pendingDelete, setPendingDelete] = React.useState(false);
+
+  const isBuiltIn = activePreset?.isBuiltIn === true;
+  const hasChanges = useAutoSupportDialogChanges(draft);
+
+  return (
+    <>
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-3 shrink-0"
+        style={{
+          borderTop: '1px solid var(--border-subtle)',
+          background: 'color-mix(in srgb, var(--surface-1), transparent 10%)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setPendingDelete(true)}
+          disabled={!activePreset || isBuiltIn}
+          className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 disabled:cursor-not-allowed"
+          style={!activePreset || isBuiltIn ? undefined : DANGER_DELETE_STYLE}
+          title={isBuiltIn
+            ? _(msg`Built-in presets cannot be deleted`)
+            : _(msg`Delete the selected preset`)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {_(msg`Delete`)}
+        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              resetToActivePreset();
+              setDraft(getSettings().autoSupport);
+            }}
+            disabled={!hasChanges}
+            className={FOOTER_BUTTON}
+            title={_(msg`Discard the edits made in this dialog and reload the selected preset`)}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {_(msg`Reset`)}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              updateAutoSupportSettings(draft);
+              if (dirty && activeId) saveAutoSupportPreset(activeId);
+              setDraft(getSettings().autoSupport);
+              onCommitted();
+            }}
+            disabled={!hasChanges || isBuiltIn}
+            className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 disabled:cursor-not-allowed"
+            style={!hasChanges || isBuiltIn ? undefined : SAVE_STYLE}
+            title={isBuiltIn
+              ? _(msg`A built-in preset cannot be saved over — Duplicate it to make it yours`)
+              : dirty
+                ? _(msg`Write these settings, and overwrite the selected preset with them`)
+                : _(msg`Write these settings to the auto-support settings`)}
+          >
+            {_(msg`Save`)}
+          </button>
+        </div>
+      </div>
 
       <StructuredDialogModal
-        open={pendingDeletePreset != null}
+        open={pendingDelete && activePreset != null}
         ariaLabel={_(msg`Delete preset`)}
-        title={pendingDeletePreset ? formatDeletePresetTitle(pendingDeletePreset.name, _) : ''}
+        title={activePreset ? formatDeletePresetTitle(activePreset.name, _) : ''}
         subtitle={_(msg`This cannot be undone.`)}
         iconTone="danger"
-        onClose={() => setPendingDeleteId(null)}
-        onBackdropClick={() => setPendingDeleteId(null)}
+        onClose={() => setPendingDelete(false)}
+        onBackdropClick={() => setPendingDelete(false)}
         actions={
           <>
             <button
               type="button"
-              onClick={() => setPendingDeleteId(null)}
+              onClick={() => setPendingDelete(false)}
               className="ui-button ui-button-secondary !h-9 px-3 text-xs"
               title={_(msg`Keep the preset`)}
             >
@@ -564,9 +640,8 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
             <button
               type="button"
               onClick={() => {
-                if (pendingDeleteId) deleteAutoSupportPreset(pendingDeleteId);
-                setPendingDeleteId(null);
-                setDraft(getSettings().autoSupport);
+                deleteActiveAutoSupportPreset(setDraft);
+                setPendingDelete(false);
               }}
               className="ui-button !h-9 px-3 text-xs"
               style={{
@@ -586,47 +661,6 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
         </p>
       </StructuredDialogModal>
 
-      <StructuredDialogModal
-        open={showRestoreFactory}
-        ariaLabel={_(msg`Restore factory presets`)}
-        title={_(msg`Restore Factory Presets?`)}
-        subtitle={_(msg`The built-in presets go back to their measured factory settings.`)}
-        iconTone="warning"
-        onClose={() => setShowRestoreFactory(false)}
-        onBackdropClick={() => setShowRestoreFactory(false)}
-        actions={
-          <>
-            <button
-              type="button"
-              onClick={() => setShowRestoreFactory(false)}
-              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
-              title={_(msg`Keep the built-in presets as they are`)}
-            >
-              {_(msg`Cancel`)}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                restoreAutoSupportFactoryDefaults();
-                setShowRestoreFactory(false);
-              }}
-              className="ui-button !h-9 px-3 text-xs"
-              style={{
-                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
-                color: 'var(--accent)',
-              }}
-              title={_(msg`Restore the built-in presets`)}
-            >
-              {_(msg`Restore`)}
-            </button>
-          </>
-        }
-      >
-        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          {_(msg`Your own presets are left alone, and the current settings are not touched — the built-in you are using will read as having unsaved changes, with Revert as the way to accept the factory block.`)}
-        </p>
-      </StructuredDialogModal>
-    </section>
+    </>
   );
 }

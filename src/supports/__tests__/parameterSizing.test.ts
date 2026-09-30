@@ -5,14 +5,17 @@ import {
     sizeParameters,
     presetForArea,
     activeSizingBand,
+    resolvedSizingBandsForRun,
+    setResolvedSizingBands,
     HEIGHT_REFERENCE_MM,
 } from '../autoSupport/parameterSizing';
 import type { ModelSizingContext } from '../autoSupport/parameterSizing';
 import { setSettings, getSettings, updateAutoSupportSettings } from '../Settings/state';
+import { createPreset, deletePreset, getPresetById } from '../Settings/presets';
 import { createDefaultSettings } from '../Settings/types';
 import type { CandidatePoint } from '../autoSupport/types';
-import { AUTO_SUPPORT_CONSTRAINTS } from '../autoSupport/settings';
-import type { AutoSupportSettings } from '../autoSupport/settings';
+import { AUTO_SUPPORT_CONSTRAINTS, SIZING_BANDS } from '../autoSupport/settings';
+import type { AutoSupportSettings, SizingBand } from '../autoSupport/settings';
 
 function makeCandidate(over: Partial<CandidatePoint> = {}): CandidatePoint {
     return {
@@ -28,16 +31,58 @@ function makeCandidate(over: Partial<CandidatePoint> = {}): CandidatePoint {
     };
 }
 
-/** Switch the auto-support sizing tier (as the panel quick-select would)
- *  and restore after. Sizing deliberately ignores the global shaft/tip/roots
- *  — trunk presets are for manual placement. */
-function withTier<T>(tier: 'detail' | 'structure' | 'anchor', fn: () => T): T {
+/**
+ * Pin the run's sizing tier for one case. The band is borrowed from a Support
+ * Studio preset now, so a factory band is that preset's id.
+ */
+function withTier<T>(id: string, fn: () => T): T {
     const prev = getSettings().autoSupport;
-    updateAutoSupportSettings({ sizingPreset: tier } as Partial<AutoSupportSettings>);
+    updateAutoSupportSettings({ sizingPreset: id });
     try {
         return fn();
     } finally {
         updateAutoSupportSettings({ ...prev });
+    }
+}
+
+/**
+ * A Support Studio preset carrying `band`: a preset IS its tip, shaft and roots,
+ * so the profile fields are written to the band's numbers and a preset is created
+ * from them. Returns the preset, so a caller can name its id.
+ */
+function createPresetWithBand(band: SizingBand, name = 'test band') {
+    const settings = getSettings();
+    setSettings({
+        ...settings,
+        tip: {
+            ...settings.tip,
+            contactDiameterMm: band.tipContactDiameterMm,
+            lengthMm: band.tipLengthMm,
+            penetrationMm: band.tipPenetrationMm,
+        },
+        shaft: { ...settings.shaft, diameterMm: band.shaftDiameterMm },
+        roots: {
+            ...settings.roots,
+            diameterMm: band.rootDiameterMm,
+            diskHeightMm: band.rootDiskHeightMm,
+            coneHeightMm: band.rootConeHeightMm,
+        },
+    });
+    return createPreset(name);
+}
+
+/** Pin a band no factory preset ships, restoring everything after. */
+function withBand<T>(band: SizingBand, fn: () => T): T {
+    const prevAutoSupport = getSettings().autoSupport;
+    const prevSettings = getSettings();
+    const created = createPresetWithBand(band);
+    updateAutoSupportSettings({ sizingPreset: created.id });
+    try {
+        return fn();
+    } finally {
+        deletePreset(created.id);
+        setSettings(prevSettings);
+        updateAutoSupportSettings({ ...prevAutoSupport });
     }
 }
 
@@ -61,7 +106,7 @@ test('presetForArea maps the empirical bands', () => {
     assert.equal(presetForArea(8), 'anchor');
 });
 
-test('density-grid cell sits FLAT at the active sizing tier', () => {
+test('density-grid cell sits FLAT at the active band', () => {
     withTier('anchor', () => {
         const s = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }));
         assert.equal(s.shaftDiameterMm, 1.4, 'a cell reads exactly the tier band — not the cell area');
@@ -72,15 +117,51 @@ test('density-grid cell sits FLAT at the active sizing tier', () => {
     });
 });
 
-test('the band follows the hardcoded tier (detail < structure < anchor)', () => {
+test('the band follows the hardcoded factory bands (detail < structure < anchor)', () => {
     // The regression: the old area-derived curve sized a light 16 mm² cell
-    // THICKER than a heavy 5 mm² cell. The band must come from the tier.
-    const shaftAt = (tier: 'detail' | 'structure' | 'anchor') => withTier(tier, () => (
+    // THICKER than a heavy 5 mm² cell. The band must come from the block.
+    const shaftAt = (tier: string) => withTier(tier, () => (
         sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 })).shaftDiameterMm!
     ));
-    assert.equal(shaftAt('detail'), 0.8, 'detail tier band');
-    assert.equal(shaftAt('structure'), 1.0, 'structure tier band');
-    assert.equal(shaftAt('anchor'), 1.4, 'anchor tier band');
+    assert.equal(shaftAt('detail'), 0.8, 'the factory detail preset');
+    assert.equal(shaftAt('structure'), 1.0, 'the factory structure preset');
+    assert.equal(shaftAt('anchor'), 1.4, 'the factory anchor preset');
+});
+
+test('a custom band sizes the run (the band is the block, not a tier lookup)', () => {
+    // A band no factory preset ships. Nothing in the engine may fall back to a
+    // tier's numbers, so the same candidate has to size from these seven.
+    const thinBand: SizingBand = {
+        ...SIZING_BANDS.structure,
+        shaftDiameterMm: 0.45,
+        tipContactDiameterMm: 0.12,
+        rootDiameterMm: 1.2,
+    };
+    const fatBand: SizingBand = {
+        ...SIZING_BANDS.structure,
+        shaftDiameterMm: 1.8,
+        tipContactDiameterMm: 0.7,
+        rootDiameterMm: 2.6,
+    };
+    const candidate = makeCandidate({ islandAreaMm2: 8, zHeight: 10 });
+    const at = (band: SizingBand) => withBand(band, () => sizeParameters(candidate)!);
+
+    const defaulted = withTier('structure', () => sizeParameters(candidate)!);
+    const thin = at(thinBand);
+    const fat = at(fatBand);
+
+    assert.equal(thin.shaftDiameterMm, 0.45, "the shaft is the block's own number");
+    assert.equal(thin.rootsDiameterMm, 1.2, 'the pad too');
+    // The tip floor is 30% of the shaft, so a 0.45 mm shaft floors at 0.135 —
+    // past the band's own 0.12 contact.
+    assert.ok(Math.abs(thin.tipContactDiameterMm! - 0.135) < 1e-9,
+        `tip floors on a thin custom shaft (${thin.tipContactDiameterMm})`);
+
+    assert.ok(thin.shaftDiameterMm! < defaulted.shaftDiameterMm!, 'a smaller band sizes thinner');
+    assert.ok(thin.tipContactDiameterMm! < defaulted.tipContactDiameterMm!, 'and with a smaller tip');
+    assert.ok(fat.shaftDiameterMm! > defaulted.shaftDiameterMm!, 'a larger band sizes thicker');
+    assert.equal(fat.tipContactDiameterMm, 0.7, 'a tip band above the 30% floor is taken as written');
+    assert.ok(fat.rootsDiameterMm! > defaulted.rootsDiameterMm!, 'and the pad with it');
 });
 
 test('sizing ignores the global shaft/tip bands (trunk presets are manual-only)', () => {
@@ -95,7 +176,7 @@ test('sizing ignores the global shaft/tip bands (trunk presets are manual-only)'
     try {
         const s = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }));
         assert.equal(s.shaftDiameterMm, activeSizingBand().shaftDiameterMm,
-            'sizing reads the auto-support tier, not the global preset');
+            'sizing reads the auto-support band, not the global preset');
     } finally {
         setSettings(prev);
     }
@@ -169,7 +250,7 @@ test('sizing without a model context is exactly the band', () => {
 test('tip contact never drops below 30% of the shaft', () => {
     // At factory band ratios the 30% floor binds before the angle factor
     // differentiates — the floor is the guarantee that matters.
-    withTier('structure', () => {
+    withBand(SIZING_BANDS.structure, () => {
         const flat = sizeParameters(makeCandidate({ islandAreaMm2: 8, tipNormal: { x: 0, y: 0, z: -1 } }))!;
         const slope = sizeParameters(makeCandidate({
             islandAreaMm2: 8,
@@ -274,4 +355,41 @@ test('modelScaleEnabled off pins every model factor to ×1', () => {
     const disabled = withAutoSupport({ modelScaleEnabled: false }, () => sizeParameters(candidate, 1, ctx)!);
     assert.equal(disabled.shaftDiameterMm, band.shaftDiameterMm, 'off = height × size × load all ×1');
     assert.equal(disabled.rootsDiameterMm, band.rootDiameterMm, 'off leaves the pad at band too');
+});
+
+test('a run naming a custom Support Studio preset sizes with its numbers, not the fallback', () => {
+    // The shape of a worker run: the main thread can reach the preset table and
+    // resolves every band the run may name; the worker has no storage at all, so
+    // the id resolves to nothing there. The handed band has to win.
+    const custom: SizingBand = {
+        ...SIZING_BANDS.structure,
+        shaftDiameterMm: 0.45,
+        tipContactDiameterMm: 0.12,
+        rootDiameterMm: 1.2,
+    };
+    const created = createPresetWithBand(custom, 'my custom tier');
+    const handed = resolvedSizingBandsForRun(created.id);
+    // The run's block names it, then the preset goes away: exactly what the worker
+    // sees, where the id resolves to nothing.
+    updateAutoSupportSettings({ sizingPreset: created.id });
+    deletePreset(created.id);
+    assert.equal(getPresetById(created.id), undefined, 'the worker cannot see this preset');
+
+    setResolvedSizingBands(handed);
+    try {
+        assert.equal(activeSizingBand().shaftDiameterMm, 0.45, 'the handed band, not the structure fallback');
+        const sized = sizeParameters(makeCandidate({ islandAreaMm2: 8, zHeight: 10 }))!;
+        assert.equal(sized.shaftDiameterMm, 0.45, "the run sizes with the user's own preset");
+        assert.equal(sized.rootsDiameterMm, 1.2, 'and its roots');
+        assert.ok(Math.abs(sized.tipContactDiameterMm! - 0.135) < 1e-9,
+            `and its tip, floored at 30% of the shaft (${sized.tipContactDiameterMm})`);
+    } finally {
+        setResolvedSizingBands(null);
+        updateAutoSupportSettings({ sizingPreset: 'structure' });
+    }
+
+    // Without the handover the same id is the documented factory fallback.
+    updateAutoSupportSettings({ sizingPreset: created.id });
+    assert.equal(activeSizingBand().shaftDiameterMm, 1.0, 'an unresolvable id falls back to structure');
+    updateAutoSupportSettings({ sizingPreset: 'structure' });
 });

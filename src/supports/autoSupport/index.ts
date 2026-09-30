@@ -11,11 +11,19 @@ export type {
 
 export {
   AUTO_SUPPORT_CONSTRAINTS,
+  SIZING_BANDS,
   createDefaultAutoSupportSettings,
   normalizeAutoSupportSettings,
   applyAutoSupportSettingsPatch,
+  migrateLegacySizingPreset,
 } from "./settings";
-export type { AutoSupportSettings, NumericConstraint, NumericAutoSupportSettingKey } from "./settings";
+export type {
+  AutoSupportSettings,
+  NumericConstraint,
+  NumericAutoSupportSettingKey,
+  SizingBand,
+  SizingPreset,
+} from "./settings";
 
 export {
   generateCandidates,

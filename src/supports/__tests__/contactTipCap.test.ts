@@ -8,10 +8,11 @@ import { generateGridCandidates } from '../autoSupport/gridPlacement';
 import { applyContactTipCap, localFreeWidthMm } from '../autoSupport/contactTipCap';
 import { sizeParameters, smallIslandTipDiameterMm, activeSizingBand } from '../autoSupport/parameterSizing';
 import { SDFCache } from '../PlacementLogic/Pathfinding/SDFCache';
-import { createDefaultAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS } from '../autoSupport/settings';
+import { createDefaultAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS, SIZING_BANDS } from '../autoSupport/settings';
 import { setSettings, getSettings, updateAutoSupportSettings } from '../Settings/state';
+import { createPreset, deletePreset } from '../Settings/presets';
 import { createDefaultSettings } from '../Settings/types';
-import type { AutoSupportSettings } from '../autoSupport/settings';
+import type { SizingBand } from '../autoSupport/settings';
 import type { CandidatePoint } from '../autoSupport/types';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 
@@ -76,14 +77,52 @@ function sdfFor(mesh: THREE.Mesh): SDFCache {
     return sdf;
 }
 
-/** Pin the auto-support sizing tier for one case, restoring after. */
-function withTier<T>(tier: 'detail' | 'structure' | 'anchor', fn: () => T): T {
+/**
+ * Pin the run's sizing tier for one case. The band is borrowed from a Support
+ * Studio preset now, so a factory band is that preset's id.
+ */
+function withTier<T>(id: string, fn: () => T): T {
     const prev = getSettings().autoSupport;
-    updateAutoSupportSettings({ sizingPreset: tier } as Partial<AutoSupportSettings>);
+    updateAutoSupportSettings({ sizingPreset: id });
     try {
         return fn();
     } finally {
         updateAutoSupportSettings({ ...prev });
+    }
+}
+
+/**
+ * Pin a band no factory preset ships: a Support Studio preset IS its tip, shaft
+ * and roots, so the profile fields are written to the band's numbers, a preset is
+ * created from them, and the block names its id. Everything is restored after.
+ */
+function withBand<T>(band: SizingBand, fn: () => T): T {
+    const prevAutoSupport = getSettings().autoSupport;
+    const prevSettings = getSettings();
+    setSettings({
+        ...prevSettings,
+        tip: {
+            ...prevSettings.tip,
+            contactDiameterMm: band.tipContactDiameterMm,
+            lengthMm: band.tipLengthMm,
+            penetrationMm: band.tipPenetrationMm,
+        },
+        shaft: { ...prevSettings.shaft, diameterMm: band.shaftDiameterMm },
+        roots: {
+            ...prevSettings.roots,
+            diameterMm: band.rootDiameterMm,
+            diskHeightMm: band.rootDiskHeightMm,
+            coneHeightMm: band.rootConeHeightMm,
+        },
+    });
+    const created = createPreset('test band');
+    updateAutoSupportSettings({ sizingPreset: created.id });
+    try {
+        return fn();
+    } finally {
+        deletePreset(created.id);
+        setSettings(prevSettings);
+        updateAutoSupportSettings({ ...prevAutoSupport });
     }
 }
 

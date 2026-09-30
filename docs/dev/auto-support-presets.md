@@ -2,7 +2,7 @@
 
 A preset is a named `autoSupport` settings block: the run policy an automatic
 support pass follows — support density, overhang self-support angle, merge
-radius, fan limits, the sizing tier. Picking a preset applies the whole block;
+radius, fan limits, the sizing band. Picking a preset applies the whole block;
 the collection, the active selection and the preset file format are owned by
 `src/supports/Settings/autoSupportPresets.ts`, and the built-ins' translated
 names by `src/supports/Settings/autoSupportPresetMessages.ts`.
@@ -23,9 +23,14 @@ These are **two systems**, and neither store knows the other exists:
 | UX | pinned slots, hotkeys, reordering, one selection driving the whole settings panel | pick per run, save / revert, import / export |
 
 They have no shared storage, state, ids or functions. Support Studio's presets
-keep excluding `autoSupport`, and an auto-support preset carries no geometry: the
-engine derives tip, shaft and roots from the sizing tier. See
-[backlog.md](backlog.md) for why this is a decision rather than a pending merge.
+keep excluding `autoSupport`, and an auto-support preset carries no geometry: its
+`sizingPreset` is the id of the Support Studio preset the run borrows its tip,
+shaft and roots from, resolved at run time. That one read is the coupling the user
+chose — see [backlog.md](backlog.md) for the decision and its cost. A payload
+written by the band-as-data build carries a `sizingBand` object instead; the store
+runs `migrateLegacySizingPreset` (from `src/supports/autoSupport/settings.ts`) over
+a payload as it adopts it and over an imported file, so the band maps back to the
+factory preset it matches (else `structure`) and the obsolete key is dropped.
 
 ## Public surface
 

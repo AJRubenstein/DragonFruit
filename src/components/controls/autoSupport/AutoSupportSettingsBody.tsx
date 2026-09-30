@@ -23,25 +23,20 @@
 import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { AlertTriangle, Check, ChevronDown, RotateCcw } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { FieldHelpTooltip, LabeledNumberInput, LabeledToggleInput } from '@/components/settings/profileFormAtoms';
+import { LabeledNumberInput, LabeledToggleInput } from '@/components/settings/profileFormAtoms';
 import type { AutoSupportSettings, ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
-import { AutoSupportPresetSelector } from './AutoSupportPresets';
+import { AutoSupportPresetSelector, AutoSupportSettingsFooterActions } from './AutoSupportPresets';
+import { AutoSupportSizingTierField } from './AutoSupportSizingTierField';
 import {
-  ADVANCED_CALIBRATION_HEADING,
   ADVANCED_CALIBRATION_KNOBS,
   ADVANCED_CALIBRATION_TOGGLE,
-  ADVANCED_CALIBRATION_WARNING,
   AUTO_SUPPORT_ADVANCED_SECTION,
   AUTO_SUPPORT_POLICY_SECTIONS,
-  AUTO_SUPPORT_SECTION_CARD,
   DEBUG_DIAGNOSTICS_HEADING,
   KNOBS_BY_SECTION,
-  SIZING_TIER_FIELD,
-  SIZING_TIER_OPTIONS,
   TOGGLES_BY_SECTION,
-  measuredCalibrationDefaults,
   type AutoSupportSectionDef,
   type KnobDef,
   type ToggleDef,
@@ -53,37 +48,18 @@ const FIELD_CARD_STYLE: CSSProperties = {
   background: 'var(--surface-2)',
 };
 
-const TIER_ACTIVE_STYLE: CSSProperties = {
-  borderColor: 'color-mix(in srgb, var(--accent), white 10%)',
-  background: 'color-mix(in srgb, var(--accent), var(--surface-0) 76%)',
-  color: 'color-mix(in srgb, var(--accent), var(--text-strong) 25%)',
-};
-
-const TIER_IDLE_STYLE: CSSProperties = {
-  borderColor: 'var(--border-subtle)',
-  background: 'var(--surface-1)',
-  color: 'var(--text-muted)',
-};
-
-/** The dialog's primary action — the panel's own accent treatment. */
-const ACCENT_ACTION_STYLE: CSSProperties = {
-  borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-  background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
-  color: 'var(--accent)',
-};
-
 /** The number of decimals a knob's step implies. */
 const decimalsForStep = (step: number) => (step < 0.1 ? 2 : step < 1 ? 1 : 0);
 
 /**
- * A knob's value as the dialog will store it: inside the range the slider used to
- * offer, rounded to the decimals its step implies. The settings store clamps to
+ * A field's value as the dialog will store it: inside the range the field offers,
+ * rounded to the decimals its step implies. The settings store clamps to
  * `AUTO_SUPPORT_CONSTRAINTS` on write; this keeps a typed number from showing as
  * one value and landing as another.
  */
-function normalizeKnobValue(knob: KnobDef, raw: number): number {
-  const clamped = Math.min(knob.max, Math.max(knob.min, raw));
-  return Number(clamped.toFixed(decimalsForStep(knob.step)));
+function normalizeFieldValue(min: number, max: number, step: number, raw: number): number {
+  const clamped = Math.min(max, Math.max(min, raw));
+  return Number(clamped.toFixed(decimalsForStep(step)));
 }
 
 /** One numeric knob: a labelled field with the stepper, never a slider. */
@@ -108,13 +84,11 @@ function NumberField({
         title={hint}
         value={draft[knob.key]}
         step={knob.step}
-        onChange={(value) => setDraft((current) => ({ ...current, [knob.key]: normalizeKnobValue(knob, value) }))}
+        onChange={(value) => setDraft((current) => ({
+          ...current,
+          [knob.key]: normalizeFieldValue(knob.min, knob.max, knob.step, value),
+        }))}
       />
-      {knob.measuredDefault !== undefined && (
-        <div className="text-[9px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-          {_(msg`measured`)} {knob.measuredDefault.toFixed(decimalsForStep(knob.step))}
-        </div>
-      )}
     </div>
   );
 }
@@ -143,49 +117,6 @@ function ToggleField({
   );
 }
 
-/**
- * The sizing band, as the segmented control the Settings modal uses for its own
- * three-way choices (`Off / Line / Solid`). Its own band tooltip sits on each
- * segment; the field's tooltip is the ⓘ beside the label.
- */
-function SizingTierField({
-  draft,
-  setDraft,
-}: {
-  draft: AutoSupportSettings;
-  setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
-}) {
-  const { _ } = useLingui();
-  const label = _(SIZING_TIER_FIELD.label);
-  const hint = _(SIZING_TIER_FIELD.hint);
-
-  return (
-    <div className="col-span-2 space-y-1">
-      <span className="ui-label font-medium inline-flex items-center gap-1.5">
-        {label}
-        <FieldHelpTooltip label={label} help={hint} />
-      </span>
-      <div className="grid grid-cols-3 gap-1.5" title={hint}>
-        {SIZING_TIER_OPTIONS.map((option) => {
-          const active = draft.sizingPreset === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setDraft((current) => ({ ...current, sizingPreset: option.value }))}
-              title={_(option.hint)}
-              className="h-9 rounded-md border text-[12px] font-semibold transition-colors"
-              style={active ? TIER_ACTIVE_STYLE : TIER_IDLE_STYLE}
-            >
-              {_(option.label)}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /** A card of fields: the section's uppercase header, its one-liner, and a 2-column grid. */
 function FieldCard({ section, children }: { section: AutoSupportSectionDef; children: React.ReactNode }) {
   const { _ } = useLingui();
@@ -195,9 +126,11 @@ function FieldCard({ section, children }: { section: AutoSupportSectionDef; chil
       <div className="ui-meta font-semibold uppercase tracking-wide" title={_(section.hint)}>
         {_(section.label)}
       </div>
-      <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
-        {_(section.subtitle)}
-      </p>
+      {section.subtitle && (
+        <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+          {_(section.subtitle)}
+        </p>
+      )}
       <div className="mt-2 grid grid-cols-2 gap-2">{children}</div>
     </section>
   );
@@ -246,20 +179,15 @@ function DiagnosticsCard({
         />
       </div>
 
-      <div className="mt-3 space-y-2">
-        {!sizingDebug && !forestReport && (
-          <div className="text-[10px] italic" style={{ color: 'var(--text-muted)' }}>
-            {_(msg`Run Generate Supports to collect sizing and forest diagnostics.`)}
-          </div>
-        )}
-
+      {/* The last run's report, directly on the card: no container of its own. */}
+      <div className="mt-3 space-y-1.5">
         {sizingDebug && (
-          <div className="rounded-md border" style={AUTO_SUPPORT_SECTION_CARD}>
+          <>
             <button
               type="button"
               onClick={onToggleSizingDebug}
               title={_(msg`The inputs and factors the last run sized the supports with`)}
-              className="w-full flex items-center justify-between px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide"
+              className="w-full flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide"
               style={{ color: 'var(--text-muted)' }}
             >
               <span>{_(msg`Sizing Debug`)}</span>
@@ -269,10 +197,8 @@ function DiagnosticsCard({
               />
             </button>
             {showSizingDebug && (
-              <div className="px-2.5 pb-2 space-y-1 text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                <div className="flex justify-between border-t pt-1.5" style={{ borderColor: 'var(--border-subtle)' }}>
-                  <span>{_(msg`Model volume`)}</span><span style={{ color: 'var(--text-strong)' }}>{(sizingDebug.modelVolumeMm3 / 1000).toFixed(1)} cm³</span>
-                </div>
+              <div className="space-y-1 text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                <div className="flex justify-between"><span>{_(msg`Model volume`)}</span><span style={{ color: 'var(--text-strong)' }}>{(sizingDebug.modelVolumeMm3 / 1000).toFixed(1)} cm³</span></div>
                 <div className="flex justify-between"><span>{_(msg`Est. weight`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.estimatedWeightG.toFixed(1)} g</span></div>
                 <div className="flex justify-between"><span>{_(msg`Candidates`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.totalCandidates}</span></div>
                 <div className="flex justify-between"><span>{_(msg`Model size`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.modelSizeMm.toFixed(0)} mm</span></div>
@@ -288,7 +214,7 @@ function DiagnosticsCard({
                 <div className="flex justify-between"><span>{_(msg`Tip Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.tipContactRange.min.toFixed(2)}–{sizingDebug.tipContactRange.max.toFixed(2)} mm</span></div>
               </div>
             )}
-          </div>
+          </>
         )}
 
         {forestReport && (
@@ -296,8 +222,8 @@ function DiagnosticsCard({
             type="button"
             onClick={onShowForestReport}
             title={_(msg`Every placed support with its size and fan-out groups`)}
-            className="w-full rounded-md border px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide flex items-center justify-between"
-            style={{ ...AUTO_SUPPORT_SECTION_CARD, color: 'var(--text-muted)' }}
+            className="ui-button ui-button-secondary !h-7 w-full px-2 text-[10px] font-semibold uppercase tracking-wide inline-flex items-center justify-between"
+            style={{ color: 'var(--text-muted)' }}
           >
             <span>{_(msg`Forest Report`)}</span>
             <span className="text-[9px] normal-case tracking-normal">
@@ -310,53 +236,21 @@ function DiagnosticsCard({
   );
 }
 
-/** The calibration card: the warning, the master switch, the six measured fields. */
-function CalibrationCard({
+/** The six calibration fields plus their master switch, as one grid. */
+function CalibrationFields({
   draft,
   setDraft,
 }: {
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
 }) {
-  const { _ } = useLingui();
-
   return (
-    <section className="rounded-xl border p-3" style={FIELD_CARD_STYLE}>
-      <div className="ui-meta font-semibold uppercase tracking-wide">{_(ADVANCED_CALIBRATION_HEADING)}</div>
-
-      <div
-        className="mt-2 flex items-start gap-2 rounded-md border px-2 py-1.5"
-        style={{
-          borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 50%)',
-          background: 'color-mix(in srgb, #d97706, var(--surface-1) 90%)',
-        }}
-        role="note"
-      >
-        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: '#d97706' }} />
-        <span className="text-[10px] leading-snug" style={{ color: 'var(--text-strong)' }}>
-          {_(ADVANCED_CALIBRATION_WARNING)}
-        </span>
-      </div>
-
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <ToggleField toggle={ADVANCED_CALIBRATION_TOGGLE} draft={draft} setDraft={setDraft} />
-        {ADVANCED_CALIBRATION_KNOBS.map((knob) => (
-          <NumberField key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-        ))}
-      </div>
-
-      <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setDraft((current) => ({ ...current, ...measuredCalibrationDefaults() }))}
-          className="ui-button ui-button-secondary !h-8 px-3 text-xs inline-flex items-center gap-1.5"
-          title={_(msg`Reset the six calibration values to the measured defaults`)}
-        >
-          <RotateCcw className="h-3 w-3" />
-          {_(msg`Reset to measured defaults`)}
-        </button>
-      </div>
-    </section>
+    <div className="grid grid-cols-2 gap-2">
+      <ToggleField toggle={ADVANCED_CALIBRATION_TOGGLE} draft={draft} setDraft={setDraft} />
+      {ADVANCED_CALIBRATION_KNOBS.map((knob) => (
+        <NumberField key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+      ))}
+    </div>
   );
 }
 
@@ -368,10 +262,8 @@ export type AutoSupportSettingsBodyProps = {
   sizingDebug: SizingDebugInfo | null;
   forestReport: ForestReport | null;
   onShowForestReport: () => void;
-  /** Close without writing the draft. */
-  onCancel: () => void;
-  /** Write the draft to the auto-support settings. */
-  onApply: () => void;
+  /** Called once the footer's Save has written the draft, so the shell can close. */
+  onCommitted: () => void;
 };
 
 export function AutoSupportSettingsBody({
@@ -382,8 +274,7 @@ export function AutoSupportSettingsBody({
   sizingDebug,
   forestReport,
   onShowForestReport,
-  onCancel,
-  onApply,
+  onCommitted,
 }: AutoSupportSettingsBodyProps) {
   const { _ } = useLingui();
   const [showSizingDebug, setShowSizingDebug] = React.useState(false);
@@ -393,87 +284,67 @@ export function AutoSupportSettingsBody({
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-4 space-y-3">
         <AutoSupportPresetSelector draft={draft} setDraft={setDraft} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+        {/* The cards stretch to their row's height — the anti-aliasing section's
+            idiom (`profileFormAtoms.tsx`): a plain grid, whose items stretch by
+            default, so a short card leaves no dead space beside a tall one. Six
+            cards fill three rows exactly; the disclosure below spans both columns. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {AUTO_SUPPORT_POLICY_SECTIONS.map((section) => (
             <FieldCard key={section.key} section={section}>
               {TOGGLES_BY_SECTION[section.key].map((toggle) => (
                 <ToggleField key={toggle.key} toggle={toggle} draft={draft} setDraft={setDraft} />
               ))}
-              {section.key === 'density' && <SizingTierField draft={draft} setDraft={setDraft} />}
+              {section.key === 'density' && <AutoSupportSizingTierField draft={draft} setDraft={setDraft} />}
               {KNOBS_BY_SECTION[section.key].map((knob) => (
                 <NumberField key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
               ))}
             </FieldCard>
           ))}
 
-          {/* Debug & Advanced: closed by default, so nothing debug sits between a
-              user and the fields above it. */}
-          <details
-            className="group lg:col-span-2 rounded-xl border"
-            style={FIELD_CARD_STYLE}
-          >
-            <summary className="flex cursor-pointer list-none items-center gap-2 p-3 [&::-webkit-details-marker]:hidden">
-              <ChevronDown
-                className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180"
-                style={{ color: 'var(--text-muted)' }}
-              />
-              <span
-                className="ui-meta font-semibold uppercase tracking-wide"
-                title={_(AUTO_SUPPORT_ADVANCED_SECTION.hint)}
-              >
-                {_(AUTO_SUPPORT_ADVANCED_SECTION.label)}
-              </span>
-              <span className="min-w-0 truncate text-xs" style={{ color: 'var(--text-muted)' }}>
-                {_(AUTO_SUPPORT_ADVANCED_SECTION.subtitle)}
-              </span>
-            </summary>
+          {/* Diagnostics is a card like the others: the switches and the last run's
+              report are always on screen, not behind a disclosure. */}
+          <DiagnosticsCard
+            draft={draft}
+            setDraft={setDraft}
+            debugSimpleRender={debugSimpleRender}
+            onToggleDebugSimpleRender={onToggleDebugSimpleRender}
+            sizingDebug={sizingDebug}
+            forestReport={forestReport}
+            onShowForestReport={onShowForestReport}
+            showSizingDebug={showSizingDebug}
+            onToggleSizingDebug={() => setShowSizingDebug((current) => !current)}
+          />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start px-3 pb-3">
-              <DiagnosticsCard
-                draft={draft}
-                setDraft={setDraft}
-                debugSimpleRender={debugSimpleRender}
-                onToggleDebugSimpleRender={onToggleDebugSimpleRender}
-                sizingDebug={sizingDebug}
-                forestReport={forestReport}
-                onShowForestReport={onShowForestReport}
-                showSizingDebug={showSizingDebug}
-                onToggleSizingDebug={() => setShowSizingDebug((current) => !current)}
-              />
-              <CalibrationCard draft={draft} setDraft={setDraft} />
+          {/* Advanced (calibration) is always visible too, but framed in the
+              app's warning tone (the material modal's official-profile banner:
+              `#d97706` mixed into the border and the surface) so it reads as the
+              tuning constants rather than another preference. No callout text: the
+              fields' tooltips carry it. */}
+          <section
+            className="lg:col-span-2 rounded-xl border p-3"
+            style={{
+              borderColor: 'color-mix(in srgb, #d97706, var(--border-subtle) 36%)',
+              background: 'color-mix(in srgb, #d97706, var(--surface-1) 92%)',
+            }}
+          >
+            <div className="ui-meta font-semibold uppercase tracking-wide" title={_(AUTO_SUPPORT_ADVANCED_SECTION.hint)}>
+              {_(AUTO_SUPPORT_ADVANCED_SECTION.label)}
             </div>
-          </details>
+            <div className="mt-2">
+              <CalibrationFields draft={draft} setDraft={setDraft} />
+            </div>
+          </section>
         </div>
       </div>
 
-      {/* The footer is the dialog's own commit bar. Managing the preset
-          collection is the selector's second row, so nothing here repeats it. */}
-      <div
-        className="flex items-center justify-end gap-2 px-4 py-3 shrink-0"
-        style={{
-          borderTop: '1px solid var(--border-subtle)',
-          background: 'color-mix(in srgb, var(--surface-1), transparent 10%)',
-        }}
-      >
-        <button
-          type="button"
-          onClick={onCancel}
-          className="ui-button ui-button-secondary !h-9 px-3 text-xs"
-          title={_(msg`Close without applying the edits made in this dialog`)}
-        >
-          {_(msg`Cancel`)}
-        </button>
-        <button
-          type="button"
-          onClick={onApply}
-          className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
-          style={ACCENT_ACTION_STYLE}
-          title={_(msg`Write the edits made in this dialog to the auto-support settings`)}
-        >
-          <Check className="h-3.5 w-3.5 shrink-0" />
-          {_(msg`Apply`)}
-        </button>
-      </div>
+      {/* The footer's actions are the preset's, in the reference's arrangement:
+          Delete alone on the left, Reset and Save on the right. Save is the
+          dialog's commit, so there is no separate Apply. */}
+      <AutoSupportSettingsFooterActions
+        draft={draft}
+        setDraft={setDraft}
+        onCommitted={onCommitted}
+      />
     </div>
   );
 }

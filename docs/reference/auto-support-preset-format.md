@@ -2,7 +2,8 @@
 
 An auto-support preset file holds one named set of automatic support settings —
 the run policy a Generate Supports pass follows: support density, self-support
-angle, merge radius, fan limits and the sizing tier. Exporting a preset writes
+angle, merge radius, fan limits and the sizing tier every shaft, tip and root is
+built from. Exporting a preset writes
 one of these files; importing one adds the preset to your list and selects it.
 
 Files are plain JSON and safe to read, edit or hand to someone else.
@@ -63,6 +64,10 @@ build. Keys this build cannot name are simply not applied to the run.
 - Built-in presets — `light`, `medium`, `heavy` — cannot be renamed, deleted or
   imported over; an import of a file named after one gets its own new name.
 - A file that fails any check above adds nothing.
+- A file from the band-as-data build — one whose block carries a `sizingBand`
+  object instead of the tier id — is migrated: the seven numbers map back to the
+  factory preset whose band they match (`structure` when they match none), the
+  obsolete key is dropped, and nothing else about the block changes.
 
 ## Not the Support Studio presets
 

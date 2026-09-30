@@ -149,7 +149,7 @@ heuristics currently approximate:
   carries almost nothing. This measured value replaces the empirical
   height factor (a buckling proxy guessing at load) and the
   suction-area term (guessing peel from region area) as the modulation
-  on top of the sizing tier band.
+  on top of the settings' sizing band.
 - **Anchor identification**: L(z) combined with the island scanner's
   per-layer regions pinpoints the layers where new disconnected islands
   start — the principled first-printed-surface set.
@@ -159,7 +159,7 @@ heuristics currently approximate:
 Caveats: L(z) is whole-model area; per-region attribution layers the
 region scan on top (it exists). Buffer resolution bounds accuracy —
 fine for a smooth modulation term, not for exact contact sizing. The
-tier band remains the base; peel exposure modulates it.
+sizing band remains the base; peel exposure modulates it.
 
 ### Integration points
 

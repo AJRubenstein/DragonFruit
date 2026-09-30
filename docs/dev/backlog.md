@@ -6,7 +6,7 @@ this page is the fleshed-out explanation. Add entries here when a rule is too
 long for `AGENTS.md`, is expected to be lifted once an upstream change lands,
 or is a known refactor we intend to do.
 
-## Decision: auto-support presets are their own system
+## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the
 `autoSupport` block — the policy an automatic placement run follows. The Support
@@ -15,13 +15,44 @@ geometry of a *manually placed* support, which excludes `autoSupport` from what
 it saves. A Support Studio preset never carries auto-support settings, and an
 auto-support preset carries nothing else.
 
-They are separate **by design**, not pending a merge. They answer different
-questions ("how is a support built?" versus "what should this run do?"), and they
-have different lifecycles: slots, hotkeys and one selection driving the whole
-settings panel, against a policy picked per run and exported as its own file.
-One store owning both would make "preset" mean two things in the panel that
-shows them. So: no shared storage, no shared state, no shared ids, and no imports
-either way.
+They are separate stores, with separate lifecycles: slots, hotkeys and one
+selection driving the whole settings panel, against a policy picked per run and
+exported as its own file. One store owning both would make "preset" mean two
+things in the panel that shows them. No shared storage, no shared state, no
+shared ids.
+
+**One deliberate exception, and it is the coupling the user chose.**
+`autoSupport.sizingPreset` names a **Support Studio preset id** — the factory
+`detail` / `structure` / `anchor` presets or any preset the user made — and the
+run's sizing band (shaft, tip, roots) is that preset's own numbers, resolved at
+run time by `activeSizingBand()` in
+`src/supports/autoSupport/parameterSizing.ts`. So the auto-support side is the
+only one that imports the other, and only to *read*: `getPresetById()` through
+`resolveSizingBand()`, which falls back to the factory `structure` band for an id
+that no longer resolves (a user can delete a preset an auto-support block still
+names) and never throws. Nothing writes to a Support Studio preset from the
+auto-support side.
+
+The reason: the user asked "if we just derive sizing tiers from our regular
+support presets, why even bother showing the sizing band UI?" — one place to
+define how thick a support is, rather than a second set of seven numbers to keep
+in step.
+
+**The cost, stated plainly:** editing a manual preset changes what auto-support
+prints. A user who tunes `detail` for hand-placed supports has retuned every
+auto-support preset that names `detail`, and the panel's Sizing Tier control has
+to say so (its tooltip does). The band table in `src/supports/autoSupport/settings.ts`
+(`SIZING_BANDS`) is only a mirror of what the three factory presets carry, plus
+the fallback; it is not the source of truth.
+
+**Where a worker run resolves it.** The placement worker has no storage and
+therefore no Support Studio presets beyond the factory ones, so it cannot resolve
+an id the user made. The main thread resolves every band a run can name
+(`resolvedSizingBandsForRun`: the run's own tier plus the three analytic tiers the
+load budget weighs against) and hands the numbers over in the run request
+(`AutoPlaceWorkerPayload.sizingBands`); the worker's `resolveSizingBand` reads
+that table verbatim. The factory `structure` fallback for an id that names nothing
+still applies, on the main thread, before the handover.
 
 **Temporary until:** nothing — this is a decision. See
 [`auto-support-presets.md`](auto-support-presets.md).

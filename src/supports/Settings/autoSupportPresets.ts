@@ -17,6 +17,8 @@
 
 import {
     createDefaultAutoSupportSettings,
+    migrateLegacySizingPreset,
+    normalizeAutoSupportSettings,
     type AutoSupportSettings,
 } from '../autoSupport/settings';
 import {
@@ -145,7 +147,12 @@ function hasLocalStorage(): boolean {
  * the unknown keys a preset file may also hold.
  */
 function snapshotPresetSettings(settings: AutoSupportSettings): AutoSupportPresetSettings {
-    return structuredClone(settings) as AutoSupportPresetSettings;
+    // The migration runs here rather than at each call site: this is the one
+    // function every write path goes through — create, save, duplicate, restore,
+    // import — and `readStoredState` adopts stored records through it as well, so
+    // a preset written by a build that still carried `sizingPreset` is repaired
+    // on the way in. One mapping, from the settings module.
+    return structuredClone(migrateLegacySizingPreset(settings)) as AutoSupportPresetSettings;
 }
 
 function sanitizePresetName(value: unknown): string {
@@ -354,8 +361,17 @@ export function isAutoSupportPresetDirty(): boolean {
     const preset = state.activeId ? state.byId[state.activeId] : undefined;
     if (!preset) return false;
 
-    const live = getAutoSupportSettings();
-    return KNOWN_AUTO_SUPPORT_KEYS.some((key) => preset.settings[key] !== live[key]);
+    // Both sides go through the normalizer, so a stored payload that predates a
+    // key — or still carries a legacy one — fills the same defaults the live block
+    // does and an untouched preset reads clean. Comparing the raw payloads marked
+    // every preset dirty the moment a key was added or renamed (`sizingPreset` →
+    // `sizingBand`), and would do so again for the next key.
+    const stored = normalizeAutoSupportSettings(preset.settings);
+    const live = normalizeAutoSupportSettings(getAutoSupportSettings());
+    // By value, because a normalized block holds objects as well as primitives.
+    return KNOWN_AUTO_SUPPORT_KEYS.some(
+        (key) => JSON.stringify(stored[key]) !== JSON.stringify(live[key]),
+    );
 }
 
 // --- Setters ---
@@ -453,9 +469,15 @@ export function saveAutoSupportPreset(id: string): void {
         console.warn('[AutoSupportPresetStore] Cannot save, preset not found:', id);
         return;
     }
+    if (preset.isBuiltIn) {
+        // A built-in's block is the factory's, and its id is what the panel's tier
+        // row and the file format are defined in terms of. Refused here as well as
+        // in the UI, so no caller can write over one: `duplicateAutoSupportPreset`
+        // is the way to keep an edit, and it returns a preset of the user's own.
+        console.warn('[AutoSupportPresetStore] Built-in presets cannot be saved over:', id);
+        return;
+    }
 
-    // Built-ins are savable on purpose: overwriting one is how a user keeps a
-    // tweaked tier, and `restoreAutoSupportFactoryDefaults` is the way back.
     state.byId[id] = {
         ...preset,
         settings: snapshotPresetSettings(getAutoSupportSettings()),
@@ -632,7 +654,10 @@ export function importAutoSupportPresetFromJson(jsonText: string): AutoSupportPr
         // know still survive the round trip.
         settings: snapshotPresetSettings({
             ...createDefaultAutoSupportSettings(),
-            ...(parsed.preset.settings as AutoSupportPresetSettings),
+            // The payload is migrated before the spread: a file exported by a
+            // build that still wrote `sizingPreset` must land on its band, and the
+            // obsolete key must not survive as an unknown key of the preset.
+            ...migrateLegacySizingPreset(parsed.preset.settings as Partial<AutoSupportSettings>),
         } as AutoSupportPresetSettings),
         updatedAt: Date.now(),
     };

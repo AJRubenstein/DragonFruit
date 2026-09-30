@@ -12,7 +12,7 @@ import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { forestReportToText, runAutoPlaceInWorker } from '@/supports/autoSupport';
 import type { SizingDebugInfo, ForestReport } from '@/supports/autoSupport';
-import { getSettings, updateAutoSupportSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
+import { getSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
 import {
   getActiveAutoSupportPresetId,
   getAutoSupportPresets,
@@ -25,7 +25,7 @@ import { getSnapshot, setSnapshot } from '@/supports/state';
 import { knotHostId, coneKnotHostType, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import type { Knot } from '@/supports/types';
 import { AutoSupportSettingsBody } from './autoSupport/AutoSupportSettingsBody';
-import { selectAutoSupportPreset } from './autoSupport/AutoSupportPresets';
+import { selectAutoSupportPreset, useAutoSupportDialogChanges } from './autoSupport/AutoSupportPresets';
 import { AUTO_SUPPORT_SECTION_CARD, TIER_HINTS } from './autoSupport/autoSupportPanelTabs';
 /** Set to true while auto-support is busy (scanning or placing).
  *  Page-level overlay reads this to show the "Generating Supports"
@@ -89,6 +89,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
+  const [showDiscardSettingsDialog, setShowDiscardSettingsDialog] = React.useState(false);
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
   const [showForestReport, setShowForestReport] = React.useState(false);
@@ -113,14 +114,19 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
     setShowSettings(true);
   }, []);
 
-  const closeSettings = React.useCallback(() => setShowSettings(false), []);
+  // Closing the dialog throws the draft away, so a dirty one asks first — the
+  // same fact the footer's Save and Reset key off.
+  const settingsHaveChanges = useAutoSupportDialogChanges(draft);
+  const closeSettings = React.useCallback(() => {
+    if (settingsHaveChanges) {
+      setShowDiscardSettingsDialog(true);
+      return;
+    }
+    setShowSettings(false);
+  }, [settingsHaveChanges]);
   // The dialog is the panel's own overlay, so it registers for Escape itself.
   useEscapeToClose(showSettings, closeSettings);
 
-  const applySettings = React.useCallback(() => {
-    updateAutoSupportSettings(draft);
-    setShowSettings(false);
-  }, [draft]);
 
   const pendingRef = React.useRef(false);
   const islandsRef = React.useRef(islands);
@@ -557,13 +563,56 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               sizingDebug={sizingDebug}
               forestReport={forestReport}
               onShowForestReport={() => setShowForestReport(true)}
-              onCancel={closeSettings}
-              onApply={applySettings}
+              onCommitted={closeSettings}
             />
           </div>
         </div>,
         document.body,
       )}
+
+      <StructuredDialogModal
+        open={showDiscardSettingsDialog}
+        ariaLabel={_(msg`Discard auto-support settings changes`)}
+        title={_(msg`Discard Changes?`)}
+        subtitle={_(msg`The edits made in this dialog have not been saved.`)}
+        iconTone="warning"
+        zIndexClassName="z-[120]"
+        onClose={() => setShowDiscardSettingsDialog(false)}
+        onBackdropClick={() => setShowDiscardSettingsDialog(false)}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowDiscardSettingsDialog(false)}
+              className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Go back to the settings dialog`)}
+            >
+              {_(msg`Keep Editing`)}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowDiscardSettingsDialog(false);
+                setDraft(getSettings().autoSupport);
+                setShowSettings(false);
+              }}
+              className="ui-button !h-9 px-3 text-xs"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--danger), var(--surface-1) 88%)',
+                color: 'var(--danger)',
+              }}
+              title={_(msg`Close the dialog and discard the edits`)}
+            >
+              {_(msg`Discard`)}
+            </button>
+          </>
+        }
+      >
+        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {_(msg`Closing now leaves the auto-support settings as they are. Save in the dialog's footer writes them.`)}
+        </p>
+      </StructuredDialogModal>
 
       <StructuredDialogModal
         open={showReplaceDialog}

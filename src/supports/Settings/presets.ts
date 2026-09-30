@@ -7,7 +7,7 @@
 import { SupportPreset, PresetCollection, SupportSettings, createDefaultSettings } from './types';
 import { getSettings, setSettings, saveSettingsToLocalStorage } from './state';
 import { createDefaultAutoBracingSettings } from '../autoBracing/settings';
-import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
+import { createDefaultAutoSupportSettings, migrateLegacySizingPreset } from '../autoSupport/settings';
 
 function normalizePresetSettings(
     settings: Partial<SupportSettings> | undefined,
@@ -63,7 +63,11 @@ function normalizePresetSettings(
         autoSupport: {
             ...defaults.autoSupport,
             ...fallback.autoSupport,
-            ...(source.autoSupport ?? {}),
+            // A stored preset written before the band became data names a tier:
+            // migrate it here so the preset record carries a band, not the
+            // obsolete key (and so `migrateLegacyPresetAutoSupport`'s
+            // comparison below compares like with like).
+            ...migrateLegacySizingPreset(source.autoSupport ?? {}),
         },
     };
 }

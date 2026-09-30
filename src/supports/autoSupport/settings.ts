@@ -1,4 +1,67 @@
 import { MIN_LEAF_FAN_RADIUS_MM } from './constants';
+
+/**
+ * The seven numbers a run sizes every shaft, tip and root from — a Support
+ * Studio preset's tip, shaft and roots, read as one band.
+ *
+ * They are not the auto-support block's own data: `autoSupport.sizingPreset`
+ * names the Support Studio preset the run borrows them from, and the engine
+ * resolves that id on every run. The coupling is deliberate — see the backlog
+ * entry — so editing a manual preset changes what auto-support prints.
+ */
+export interface SizingBand {
+    shaftDiameterMm: number;
+    tipContactDiameterMm: number;
+    tipLengthMm: number;
+    tipPenetrationMm: number;
+    rootDiameterMm: number;
+    rootDiskHeightMm: number;
+    rootConeHeightMm: number;
+}
+
+/**
+ * The three factory Support Studio presets, whose bands `SIZING_BANDS` mirrors.
+ * `presetForArea` still names the tier a supported area falls in for the forest
+ * ledger, and the load budget weighs a support's cross-section against them.
+ */
+export type SizingPreset = 'detail' | 'structure' | 'anchor';
+
+/**
+ * The factory bands, mirroring what the three factory Support Studio presets
+ * carry (detail / structure / anchor). Two consumers: the auto-support built-in
+ * presets name these tiers, and the *fallback* `activeSizingBand()` uses when the
+ * id in the settings names no preset at all (`structure` is the baseline).
+ */
+export const SIZING_BANDS: Record<SizingPreset, SizingBand> = {
+    detail: {
+        shaftDiameterMm: 0.8,
+        tipContactDiameterMm: 0.22,
+        tipLengthMm: 2.5,
+        tipPenetrationMm: 0,
+        rootDiameterMm: 2.0,
+        rootDiskHeightMm: 0.5,
+        rootConeHeightMm: 1.0,
+    },
+    structure: {
+        shaftDiameterMm: 1.0,
+        tipContactDiameterMm: 0.28,
+        tipLengthMm: 2.5,
+        tipPenetrationMm: 0,
+        rootDiameterMm: 2.0,
+        rootDiskHeightMm: 0.5,
+        rootConeHeightMm: 1.0,
+    },
+    anchor: {
+        shaftDiameterMm: 1.4,
+        tipContactDiameterMm: 0.4,
+        tipLengthMm: 2.5,
+        tipPenetrationMm: 0,
+        rootDiameterMm: 2.3,
+        rootDiskHeightMm: 0.5,
+        rootConeHeightMm: 1.0,
+    },
+};
+
 export interface AutoSupportSettings {
     enabled: boolean;
     minIslandAreaMm2: number;
@@ -32,11 +95,17 @@ export interface AutoSupportSettings {
             /** Percentage of each region's projected footprint the auto grid must
      *  cover before gap-fill stops (75–100). */
     coverageTargetPercent: number;
-    /** Auto-support sizing tier — the hardcoded shaft/tip/roots band auto
-     *  supports are sized with. Independent of the active trunk preset
-     *  (which is for manual placement only). Default 'structure' = the
-     *  loaded defaults that already work well. */
-    sizingPreset: 'detail' | 'structure' | 'anchor';
+    /** The band auto supports are sized with — shaft, tip contact/length/
+     *  penetration and the root pad. Independent of the active trunk preset
+     *  (which is for manual placement only). Default = the `structure` band,
+     *  the block the removed `sizingPreset` default selected. */
+    /**
+     * The Support Studio preset whose tip, shaft and roots numbers size this run.
+     * An open id — the three factory presets plus any preset the user made — and a
+     * value that no longer resolves (a deleted preset) falls back to the factory
+     * structure band rather than failing the run.
+     */
+    sizingPreset: string;
     /** Leaf fanning: max horizontal reach from a trunk shaft (mm). */
     leafFanRadiusMm: number;
     /** Leaf fanning: max angle from vertical for a fan leaf (deg). */
@@ -194,7 +263,10 @@ export function createDefaultAutoSupportSettings(): AutoSupportSettings {
 
 export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings> | null): AutoSupportSettings {
     const defaults = createDefaultAutoSupportSettings();
-    const source = input ?? defaults;
+    // A block written by the band-era build carries the seven numbers instead of
+    // the preset id: migrating here means every read path (the settings store's own
+    // load, a preset payload applied through it, a direct patch) lands on the id.
+    const source = migrateLegacySizingPreset(input ?? defaults);
 
     return {
         enabled: normalizeBoolean(source.enabled, defaults.enabled),
@@ -210,9 +282,7 @@ export function normalizeAutoSupportSettings(input?: Partial<AutoSupportSettings
         slopeRelaxFactor: clampNumeric(source.slopeRelaxFactor, AUTO_SUPPORT_CONSTRAINTS.slopeRelaxFactor),
         suctionAreaExponent: clampNumeric(source.suctionAreaExponent, AUTO_SUPPORT_CONSTRAINTS.suctionAreaExponent),
         coverageTargetPercent: clampNumeric(source.coverageTargetPercent, AUTO_SUPPORT_CONSTRAINTS.coverageTargetPercent),
-        sizingPreset: source.sizingPreset === 'detail' || source.sizingPreset === 'anchor'
-            ? source.sizingPreset
-            : 'structure',
+        sizingPreset: normalizeSizingPreset(source.sizingPreset, defaults.sizingPreset),
         leafFanRadiusMm: clampNumeric(source.leafFanRadiusMm, AUTO_SUPPORT_CONSTRAINTS.leafFanRadiusMm),
         leafFanMaxAngleDeg: clampNumeric(source.leafFanMaxAngleDeg, AUTO_SUPPORT_CONSTRAINTS.leafFanMaxAngleDeg),
         tipContactMarginScale: clampNumeric(source.tipContactMarginScale, AUTO_SUPPORT_CONSTRAINTS.tipContactMarginScale),
@@ -239,4 +309,52 @@ export function applyAutoSupportSettingsPatch(
         ...current,
         ...patch,
     });
+}
+
+// ---------------------------------------------------------------------------
+// Migration off the band-as-data block
+//
+// One build in this session wrote the seven numbers into the block as
+// `autoSupport.sizingBand`. The field names a Support Studio preset again, so a
+// block carrying a band is rewritten to the factory preset whose band matches
+// (or `structure`, the default). This is the only place that key is read.
+// ---------------------------------------------------------------------------
+
+/** The factory preset a band's seven numbers are, or `structure` when they match none. */
+function sizingPresetForBand(value: unknown): SizingPreset {
+    if (typeof value !== 'object' || value === null) return 'structure';
+    const band = value as Record<string, unknown>;
+    const tier = (Object.keys(SIZING_BANDS) as SizingPreset[]).find((name) =>
+        (Object.keys(SIZING_BANDS[name]) as (keyof SizingBand)[])
+            .every((field) => SIZING_BANDS[name][field] === band[field]),
+    );
+    return tier ?? 'structure';
+}
+
+/**
+ * Rewrite a stored auto-support block off the removed `sizingBand` object: the
+ * obsolete key is dropped and the factory preset whose band it matched is written
+ * in its place (`structure` for a band the factory never shipped). Unknown keys
+ * pass through untouched, because a preset payload carries keys this build cannot
+ * name and must keep them.
+ *
+ * The band wins over any id in the same payload: no build wrote both, so an id
+ * sitting beside a band can only have come from merging the defaults over a
+ * band-era block, and the band is the honest value there. A payload without a
+ * band is returned as it is, same reference.
+ */
+export function migrateLegacySizingPreset<T extends object>(payload: T): T {
+    const record = payload as Record<string, unknown>;
+    if (!Object.hasOwn(record, 'sizingBand')) return payload;
+    const { sizingBand, ...rest } = record;
+    return { ...rest, sizingPreset: sizingPresetForBand(sizingBand) } as unknown as T;
+}
+
+/**
+ * The tier a block names: any non-empty string is an id to resolve at run time
+ * (a user's own preset is as valid as a factory one, and a deleted one is a
+ * fallback rather than an error), so the only repair here is the default.
+ */
+function normalizeSizingPreset(value: unknown, fallback: string): string {
+    return typeof value === 'string' && value.trim().length > 0 ? value : fallback;
 }
