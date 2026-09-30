@@ -101,6 +101,7 @@ nav:
           - Architecture: dev/architecture-overview.md
           - page.tsx Refactor Handoff: dev/page-tsx-refactor-handoff.md
           - Contributing: dev/contributing.md
+          - Preview Builds and CI Permissions: dev/preview-builds.md
           - Backlog and Known Gotchas: dev/backlog.md
           - Support Registry Findings: dev/support-registry-findings.md
           - Performance Debugging: dev/performance-debugging.md
