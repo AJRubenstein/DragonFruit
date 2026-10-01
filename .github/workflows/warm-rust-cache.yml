@@ -17,8 +17,29 @@ concurrency:
 
 jobs:
   warm-macos:
-    name: Warm macOS Rust cache
+    name: Warm macOS Rust cache (${{ matrix.profile }})
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The shipped profile, and the one the compile check links with. Both are
+          # warmed because a profile change is a different fingerprint for every
+          # crate, so one cache cannot serve the other: a thin check restoring the
+          # fat cache would reuse none of it and then skip saving its own.
+          #
+          # The thin leg is what makes a pull request's *first* macOS check warm. The
+          # check runs on pull requests only, whose caches are scoped to their own
+          # merge ref, so nothing else can put a thin cache where they can read it.
+          - profile: fat
+            lto: fat
+            codegen_units: "1"
+          - profile: thin
+            lto: thin
+            codegen_units: "16"
+    env:
+      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.codegen_units }}
     permissions:
       actions: write
       contents: read
@@ -56,6 +77,7 @@ jobs:
             ./src-tauri -> target
             ./rust/dragonfruit-voxl-thumbnail -> target
           shared-key: tauri
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS
           # If a late compile step fails, still save everything built so far —
           # the whole point of this workflow is warming the dependency cache.
           cache-on-failure: true
