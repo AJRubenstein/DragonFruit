@@ -193,6 +193,15 @@ if (isUniversal) {
 // Windows — build the COM DLL and copy it to src-tauri/windows-resources/
 // ---------------------------------------------------------------------------
 if (platform === 'windows') {
+      if (triple !== 'x86_64-pc-windows-msvc') {
+            throw new Error(`The bundled Windows CRT is x64-only; unsupported target: ${triple}`);
+      }
+      // tauri-build resolves bundle resources during compilation, before the
+      // beforeBundleCommand hook. Prepare the CRT for dev/build as well.
+      run('powershell', [
+            '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', 'scripts/prepare-windows-runtime.ps1',
+      ], projectRoot);
       run('cargo', ['build', '--release', ...targetArgs], comCrateDir);
 
       const dllSrc = path.join(comCrateDir, releaseSuffix, COM_DLL_NAME);

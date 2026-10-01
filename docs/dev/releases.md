@@ -244,6 +244,93 @@ again, so every external build is one a maintainer chose to run. Preview
 branches whose pull request has closed are swept away the next time any
 preview is activated.
 
+## Windows app-local C++ runtime
+
+Windows x64 packages include Microsoft's VC14 CRT beside
+`dragonfruit-desktop.exe`. Do not depend on a developer's or user's system
+redistributable: #683 reproduced an import-time access violation with the same
+application and an older `MSVCP140.dll`. Disabling mesh classification or changing
+the graphics backend does not address this deployment requirement.
+
+### Pin and preparation
+
+`scripts/windows-runtime.json` pins the runtime version, immutable Microsoft
+installer URL, and SHA-256. Ordinary builds never resolve a floating latest URL.
+`scripts/prepare-windows-runtime.ps1` verifies the installer hash, trusted Microsoft
+Authenticode publisher, and version. A checksum-pinned WiX extractor unpacks the
+bundle and minimum-x64 MSI without executing an installer or requiring elevation.
+Every staged CRT DLL must be Microsoft-signed and AMD64; the complete required
+CRT family must be present and `MSVCP140.dll` must match the pin. MFC, UCRT, and the
+ARM64 payload are not copied. Only validated files replace the previous stage.
+
+Preparation is Windows-only and supports Windows PowerShell 5.1 and PowerShell 7:
+
+```powershell
+./scripts/prepare-windows-runtime.ps1
+./scripts/verify-windows-runtime.ps1
+```
+
+The preparation script accepts `-ManifestPath` and `-OutputDirectory` for isolated
+checks. The output directory is owned by the script and replaced as a unit; do not
+point it at an installation or a directory containing unrelated files. The native
+verifier accepts `-RuntimeDirectory`, compares against the repository pin, selects
+the latest installed MSVC x64 tools, checks their redistributable version against
+the pin, and compiles/runs a C++ mutex probe that rejects loading system CRT DLLs.
+A newer toolset than the pinned CRT fails the bundle: update the pin, do not skip
+verification. Compiler identity and runtime versions are printed in build logs.
+
+`scripts/build-thumbnail-providers.mjs` prepares the runtime on Windows before
+Tauri's compile-time resource resolution. The Windows `beforeBundleCommand` in
+`src-tauri/tauri.windows.conf.json` prepares and verifies it again for standalone
+bundling. Generated DLLs live under `src-tauri/windows-resources/vc-runtime/` and
+are ignored by git; the Windows resource map installs them at the executable
+root, not in a nested resources directory. Other platform configurations do not
+include them. Windows cache keys include the runtime pin and runner image as well
+as the existing release-profile keys, avoiding reuse across toolchain-image changes.
+
+### Artifact and upgrade checks
+
+Release jobs run `scripts/verify-windows-bundles.ps1` on both NSIS and MSI payloads
+before upload. Preview jobs use `-Formats nsis`. The script extracts each actual
+installer, checks that every staged CRT DLL is byte-identical and adjacent to the
+application executable, then runs the native probe against those packaged DLLs.
+It needs 7-Zip for NSIS and uses MSI administrative extraction, not installation.
+Its default bundle directory is the x64 MSVC release target; use `-BundleDirectory`
+for another output path.
+
+The application updater distributes these same installers, so runtime upgrades
+ship with DragonFruit releases, not through a separate DLL-download mechanism.
+Microsoft system-runtime updates do **not** service our app-local files; we own
+shipping security updates. Before releasing this packaging change, smoke an
+actual installation and an upgrade from 0.1.15 on Windows: verify the loaded CRT
+path/version and import `top-single.stl`, including on a machine with an older
+system runtime. Extracted-payload checks do not replace this installed-app check.
+
+### Automated update proposals
+
+`.github/workflows/update-windows-runtime.yml` runs weekly or manually. It checks
+out `dev`, calls `scripts/prepare-windows-runtime.ps1 -CheckForUpdate`, then runs
+normal pinned preparation and the native verifier before opening/updating a PR
+from `automation/windows-vc-runtime` to `dev`. Discovery follows Microsoft's
+official latest-x64 link, requires an immutable Microsoft destination, and
+validates the signed installer and extracted DLLs before writing the new pin.
+Equal or older versions leave the pin unchanged. The workflow only commits the
+pin; it never merges, bumps the application version, or publishes a release.
+
+Operational requirements:
+
+- The scheduled workflow must also land on the repository's default `main`
+  branch for GitHub cron to run; adding it only to `dev` is insufficient.
+- Enable GitHub Actions permission to create pull requests. The updater uses
+  scoped `contents: write` and `pull-requests: write`, with no new PAT or secret.
+- PRs created using `GITHUB_TOKEN` do not trigger ordinary PR workflows. Candidate
+  checks therefore run **before** PR creation and the PR links that run. A
+  maintainer can close/reopen the PR to trigger normal required checks, or manually
+  run **Validate Windows runtime** on the bot branch for the dedicated check.
+- `.github/workflows/validate-windows-runtime.yml` also checks human-created PRs
+  affecting this integration, under both PowerShell versions with read-only
+  permissions. Merge only after the required Windows checks pass.
+
 ## Updater implementation notes
 
 - `src-tauri/tauri.conf.json`'s `plugins.updater.endpoints` points at the

@@ -1,0 +1,76 @@
+name: Update Windows runtime
+
+on:
+  schedule:
+    # GitHub schedules run from the default branch: install this workflow on main.
+    - cron: "43 5 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-windows-runtime
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Verify runtime and propose pin update
+    if: >-
+      github.repository == 'Open-Resin-Alliance/DragonFruit' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout development runtime pin
+        uses: actions/checkout@v7
+        with:
+          ref: dev
+          persist-credentials: false
+
+      - name: Discover and verify a newer Microsoft runtime
+        shell: powershell
+        run: >-
+          ./scripts/prepare-windows-runtime.ps1
+          -CheckForUpdate
+          -OutputDirectory "$env:RUNNER_TEMP\windows-vc-runtime-candidate"
+
+      # GITHUB_TOKEN-created PRs do not trigger pull_request workflows. Both
+      # candidate verification and normal pinned preparation must pass here,
+      # before any branch or PR is written. This also exercises PS 5.1 and 7.
+      - name: Verify normal preparation from the resulting pin
+        id: runtime
+        shell: pwsh
+        run: |
+          ./scripts/prepare-windows-runtime.ps1 -OutputDirectory "$env:RUNNER_TEMP\windows-vc-runtime-pinned"
+          ./scripts/verify-windows-runtime.ps1 -RuntimeDirectory "$env:RUNNER_TEMP\windows-vc-runtime-pinned"
+          $manifest = Get-Content scripts/windows-runtime.json -Raw | ConvertFrom-Json
+          "version=$($manifest.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Create or update runtime pull request
+        # v8.1.1, pinned because this action receives repository write access.
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
+        with:
+          token: ${{ github.token }}
+          base: dev
+          branch: automation/windows-vc-runtime
+          add-paths: scripts/windows-runtime.json
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          commit-message: "chore: update Windows VC++ runtime to ${{ steps.runtime.outputs.version }}"
+          title: "chore: update Windows VC++ runtime to ${{ steps.runtime.outputs.version }}"
+          body: |
+            ## Summary
+
+            Update the app-local x64 Microsoft VC++ runtime pin to ${{ steps.runtime.outputs.version }}.
+            Only the runtime version, immutable Microsoft download URL, and SHA-256 pin change. No app version or release is created.
+
+            ## Validation notes
+
+            [The updater run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) verified the Microsoft Authenticode signature, SHA-256, runtime version, required DLL set, and x64 PE architecture before proposing this change. Normal preparation from the resulting pin and the compiled C++ mutex/app-local DLL-loading smoke probe also passed. Candidate discovery used Windows PowerShell 5.1; pinned preparation and the probe used PowerShell 7.
+
+            This PR uses `GITHUB_TOKEN`, so GitHub does not automatically trigger the usual push or pull-request checks. Review the linked updater run; a maintainer can manually run **Validate Windows runtime** on `automation/windows-vc-runtime` for another pinned-runtime check. That manual run does not replace any other required PR checks; close and reopen this PR as a maintainer to trigger those checks before merging.
+
+            This workflow does not merge the PR or publish a release.

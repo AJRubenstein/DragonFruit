@@ -1,0 +1,65 @@
+name: Validate Windows runtime
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - .github/workflows/update-windows-runtime.yml
+      - .github/workflows/validate-windows-runtime.yml
+      - scripts/prepare-windows-runtime.ps1
+      - scripts/verify-windows-runtime.ps1
+      - scripts/verify-windows-bundles.ps1
+      - scripts/build-thumbnail-providers.mjs
+      - scripts/windows-runtime.json
+      - scripts/*tauri*.mjs
+      - src-tauri/tauri*.conf.json
+      - package.json
+  # Maintainers can select the bot branch for independent validation without
+  # a PAT. This does not cause other PR checks to run or grant write access.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-windows-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Pinned x64 runtime (${{ matrix.shell }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shell:
+          - powershell
+          - pwsh
+    steps:
+      - name: Checkout merged pull request or selected branch
+        # Default checkout validates the PR merge commit, never pull_request_target.
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Prepare and verify with Windows PowerShell 5.1
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: |
+          ./scripts/prepare-windows-runtime.ps1
+          ./scripts/verify-windows-runtime.ps1
+
+      - name: Prepare and verify with PowerShell 7
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: |
+          ./scripts/prepare-windows-runtime.ps1
+          ./scripts/verify-windows-runtime.ps1

@@ -578,7 +578,8 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
           shared-key: tauri
-          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES
+          key: ${{ runner.os == 'Windows' && hashFiles('scripts/windows-runtime.json') || '' }}
+          env-vars: ${{ runner.os == 'Windows' && 'CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES ImageOS ImageVersion' || 'CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES' }}
 
       - name: Install frontend dependencies
         run: npm ci
@@ -609,6 +610,11 @@ jobs:
         with:
           tauriScript: npx tauri
           args: ${{ matrix.args }}
+
+      - name: Verify Windows installer runtime payload
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-windows-bundles.ps1 -Formats nsis
 
       - name: Install Flatpak build tooling
         if: matrix.build_kind == 'flatpak'
