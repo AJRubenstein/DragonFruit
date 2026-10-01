@@ -11,7 +11,7 @@
     "windows": {
       "wix": {
         "fragmentPaths": ["wix/runtime-prerequisite.wxs"],
-        "customActionRefs": ["DfRequireVcRuntime"]
+        "componentGroupRefs": ["DfRuntimePrerequisite"]
       },
       "nsis": {
         "installerHooks": "nsis/thumbnail-hooks.nsh",

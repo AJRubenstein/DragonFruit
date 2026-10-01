@@ -5,6 +5,9 @@
     <?error The DragonFruit Visual C++ prerequisite supports x64 packages only. ?>
   <?endif ?>
   <Fragment>
+    <!-- Tauri references this group to link the entire prerequisite fragment.
+         It installs no components; the searches and error action below are the guard. -->
+    <ComponentGroup Id="DfRuntimePrerequisite" />
     <!-- MSI's Signature table compares all four numeric file-version components.
          Search System32 in this x64 package, never an app-local or x86 copy. -->
     <Property Id="DF_VC_RUNTIME_SUFFICIENT" Secure="yes">

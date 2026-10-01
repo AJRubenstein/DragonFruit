@@ -270,6 +270,8 @@ exit `3010` requests a manual restart and rerun, never an automatic reboot/launc
 Silent `/S` and passive `/P` installations must have the prerequisite provisioned
 first. `src-tauri/wix/runtime-prerequisite.wxs` blocks an inadequate runtime with
 a Microsoft download link; it never nests an installer and allows uninstall.
+Tauri links that fragment through its supported `componentGroupRefs` option; the
+empty group anchors the searches and blocking action without installing a dummy component.
 
 There is no Microsoft installer checksum pin or update bot: Microsoft may update
 its signed download independently. The shipped InetC plugin remains pinned.
