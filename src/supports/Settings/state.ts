@@ -22,6 +22,7 @@ import {
 import {
     applyAutoSupportSettingsPatch,
     normalizeAutoSupportSettings,
+    type AutoSupportDiagnosticKey,
 } from '../autoSupport/settings';
 import {
     CURRENT_SUPPORT_DEFAULTS_VERSION,
@@ -295,6 +296,24 @@ export function updateDebugSimpleSupportRender(enabled: boolean): void {
     currentSettings = {
         ...currentSettings,
         debugSimpleSupportRender: enabled,
+    };
+    notify();
+}
+
+/**
+ * A diagnostic switch from the auto-support settings dialog. Applied the moment
+ * it is toggled, not staged for `Save`: it exists to be flipped while reading the
+ * scene, and the dialog's dirty state ignores it (see
+ * `DIAGNOSTIC_AUTO_SUPPORT_KEYS`). Like `debugSimpleSupportRender` it is not
+ * written to storage by itself; the next full save carries it.
+ */
+export function updateAutoSupportDiagnostic(key: AutoSupportDiagnosticKey, enabled: boolean): void {
+    currentSettings = {
+        ...currentSettings,
+        autoSupport: {
+            ...currentSettings.autoSupport,
+            [key]: enabled,
+        },
     };
     notify();
 }

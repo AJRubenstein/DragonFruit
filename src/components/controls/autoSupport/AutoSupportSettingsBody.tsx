@@ -25,7 +25,7 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { CSSProperties } from 'react';
 import { LabeledNumberInput, LabeledToggleInput } from '@/components/settings/profileFormAtoms';
-import type { AutoSupportSettings } from '@/supports/autoSupport';
+import type { AutoSupportSettings, AutoSupportDiagnosticKey } from '@/supports/autoSupport';
 import { AutoSupportPresetSelector, AutoSupportSettingsFooterActions } from './AutoSupportPresets';
 import { AutoSupportSizingTierField } from './AutoSupportSizingTierField';
 import {
@@ -34,6 +34,7 @@ import {
   AUTO_SUPPORT_ADVANCED_SECTION,
   AUTO_SUPPORT_POLICY_SECTIONS,
   DEBUG_DIAGNOSTICS_HEADING,
+  DIAGNOSTIC_TOGGLES,
   KNOBS_BY_SECTION,
   TOGGLES_BY_SECTION,
   type AutoSupportSectionDef,
@@ -138,17 +139,19 @@ function FieldCard({ section, children }: { section: AutoSupportSectionDef; chil
 /** The diagnostics card: the debug switches, and the switch that puts the last
  *  run's report on the panel. */
 function DiagnosticsCard({
-  draft,
-  setDraft,
   debugSimpleRender,
   onToggleDebugSimpleRender,
+  diagnostics,
+  onToggleDiagnostic,
   debugMode,
   onToggleDebugMode,
 }: {
-  draft: AutoSupportSettings;
-  setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
   debugSimpleRender: boolean;
   onToggleDebugSimpleRender: () => void;
+  /** The diagnostic switches' current state, from the store: they are applied
+   *  at once, so the draft is not their home. */
+  diagnostics: Record<AutoSupportDiagnosticKey, boolean>;
+  onToggleDiagnostic: (key: AutoSupportDiagnosticKey, enabled: boolean) => void;
   debugMode: boolean;
   onToggleDebugMode: () => void;
 }) {
@@ -161,8 +164,15 @@ function DiagnosticsCard({
       <div className="ui-meta font-semibold uppercase tracking-wide">{_(DEBUG_DIAGNOSTICS_HEADING)}</div>
 
       <div className="mt-2 grid grid-cols-2 gap-2">
-        {TOGGLES_BY_SECTION.debug.map((toggle) => (
-          <ToggleField key={toggle.key} toggle={toggle} draft={draft} setDraft={setDraft} />
+        {DIAGNOSTIC_TOGGLES.map((toggle) => (
+          <LabeledToggleInput
+            key={toggle.key}
+            label={_(toggle.label)}
+            helpText={_(toggle.hint)}
+            title={_(toggle.hint)}
+            checked={diagnostics[toggle.key]}
+            onChange={(next) => onToggleDiagnostic(toggle.key, next)}
+          />
         ))}
         {/* Not an `autoSupport` key: a top-level render switch with its own updater. */}
         <LabeledToggleInput
@@ -211,6 +221,10 @@ export type AutoSupportSettingsBodyProps = {
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
   debugSimpleRender: boolean;
   onToggleDebugSimpleRender: () => void;
+  /** The diagnostic switches (`Origin Colors`, `No Brace`), from the store: they
+   *  apply the moment they are toggled and never mark the dialog dirty. */
+  diagnostics: Record<AutoSupportDiagnosticKey, boolean>;
+  onToggleDiagnostic: (key: AutoSupportDiagnosticKey, enabled: boolean) => void;
   /** Whether the panel shows the last run's diagnostics. Session state the panel owns. */
   debugMode: boolean;
   onToggleDebugMode: () => void;
@@ -223,6 +237,8 @@ export function AutoSupportSettingsBody({
   setDraft,
   debugSimpleRender,
   onToggleDebugSimpleRender,
+  diagnostics,
+  onToggleDiagnostic,
   debugMode,
   onToggleDebugMode,
   onCommitted,
@@ -254,10 +270,10 @@ export function AutoSupportSettingsBody({
           {/* Diagnostics is a card like the others: the switches are always on
               screen, not behind a disclosure. */}
           <DiagnosticsCard
-            draft={draft}
-            setDraft={setDraft}
             debugSimpleRender={debugSimpleRender}
             onToggleDebugSimpleRender={onToggleDebugSimpleRender}
+            diagnostics={diagnostics}
+            onToggleDiagnostic={onToggleDiagnostic}
             debugMode={debugMode}
             onToggleDebugMode={onToggleDebugMode}
           />

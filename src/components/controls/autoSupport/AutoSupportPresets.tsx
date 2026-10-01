@@ -61,6 +61,7 @@ import {
   duplicateAutoSupportPreset,
   exportAutoSupportPresetToJson,
   getActiveAutoSupportPresetId,
+  autoSupportPolicyDiffers,
   getAutoSupportPreset,
   getAutoSupportPresetsServerSnapshot,
   getAutoSupportPresetsSnapshot,
@@ -521,9 +522,11 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
  */
 export function useAutoSupportDialogChanges(draft: AutoSupportSettings): boolean {
   const { dirty, live } = useAutoSupportPresetState();
+  // Policy keys only: a flipped diagnostic is a view switch, not an edit, so it
+  // never puts the dialog in the "save or discard?" state (see
+  // `DIAGNOSTIC_AUTO_SUPPORT_KEYS`).
   const draftDiffersFromLive = React.useMemo(
-    () => (Object.keys(live) as (keyof AutoSupportSettings)[])
-      .some((key) => JSON.stringify(draft[key]) !== JSON.stringify(live[key])),
+    () => autoSupportPolicyDiffers(draft, live),
     [draft, live],
   );
   return dirty || draftDiffersFromLive;

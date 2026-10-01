@@ -12,7 +12,7 @@ import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { forestReportToText, runAutoPlaceInWorker } from '@/supports/autoSupport';
 import type { SizingDebugInfo, ForestReport } from '@/supports/autoSupport';
-import { getSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
+import { getSettings, subscribeToSettings, updateAutoSupportDiagnostic, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
 import {
   getActiveAutoSupportPresetId,
   getAutoSupportPresets,
@@ -109,7 +109,8 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
   );
   const builtInPresets = getAutoSupportPresets().filter((preset) => preset.isBuiltIn);
   const activePresetId = getActiveAutoSupportPresetId();
-  const debugSimpleRender = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings).debugSimpleSupportRender;
+  const supportSettings = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
+  const debugSimpleRender = supportSettings.debugSimpleSupportRender;
 
   const settings = getSettings().autoSupport;
   const [draft, setDraft] = React.useState(settings);
@@ -576,6 +577,17 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               setDraft={setDraft}
               debugSimpleRender={debugSimpleRender}
               onToggleDebugSimpleRender={() => updateDebugSimpleSupportRender(!debugSimpleRender)}
+              diagnostics={{
+                debugSupportOriginColors: supportSettings.autoSupport.debugSupportOriginColors,
+                debugSkipAutoBracing: supportSettings.autoSupport.debugSkipAutoBracing,
+              }}
+              onToggleDiagnostic={(key, enabled) => {
+                // Applied at once, so closing the dialog does not ask whether to
+                // discard a view switch. The draft follows, or a later Save would
+                // write the value the toggle just replaced.
+                updateAutoSupportDiagnostic(key, enabled);
+                setDraft((current) => ({ ...current, [key]: enabled }));
+              }}
               debugMode={debugMode}
               onToggleDebugMode={() => setDebugMode((current) => !current)}
               onCommitted={closeSettings}

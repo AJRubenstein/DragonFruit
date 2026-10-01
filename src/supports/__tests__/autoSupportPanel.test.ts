@@ -46,6 +46,8 @@ let selectAutoSupportPreset: (id: string, setDraft: React.Dispatch<React.SetStat
 let deleteActiveAutoSupportPreset: (setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
 let autoSupportSections: ReadonlyArray<AutoSupportSectionDef>;
 let policySections: ReadonlyArray<AutoSupportSectionDef>;
+let diagnosticToggles: ReadonlyArray<{ key: string }>;
+let togglesBySection: { debug: ReadonlyArray<{ key: string }> };
 
 // Dynamic on purpose: these modules call `msg`, so the resolve hook above must
 // already be registered — a static import would be evaluated first.
@@ -56,6 +58,8 @@ before(async () => {
   ({
     AUTO_SUPPORT_SECTIONS: autoSupportSections,
     AUTO_SUPPORT_POLICY_SECTIONS: policySections,
+    DIAGNOSTIC_TOGGLES: diagnosticToggles,
+    TOGGLES_BY_SECTION: togglesBySection,
   } = await import('@/components/controls/autoSupport/autoSupportPanelTabs'));
 });
 
@@ -96,6 +100,8 @@ const BODY_PROPS = {
   setDraft: () => {},
   debugSimpleRender: false,
   onToggleDebugSimpleRender: () => {},
+  diagnostics: { debugSupportOriginColors: false, debugSkipAutoBracing: false },
+  onToggleDiagnostic: () => {},
   debugMode: false,
   onToggleDebugMode: () => {},
   onCommitted: () => {},
@@ -211,6 +217,40 @@ test('the run diagnostics are the panel\'s: the sizing inputs and the report but
     '',
     'a panel with no run yet must render no diagnostics',
   );
+});
+
+test('every debug toggle is a declared diagnostic', () => {
+  // The card renders `DIAGNOSTIC_TOGGLES`, typed as the block's diagnostics. A
+  // debug switch added to the catalogue but not to `DIAGNOSTIC_AUTO_SUPPORT_KEYS`
+  // would silently vanish from the card (and would be staged for Save again), so
+  // the two lists have to stay the same list.
+  assert.deepEqual(
+    diagnosticToggles.map((toggle) => toggle.key),
+    togglesBySection.debug.map((toggle) => toggle.key),
+    'the debug section and the diagnostics list have drifted apart',
+  );
+});
+
+test('the diagnostic switches read the store, not the dialog’s draft', () => {
+  // The draft says both are off while the store has Origin Colors on. A
+  // diagnostic is applied the moment it is toggled, so the card must show the
+  // store's state: reading the draft here is what made these switches look like
+  // unsaved edits the user had to save or discard.
+  const markup = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      { i18n },
+      React.createElement(AutoSupportSettingsBody, {
+        ...BODY_PROPS,
+        draft: { ...getSettings().autoSupport, debugSupportOriginColors: false, debugSkipAutoBracing: false },
+        diagnostics: { debugSupportOriginColors: true, debugSkipAutoBracing: false },
+      }),
+    ),
+  );
+
+  const switchAfter = (label: string) => /aria-checked="(true|false)"/.exec(markup.slice(markup.indexOf(label)))?.[1];
+  assert.equal(switchAfter('Origin Colors'), 'true', 'Origin Colors must show what the store holds');
+  assert.equal(switchAfter('No Brace'), 'false', 'No Brace must show what the store holds');
 });
 
 test('a numeric knob is a labelled field with its unit and a stepper, never a slider', () => {

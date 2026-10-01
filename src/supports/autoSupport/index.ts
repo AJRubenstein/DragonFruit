@@ -12,6 +12,7 @@ export type {
 export {
   AUTO_SUPPORT_CONSTRAINTS,
   SIZING_BANDS,
+  DIAGNOSTIC_AUTO_SUPPORT_KEYS,
   createDefaultAutoSupportSettings,
   normalizeAutoSupportSettings,
   applyAutoSupportSettingsPatch,
@@ -19,6 +20,7 @@ export {
 } from "./settings";
 export type {
   AutoSupportSettings,
+  AutoSupportDiagnosticKey,
   NumericConstraint,
   NumericAutoSupportSettingKey,
   SizingBand,

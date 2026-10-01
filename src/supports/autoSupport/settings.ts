@@ -152,6 +152,31 @@ export interface AutoSupportSettings {
     heightFactorCap: number;
 }
 
+/**
+ * The block's diagnostic keys: switches a user flips to look *at* a run (color
+ * supports by origin, skip bracing to read the forest). They are stored with the
+ * block like any other key, but they are not run policy, so they are treated
+ * differently in three places:
+ *
+ * - the settings dialog applies them the moment they are toggled, instead of
+ *   staging them for `Save` (they are there to be flipped while reading the
+ *   scene, and a diagnostic that needs a commit is a diagnostic nobody uses);
+ * - they never mark the dialog dirty, so closing it does not ask whether to
+ *   discard a view switch;
+ * - they never make the active preset read as modified.
+ *
+ * `docs/dev/auto-supports.md` carries the same list in prose; the test beside
+ * `isAutoSupportPresetDirty` fails if a new debug switch is added without a
+ * decision about which side of this line it is on.
+ */
+export const DIAGNOSTIC_AUTO_SUPPORT_KEYS = [
+    'debugSupportOriginColors',
+    'debugSkipAutoBracing',
+] as const satisfies readonly (keyof AutoSupportSettings)[];
+
+/** A key from {@link DIAGNOSTIC_AUTO_SUPPORT_KEYS}. */
+export type AutoSupportDiagnosticKey = (typeof DIAGNOSTIC_AUTO_SUPPORT_KEYS)[number];
+
 export type NumericConstraint = {
     min: number;
     max: number;

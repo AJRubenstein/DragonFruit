@@ -12,6 +12,7 @@
  */
 import type { CSSProperties } from 'react';
 import { msg } from '@lingui/core/macro';
+import { DIAGNOSTIC_AUTO_SUPPORT_KEYS, type AutoSupportDiagnosticKey } from '@/supports/autoSupport/settings';
 import type { MessageDescriptor } from '@lingui/core';
 import {
   AUTO_SUPPORT_CONSTRAINTS,
@@ -221,6 +222,21 @@ function groupBySection<T extends { section: AutoSupportSectionKey }>(items: rea
 
 export const KNOBS_BY_SECTION = groupBySection(KNOBS);
 export const TOGGLES_BY_SECTION = groupBySection(TOGGLES);
+
+/**
+ * The debug section's toggles, typed as the block's diagnostics.
+ *
+ * The Diagnostics card renders these straight from the store rather than from
+ * the dialog's draft (they apply the moment they are flipped), so the card needs
+ * the narrow key type. The two lists are the same list by construction: the
+ * panel test fails if a debug toggle is added that is not a diagnostic, rather
+ * than letting it disappear from the card.
+ */
+export const DIAGNOSTIC_TOGGLES: ReadonlyArray<ToggleDef & { key: AutoSupportDiagnosticKey }> =
+    TOGGLES_BY_SECTION.debug.filter(
+        (toggle): toggle is ToggleDef & { key: AutoSupportDiagnosticKey } =>
+            (DIAGNOSTIC_AUTO_SUPPORT_KEYS as readonly string[]).includes(toggle.key),
+    );
 
 /** The diagnostics card's header — the debug switches and the last run's report. */
 export const DEBUG_DIAGNOSTICS_HEADING = msg`Diagnostics`;

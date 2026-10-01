@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 
 import { ANCHOR_PRESET, DETAIL_PRESET, STRUCTURE_PRESET } from '../Settings/presets';
 import { createDefaultAutoSupportSettings, SIZING_BANDS } from '../autoSupport/settings';
-import { getAutoSupportSettings, updateAutoSupportSettings } from '../Settings/state';
+import { getAutoSupportSettings, updateAutoSupportDiagnostic, updateAutoSupportSettings } from '../Settings/state';
 import type * as AutoSupportPresetStore from '../Settings/autoSupportPresets';
 
 type Store = typeof AutoSupportPresetStore;
@@ -115,6 +115,48 @@ test('a preset payload that predates a key reads clean, and a knob edit reads di
         updateAutoSupportSettings({ areaPerSupportMm2: 7 });
         assert.equal(store.isAutoSupportPresetDirty(), true, `${label}: a knob edit reads dirty`);
     }
+});
+
+test('a flipped diagnostic asks for nothing; a policy edit still does', () => {
+    const { store } = loadStoreWith({
+        [PRESETS_KEY]: JSON.stringify({
+            byId: {
+                light: { id: 'light', name: 'Light', isBuiltIn: true, settings: createDefaultAutoSupportSettings() },
+            },
+            allIds: ['light'],
+        }),
+        [ACTIVE_KEY]: 'light',
+    });
+    store.setActiveAutoSupportPreset('light');
+    assert.equal(store.isAutoSupportPresetDirty(), false, 'a freshly applied preset reads clean');
+
+    // Diagnostics are view switches: applied at once, and invisible to every
+    // "did the user change something" question, so closing the dialog never asks
+    // whether to discard one.
+    const beforeToggle = getAutoSupportSettings();
+    updateAutoSupportDiagnostic('debugSupportOriginColors', true);
+    assert.equal(getAutoSupportSettings().debugSupportOriginColors, true, 'the diagnostic applies at once');
+    assert.equal(store.isAutoSupportPresetDirty(), false, 'a diagnostic does not dirty the preset');
+    assert.equal(
+        store.autoSupportPolicyDiffers(
+            { ...getAutoSupportSettings(), debugSupportOriginColors: false },
+            getAutoSupportSettings(),
+        ),
+        false,
+        'a diagnostic does not count as a staged edit in the dialog either',
+    );
+    assert.equal(
+        store.autoSupportPolicyDiffers(
+            { ...beforeToggle, areaPerSupportMm2: beforeToggle.areaPerSupportMm2 + 1 },
+            getAutoSupportSettings(),
+        ),
+        true,
+        'a staged policy edit still counts',
+    );
+
+    // The run policy is a different matter: it is what Save writes.
+    updateAutoSupportSettings({ areaPerSupportMm2: 7 });
+    assert.equal(store.isAutoSupportPresetDirty(), true, 'a policy edit still reads dirty');
 });
 
 test('create, rename, duplicate and delete persist, and built-ins are not renamed or deleted', () => {

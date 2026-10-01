@@ -19,6 +19,7 @@ import {
     createDefaultAutoSupportSettings,
     migrateLegacySizingPreset,
     normalizeAutoSupportSettings,
+    DIAGNOSTIC_AUTO_SUPPORT_KEYS,
     type AutoSupportSettings,
 } from '../autoSupport/settings';
 import {
@@ -344,6 +345,24 @@ export function getActiveAutoSupportPresetId(): string | null {
 }
 
 /**
+ * The block's *policy* keys: everything except the diagnostics, which are view
+ * switches rather than the run's instructions. They are compared everywhere
+ * "did the user change something" is asked — the preset's drifted state here and
+ * the dialog's staged draft in `useAutoSupportDialogChanges` — so a flipped
+ * diagnostic never asks for a decision it does not need.
+ */
+export const POLICY_AUTO_SUPPORT_KEYS = KNOWN_AUTO_SUPPORT_KEYS.filter(
+    (key) => !(DIAGNOSTIC_AUTO_SUPPORT_KEYS as readonly string[]).includes(key),
+);
+
+/** Whether two blocks differ on any policy key. By value: a block holds objects. */
+export function autoSupportPolicyDiffers(a: AutoSupportSettings, b: AutoSupportSettings): boolean {
+    return POLICY_AUTO_SUPPORT_KEYS.some(
+        (key) => JSON.stringify(a[key]) !== JSON.stringify(b[key]),
+    );
+}
+
+/**
  * Whether the live `autoSupport` block still matches the active preset.
  *
  * Editing a knob while a preset is active leaves the preset alone and leaves
@@ -366,11 +385,9 @@ export function isAutoSupportPresetDirty(): boolean {
     // does and an untouched preset reads clean. Comparing the raw payloads marked
     // every preset dirty the moment a key was added or renamed (`sizingPreset` →
     // `sizingBand`), and would do so again for the next key.
-    const stored = normalizeAutoSupportSettings(preset.settings);
-    const live = normalizeAutoSupportSettings(getAutoSupportSettings());
-    // By value, because a normalized block holds objects as well as primitives.
-    return KNOWN_AUTO_SUPPORT_KEYS.some(
-        (key) => JSON.stringify(stored[key]) !== JSON.stringify(live[key]),
+    return autoSupportPolicyDiffers(
+        normalizeAutoSupportSettings(preset.settings),
+        normalizeAutoSupportSettings(getAutoSupportSettings()),
     );
 }
 
