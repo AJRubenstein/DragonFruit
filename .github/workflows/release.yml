@@ -267,9 +267,7 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
           shared-key: tauri
-          # C++ objects must not survive a Windows toolchain-image/runtime change.
-          key: ${{ runner.os == 'Windows' && hashFiles('scripts/windows-runtime.json') || '' }}
-          env-vars: ${{ runner.os == 'Windows' && 'CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES ImageOS ImageVersion' || 'CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES' }}
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES
 
       - name: Install frontend dependencies
         run: npm ci

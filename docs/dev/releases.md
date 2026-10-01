@@ -328,8 +328,8 @@ Preparation accepts `-ManifestPath` and `-OutputDirectory` for isolated checks.
 validation used by both build tooling and the embedded verifier. Generated files
 are ignored by git. The existing native-resource build step prepares them before
 Tauri resource resolution, and the Windows pre-bundle hook handles standalone
-bundling. Cache keys retain the profile, target architecture, runtime pin, and
-Windows runner-image inputs.
+bundling. The upstream profile and target-architecture cache inputs are unchanged;
+updating installer prerequisite metadata does not invalidate compiled Rust dependencies.
 
 ### Verification and update proposals
 
