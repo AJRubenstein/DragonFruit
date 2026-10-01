@@ -294,7 +294,7 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
       case 'slice_solid_native_to_temp_path': {
         assert.ok(args && typeof args === 'object' && 'jobJson' in args && typeof args.jobJson === 'string');
         const job = JSON.parse(args.jobJson);
-        assert.equal(job.mesh_encoding, 'quantized_u16');
+        assert.equal(job.mesh_encoding, 'raw_f32');
         assert.equal(Object.hasOwn(job, 'support_tip_shrink_percent'), false, 'tip shrink is geometry, not native metadata');
         assert.equal(Object.hasOwn(job, 'supportTipShrinkPercent'), false);
         captured = { bytes: staged.slice(), modelCount: job.model_triangle_count };
@@ -319,8 +319,9 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
       hoveredCategory: 'none', interactionWarning: null,
     });
     const authoredAnchor = structuredClone(getSnapshot().stumps[anchor.id]);
+    // The staged transport is raw f32 now, so this is only a tolerance: it bounds
+    // float32 rounding in the generated support geometry.
     const step = printerProfile.buildVolumeMm.width / 65535;
-    const dequantize = (value: number, axis: number) => value * step - (axis === 2 ? 0 : 10);
     const cases = [
       { mode: 'Vertical2', level: '8x', percent: undefined, diameter: 0.36 },
       { mode: 'Vertical2', level: '8x', percent: 25, diameter: 0.3 },
@@ -346,18 +347,18 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
       assert.ok(received, `${mode}/${level}/${percent} reached the native slice boundary`);
       assert.equal(received.modelCount, 1);
       assert.ok(received.bytes.length > 18, 'staged mesh includes generated support triangles');
-      const coordinates = new Uint16Array(received.bytes.buffer, received.bytes.byteOffset, received.bytes.byteLength / 2);
+      const coordinates = new Float32Array(received.bytes.buffer, received.bytes.byteOffset, received.bytes.byteLength / 4);
       const modelCoordinates = Array.from(coordinates.subarray(0, received.modelCount * 9));
       const supportCoordinates = coordinates.subarray(received.modelCount * 9);
       const contactZ = Math.max(...Array.from(supportCoordinates).filter((_, i) => i % 3 === 2));
       const contactX: number[] = [];
       const otherSupport: number[] = [];
       for (let i = 0; i < supportCoordinates.length; i += 3) {
-        if (supportCoordinates[i + 2] === contactZ) contactX.push(dequantize(supportCoordinates[i], 0));
+        if (supportCoordinates[i + 2] === contactZ) contactX.push(supportCoordinates[i]);
         else otherSupport.push(supportCoordinates[i], supportCoordinates[i + 1], supportCoordinates[i + 2]);
       }
       assert.ok(contactX.length > 0, 'contact-plane vertices are staged');
-      assert.ok(Math.abs(dequantize(contactZ, 2) - 5) <= step, 'measured plane belongs to the contact face');
+      assert.ok(Math.abs(contactZ - 5) <= step, 'measured plane belongs to the contact face');
       assert.ok(Math.abs(Math.max(...contactX) - Math.min(...contactX) - diameter) <= 2 * step,
         `${mode}/${level}/${percent}: contact diameter ${diameter} mm within a step per coordinate`);
       if (baselineModel) {
@@ -369,7 +370,7 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
         baselineOtherSupport = otherSupport;
         baselineContactZ = contactZ;
         for (const z of [0, 1, 1.1, 2.5, 2.8]) {
-          assert.ok(otherSupport.some((_, i) => i % 3 === 2 && Math.abs(dequantize(otherSupport[i], 2) - z) <= step),
+          assert.ok(otherSupport.some((_, i) => i % 3 === 2 && Math.abs(otherSupport[i] - z) <= step),
             `root, shaft and socket ring include z=${z} mm`);
         }
       }
