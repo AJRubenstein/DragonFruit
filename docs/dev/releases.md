@@ -262,6 +262,10 @@ bundle and minimum-x64 MSI without executing an installer or requiring elevation
 Every staged CRT DLL must be Microsoft-signed and AMD64; the complete required
 CRT family must be present and `MSVCP140.dll` must match the pin. MFC, UCRT, and the
 ARM64 payload are not copied. Only validated files replace the previous stage.
+The publisher check accepts the exact certificate names `Microsoft Corporation`
+and `Microsoft Windows Software Compatibility Publisher`: Windows can select the
+latter on dual-signed CRT DLLs. Both still require Authenticode status `Valid`;
+an unrelated trusted publisher or an invalid Microsoft signature is rejected.
 
 Preparation is Windows-only and supports Windows PowerShell 5.1 and PowerShell 7:
 

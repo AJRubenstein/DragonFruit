@@ -65,9 +65,14 @@ function Assert-Sha256([string]$Path, [string]$Expected) {
 
 function Assert-MicrosoftSignature([string]$Path) {
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
-        $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -cne 'Microsoft Corporation') {
-        throw "Expected a valid Microsoft Corporation Authenticode signature: $Path ($($signature.Status))"
+    $signer = if ($null -ne $signature.SignerCertificate) {
+        $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+    } else { '<none>' }
+    # The installer uses the corporate signer. Windows can select the primary
+    # compatibility-publisher signature on dual-signed CRT DLLs instead.
+    $microsoftSigners = @('Microsoft Corporation', 'Microsoft Windows Software Compatibility Publisher')
+    if ($signature.Status -ne 'Valid' -or $signer -cnotin $microsoftSigners) {
+        throw "Expected a valid Microsoft Authenticode signature: $Path (status=$($signature.Status), signer=$signer)"
     }
 }
 
