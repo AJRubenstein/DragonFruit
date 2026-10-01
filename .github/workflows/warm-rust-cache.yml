@@ -19,6 +19,12 @@ jobs:
   warm-macos:
     name: Warm macOS Rust cache
     runs-on: macos-latest
+    # The shipped profile, stated here as well as in Cargo.toml so that
+    # `swatinem/rust-cache` keys on it (see `env-vars` below): the compile check
+    # links thin and keeps its artifacts under a different key.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: fat
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
     permissions:
       actions: write
       contents: read
@@ -56,6 +62,7 @@ jobs:
             ./src-tauri -> target
             ./rust/dragonfruit-voxl-thumbnail -> target
           shared-key: tauri
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS
           # If a late compile step fails, still save everything built so far —
           # the whole point of this workflow is warming the dependency cache.
           cache-on-failure: true
