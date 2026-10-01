@@ -23,6 +23,12 @@ import {
     applyAutoSupportSettingsPatch,
     normalizeAutoSupportSettings,
 } from '../autoSupport/settings';
+import {
+    CURRENT_SUPPORT_DEFAULTS_VERSION,
+    SUPPORT_DEFAULTS_VERSION_KEY,
+    applySupportDefaultMigrations,
+    readWrittenDefaultsVersion,
+} from './defaultMigrations';
 
 // --- Store ---
 
@@ -340,6 +346,9 @@ export function saveSettingsToLocalStorage(): void {
             ...currentSettings,
             devToolsEnabled: false,
             devTools: createDefaultSettings().devTools,
+            // The batch this block was written at, so a later default change
+            // knows which of these values are still ours (see defaultMigrations).
+            [SUPPORT_DEFAULTS_VERSION_KEY]: CURRENT_SUPPORT_DEFAULTS_VERSION,
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
         console.log('[SettingsStore] Saved to localStorage (DevTools reset)');
@@ -354,6 +363,10 @@ export function loadSettingsFromLocalStorage(): boolean {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (!stored) return false;
         const parsed = JSON.parse(stored) as SupportSettings;
+        // The version is a wire field, not a setting: read it, then drop it so it
+        // cannot ride into the live block (the store spreads what it loads).
+        const writtenAtVersion = readWrittenDefaultsVersion(parsed);
+        delete (parsed as Partial<Record<typeof SUPPORT_DEFAULTS_VERSION_KEY, unknown>>)[SUPPORT_DEFAULTS_VERSION_KEY];
         // Force reset dev tools on load
         parsed.devToolsEnabled = false;
         parsed.devTools = createDefaultSettings().devTools;
@@ -361,7 +374,9 @@ export function loadSettingsFromLocalStorage(): boolean {
         if (parsed.shaft) {
             parsed.shaft.routingAlgorithm = 'potential';
         }
-        currentSettings = mergeWithDefaults(parsed);
+        // Defaults move: a stored value that is still the old default follows the
+        // new one, a value the user chose does not.
+        currentSettings = mergeWithDefaults(applySupportDefaultMigrations(parsed, writtenAtVersion));
         notify();
         console.log('[SettingsStore] Loaded from localStorage (DevTools reset)');
         return true;

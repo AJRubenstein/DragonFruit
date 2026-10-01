@@ -7,7 +7,15 @@
 import { SupportPreset, PresetCollection, SupportSettings, createDefaultSettings } from './types';
 import { getSettings, setSettings, saveSettingsToLocalStorage } from './state';
 import { createDefaultAutoBracingSettings } from '../autoBracing/settings';
+import type { AutoBracingSettings } from '../autoBracing/settings';
 import { createDefaultAutoSupportSettings, migrateLegacySizingPreset } from '../autoSupport/settings';
+import type { AutoSupportSettings } from '../autoSupport/settings';
+import {
+    CURRENT_SUPPORT_DEFAULTS_VERSION,
+    SUPPORT_DEFAULTS_VERSION_KEY,
+    applySupportDefaultMigrations,
+    readWrittenDefaultsVersion,
+} from './defaultMigrations';
 
 function normalizePresetSettings(
     settings: Partial<SupportSettings> | undefined,
@@ -92,6 +100,26 @@ function migrateLegacyPresetAutoSupport(
         return { ...normalized, autoSupport: fallbackSettings.autoSupport };
     }
     return normalized;
+}
+
+/**
+ * The `section.key` paths a preset *states* itself, rather than inheriting from
+ * the code defaults. A shipped preset writes its own density (detail 16, anchor
+ * 5) and inherits the rest, so a stated value is a design decision: the
+ * default-migration table must not move it, even when it happens to equal an old
+ * default. Everything else in the preset came from the defaults and follows them.
+ */
+function designedKeysOf(presetSettings: SupportSettings): Set<string> {
+    const defaults = createDefaultSettings();
+    const keys = new Set<string>();
+
+    for (const key of Object.keys(presetSettings.autoSupport) as Array<keyof AutoSupportSettings>) {
+        if (presetSettings.autoSupport[key] !== defaults.autoSupport[key]) keys.add(`autoSupport.${key}`);
+    }
+    for (const key of Object.keys(presetSettings.autoBracing) as Array<keyof AutoBracingSettings>) {
+        if (presetSettings.autoBracing[key] !== defaults.autoBracing[key]) keys.add(`autoBracing.${key}`);
+    }
+    return keys;
 }
 
 const DETAIL_PRESET: SupportPreset = {
@@ -284,6 +312,10 @@ function loadPresetsFromStorage(): PresetCollection {
         const stored = localStorage.getItem(PRESET_STORAGE_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
+            // A preset's `settings` is a whole block, so its values pin defaults the
+            // same way the live block's do. This blob carries its own batch: a
+            // preset saved since the last migration keeps whatever it holds.
+            const writtenAtVersion = readWrittenDefaultsVersion(parsed);
 
             // Merge stored presets into defaults (preserves new structure if code updates)
             // But allows stored names/settings to win.
@@ -300,9 +332,13 @@ function loadPresetsFromStorage(): PresetCollection {
                         pinnedSlot: parsedPreset.pinnedSlot === undefined
                             ? fallbackPreset.pinnedSlot
                             : parsedPreset.pinnedSlot,
-                        settings: migrateLegacyPresetAutoSupport(
-                            parsedPreset.settings,
-                            fallbackPreset.settings,
+                        settings: applySupportDefaultMigrations(
+                            migrateLegacyPresetAutoSupport(
+                                parsedPreset.settings,
+                                fallbackPreset.settings,
+                            ),
+                            writtenAtVersion,
+                            { skip: designedKeysOf(fallbackPreset.settings) },
                         ),
                         updatedAt: parsedPreset.updatedAt,
                     };
@@ -323,6 +359,10 @@ function loadPresetsFromStorage(): PresetCollection {
                         icon: parsedPreset.icon || '👤',
                         isBuiltIn: false,
                         pinnedSlot: parsedPreset.pinnedSlot ?? undefined,
+                        // A user's own preset is their artifact: its block is what
+                        // they made, not a copy of a shipped default, so the
+                        // default-migration table does not touch it. Only the
+                        // factory presets above follow the code.
                         settings: normalizePresetSettings(
                             parsedPreset.settings,
                             createDefaultSettings(),
@@ -400,7 +440,12 @@ function loadPresetsFromStorage(): PresetCollection {
 function savePresetsToStorage() {
     if (typeof window === 'undefined') return;
     try {
-        localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets));
+        localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify({
+            ...presets,
+            // The batch this blob was written at: the same wire field the settings
+            // blob carries, read back by `readWrittenDefaultsVersion` on load.
+            [SUPPORT_DEFAULTS_VERSION_KEY]: CURRENT_SUPPORT_DEFAULTS_VERSION,
+        }));
         if (presets.activePresetId) {
             localStorage.setItem(ACTIVE_PRESET_STORAGE_KEY, presets.activePresetId);
         } else {

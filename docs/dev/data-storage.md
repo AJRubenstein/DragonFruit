@@ -22,6 +22,13 @@ This page is the developer-facing source of truth for client-side persistence us
 | `support-settings`            | localStorage | Core support-generation settings (tip/shaft/root/grid/auto-bracing/etc.) |
 | `support-presets-v1`          | localStorage | Preset definitions + active preset metadata                              |
 | `support-active-preset-id-v1` | localStorage | Legacy active preset key (redundant with `support-presets-v1`)           |
+| `auto-support-presets-v1`     | localStorage | Auto-support policy presets (the `light`/`medium`/`heavy` built-ins and the user's own) |
+| `auto-support-active-preset-id-v1` | localStorage | Active auto-support preset id; selecting one writes the block into `support-settings` |
+
+Both `support-settings` and `support-presets-v1` carry a `supportDefaultsVersion`
+field beside their payload: the batch of code defaults the blob was written at.
+It is a wire field, not a setting — it is stripped on load and must never be
+spread into the live block. See [Code defaults that move](#code-defaults-that-move).
 
 ### Support presets (`support-presets-v1`)
 
@@ -160,6 +167,50 @@ Autosave timing is stored in milliseconds: `debounceMs` defaults to `45_000` (45
 - `dragonfruit-profiles` is deprecated; `dragonfruit-profiles-v1` is canonical.
 - `support-active-preset-id-v1` is legacy/redundant; active preset is also tracked in `support-presets-v1`.
 - `lumenslicer:*` keys remain for compatibility and should not be removed without explicit migration handling.
+
+### Code defaults that move
+
+`support-settings` and the `settings` block inside every preset are persisted whole,
+so every key an install ever wrote carries a value, and loading is
+`{ ...codeDefaults, ...stored }`. A stored value therefore wins forever: change a
+default in code and an install that has ever saved keeps the old one. Two installs
+then disagree about a "default" while both are doing what the code told them to,
+which is indistinguishable from a stale profile.
+
+The fix is `src/supports/Settings/defaultMigrations.ts`: one entry per shipped
+default change, applied on load against the batch the blob was written at.
+
+- **The rule.** A stored key equal to `from` is a value this app shipped, so it
+  moves to `to`. Any other value is the user's (or a preset's) and is left alone.
+  That is the same rule the preset loader applies by hand for a whole block
+  (`migrateLegacyPresetAutoSupport` in `src/supports/Settings/presets.ts`),
+  generalized to single keys so the next default change needs no new one-off. It
+  covers the live block and the **factory** presets; a preset the user made is
+  their artifact and is left exactly as they wrote it. Inside a factory preset, a
+  key the preset **states itself** (its own density: detail 16, anchor 5) is a
+  design decision and is never moved, even when its value happens to equal an old
+  default; the keys it inherits follow the table. `designedKeysOf` in
+  `src/supports/Settings/presets.ts` derives that split by comparing each preset's
+  definition against the code defaults, so it stays true when a preset changes.
+- **The one assumption.** Deliberately setting a key back to the old default is
+  indistinguishable from never having touched it, and reads as untouched. That is
+  the price of a whole-block format; if it ever matters for a key, that key needs
+  its own record rather than a `from`/`to` entry.
+- **Adding an entry.** Bump the batch (`version`), add
+  `{ section, key, from, to }`, and list every older default the key may hold: an
+  install can be pinned at any of them, so a key that moved twice needs an entry
+  per step. `section`/`key` are checked against the settings types, so a renamed
+  key fails the build instead of silently migrating nothing.
+- **What keeps the table honest.**
+  `src/supports/__tests__/supportDefaultsMigration.test.ts` fails when an entry's
+  `to` no longer equals the value the code ships, when `from` and `to` are equal,
+  or when a batch is out of range. The load paths themselves are covered there
+  too: a stored block migrates, a chosen value does not, and a blob already at the
+  current batch is returned untouched.
+- **Not a migration.** Removing a key needs none: `normalize*Settings` drops
+  unknown keys, and their values are gone either way. Renaming a key is a
+  migration in the key's own shape, not a default move: `sizingPreset` went from a
+  numeric tier to a preset id and is handled by `migrateLegacySizingPreset`.
 
 ## Engineering expectations
 
