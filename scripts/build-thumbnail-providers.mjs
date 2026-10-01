@@ -194,10 +194,10 @@ if (isUniversal) {
 // ---------------------------------------------------------------------------
 if (platform === 'windows') {
       if (triple !== 'x86_64-pc-windows-msvc') {
-            throw new Error(`The bundled Windows CRT is x64-only; unsupported target: ${triple}`);
+            throw new Error(`The Windows runtime prerequisite is x64-only; unsupported target: ${triple}`);
       }
-      // tauri-build resolves bundle resources during compilation, before the
-      // beforeBundleCommand hook. Prepare the CRT for dev/build as well.
+      // Prepare prerequisite metadata and the download-plugin notice before
+      // tauri-build resolves resources; no Microsoft runtime is bundled.
       run('powershell', [
             '-NoProfile', '-ExecutionPolicy', 'Bypass',
             '-File', 'scripts/prepare-windows-runtime.ps1',

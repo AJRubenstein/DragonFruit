@@ -15,11 +15,19 @@ on:
       - .github/workflows/validate-windows-runtime.yml
       - scripts/prepare-windows-runtime.ps1
       - scripts/verify-windows-runtime.ps1
+      - scripts/update-windows-runtime.ps1
+      - scripts/windows-runtime-common.ps1
+      - scripts/test-windows-runtime-policy.ps1
+      - scripts/windows-runtime-download-plugin.json
+      - scripts/inetc-license.txt
       - scripts/verify-windows-bundles.ps1
       - scripts/build-thumbnail-providers.mjs
       - scripts/windows-runtime.json
       - scripts/*tauri*.mjs
       - src-tauri/tauri*.conf.json
+      - src-tauri/nsis/runtime-prerequisite.nsh
+      - src-tauri/nsis/thumbnail-hooks.nsh
+      - src-tauri/wix/runtime-prerequisite.wxs
       - package.json
   # Maintainers can select the bot branch for independent validation without
   # a PAT. This does not cause other PR checks to run or grant write access.
@@ -54,12 +62,14 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: powershell
         run: |
+          ./scripts/test-windows-runtime-policy.ps1
           ./scripts/prepare-windows-runtime.ps1
-          ./scripts/verify-windows-runtime.ps1
+          ./scripts/update-windows-runtime.ps1 -Check
 
       - name: Prepare and verify with PowerShell 7
         if: matrix.shell == 'pwsh'
         shell: pwsh
         run: |
+          ./scripts/test-windows-runtime-policy.ps1
           ./scripts/prepare-windows-runtime.ps1
-          ./scripts/verify-windows-runtime.ps1
+          ./scripts/update-windows-runtime.ps1 -Check

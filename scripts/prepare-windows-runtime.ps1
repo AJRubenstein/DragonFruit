@@ -1,249 +1,133 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Stages the pinned Microsoft x64 CRT for app-local deployment, without installing it.
+Generates NSIS and WiX prerequisite metadata from the pinned Microsoft x64 runtime.
 .DESCRIPTION
-Normal builds only use windows-runtime.json. -CheckForUpdate validates a candidate
-from Microsoft's stable URL, then atomically updates only the pin if it is newer.
-WiX dark extracts both the Burn bundle and MSI cabinets; no installer is executed.
+No Microsoft download, installer execution, or CRT staging occurs during
+preparation. Both include files use the same validated pin. The free InetC NSIS
+HTTPS plugin is checksum-pinned separately and cached with its license notice.
 #>
 [CmdletBinding()]
 param(
     [string]$ManifestPath = (Join-Path $PSScriptRoot 'windows-runtime.json'),
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot '../src-tauri/windows-resources/vc-runtime'),
-    [switch]$CheckForUpdate
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot '../src-tauri/windows-resources')
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows-runtime-common.ps1')
 
-function Remove-TemporaryPath([string]$Path) {
-    if (Test-Path -LiteralPath $Path) {
-        try { Remove-Item -LiteralPath $Path -Recurse -Force }
-        catch { Write-Warning "Could not remove temporary path ${Path}: $_" }
-    }
-}
-
-function Assert-MicrosoftUrl([uri]$Uri) {
-    if ($Uri.Scheme -ne 'https' -or $Uri.Host -ne 'download.visualstudio.microsoft.com' -or
-        -not $Uri.IsDefaultPort -or $Uri.UserInfo -or $Uri.Query -or $Uri.Fragment -or
-        $Uri.AbsolutePath -notmatch '^/download/pr/[0-9a-f-]+/[0-9a-f]+/VC_redist\.x64\.exe$') {
-        throw "Expected an immutable Microsoft x64 redistributable URL, got: $Uri"
-    }
-}
-
-function Receive-Download([uri]$Uri, [string]$Destination) {
-    $client = [System.Net.Http.HttpClient]::new()
-    $response = $null
-    $stream = $null
-    $file = $null
-    try {
-        $response = $client.GetAsync($Uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
-        [void]$response.EnsureSuccessStatusCode()
-        $finalUri = $response.RequestMessage.RequestUri
-        if ($finalUri.Scheme -ne 'https') {
-            throw "Download redirected away from HTTPS: $finalUri"
-        }
-        $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
-        $file = [System.IO.File]::Create($Destination)
-        $stream.CopyTo($file)
-        return $finalUri
-    } finally {
-        if ($null -ne $file) { $file.Dispose() }
-        if ($null -ne $stream) { $stream.Dispose() }
-        if ($null -ne $response) { $response.Dispose() }
-        $client.Dispose()
-    }
-}
-
-function Assert-Sha256([string]$Path, [string]$Expected) {
-    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
-    if ($actual -ne $Expected) {
-        throw "SHA-256 mismatch for ${Path}: expected $Expected, got $actual"
-    }
-}
-
-function Assert-MicrosoftSignature([string]$Path) {
-    $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    $signer = if ($null -ne $signature.SignerCertificate) {
-        $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
-    } else { '<none>' }
-    # The installer uses the corporate signer. Windows can select the primary
-    # compatibility-publisher signature on dual-signed CRT DLLs instead.
-    $microsoftSigners = @('Microsoft Corporation', 'Microsoft Windows Software Compatibility Publisher')
-    if ($signature.Status -ne 'Valid' -or $signer -cnotin $microsoftSigners) {
-        throw "Expected a valid Microsoft Authenticode signature: $Path (status=$($signature.Status), signer=$signer)"
-    }
-}
-
-function Get-BinaryVersion([string]$Path) {
-    $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
-    return [version]('{0}.{1}.{2}.{3}' -f $info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart)
-}
-
-function Assert-X64Dll([string]$Path) {
-    $reader = [System.IO.BinaryReader]::new([System.IO.File]::OpenRead($Path))
-    try {
-        if ($reader.BaseStream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) {
-            throw "Not a PE binary: $Path"
-        }
-        $reader.BaseStream.Position = 0x3C
-        $peOffset = $reader.ReadInt32()
-        if ($peOffset -lt 64 -or $peOffset -gt ($reader.BaseStream.Length - 24)) {
-            throw "Invalid PE header: $Path"
-        }
-        $reader.BaseStream.Position = $peOffset
-        if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne 0x8664) {
-            throw "Expected an x64 (AMD64) PE binary, not x86 or ARM64: $Path"
-        }
-        $reader.BaseStream.Position = $peOffset + 22
-        if (($reader.ReadUInt16() -band 0x2000) -eq 0) {
-            throw "Expected a DLL: $Path"
-        }
-    } finally {
-        $reader.Dispose()
-    }
-}
-
-if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
-    throw 'Windows runtime preparation requires Windows (PowerShell 5.1 or 7).'
-}
 if ($env:TAURI_ENV_ARCH -and $env:TAURI_ENV_ARCH -notin @('x86_64', 'x64')) {
-    throw "App-local CRT bundling supports x64 only, not TAURI_ENV_ARCH=$env:TAURI_ENV_ARCH"
+    throw "The Windows runtime prerequisite supports x64 only, not TAURI_ENV_ARCH=$env:TAURI_ENV_ARCH"
 }
 foreach ($variable in @('CARGO_BUILD_TARGET', 'DF_BUILD_TARGET_TRIPLE')) {
     $target = [Environment]::GetEnvironmentVariable($variable)
     if ($target -and $target -ne 'x86_64-pc-windows-msvc') {
-        throw "App-local CRT bundling requires x86_64-pc-windows-msvc, not ${variable}=$target"
+        throw "The Windows runtime prerequisite requires x86_64-pc-windows-msvc, not ${variable}=$target"
     }
 }
-Add-Type -AssemblyName System.Net.Http
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-$ManifestPath = [System.IO.Path]::GetFullPath($ManifestPath)
+
+$pin = Read-DfVcManifest $ManifestPath
+$version = ConvertTo-DfVcVersion $pin.version
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    # MSVC's newer headers can require a newer runtime even when DLL names match.
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+        throw 'vswhere.exe is missing; install the Visual Studio C++ x64 build tools.'
+    }
+    $vcvars = @(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat')
+    if ($LASTEXITCODE -ne 0 -or $vcvars.Count -ne 1) {
+        throw 'Could not locate exactly one vcvars64.bat for the latest installed C++ toolset.'
+    }
+    $command = '""{0}" >nul && set VCToolsRedistDir"' -f $vcvars[0]
+    $environment = @(& $env:ComSpec /d /s /c $command)
+    if ($LASTEXITCODE -ne 0) { throw "Could not read the selected MSVC environment (exit $LASTEXITCODE)." }
+    $redistLine = @($environment | Where-Object { $_.StartsWith('VCToolsRedistDir=', [StringComparison]::OrdinalIgnoreCase) })
+    if ($redistLine.Count -ne 1) { throw 'The selected MSVC toolset did not report VCToolsRedistDir.' }
+    $redistRoot = $redistLine[0].Substring('VCToolsRedistDir='.Length)
+    $toolsetRuntime = @(Get-ChildItem -Path (Join-Path $redistRoot 'x64/Microsoft.VC*.CRT/msvcp140.dll') -File)
+    if ($toolsetRuntime.Count -ne 1) { throw 'Could not identify the selected toolset x64 redistributable.' }
+    $requiredVersion = Get-DfVcBinaryVersion $toolsetRuntime[0].FullName
+    if ($version -lt $requiredVersion) {
+        throw "Pinned runtime $version is older than the selected MSVC redistributable $requiredVersion. Update the pin before bundling."
+    }
+    Write-Host "[windows-runtime] Selected toolset CRT $requiredVersion; required system runtime $version."
+}
+$constants = [ordered]@{
+    DF_VC_VERSION = $version.ToString()
+    DF_VC_MAJOR = $version.Major
+    DF_VC_MINOR = $version.Minor
+    DF_VC_BUILD = $version.Build
+    DF_VC_REVISION = $version.Revision
+    DF_VC_URL = ([uri]$pin.url).AbsoluteUri
+    DF_VC_SHA256 = $pin.sha256.ToUpperInvariant()
+}
+$nsis = @('; Generated by scripts/prepare-windows-runtime.ps1; do not edit.')
+$wix = @('<?xml version="1.0" encoding="utf-8"?>', '<Include xmlns="http://schemas.microsoft.com/wix/2006/wi">')
+foreach ($entry in $constants.GetEnumerator()) {
+    # Validation restricts all values to safe version, hash, and immutable URL text.
+    $nsis += '!define {0} "{1}"' -f $entry.Key, $entry.Value
+    $wix += '  <?define {0}="{1}" ?>' -f $entry.Key, $entry.Value
+}
+$wix += '</Include>'
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
-$pin = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-if ($pin.version -notmatch '^14\.\d+\.\d+\.\d+$' -or $pin.sha256 -notmatch '^[0-9a-fA-F]{64}$') {
-    throw 'The runtime manifest must contain a four-part VC14 version and a SHA-256 hash.'
-}
-$pinnedVersion = [version]$pin.version
-Assert-MicrosoftUrl ([uri]$pin.url)
+[void](New-Item -ItemType Directory -Path $OutputDirectory -Force)
+$encoding = [System.Text.UTF8Encoding]::new($false)
 
-$wixUrl = 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip'
-$wixSha256 = '6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31'
-# The complete VC14 CRT family, not MFC, UCRT, or the ARM64 payload also in the bundle.
-$requiredDlls = @(
-    'concrt140.dll',
-    'msvcp140.dll',
-    'msvcp140_1.dll',
-    'msvcp140_2.dll',
-    'msvcp140_atomic_wait.dll',
-    'msvcp140_codecvt_ids.dll',
-    'vcamp140.dll',
-    'vccorlib140.dll',
-    'vcomp140.dll',
-    'vcruntime140.dll',
-    'vcruntime140_1.dll',
-    'vcruntime140_threads.dll'
-)
-$work = Join-Path ([System.IO.Path]::GetTempPath()) ('dragonfruit-vc-runtime-' + [guid]::NewGuid().ToString('N'))
-[void](New-Item -ItemType Directory -Path $work)
+$pluginPin = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'windows-runtime-download-plugin.json') -Raw | ConvertFrom-Json
+if ($pluginPin.version -notmatch '^\d+\.\d+\.\d+\.\d+\z' -or
+    $pluginPin.url -cne "https://github.com/DigitalMediaServer/NSIS-INetC-plugin/releases/download/v$($pluginPin.version)/InetC.zip" -or
+    $pluginPin.licenseUrl -cne "https://raw.githubusercontent.com/DigitalMediaServer/NSIS-INetC-plugin/v$($pluginPin.version)/LICENSE.md") {
+    throw 'The InetC plugin pin must identify an official tagged release and its license.'
+}
+foreach ($hash in @($pluginPin.sha256, $pluginPin.pluginSha256, $pluginPin.licenseSha256)) {
+    if ($hash -notmatch '^[0-9a-fA-F]{64}\z') { throw 'The InetC plugin pin contains an invalid SHA-256 hash.' }
+}
+# Normalize checkout line endings to reproduce the exact tagged upstream notice.
+$license = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'inetc-license.txt')).Replace("`r`n", "`n")
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
 try {
-    $installer = Join-Path $work 'VC_redist.x64.exe'
-    $downloadUrl = if ($CheckForUpdate) { 'https://aka.ms/vc14/vc_redist.x64.exe' } else { $pin.url }
-    $finalUrl = Receive-Download ([uri]$downloadUrl) $installer
-    Assert-MicrosoftUrl $finalUrl
-    $sha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
-    if (-not $CheckForUpdate) { Assert-Sha256 $installer $pin.sha256 }
-    Assert-MicrosoftSignature $installer
-    $version = Get-BinaryVersion $installer
-    if ($version.Major -ne 14) { throw "Expected a VC14 runtime, got $version" }
-    if ($CheckForUpdate) {
-        if ($version -le $pinnedVersion) {
-            Write-Host "Microsoft runtime $version is not newer than pin $pinnedVersion; leaving pin and output unchanged."
-            return
-        }
-    } elseif ($version -ne $pinnedVersion) {
-        throw "Redistributable version $version does not match pin $pinnedVersion"
-    }
-
-    $wixArchive = Join-Path $work 'wix.zip'
-    [void](Receive-Download ([uri]$wixUrl) $wixArchive)
-    Assert-Sha256 $wixArchive $wixSha256
-    $wixDirectory = Join-Path $work 'wix'
-    Expand-Archive -LiteralPath $wixArchive -DestinationPath $wixDirectory
-    $dark = Join-Path $wixDirectory 'dark.exe'
-    $bundleDirectory = Join-Path $work 'bundle'
-    & $dark -nologo $installer -x $bundleDirectory -o (Join-Path $work 'bundle.wxs')
-    if ($LASTEXITCODE -ne 0) { throw "WiX bundle extraction failed with exit code $LASTEXITCODE" }
-
-    $candidate = Join-Path $work 'candidate'
-    [void](New-Item -ItemType Directory -Path $candidate)
-    $copied = @{}
-    # The minimum x64 MSI holds the entire CRT; the additional MSI contains MFC.
-    $packageName = 'vc_runtimeMinimum_x64.msi'
-    $packages = @(Get-ChildItem -LiteralPath $bundleDirectory -Recurse -File -Filter $packageName)
-    if ($packages.Count -ne 1) { throw "Expected exactly one $packageName in the redistributable" }
-    $packageDirectory = Join-Path $work 'minimum-x64'
-    $wxsPath = "$packageDirectory.wxs"
-    # dark reads the MSI cabinets directly: no /layout, /a, elevation, or machine installation.
-    & $dark -nologo $packages[0].FullName $wxsPath -x $packageDirectory
-    if ($LASTEXITCODE -ne 0) { throw "WiX extraction of $packageName failed with exit code $LASTEXITCODE" }
-    $document = [System.Xml.XmlDocument]::new()
-    $document.XmlResolver = $null
-    $document.Load($wxsPath)
-    $namespaces = [System.Xml.XmlNamespaceManager]::new($document.NameTable)
-    $namespaces.AddNamespace('w', 'http://schemas.microsoft.com/wix/2006/wi')
-    foreach ($entry in $document.SelectNodes('//w:File', $namespaces)) {
-        $name = $entry.GetAttribute('Name')
-        if ($name -notmatch '^(concrt140|msvcp140(?:_[a-z0-9_]+)?|vcamp140|vccorlib140|vcomp140|vcruntime140(?:_[a-z0-9_]+)?)\.dll$') { continue }
-        if ($copied.ContainsKey($name)) { throw "Duplicate CRT payload: $name" }
-        $source = [System.IO.Path]::GetFullPath($entry.GetAttribute('Source'))
-        if (-not $source.StartsWith($packageDirectory + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "CRT source escaped its extraction directory: $source"
-        }
-        $destination = Join-Path $candidate $name
-        Copy-Item -LiteralPath $source -Destination $destination
-        Assert-X64Dll $destination
-        Assert-MicrosoftSignature $destination
-        $copied[$name] = $true
-    }
-    foreach ($name in $requiredDlls) {
-        if (-not $copied.ContainsKey($name)) { throw "Required x64 CRT payload is missing: $name" }
-    }
-    $crtVersion = Get-BinaryVersion (Join-Path $candidate 'msvcp140.dll')
-    if ($crtVersion -ne $version) { throw "MSVCP140 version $crtVersion does not match redistributable $version" }
-
-    if ($CheckForUpdate) {
-        $newPin = [ordered]@{ version = $version.ToString(); url = $finalUrl.AbsoluteUri; sha256 = $sha256 }
-        $temporaryManifest = "$ManifestPath.$([guid]::NewGuid().ToString('N')).tmp"
-        try {
-            [System.IO.File]::WriteAllText($temporaryManifest, (($newPin | ConvertTo-Json) + "`n"), [System.Text.UTF8Encoding]::new($false))
-            [System.IO.File]::Replace($temporaryManifest, $ManifestPath, $null)
-        } finally {
-            Remove-TemporaryPath $temporaryManifest
-        }
-        Write-Host "Updated runtime pin from $pinnedVersion to verified $version ($sha256). Output directory is unchanged."
-    } else {
-        # Prepare a sibling first, then replace the old stage with rollback on a failed rename.
-        $parent = Split-Path -Parent $OutputDirectory
-        [void](New-Item -ItemType Directory -Path $parent -Force)
-        $next = "$OutputDirectory.$([guid]::NewGuid().ToString('N')).new"
-        $backup = "$OutputDirectory.$([guid]::NewGuid().ToString('N')).old"
-        try {
-            Copy-Item -LiteralPath $candidate -Destination $next -Recurse
-            if (Test-Path -LiteralPath $OutputDirectory) { [System.IO.Directory]::Move($OutputDirectory, $backup) }
-            try {
-                [System.IO.Directory]::Move($next, $OutputDirectory)
-            } catch {
-                if (Test-Path -LiteralPath $backup) { [System.IO.Directory]::Move($backup, $OutputDirectory) }
-                throw
-            }
-        } finally {
-            Remove-TemporaryPath $next
-        }
-        Remove-TemporaryPath $backup
-        Write-Host "Staged $($copied.Count) verified x64 CRT DLLs ($version) in $OutputDirectory"
-    }
+    $licenseHash = [BitConverter]::ToString($sha256.ComputeHash($encoding.GetBytes($license))).Replace('-', '')
 } finally {
-    Remove-TemporaryPath $work
+    $sha256.Dispose()
 }
+if ($licenseHash -ne $pluginPin.licenseSha256) { throw 'The InetC license notice differs from the pinned upstream notice.' }
+$pluginDirectory = Join-Path $OutputDirectory 'nsis-plugins'
+$pluginPath = Join-Path $pluginDirectory 'x86-unicode/INetC.dll'
+$pluginValid = (Test-Path -LiteralPath $pluginPath -PathType Leaf) -and
+    ((Get-FileHash -LiteralPath $pluginPath -Algorithm SHA256).Hash -eq $pluginPin.pluginSha256)
+if (-not $pluginValid) {
+    $work = Join-Path ([System.IO.Path]::GetTempPath()) ('dragonfruit-inetc-' + [guid]::NewGuid().ToString('N'))
+    [void](New-Item -ItemType Directory -Path $work)
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $archivePath = Join-Path $work 'InetC.zip'
+        Invoke-WebRequest -UseBasicParsing -Uri $pluginPin.url -OutFile $archivePath
+        if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash -ne $pluginPin.sha256) {
+            throw 'The downloaded InetC archive does not match its pinned SHA-256.'
+        }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+        $candidatePath = Join-Path $work 'INetC.dll'
+        try {
+            $entry = $archive.GetEntry('x86-unicode/INetC.dll')
+            if ($null -eq $entry) { throw 'The pinned InetC archive has no x86-Unicode plugin.' }
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $candidatePath)
+        } finally {
+            $archive.Dispose()
+        }
+        if ((Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256).Hash -ne $pluginPin.pluginSha256) {
+            throw 'The extracted InetC plugin does not match its pinned SHA-256.'
+        }
+        [void](New-Item -ItemType Directory -Path (Split-Path -Parent $pluginPath) -Force)
+        Copy-Item -LiteralPath $candidatePath -Destination $pluginPath -Force
+    } finally {
+        Remove-Item -LiteralPath $work -Recurse -Force
+    }
+}
+[System.IO.File]::WriteAllText((Join-Path $pluginDirectory 'LICENSE.txt'), $license, $encoding)
+Write-Host "Prepared checksum-pinned InetC $($pluginPin.version) HTTPS plugin and license notice."
+
+[System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'runtime-version.nsh'), (($nsis -join "`n") + "`n"), $encoding)
+[System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'runtime-version.wxi'), (($wix -join "`n") + "`n"), $encoding)
+Write-Host "Generated x64 runtime prerequisite metadata for $version in $OutputDirectory (no Microsoft payload downloaded)."
