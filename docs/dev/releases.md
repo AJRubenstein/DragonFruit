@@ -246,119 +246,46 @@ preview is activated.
 
 ## Windows Microsoft C++ prerequisite
 
-DragonFruit's Windows installers do **not** contain Microsoft CRT DLLs or a
-Microsoft redistributable executable. #683 reproduced an import-time access
-violation with an older system runtime, so installation requires a sufficiently
-recent registered x64 runtime and native `System32/msvcp140.dll` file version.
+Windows installers contain neither Microsoft CRT DLLs nor its redistributable.
+NSIS obtains the runtime directly from [Microsoft's latest-x64 endpoint](https://aka.ms/vc14/vc_redist.x64.exe)
+under Microsoft's terms. DragonFruit's AGPL license is unchanged; see the
+[FSF runtime guidance](https://www.gnu.org/licenses/gpl-faq.html#WindowsRuntimeAndGPL)
+and [Microsoft redistribution rules](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files).
+Build-tool licensing remains the release owner's responsibility.
 
-### Licensing boundary
+`scripts/prepare-windows-runtime.ps1` derives the minimum version from the selected
+MSVC toolset and generates the NSIS/WiX includes. It downloads only checksum-pinned
+InetC, the free HTTPS plugin described in `scripts/windows-runtime-download-plugin.json`.
+Its zlib notice, `scripts/inetc-license.txt`, ships as `licenses/InetC.txt`.
+The native-resource build step and Windows pre-bundle hook run preparation.
 
-The runtime is obtained directly from Microsoft on the user's machine, under
-Microsoft's own terms, rather than redistributed or relicensed as part of
-DragonFruit. This replaces the app-local bundling design. The
-[FSF's Windows-runtime guidance](https://www.gnu.org/licenses/gpl-faq.html#WindowsRuntimeAndGPL)
-permits linking but warns against shipping the proprietary DLLs with a GPL
-program. Microsoft's [redistribution rules](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files)
-also make redistribution conditional on the applicable Visual Studio license.
-Adding a notice alone would not establish those rights.
+`src-tauri/nsis/runtime-prerequisite.nsh` checks the registered native x64 runtime
+and numeric system DLL version. If inadequate, an early consent page precedes
+any reinstall/uninstall pages. InetC downloads the latest official installer;
+`scripts/verify-windows-runtime.ps1` requires a valid Microsoft corporate signature
+and a VC14 version at least as new as the build requires, then setup runs
+**`/q /norestart`** and rechecks the runtime. Failure or cancellation stops setup;
+exit `3010` requests a manual restart and rerun, never an automatic reboot/launch.
+Silent `/S` and passive `/P` installations must have the prerequisite provisioned
+first. `src-tauri/wix/runtime-prerequisite.wxs` blocks an inadequate runtime with
+a Microsoft download link; it never nests an installer and allows uninstall.
 
-This deployment boundary does not change DragonFruit's AGPL license or assert
-that Microsoft's binaries are AGPL-covered. Build-tool use still remains subject
-to the applicable Microsoft terms; a hosted runner's presence is not proof of a
-release owner's licensing entitlement. Any future plan to redistribute the CRT
-needs a separate qualified licensing review.
-
-### Installation behavior
-
-- **NSIS:** `src-tauri/nsis/runtime-prerequisite.nsh`, included by the existing
-  thumbnail hooks, checks the registered native x64 runtime and compares all four
-  numeric DLL-version components. An adequate installation is left alone.
-- If missing or too old, an early custom page links Microsoft's terms and asks
-  for explicit consent before Tauri's reinstall/uninstall pages. The separately
-  pinned **InetC** plugin downloads the official installer over HTTPS. Builtin
-  NSISdl is not used because it does not support HTTPS.
-- Our embedded PowerShell verifier checks the pinned SHA-256, trusted Microsoft
-  Authenticode signer, and exact file version before anything downloaded runs.
-  The official Microsoft installer runs with **`/q /norestart`**; its bootstrapper
-  handles elevation. DragonFruit setup rechecks the installed runtime afterward.
-- Cancellation, download/verification/UAC failure, or an inadequate result stops
-  installation. Exit `3010` requires a user-initiated restart and rerunning setup;
-  it does not automatically reboot or launch DragonFruit. Fully silent `/S` and
-  passive `/P` runs fail with instructions if a prerequisite installation would
-  require consent. Administrators must provision it first for unattended installs.
-- **Standalone MSI:** `src-tauri/wix/runtime-prerequisite.wxs` uses the native
-  registered-install flag and MSI's numeric file-version search. A Type 19 error
-  after MSI property searches blocks both interactive and silent installation with a
-  Microsoft download link. It never starts a nested installer. Uninstall is exempt.
-
-The updater uses these same installers. A machine with an inadequate runtime
-must satisfy the prerequisite before a passive update can finish. Do not assume
-the runtime can be installed offline or without administrator approval. Microsoft
-services the centrally installed runtime; our minimum-version pin is not a second
-runtime updater running inside the application.
-
-### Pin, tooling, and plugin notice
-
-`scripts/windows-runtime.json` contains the required runtime version, immutable
-Microsoft x64 installer URL, and SHA-256. Ordinary builds never resolve a floating
-Microsoft URL. `scripts/prepare-windows-runtime.ps1` writes generated
-`runtime-version.nsh` and `runtime-version.wxi` under `src-tauri/windows-resources/`.
-It does not download or extract Microsoft's software. On Windows it also rejects
-a pin older than the selected MSVC toolset's redistributable version.
-
-Preparation downloads only the free HTTPS plugin when its exact cached binary is
-unavailable. `scripts/windows-runtime-download-plugin.json` pins its release,
-archive, binary, and zlib license hashes. `scripts/inetc-license.txt` preserves the
-upstream notice; it is shipped as `licenses/InetC.txt` and inside the NSIS helper
-payload. Other platforms do not package the plugin or run prerequisite setup.
-
-The scripts support Windows PowerShell 5.1 and PowerShell 7:
+There is no Microsoft installer checksum pin or update bot: Microsoft may update
+its signed download independently. The shipped InetC plugin remains pinned.
+On Windows PowerShell 5.1 or 7:
 
 ```powershell
-# Generate installer metadata and stage the open-source download plugin.
-./scripts/prepare-windows-runtime.ps1
-# Download and verify the exact Microsoft pin; do not install it or change the pin.
-./scripts/update-windows-runtime.ps1 -Check
-# Same verifier embedded in NSIS, for an already downloaded installer.
-./scripts/verify-windows-runtime.ps1 -InstallerPath C:\Temp\VC_redist.x64.exe -ManifestPath scripts/windows-runtime.json
+$minimum = ./scripts/prepare-windows-runtime.ps1
+./scripts/verify-windows-runtime.ps1 -InstallerPath C:\Temp\VC_redist.x64.exe -MinimumVersion $minimum
 ```
 
-Preparation accepts `-ManifestPath` and `-OutputDirectory` for isolated checks.
-`scripts/windows-runtime-common.ps1` contains the shared metadata and installer
-validation used by both build tooling and the embedded verifier. Generated files
-are ignored by git. The existing native-resource build step prepares them before
-Tauri resource resolution, and the Windows pre-bundle hook handles standalone
-bundling. The upstream profile and target-architecture cache inputs are unchanged;
-updating installer prerequisite metadata does not invalidate compiled Rust dependencies.
-
-### Verification and update proposals
-
-Release jobs use `scripts/verify-windows-bundles.ps1` to inspect the actual NSIS
-and MSI payloads before upload; preview jobs use `-Formats nsis`. Verification
-rejects bundled Microsoft CRT/redistributable payloads, requires the unmodified
-InetC notice, checks NSIS's embedded verifier and pin, and checks MSI's numeric
-minimum-version and blocking-action tables. This is extraction, not installation.
-
-Before release, exercise missing/old/current runtimes on Windows, including
-declined consent, failed download or validation, declined UAC, and reboot-required
-results. Test fresh installation and update, then import `top-single.stl`.
-Metadata generation and installer compilation do not replace those checks.
-
-`.github/workflows/update-windows-runtime.yml` runs weekly or manually, checks out
-`dev`, and calls `scripts/update-windows-runtime.ps1`. It follows Microsoft's
-official latest-x64 link, validates the resulting immutable URL, signature, hash,
-and version, then proposes only a newer pin from `automation/windows-vc-runtime`
-to `dev`. Pinned validation and metadata generation run before PR creation.
-Downloaded installers are temporary, never executed by this workflow, and never
-uploaded as artifacts. There is no auto-merge, version bump, or release.
-
-The workflow must reach default `main` for GitHub cron to run, and Actions must
-be permitted to create PRs. No new PAT is required. `GITHUB_TOKEN`-created PRs do
-not trigger normal PR checks: review the linked updater run and close/reopen the
-PR as a maintainer to trigger required checks. **Validate Windows runtime** can
-also be dispatched on the bot branch; it covers PowerShell 5.1 and 7 with
-read-only permissions. This dedicated validation does not replace other required
-PR checks.
+Preparation accepts `-OutputDirectory` and a higher `-MinimumVersion`; Windows
+cannot lower the toolset floor. Other platforms require an explicit minimum for
+isolated compile checks. One Windows validation job checks the current Microsoft
+download. `scripts/verify-windows-bundles.ps1` rejects bundled Microsoft runtime
+payloads and checks the NSIS helpers and plugin notice before publication.
+Windows install/upgrade smoke must still cover missing/old/current runtimes,
+consent/UAC cancellation, failed downloads/signatures, and reboot-required results.
 
 ## Updater implementation notes
 

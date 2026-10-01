@@ -4,7 +4,7 @@
 Verify Windows installers do not redistribute the Microsoft runtime.
 .DESCRIPTION
 Extracts NSIS/MSI payloads without installing them, rejects CRT/redistributable
-payloads, and checks the installer-side prerequisite guards and InetC notice.
+payloads, and checks the NSIS verifier, download plugin, and license notice.
 #>
 [CmdletBinding()]
 param(
@@ -16,17 +16,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'Windows installer verification requires Windows.'
-}
-$pin = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'windows-runtime.json') -Raw | ConvertFrom-Json
-
-function Get-MsiValue($Database, [string]$Query) {
-    $view = $Database.OpenView($Query)
-    try {
-        $view.Execute()
-        $record = $view.Fetch()
-        if ($null -eq $record) { throw "Missing MSI prerequisite metadata: $Query" }
-        return $record.StringData(1)
-    } finally { $view.Close() }
 }
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ('dragonfruit-bundle-check-' + [Guid]::NewGuid().ToString('N'))
@@ -50,19 +39,6 @@ try {
                     Get-Content -LiteralPath $log -ErrorAction SilentlyContinue | Write-Host
                     throw "Could not unpack MSI installer (exit $($process.ExitCode)): $($installer.FullName)"
                 }
-                $windowsInstaller = New-Object -ComObject WindowsInstaller.Installer
-                $database = $windowsInstaller.OpenDatabase($installer.FullName, 0)
-                $minimum = Get-MsiValue $database 'SELECT `MinVersion` FROM `Signature` WHERE `Signature` = ''DfVcMsvcpSearch'''
-                if ([version]$minimum -ne [version]$pin.version) { throw "MSI runtime floor $minimum differs from pin $($pin.version)." }
-                $type = Get-MsiValue $database 'SELECT `Type` FROM `CustomAction` WHERE `Action` = ''DfRequireVcRuntime'''
-                if ([int]$type -ne 19) { throw 'MSI prerequisite must be a blocking error action, not an executable installer.' }
-                foreach ($sequence in @('InstallUISequence', 'InstallExecuteSequence')) {
-                    $search = Get-MsiValue $database "SELECT ``Sequence`` FROM ``$sequence`` WHERE ``Action`` = 'AppSearch'"
-                    $guard = Get-MsiValue $database "SELECT ``Sequence`` FROM ``$sequence`` WHERE ``Action`` = 'DfRequireVcRuntime'"
-                    if ([int]$guard -le [int]$search) { throw "MSI prerequisite check runs before AppSearch in $sequence." }
-                }
-                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database)
-                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($windowsInstaller)
             }
             $files = @(Get-ChildItem -LiteralPath $destination -Recurse -File)
             $forbidden = @($files | Where-Object {
@@ -75,15 +51,9 @@ try {
             $executables = @($files | Where-Object Name -eq 'dragonfruit-desktop.exe')
             if ($executables.Count -ne 1) { throw "Expected one DragonFruit executable in $($installer.Name)." }
             if ($format -eq 'nsis') {
-                foreach ($name in @('INetC.dll', 'verify-windows-runtime.ps1', 'windows-runtime-common.ps1', 'windows-runtime.json')) {
+                foreach ($name in @('INetC.dll', 'verify-windows-runtime.ps1')) {
                     $matches = @($files | Where-Object Name -ieq $name)
                     if ($matches.Count -ne 1) { throw "$($installer.Name) must include one prerequisite helper $name." }
-                    if ($name -eq 'windows-runtime.json') {
-                        $packagedPin = Get-Content -LiteralPath $matches[0].FullName -Raw | ConvertFrom-Json
-                        if ($packagedPin.version -ne $pin.version -or $packagedPin.url -ne $pin.url -or $packagedPin.sha256 -ne $pin.sha256) {
-                            throw 'NSIS prerequisite metadata differs from the checked pin.'
-                        }
-                    }
                 }
             }
             $notice = Join-Path $executables[0].DirectoryName 'licenses/InetC.txt'

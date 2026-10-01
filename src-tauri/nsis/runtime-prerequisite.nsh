@@ -154,13 +154,11 @@ Function DF_EnsureVcRuntime
 
   InitPluginsDir
   File "/oname=$PLUGINSDIR\verify-windows-runtime.ps1" "${DF_VC_SCRIPTS}\verify-windows-runtime.ps1"
-  File "/oname=$PLUGINSDIR\windows-runtime-common.ps1" "${DF_VC_SCRIPTS}\windows-runtime-common.ps1"
-  File "/oname=$PLUGINSDIR\windows-runtime.json" "${DF_VC_SCRIPTS}\windows-runtime.json"
   File "/oname=$PLUGINSDIR\INetC-LICENSE.txt" "${DF_VC_PLUGIN_NOTICE}"
   Delete "$PLUGINSDIR\VC_redist.x64.exe"
-  DetailPrint "Downloading Microsoft Visual C++ x64 ${DF_VC_VERSION} directly from Microsoft..."
+  DetailPrint "Downloading the latest Microsoft Visual C++ x64 runtime (minimum ${DF_VC_VERSION})..."
   ; InetC uses WinINet TLS; NSISdl only supports HTTP. Never use /WEAKSECURITY.
-  inetc::get /POPUP "Microsoft Visual C++ prerequisite" /CONNECTTIMEOUT 30 /RECEIVETIMEOUT 60 /NOCOOKIES "${DF_VC_URL}" "$PLUGINSDIR\VC_redist.x64.exe" /END
+  inetc::get /POPUP "Microsoft Visual C++ prerequisite" /CONNECTTIMEOUT 30 /RECEIVETIMEOUT 60 /NOCOOKIES "${DF_VC_DOWNLOAD_URL}" "$PLUGINSDIR\VC_redist.x64.exe" /END
   Pop $0
   ${If} $0 != "OK"
     Delete "$PLUGINSDIR\VC_redist.x64.exe"
@@ -169,9 +167,9 @@ Function DF_EnsureVcRuntime
     Call DF_VcStop
   ${EndIf}
 
-  DetailPrint "Verifying the pinned SHA-256, Microsoft signature and installer version..."
+  DetailPrint "Verifying the Microsoft signature and minimum runtime version..."
   ClearErrors
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\verify-windows-runtime.ps1" -InstallerPath "$PLUGINSDIR\VC_redist.x64.exe" -ManifestPath "$PLUGINSDIR\windows-runtime.json"' $DF_VC_ExitCode
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\verify-windows-runtime.ps1" -InstallerPath "$PLUGINSDIR\VC_redist.x64.exe" -MinimumVersion "${DF_VC_VERSION}"' $DF_VC_ExitCode
   ${If} ${Errors}
   ${OrIf} $DF_VC_ExitCode <> 0
     Delete "$PLUGINSDIR\VC_redist.x64.exe"

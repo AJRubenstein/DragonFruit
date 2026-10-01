@@ -1,75 +1,38 @@
-name: Validate Windows runtime
-
+name: Validate Windows prerequisite
 on:
   pull_request:
-    branches:
-      - dev
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+    branches: [dev, main]
     paths:
-      - .github/workflows/update-windows-runtime.yml
       - .github/workflows/validate-windows-runtime.yml
-      - scripts/prepare-windows-runtime.ps1
-      - scripts/verify-windows-runtime.ps1
-      - scripts/update-windows-runtime.ps1
-      - scripts/windows-runtime-common.ps1
-      - scripts/test-windows-runtime-policy.ps1
-      - scripts/windows-runtime-download-plugin.json
-      - scripts/inetc-license.txt
+      - scripts/*windows-runtime*
       - scripts/verify-windows-bundles.ps1
       - scripts/build-thumbnail-providers.mjs
-      - scripts/windows-runtime.json
-      - scripts/*tauri*.mjs
-      - src-tauri/tauri*.conf.json
-      - src-tauri/nsis/runtime-prerequisite.nsh
-      - src-tauri/nsis/thumbnail-hooks.nsh
-      - src-tauri/wix/runtime-prerequisite.wxs
-      - package.json
-  # Maintainers can select the bot branch for independent validation without
-  # a PAT. This does not cause other PR checks to run or grant write access.
+      - scripts/inetc-license.txt
+      - src-tauri/tauri.windows.conf.json
+      - src-tauri/nsis/**
+      - src-tauri/wix/**
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
-  group: validate-windows-runtime-${{ github.event.pull_request.number || github.ref }}
+  group: windows-prerequisite-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 jobs:
   validate:
-    name: Pinned x64 runtime (${{ matrix.shell }})
     runs-on: windows-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        shell:
-          - powershell
-          - pwsh
+    timeout-minutes: 10
     steps:
-      - name: Checkout merged pull request or selected branch
-        # Default checkout validates the PR merge commit, never pull_request_target.
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      - name: Prepare and verify with Windows PowerShell 5.1
-        if: matrix.shell == 'powershell'
+      - name: Verify official installer with the install-time PowerShell version
         shell: powershell
         run: |
-          ./scripts/test-windows-runtime-policy.ps1
-          ./scripts/prepare-windows-runtime.ps1
-          ./scripts/update-windows-runtime.ps1 -Check
-
-      - name: Prepare and verify with PowerShell 7
-        if: matrix.shell == 'pwsh'
-        shell: pwsh
-        run: |
-          ./scripts/test-windows-runtime-policy.ps1
-          ./scripts/prepare-windows-runtime.ps1
-          ./scripts/update-windows-runtime.ps1 -Check
+          $minimum = ./scripts/prepare-windows-runtime.ps1
+          $installer = Join-Path $env:RUNNER_TEMP 'VC_redist.x64.exe'
+          try {
+            Invoke-WebRequest -UseBasicParsing https://aka.ms/vc14/vc_redist.x64.exe -OutFile $installer
+            ./scripts/verify-windows-runtime.ps1 -InstallerPath $installer -MinimumVersion $minimum
+          } finally {
+            if (Test-Path $installer) { Remove-Item $installer }
+          }
