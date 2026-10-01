@@ -283,8 +283,10 @@ $minimum = ./scripts/prepare-windows-runtime.ps1
 ```
 
 Preparation accepts `-OutputDirectory` and a higher `-MinimumVersion`; Windows
-cannot lower the toolset floor. Other platforms require an explicit minimum for
-isolated compile checks. One Windows validation job checks the current Microsoft
+cannot lower the toolset floor. Output defaults resolve relative to the script
+after parameter binding, including Windows PowerShell `-File` invocations from
+another directory. Other platforms require an explicit minimum for isolated
+compile checks. One Windows validation job checks the current Microsoft
 download. `scripts/verify-windows-bundles.ps1` rejects bundled Microsoft runtime
 payloads and checks the NSIS helpers and plugin notice before publication.
 Windows install/upgrade smoke must still cover missing/old/current runtimes,

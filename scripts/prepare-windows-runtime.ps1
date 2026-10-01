@@ -10,11 +10,14 @@ for isolated installer-compilation checks on other platforms.
 [CmdletBinding()]
 param(
     [version]$MinimumVersion,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot '../src-tauri/windows-resources')
+    [string]$OutputDirectory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $PSBoundParameters.ContainsKey('OutputDirectory')) {
+    $OutputDirectory = Join-Path $PSScriptRoot '../src-tauri/windows-resources'
+}
 
 if ($env:TAURI_ENV_ARCH -and $env:TAURI_ENV_ARCH -notin @('x86_64', 'x64')) {
     throw "The Windows runtime prerequisite supports x64 only, not TAURI_ENV_ARCH=$env:TAURI_ENV_ARCH"

@@ -8,12 +8,15 @@ payloads, and checks the NSIS verifier, download plugin, and license notice.
 #>
 [CmdletBinding()]
 param(
-    [string]$BundleDirectory = (Join-Path $PSScriptRoot '../src-tauri/target/x86_64-pc-windows-msvc/release/bundle'),
+    [string]$BundleDirectory,
     [ValidateSet('nsis', 'msi')][string[]]$Formats = @('nsis', 'msi')
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $PSBoundParameters.ContainsKey('BundleDirectory')) {
+    $BundleDirectory = Join-Path $PSScriptRoot '../src-tauri/target/x86_64-pc-windows-msvc/release/bundle'
+}
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'Windows installer verification requires Windows.'
 }
