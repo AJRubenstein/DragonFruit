@@ -59,11 +59,17 @@ jobs:
           DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
         run: node scripts/build-thumbnail-providers.mjs
 
+      # The build check builds the app with `--target universal-apple-darwin`, and
+      # cargo keeps artifacts per target triple. Warming the two host triples
+      # filled `target/aarch64-apple-darwin` and `target/x86_64-apple-darwin`,
+      # which the universal build never reads: every dependency then compiled
+      # again inside `target/universal-apple-darwin`, which is most of the 19
+      # minutes the check took. Same triple, same profile and the same default
+      # features (`custom-protocol`, `tauri-wry`) as the app build, so what lands
+      # here is what that job reuses.
       - name: Compile Rust dependencies
         working-directory: src-tauri
         env:
           CMAKE_OSX_ARCHITECTURES: "arm64;x86_64"
           DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
-        run: |
-          cargo build --release --target aarch64-apple-darwin
-          cargo build --release --target x86_64-apple-darwin
+        run: cargo build --release --target universal-apple-darwin
