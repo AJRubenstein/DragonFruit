@@ -10,9 +10,11 @@
     <ComponentGroup Id="DfRuntimePrerequisite" />
     <!-- MSI's Signature table compares all four numeric file-version components.
          Search System32 in this x64 package, never an app-local or x86 copy. -->
+    <!-- Microsoft's CRT DLL is tagged 1033 regardless of the Windows UI language.
+         MSI checks language at equal MinVersion; a null filter rejects that DLL. -->
     <Property Id="DF_VC_RUNTIME_SUFFICIENT" Secure="yes">
       <DirectorySearch Id="DfVcSystem64Search" Path="[System64Folder]" Depth="0">
-        <FileSearch Id="DfVcMsvcpSearch" Name="msvcp140.dll" MinVersion="$(var.DF_VC_VERSION)" />
+        <FileSearch Id="DfVcMsvcpSearch" Name="msvcp140.dll" MinVersion="$(var.DF_VC_VERSION)" Languages="1033" />
       </DirectorySearch>
     </Property>
     <Property Id="DF_VC_RUNTIME_INSTALLED" Secure="yes">

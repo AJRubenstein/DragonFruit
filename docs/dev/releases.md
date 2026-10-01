@@ -253,9 +253,10 @@ under Microsoft's terms. DragonFruit's AGPL license is unchanged; see the
 and [Microsoft redistribution rules](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files).
 Build-tool licensing remains the release owner's responsibility.
 
-`scripts/prepare-windows-runtime.ps1` uses direct `vswhere` file discovery to select
-the newest x64 CRT in the selected Visual Studio installation, then generates the
-NSIS/WiX minimum-version includes. It downloads only checksum-pinned
+`scripts/prepare-windows-runtime.ps1` pins the minimum to `14.51.36247.0` and checks
+it against the selected Visual Studio installation's newest x64 CRT using direct
+`vswhere` discovery. It never updates the pin automatically. It generates the
+NSIS/WiX includes and downloads only checksum-pinned
 InetC, the free HTTPS plugin described in `scripts/windows-runtime-download-plugin.json`.
 Its zlib notice, `scripts/inetc-license.txt`, ships as `licenses/InetC.txt`.
 The native-resource build step and Windows pre-bundle hook run preparation.
@@ -272,6 +273,9 @@ first. `src-tauri/wix/runtime-prerequisite.wxs` blocks an inadequate runtime wit
 a Microsoft download link; it never nests an installer and allows uninstall.
 Tauri links that fragment through its supported `componentGroupRefs` option; the
 empty group anchors the searches and blocking action without installing a dummy component.
+The MSI search specifies the official CRT's resource language `1033`, not the
+Windows UI locale. MSI also compares language when the installed version equals
+the minimum; leaving it unspecified would reject the tagged Microsoft DLL.
 
 There is no Microsoft installer checksum pin or update bot: Microsoft may update
 its signed download independently. The shipped InetC plugin remains pinned.
@@ -282,11 +286,11 @@ $minimum = ./scripts/prepare-windows-runtime.ps1
 ./scripts/verify-windows-runtime.ps1 -InstallerPath C:\Temp\VC_redist.x64.exe -MinimumVersion $minimum
 ```
 
-Preparation accepts `-OutputDirectory` and a higher `-MinimumVersion`; Windows
-cannot lower the toolset floor. Output defaults resolve relative to the script
-after parameter binding, including Windows PowerShell `-File` invocations from
-another directory. Other platforms require an explicit minimum for isolated
-compile checks. One Windows validation job checks the current Microsoft
+Preparation accepts `-OutputDirectory` and a higher `-MinimumVersion`; it cannot
+lower the pinned floor. A toolset requiring a newer runtime fails the build rather
+than changing the pin. Output defaults resolve relative to the script after
+parameter binding, including Windows PowerShell `-File` invocations from another
+directory. One Windows validation job checks the current Microsoft
 download. `scripts/verify-windows-bundles.ps1` rejects bundled Microsoft runtime
 payloads and checks the NSIS helpers and plugin notice before publication.
 Windows install/upgrade smoke must still cover missing/old/current runtimes,

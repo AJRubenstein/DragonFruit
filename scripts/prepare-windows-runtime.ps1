@@ -1,11 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Prepares the pinned InetC plugin and build-derived Microsoft runtime requirement.
+Prepares the pinned InetC plugin and minimum Microsoft runtime requirement.
 .DESCRIPTION
-No Microsoft software is downloaded or bundled. Windows builds derive their
-minimum version from MSVC. -MinimumVersion may raise that floor, or supply it
-for isolated installer-compilation checks on other platforms.
+No Microsoft software is downloaded or bundled. The minimum runtime is pinned
+and checked against MSVC on Windows. -MinimumVersion may raise, never lower, it.
 #>
 [CmdletBinding()]
 param(
@@ -17,6 +16,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $PSBoundParameters.ContainsKey('OutputDirectory')) {
     $OutputDirectory = Join-Path $PSScriptRoot '../src-tauri/windows-resources'
+}
+# Current stable Microsoft x64 runtime; update deliberately, not during builds.
+$pinnedMinimum = [version]'14.51.36247.0'
+if (-not $PSBoundParameters.ContainsKey('MinimumVersion')) { $MinimumVersion = $pinnedMinimum }
+if ($null -eq $MinimumVersion -or $MinimumVersion -lt $pinnedMinimum) {
+    throw "MinimumVersion cannot be lower than the pinned runtime $pinnedMinimum."
 }
 
 if ($env:TAURI_ENV_ARCH -and $env:TAURI_ENV_ARCH -notin @('x86_64', 'x64')) {
@@ -53,11 +58,10 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     if ($MinimumVersion -and $MinimumVersion -lt $requiredVersion) {
         throw "MinimumVersion cannot be older than the selected MSVC runtime $requiredVersion."
     }
-    if (-not $MinimumVersion) { $MinimumVersion = $requiredVersion }
 }
 if (-not $MinimumVersion -or $MinimumVersion.Major -ne 14 -or
     $MinimumVersion.Minor -gt 65535 -or $MinimumVersion.Build -gt 65535 -or $MinimumVersion.Revision -gt 65535) {
-    throw 'A valid VC14 toolset version is required; outside Windows, supply -MinimumVersion for isolated checks.'
+    throw 'A valid four-part VC14 minimum runtime version is required.'
 }
 $version = $MinimumVersion
 $nsisConstants = [ordered]@{
