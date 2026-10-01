@@ -277,3 +277,30 @@ key … but the IPC call used a bytes payload"*). That is fine for this rule —
 geometry in, values out — but it means any option has to travel in a request
 header or stay a Rust constant. It cost a round trip to learn here, which is why
 it is in `dev/tauri-ipc-bridge.md` under *Conventions to respect* too.
+
+## Slicing must preserve closed meshes across build-volume boundaries
+
+**Rule:** preserve the closed surface of any model intersecting the build volume,
+including its outside portions. Only fully-outside models are excluded, using
+`isBoundsDisjointFromVolume` in `src/utils/modelBounds.ts`. The export entry point
+also checks the printer's volume, so callers cannot accidentally include a
+disjoint model merely by omitting the UI's exclusion list.
+
+`buildSolidSliceMeshForWasm` in `src/features/slicing/rasterLayerZipExport.ts`
+collects complete model surfaces, then support surfaces and generated support/raft
+geometry. `src/features/slicing/sliceExportOrchestrator.ts` stages their coordinates
+unchanged as `raw_f32`, in both single-shot and chunked transfers. This uses twice
+the transport bytes of `quantized_u16` but avoids its quantization allocation and
+pass, and does not clamp coordinates to the printable volume.
+
+The native rasterizer retains outside crossings when computing scanline winding,
+then crops filled spans to the printable raster. Layer count limits build height;
+it must not be implemented by clamping vertex Z coordinates either. For example,
+a closed model crossing the +X plate edge still prints its in-plate portion, and
+its outside exit crossing still determines where that portion is solid.
+
+Clipping each surface triangle without adding caps opens the solid at the cut.
+At the X borders this removes an entry or exit crossing: an isolated object can
+disappear, and several objects can produce an inverted band through their gaps.
+Zero XY projected area is not a valid reason to drop a 3D triangle: vertical walls
+can have zero XY area while supplying essential winding crossings.

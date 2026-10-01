@@ -28,6 +28,10 @@ import { PrintingModals } from '@/components/organisms/modals/PrintingModals';
 import { SceneFileModals } from '@/components/organisms/modals/SceneFileModals';
 import { ModifierModals } from '@/components/organisms/modals/ModifierModals';
 import { MeshRepairModals } from '@/components/organisms/modals/MeshRepairModals';
+import {
+  getThemeMeshHighlightColors,
+  subscribeToThemeMeshHighlightColors,
+} from '@/components/settings/themeCustomizations';
 import { useMirrorManager } from '@/features/mirror/useMirrorManager';
 import { useArrangeManager } from '@/features/scene/arrange/useArrangeManager';
 import { useHolePunchManager } from '@/features/hole-punching/useHolePunchManager';
@@ -121,6 +125,7 @@ import { initializeBVH } from '@/utils/bvh';
 import {
   computeApproxModelWorldBounds,
   computePreciseModelWorldBounds,
+  isBoundsDisjointFromVolume,
   isBoundsOutsideVolume,
   shouldUsePreciseBoundsForTransform,
 } from '@/utils/modelBounds';
@@ -665,6 +670,13 @@ export default function Home() {
     getWorkspaceCameraSettingsSnapshot,
     getWorkspaceCameraSettingsServerSnapshot,
   );
+  // Selection/hover tint is a theme setting now, so the viewport follows the
+  // applied theme instead of a scene-level appearance override.
+  const themeMeshHighlightColors = React.useSyncExternalStore(
+    subscribeToThemeMeshHighlightColors,
+    getThemeMeshHighlightColors,
+    getThemeMeshHighlightColors,
+  );
   const activePrinterProfile = React.useMemo(() => getActivePrinterProfile(profileState), [profileState]);
   const activeMaterialProfile = React.useMemo(() => getActiveMaterialProfile(profileState), [profileState]);
   const hasActivePrinterProfile = Boolean(activePrinterProfile);
@@ -947,6 +959,7 @@ export default function Home() {
     selectedModelIds: scene.selectedModelIds,
     enabled: sceneAutosaveEnabled,
     debounceMs: sceneAutosaveSettings.debounceMs,
+    cooldownMs: sceneAutosaveSettings.cooldownMs,
     capMs: sceneAutosaveSettings.capMs,
     // **Finding N3.** This used to read `preferredOverwriteScenePathRef.current`
     // — a ref, read during render. Mutating a ref does not re-render, so the
@@ -2769,6 +2782,37 @@ export default function Home() {
     }
 
     return inBoundsModelIds;
+  }, [
+    resinBuildVolumeBounds,
+    scene.models,
+  ]);
+
+  /**
+   * Models that contribute to a slice. A model that only partly overlaps the
+   * build volume keeps its closed surface; the raster crops the filled spans.
+   * Exclusion is only for models with no overlap at all.
+   */
+  const sliceableModelIdSet = React.useMemo(() => {
+    const visibleModels = scene.models.filter((model) => model.visible);
+    if (visibleModels.length === 0) return new Set<string>();
+    if (!resinBuildVolumeBounds) return new Set(visibleModels.map((model) => model.id));
+
+    const BUILD_VOLUME_BOUNDS_EPS_MM = 0.01;
+    const sliceableModelIds = new Set<string>();
+
+    for (const model of visibleModels) {
+      const approxBounds = computeApproxModelWorldBounds(model.geometry, model.transform);
+      if (isBoundsDisjointFromVolume(approxBounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)) continue;
+      // Rotated bounding boxes can overlap even when the actual mesh does not.
+      const bounds = isBoundsOutsideVolume(approxBounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)
+        ? computePreciseModelWorldBounds(model.geometry, model.transform)
+        : approxBounds;
+      if (!isBoundsDisjointFromVolume(bounds, resinBuildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM)) {
+        sliceableModelIds.add(model.id);
+      }
+    }
+
+    return sliceableModelIds;
   }, [
     resinBuildVolumeBounds,
     scene.models,
@@ -6372,6 +6416,17 @@ export default function Home() {
     return SUPPORT_COLLECTION_KEYS.some((key) => hasAnyEntries(supportStateSnapshot[key]));
   }, [hasAnyEntries, raftSettingsSnapshot.bottomMode, supportStateSnapshot]);
 
+  const slicingModels = React.useMemo(
+    () => scene.models.filter((model) => model.visible && sliceableModelIdSet.has(model.id)),
+    [scene.models, sliceableModelIdSet],
+  );
+  const excludedSliceModelIds = React.useMemo(
+    () => scene.models
+      .filter((model) => model.visible && !sliceableModelIdSet.has(model.id))
+      .map((model) => model.id),
+    [scene.models, sliceableModelIdSet],
+  );
+
   // For non-printing workflows, avoid expensive world-triangle projection work by default.
   // Keep layer floor at 0 when support/raft geometry exists so layer-1 alignment is correct.
   //
@@ -6380,8 +6435,7 @@ export default function Home() {
   // Box3.applyMatrix4 which overestimates the envelope for rotated models.
   const accurateMaxZ = React.useMemo(() => {
     let maxZ = 0;
-    for (const model of scene.models) {
-      if (!model.visible) continue;
+    for (const model of slicingModels) {
       const position = model.geometry.geometry.getAttribute('position');
       if (!position) continue;
       const center = model.geometry.center;
@@ -6405,12 +6459,12 @@ export default function Home() {
       }
     }
     return maxZ;
-  }, [scene.models]);
+  }, [slicingModels]);
 
   const fallbackZRange = React.useMemo(() => ({
     min: hasSupportOrRaftGeometry ? 0 : (scene.sceneBounds?.min.z ?? 0),
-    max: accurateMaxZ > 0 ? accurateMaxZ : (scene.sceneBounds?.max.z ?? 100),
-  }), [hasSupportOrRaftGeometry, scene.sceneBounds, accurateMaxZ]);
+    max: slicingModels.length > 0 ? accurateMaxZ : 0,
+  }), [hasSupportOrRaftGeometry, slicingModels.length, scene.sceneBounds, accurateMaxZ]);
 
   const normalizeToSlicerZRange = React.useCallback((range: { min: number; max: number }) => {
     const maxZMm = Math.max(0, Number(range.max) || 0);
@@ -6438,8 +6492,7 @@ export default function Home() {
 
   const projectedZRangeCacheRef = React.useRef<Map<string, { min: number; max: number }>>(new Map());
   const buildProjectedZRangeCacheKey = React.useCallback(() => {
-    const visibleSignature = scene.models
-      .filter((model) => model.visible)
+    const visibleSignature = slicingModels
       .map((model) => {
         const t = model.transform;
         return [
@@ -6470,7 +6523,7 @@ export default function Home() {
     ].join('||');
   }, [
     raftSettingsSnapshot.bottomMode,
-    scene.models,
+    slicingModels,
     supportRenderRefreshNonce,
     supportStateSnapshot,
   ]);
@@ -6498,7 +6551,7 @@ export default function Home() {
 
       const run = () => {
         if (cancelled) return;
-        const projected = buildProjectedCrossSectionZRange(scene.models);
+        const projected = buildProjectedCrossSectionZRange(slicingModels);
         const baseRange = projected ?? fallbackZRange;
         const nextRange = shouldUseSlicerAlignedRange
           ? normalizeToSlicerZRange(baseRange)
@@ -6542,18 +6595,18 @@ export default function Home() {
     fallbackZRange,
     printingArtifact,
     scene.mode,
-    scene.models,
+    slicingModels,
     setSceneZRangeIfChanged,
   ]);
 
   const slicing = useSlicingManager({
-    hasGeometry: scene.models.length > 0,
+    hasGeometry: slicingModels.length > 0,
     zRange: sceneZRange,
     layerHeightMm: crossSectionLayerHeightMm,
   });
 
   const estimatedSlicerLayerCount = React.useMemo(() => {
-    if (scene.models.length === 0) return 0;
+    if (slicingModels.length === 0) return 0;
 
     const layerHeightMm = Math.max(0.001, crossSectionLayerHeightMm || 0.05);
     const printableMaxZMm = Math.max(0, Number(sceneZRange.max) || 0);
@@ -6563,13 +6616,12 @@ export default function Home() {
       : printableMaxZMm;
 
     return Math.max(0, Math.ceil(slicerHeightMm / layerHeightMm));
-  }, [activePrinterProfile?.buildVolumeMm.height, crossSectionLayerHeightMm, scene.models.length, sceneZRange.max]);
+  }, [activePrinterProfile?.buildVolumeMm.height, crossSectionLayerHeightMm, sceneZRange.max, slicingModels.length]);
 
   const modelStatsEstimatedPrintTimeLabel = React.useMemo(() => {
     if (!activeMaterialProfile) return '—';
 
-    const visibleModels = scene.models.filter((model) => model.visible);
-    if (visibleModels.length === 0) return '—';
+    if (slicingModels.length === 0) return '—';
 
     const totalLayers = estimatedSlicerLayerCount;
     if (totalLayers <= 0) return '—';
@@ -6591,7 +6643,7 @@ export default function Home() {
     );
 
     return formatEstimatedPrintTimeLabel(_, totalSec);
-  }, [_, activeMaterialProfile, estimatedSlicerLayerCount, scene.models]);
+  }, [_, activeMaterialProfile, estimatedSlicerLayerCount, slicingModels.length]);
 
   const printingCurrentHeightMm = React.useMemo(() => {
     if (scene.mode !== 'printing') return null;
@@ -9780,10 +9832,6 @@ export default function Home() {
       <TopBar
         meshColor={scene.meshColor}
         onMeshColorChange={scene.setMeshColor}
-        selectionColor={scene.selectionColor}
-        onSelectionColorChange={scene.setSelectionColor}
-        hoverColor={scene.hoverColor}
-        onHoverColorChange={scene.setHoverColor}
         configuredShaderType={scene.configuredShaderType}
         onConfiguredShaderTypeChange={scene.setConfiguredShaderType}
         matcapVariant={scene.matcapVariant}
@@ -9915,6 +9963,7 @@ export default function Home() {
               handleExportSuccess: handleExportSuccess,
               showOperationError: showOperationError,
               estimatedSlicerLayerCount: estimatedSlicerLayerCount,
+              excludedSliceModelIds: excludedSliceModelIds,
               crossSectionLayerHeightMm: crossSectionLayerHeightMm,
               estimatedVolumeMlLabel: estimatedVolumeMlLabel,
               handleSliceRunStartedForPrinting: handleSliceRunStartedForPrinting,
@@ -10243,8 +10292,8 @@ export default function Home() {
             selectionHighlightMode={effectiveSelectionHighlightMode}
             higherContrastModelEdges={workspaceCameraSettings.higherContrastModelEdges}
             blockerEditMode={hollowingEditMode}
-            selectionColor={scene.selectionColor}
-            hoverColor={scene.hoverColor}
+            selectionColor={themeMeshHighlightColors.selection}
+            hoverColor={themeMeshHighlightColors.hover}
             hoverTintStrength={effectiveHoverTintStrengthForScene}
             selectedTintStrength={effectiveSelectedTintStrengthForScene}
             supportsRef={supportsRef}
@@ -10335,7 +10384,7 @@ export default function Home() {
             deferCameraIntro={holdEmptyStateSceneImportUi}
             freezeViewportActive={isSlicingBusy && scene.mode === 'export'}
             indicatorPlaneZ={scene.mode === 'printing' ? printingCurrentHeightMm : null}
-            indicatorPlaneColor={scene.selectionColor || '#ec2a77'}
+            indicatorPlaneColor={themeMeshHighlightColors.selection || '#ec2a77'}
             onNewDeviceDetected={handleNewDeviceDetected}
           >
             {scene.mode === 'prepare' && transformMgr.transformMode === 'smoothing' && (

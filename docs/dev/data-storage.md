@@ -94,21 +94,23 @@ Support Adjustments remain available under Auto AA presets (including Balanced a
 | Key                                      | Medium       | Purpose                                                 |
 | ---------------------------------------- | ------------ | ------------------------------------------------------- |
 | `app-recent-opened-files`                | localStorage | Recent files index (metadata only)                      |
-| `mesh-appearance-settings`               | localStorage | Shader, color, and mesh appearance preferences          |
+| `mesh-appearance-settings`               | localStorage | Shader, mesh color, and tint-strength preferences       |
 | `import-defaults-v1`                     | localStorage | Default import behavior (raft mode, wall/root defaults) |
-| `dragonfruit-scene-autosave:settings-v1` | localStorage | Scene autosave settings                                 |
+| `dragonfruit-scene-autosave:settings-v1` | localStorage | Scene autosave enable, debounce, cooldown, cap and recovery prompt settings |
+
+Autosave timing is stored in milliseconds: `debounceMs` defaults to `45_000` (45 seconds), `cooldownMs` to `180_000` (180 seconds; allowed `15_000`–`900_000`), and the maximum interval `capMs` to `300_000` (5 minutes). The settings UI displays debounce and cooldown in seconds and cap in minutes. After a save attempt, automatic requests wait until the cooldown expires; explicit flushes do not. Existing saved values remain in effect; a missing cooldown gets the new default, and `capMs` is normalized to at least the debounce and cooldown durations.
 
 ## UI/theme/layout keys
 
-| Key                                    | Medium       | Purpose                                    |
-| -------------------------------------- | ------------ | ------------------------------------------ |
-| `app-theme-preference`                 | localStorage | Theme mode preference                      |
-| `app-theme-colors`                     | localStorage | Active theme color overrides               |
-| `app-theme-preset`                     | localStorage | Selected theme preset                      |
-| `app-theme-custom-profiles`            | localStorage | User custom theme profiles                 |
-| `lumenslicer:floating-panel-layout:v4` | localStorage | Floating panel coordinates/sizing          |
-| `app-floating-layout-persistence`      | localStorage | Enable/disable floating layout persistence |
-| `app-debug-primitives-panel-visible`   | localStorage | Debug panel visibility (non-user-critical) |
+| Key                                    | Medium       | Purpose                                                   |
+| -------------------------------------- | ------------ | --------------------------------------------------------- |
+| `app-theme-preference`                 | localStorage | Theme mode preference                                     |
+| `app-theme-colors`                     | localStorage | Active theme color overrides (incl. mesh selection/hover) |
+| `app-theme-preset`                     | localStorage | Selected theme preset                                     |
+| `app-theme-custom-profiles`            | localStorage | User custom theme profiles                                |
+| `lumenslicer:floating-panel-layout:v4` | localStorage | Floating panel coordinates/sizing                         |
+| `app-floating-layout-persistence`      | localStorage | Enable/disable floating layout persistence                |
+| `app-debug-primitives-panel-visible`   | localStorage | Debug panel visibility (non-user-critical)                |
 
 ## Camera and view keys
 
