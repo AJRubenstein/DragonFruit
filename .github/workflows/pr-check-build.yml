@@ -180,6 +180,18 @@ jobs:
         env:
           CMAKE_OSX_ARCHITECTURES: "arm64;x86_64"
           DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
+          # The link is the job: `lto = "fat"` with `codegen-units = 1` took
+          # 6m06s + 5m48s, one per arch, against ~15s of compiling. A check that
+          # nobody downloads should not pay it, so it links thin, which is what
+          # `CARGO_PROFILE_*` overrides are for (the profile in Cargo.toml stays
+          # the shipped one).
+          #
+          # A `preview-build` PR is the exception: `pr-build-followup.yml` hands
+          # this job's DMG to the preview release, so that artifact is shipped and
+          # is built exactly like a release. Same condition the notarization gate
+          # below uses.
+          CARGO_PROFILE_RELEASE_LTO: ${{ contains(github.event.pull_request.labels.*.name, 'preview-build') && 'fat' || 'thin' }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ contains(github.event.pull_request.labels.*.name, 'preview-build') && '1' || '16' }}
         with:
           tauriScript: npx tauri
           args: --target universal-apple-darwin --bundles app,dmg
