@@ -185,6 +185,12 @@ jobs:
 
   build-tauri:
     name: Build ${{ matrix.artifact_name }}
+    # The shipped profile, stated here as well as in Cargo.toml so that
+    # `swatinem/rust-cache` keys on it (see `env-vars` below): the compile check
+    # links thin and keeps its artifacts under a different key.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: fat
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
     needs:
       - detect-version-bump
     if: needs.detect-version-bump.outputs.should_release == 'true'
@@ -256,6 +262,7 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
           shared-key: tauri
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS
 
       - name: Install frontend dependencies
         run: npm ci
