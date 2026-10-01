@@ -28,8 +28,23 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      # `rust-toolchain.toml` pins the toolchain and its Apple targets, and rustup
+      # installs what that file names. `@stable` installed the rolling channel
+      # instead, which is what `swatinem/rust-cache` hashes: Rust 1.99.0 shipping
+      # moved every macOS cache key at once (`...-773432c4-*` -> `...-d94a1be7-*`)
+      # and the next build check compiled dependencies from scratch, 28 minutes
+      # against 19 warm. A pinned channel moves the key only when that file is
+      # bumped, which is a decision someone makes on purpose.
+      - name: Read the pinned Rust toolchain
+        id: rust_toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust_toolchain.outputs.channel }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -45,25 +60,24 @@ jobs:
       - name: Generate plugin registry
         run: node scripts/generate-plugin-registry.mjs
 
-      # tauri::generate_context!() embeds frontendDist assets when compiling
-      # dragonfruit-desktop and fails if the directory is missing. A stub is
-      # enough: desktop-crate artifacts are branch-specific and recompiled on
-      # every PR anyway; this workflow only warms the dependency cache.
-      - name: Stub frontend dist
-        run: |
-          mkdir -p src-tauri/frontend-dist
-          [ -f src-tauri/frontend-dist/index.html ] || echo '<!doctype html><title>warm-cache stub</title>' > src-tauri/frontend-dist/index.html
+      - name: Install frontend dependencies
+        run: npm ci
 
-      - name: Build thumbnail provider sidecars
-        env:
-          DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
-        run: node scripts/build-thumbnail-providers.mjs
-
-      - name: Compile Rust dependencies
-        working-directory: src-tauri
+      # The build it feeds is `tauri build --target universal-apple-darwin`, and the
+      # CLI owns those details from there: the per-arch cargo invocations, the
+      # `target/universal-apple-darwin` directory it merges the binary into, and the
+      # feature set the app binary is built with. Warming with a bare `cargo build`
+      # instead left every crate whose features the two commands resolve differently
+      # to rebuild on each check (wry, tauri-runtime, the objc2 family, the updater
+      # stack, zip/zstd/bzip2): 56 crates, twice per arch, on every run. Same command
+      # as the check, minus bundling, so what lands in the cache is what it reads.
+      # `beforeBuildCommand` builds the frontend and the thumbnail sidecars on the
+      # way through, which is why neither needs a step of its own here.
+      # `--config` turns the updater artifacts off for this run: the check has a step
+      # that patches them out of `tauri.conf.json` when no signing key is present,
+      # and warming has no key either.
+      - name: Compile the app and its dependencies
         env:
           CMAKE_OSX_ARCHITECTURES: "arm64;x86_64"
           DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
-        run: |
-          cargo build --release --target aarch64-apple-darwin
-          cargo build --release --target x86_64-apple-darwin
+        run: npx tauri build --target universal-apple-darwin --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'

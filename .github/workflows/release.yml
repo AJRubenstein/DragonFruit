@@ -227,9 +227,18 @@ jobs:
           node-version: "22.23.2"
           cache: npm
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned, not `@stable`: the floating channel is what churns the Rust cache
+      # key (see warm-rust-cache.yml).
+      - name: Read the pinned Rust toolchain
+        id: rust_toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust_toolchain.outputs.channel }}
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install Apple Certificate
