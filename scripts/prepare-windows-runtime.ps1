@@ -35,20 +35,18 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
         throw 'vswhere.exe is missing; install the Visual Studio C++ x64 build tools.'
     }
-    $vcvars = @(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat')
-    if ($LASTEXITCODE -ne 0 -or $vcvars.Count -ne 1) {
-        throw 'Could not locate exactly one vcvars64.bat for the latest installed C++ toolset.'
+    $runtimes = @(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT\msvcp140.dll')
+    if ($LASTEXITCODE -ne 0 -or $runtimes.Count -eq 0) {
+        throw 'Could not locate an x64 redistributable in the selected Visual Studio installation.'
     }
-    $command = '""{0}" >nul && set VCToolsRedistDir"' -f $vcvars[0]
-    $environment = @(& $env:ComSpec /d /s /c $command)
-    if ($LASTEXITCODE -ne 0) { throw "Could not read the selected MSVC environment (exit $LASTEXITCODE)." }
-    $redistLine = @($environment | Where-Object { $_.StartsWith('VCToolsRedistDir=', [StringComparison]::OrdinalIgnoreCase) })
-    if ($redistLine.Count -ne 1) { throw 'The selected MSVC toolset did not report VCToolsRedistDir.' }
-    $redistRoot = $redistLine[0].Substring('VCToolsRedistDir='.Length)
-    $toolsetRuntime = @(Get-ChildItem -Path (Join-Path $redistRoot 'x64/Microsoft.VC*.CRT/msvcp140.dll') -File)
-    if ($toolsetRuntime.Count -ne 1) { throw 'Could not identify the selected toolset x64 redistributable.' }
-    $info = $toolsetRuntime[0].VersionInfo
-    $requiredVersion = [version]('{0}.{1}.{2}.{3}' -f $info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart)
+    # Side-by-side toolsets can supply several CRTs. Select the newest numeric
+    # file version without launching vcvars through a second command shell.
+    $requiredVersion = $runtimes | ForEach-Object {
+        $info = (Get-Item -LiteralPath $_).VersionInfo
+        $candidate = [version]('{0}.{1}.{2}.{3}' -f $info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart)
+        if ($candidate.Major -ne 14) { throw "Unrecognized MSVC runtime version $candidate at $_" }
+        $candidate
+    } | Sort-Object -Descending | Select-Object -First 1
     if ($MinimumVersion -and $MinimumVersion -lt $requiredVersion) {
         throw "MinimumVersion cannot be older than the selected MSVC runtime $requiredVersion."
     }

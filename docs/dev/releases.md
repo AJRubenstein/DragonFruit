@@ -253,8 +253,9 @@ under Microsoft's terms. DragonFruit's AGPL license is unchanged; see the
 and [Microsoft redistribution rules](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files).
 Build-tool licensing remains the release owner's responsibility.
 
-`scripts/prepare-windows-runtime.ps1` derives the minimum version from the selected
-MSVC toolset and generates the NSIS/WiX includes. It downloads only checksum-pinned
+`scripts/prepare-windows-runtime.ps1` uses direct `vswhere` file discovery to select
+the newest x64 CRT in the selected Visual Studio installation, then generates the
+NSIS/WiX minimum-version includes. It downloads only checksum-pinned
 InetC, the free HTTPS plugin described in `scripts/windows-runtime-download-plugin.json`.
 Its zlib notice, `scripts/inetc-license.txt`, ships as `licenses/InetC.txt`.
 The native-resource build step and Windows pre-bundle hook run preparation.
