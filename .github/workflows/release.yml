@@ -191,6 +191,11 @@ jobs:
     env:
       CARGO_PROFILE_RELEASE_LTO: fat
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+      # The matrix already carries these per platform; they are stated at job level
+      # so `swatinem/rust-cache` sees them (see `env-vars`) and a macOS release reads
+      # the same cache the warmer writes.
+      CMAKE_OSX_ARCHITECTURES: ${{ matrix.cmake_archs || '' }}
+      DF_BUILD_TARGET_TRIPLE: ${{ matrix.df_build_triple || '' }}
     needs:
       - detect-version-bump
     if: needs.detect-version-bump.outputs.should_release == 'true'
@@ -262,7 +267,7 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
           shared-key: tauri
-          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES
 
       - name: Install frontend dependencies
         run: npm ci
