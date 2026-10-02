@@ -1,6 +1,7 @@
 {
   "build": {
-    "runner": "../scripts/cargo-universal-runner.sh"
+    "runner": "../scripts/cargo-universal-runner.sh",
+    "beforeBundleCommand": "bash rust/dragonfruit-voxl-thumbnail/macos-qlext/build.sh"
   },
   "bundle": {
     "macOS": {
@@ -8,7 +9,10 @@
         "background": "nsis/assets/dmg-background.png"
       },
       "signingIdentity": "Developer ID Application: Pascal Krumme (MHNF3GA2MM)",
-      "providerShortName": "MHNF3GA2MM"
+      "providerShortName": "MHNF3GA2MM",
+      "files": {
+        "PlugIns/VoxlThumbnailExtension.appex": "../rust/dragonfruit-voxl-thumbnail/macos-qlext/build/VoxlThumbnailExtension.appex"
+      }
     },
     "externalBin": [
       "../rust/dragonfruit-voxl-thumbnail/target/release/dragonfruit-voxl-thumbnailer"
