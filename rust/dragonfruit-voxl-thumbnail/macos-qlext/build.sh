@@ -77,13 +77,30 @@ cp "$CRATE_DIR/src/generated_output_file_types.json" "$CONTENTS/Resources/output
 echo "Stripping extended attributes..."
 find "$APPEX" -exec xattr -c {} \; 2>/dev/null || true
 
-echo "Signing (ad-hoc with sandbox entitlement)..."
 ENTITLEMENTS="$SCRIPT_DIR/Sources/VoxlThumbnailExtension/VoxlThumbnailExtension.entitlements"
-# Use Apple Development identity if available so the extension gets a Team ID
-# (required for the QL system to load it). Falls back to ad-hoc for CI.
-SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep 'Apple Development:' | head -1 | awk '{print $2}' || true)
+# This is the extension's only signature. Tauri copies it into the .app through
+# `bundle.macOS.files` (src-tauri/tauri.macos.conf.json) and then signs and
+# notarizes the .app around it, but never signs nested code it was handed, so
+# the .appex has to arrive here already signed the way the shipped bundle needs.
+#
+# Identity, in order: Developer ID Application (CI, the only kind Apple will
+# notarize), Apple Development (a dev machine: gives the extension the Team ID
+# the QuickLook host needs before it loads it), ad-hoc (no certificate at all).
+find_identity() {
+    security find-identity -v -p codesigning 2>/dev/null | grep "$1" | head -1 | awk '{print $2}' || true
+}
+SIGN_IDENTITY=$(find_identity 'Developer ID Application:')
+SIGN_FLAGS=()
+if [ -n "$SIGN_IDENTITY" ]; then
+    # Notarization rejects nested code without the hardened runtime and a
+    # secure timestamp. --timestamp needs Apple's server, so only ask for it here.
+    SIGN_FLAGS=(--options runtime --timestamp)
+else
+    SIGN_IDENTITY=$(find_identity 'Apple Development:')
+fi
 [ -z "$SIGN_IDENTITY" ] && SIGN_IDENTITY="-"
-codesign --force --sign "$SIGN_IDENTITY" --entitlements "$ENTITLEMENTS" "$APPEX"
+echo "Signing with identity $SIGN_IDENTITY (sandbox entitlement)..."
+codesign --force --sign "$SIGN_IDENTITY" ${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"} --entitlements "$ENTITLEMENTS" "$APPEX"
 
 echo ""
 echo "Built: $APPEX"
