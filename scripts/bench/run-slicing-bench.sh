@@ -123,6 +123,15 @@ done
 
 MESH_DIR="${MESH_DIR:-$FIXTURES}"
 
+# Binary containers stamp the wall clock into their header, so two slices of the
+# same model differ and a whole-file comparison can never pass. Under --validate
+# the stamp is pinned so the comparison sees only what the slicer actually
+# produced; ordinary runs are left alone and still stamp the real time.
+DETERMINISTIC_STAMP=""
+if [[ -n "${VALIDATE_DIR:-}" ]]; then
+  DETERMINISTIC_STAMP="env SOURCE_DATE_EPOCH=0"
+fi
+
 # Expose V8's gc() to the TS "frontend" so it can actively reclaim the merged
 # geometry after handing positions.bin to the Rust slicer — the slice then runs
 # with the node process holding ~nothing, keeping the measurement to purely the
@@ -537,6 +546,19 @@ else
       fi
     fi
 
+    # A fresh worktree has neither the plugin submodules nor the generated plugin
+    # registry (it is gitignored), and the engine will not compile without them:
+    # `error[E0583]: file not found for module 'generated_plugin_encoders'`. These
+    # are the same two steps a fresh clone needs — see rust/dragonfruit-cli/docs/CLI.md.
+    if ! git -C "$wt" submodule update --init --quiet 2>/dev/null; then
+      echo "  WARN: submodule init failed for $label (plugin encoders may be missing)" >&2
+    fi
+    if ! ( cd "$wt" \
+           && node scripts/generate-plugin-registry.mjs >/dev/null 2>&1 \
+           && node scripts/generate-builtin-simple-plugins.mjs >/dev/null 2>&1 ); then
+      echo "  SKIP $label: could not generate the plugin registry" >&2; continue
+    fi
+
     if [[ "$DO_BUILD" == 1 ]]; then
       echo "  building dragonfruit-cli for $label" >&2
       if ! build_rust "$wt"; then echo "  SKIP $label: cargo build failed" >&2; continue; fi
@@ -552,7 +574,7 @@ else
     TARGET_CODEGEN+=("")
   done
 
-  [[ ${#TARGET_LABEL[@]} -gt 0 ]] || { echo "No usable git targets to benchmark" >&2; exit 1; }
+  [[ -n "${TARGET_LABEL[*]-}" ]] || { echo "No usable git targets to benchmark" >&2; exit 1; }
 fi
 
 # ---------------------------------------------------------------------------
@@ -629,16 +651,18 @@ run_matrix() { # <label> <sha> <ts-cmd> <rust-binary> <hw-label> <hw-cpus> <hw-m
     for lh in "${LHS[@]}"; do
      for aa in "${AAS[@]}"; do
       vname="$(basename "$voxl" .voxl)"; pname="$(basename "$printer" .json)"
-      repfile="$(mktemp -p "$BENCH_SCRATCH")"; ok_repeats=0; valjson=""; valfile=""; fail_diag=""
+      # Templates rather than `-p`/`--suffix`: those are GNU extensions, and BSD
+      # mktemp (macOS) rejects them outright, which took the whole run down.
+      repfile="$(mktemp "$BENCH_SCRATCH/rep.XXXXXX")"; ok_repeats=0; valjson=""; valfile=""; fail_diag=""
       for ((r=1; r<=REPEATS; r++)); do
-        tmp="$(mktemp -u -p "$BENCH_SCRATCH" --suffix="$pext")"; errf="$(mktemp -p "$BENCH_SCRATCH")"; resf="$(mktemp -p "$BENCH_SCRATCH")"; inspf="$(mktemp -p "$BENCH_SCRATCH")"; reslog="$(mktemp -p "$BENCH_SCRATCH")"
+        tmp="$(mktemp -u "$BENCH_SCRATCH/out.XXXXXX")$pext"; errf="$(mktemp "$BENCH_SCRATCH/err.XXXXXX")"; resf="$(mktemp "$BENCH_SCRATCH/res.XXXXXX")"; inspf="$(mktemp "$BENCH_SCRATCH/insp.XXXXXX")"; reslog="$(mktemp "$BENCH_SCRATCH/reslog.XXXXXX")"
         # Stream the CLI's JSON to a file, not a shell var: a long slice's `samples`
         # time-series can exceed the single-argv limit, and `--argjson s "$res"` then
         # dies with "Argument list too long". jq reads it back via `input` below.
         # DF_RESOURCE_LOG makes the slicer stream each RSS/CPU sample to $reslog as it goes,
         # so the series survives an OOM SIGKILL that never reaches the final --json emit; the
         # failure branch below folds it into the error row for post-mortem debugging.
-        if DF_RESOURCE_LOG="$reslog" $HWPRE $TS scene slice "$voxl" --o "$tmp" --mesh-dir "$MESH_DIR" \
+        if DF_RESOURCE_LOG="$reslog" $DETERMINISTIC_STAMP $HWPRE $TS scene slice "$voxl" --o "$tmp" --mesh-dir "$MESH_DIR" \
                    --printer "$printer" --layer-height "$lh" --aa-preset "$aa" \
                    --json >"$resf" 2>"$errf"; then
           # print inspect is zip-only; on binary formats (.ctb/.goo/…) it fails and
