@@ -294,6 +294,11 @@ jobs:
           tauriScript: npx tauri
           args: ${{ matrix.args }}
 
+      - name: Verify Windows installer runtime payloads
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-windows-bundles.ps1
+
       - name: Embed QuickLook extension + verify universal bundle
         if: matrix.platform == 'macos-latest'
         env:
