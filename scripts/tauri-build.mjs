@@ -217,6 +217,9 @@ if (canBuildFlatpak) {
       cwd: repoRoot,
       stdio: "pipe",
     });
+    // Which CEF got staged is the first thing to check when a build starts
+    // with the wrong libcef, so keep it in the CI log.
+    process.stdout.write(cefResult.stdout?.toString() ?? "");
     if (cefResult.status !== 0) {
       console.error("[tauri-build] bundle-cef-libs.sh failed — skipping Flatpak bundle.");
       console.error(cefResult.stderr?.toString());
