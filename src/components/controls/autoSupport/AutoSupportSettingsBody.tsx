@@ -28,6 +28,7 @@ import { LabeledNumberInput, LabeledToggleInput } from '@/components/settings/pr
 import type { AutoSupportSettings, AutoSupportDiagnosticKey } from '@/supports/autoSupport';
 import { AutoSupportPresetSelector, AutoSupportSettingsFooterActions } from './AutoSupportPresets';
 import { AutoSupportSizingTierField } from './AutoSupportSizingTierField';
+import { Tooltip } from '@/components/ui/Tooltip';
 import {
   ADVANCED_CALIBRATION_KNOBS,
   ADVANCED_CALIBRATION_TOGGLE,
@@ -36,6 +37,7 @@ import {
   DEBUG_DIAGNOSTICS_HEADING,
   DIAGNOSTIC_TOGGLES,
   KNOBS_BY_SECTION,
+  LOCKED_PROFILE_HINT,
   TOGGLES_BY_SECTION,
   type AutoSupportSectionDef,
   type KnobDef,
@@ -67,34 +69,47 @@ function NumberField({
   knob,
   draft,
   setDraft,
+  locked,
 }: {
   knob: KnobDef;
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
+  /** The active preset is a built-in, so this field cannot be edited. */
+  locked?: boolean;
 }) {
   const { _ } = useLingui();
   const hint = _(knob.hint);
   const label = _(knob.label);
+  // Locked, the field's help *is* the lock's: the ⓘ carries it for assistive tech,
+  // the hover popover carries it for the pointer, and the browser's own `title` is
+  // left off so there is one tooltip rather than two.
+  const help = locked ? _(LOCKED_PROFILE_HINT) : hint;
 
-  return (
-    <div className="space-y-1">
-      <LabeledNumberInput
-        label={label}
-        // The unit rides inside the field (Support Studio's convention), so the
-        // label is the name alone. A knob with no unit passes none, rather than an
-        // empty box.
-        unit={knob.unit || undefined}
-        helpText={hint}
-        title={hint}
-        value={draft[knob.key]}
-        step={knob.step}
-        onChange={(value) => setDraft((current) => ({
-          ...current,
-          [knob.key]: normalizeFieldValue(knob.min, knob.max, knob.step, value),
-        }))}
-      />
-    </div>
+  const field = (
+    <LabeledNumberInput
+      label={label}
+      // The unit rides inside the field (Support Studio's convention), so the label
+      // is the name alone. A knob with no unit passes none, rather than an empty box.
+      unit={knob.unit || undefined}
+      helpText={help}
+      title={locked ? undefined : hint}
+      disabled={locked}
+      value={draft[knob.key]}
+      step={knob.step}
+      onChange={(value) => setDraft((current) => ({
+        ...current,
+        [knob.key]: normalizeFieldValue(knob.min, knob.max, knob.step, value),
+      }))}
+    />
   );
+
+  if (!locked) return <div className="space-y-1">{field}</div>;
+  // The app's own tooltip, on the whole field: a locked control is dead to the
+  // pointer (hence `disabled:pointer-events-none` on it), so the wrapper is what
+  // receives the hover. `[&>*]:w-full` is load-bearing: the wrapper is a flex
+  // container, so without it the field's label would be a content-sized flex item and
+  // the input would shrink to its intrinsic width.
+  return <Tooltip content={help} fullWidth wrapperClassName="w-full [&>*]:w-full">{field}</Tooltip>;
 }
 
 /** One boolean knob, as the pill the material editor's switches use. */
@@ -102,23 +117,33 @@ function ToggleField({
   toggle,
   draft,
   setDraft,
+  locked,
 }: {
   toggle: ToggleDef;
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
+  /** The active preset is a built-in, so this field cannot be edited. */
+  locked?: boolean;
 }) {
   const { _ } = useLingui();
   const hint = _(toggle.hint);
+  const help = locked ? _(LOCKED_PROFILE_HINT) : hint;
 
-  return (
+  const field = (
     <LabeledToggleInput
       label={_(toggle.label)}
-      helpText={hint}
-      title={hint}
+      helpText={help}
+      title={locked ? undefined : hint}
+      disabled={locked}
       checked={draft[toggle.key]}
       onChange={(next) => setDraft((current) => ({ ...current, [toggle.key]: next }))}
     />
   );
+
+  if (!locked) return <div className="space-y-1">{field}</div>;
+  // Same wrapper, same reason as the number field above: the tooltip's wrapper is a
+  // flex container, so the child has to be told to fill it.
+  return <Tooltip content={help} fullWidth wrapperClassName="w-full [&>*]:w-full">{field}</Tooltip>;
 }
 
 /** A card of fields: the section's uppercase header, its one-liner, and a 2-column grid. */
@@ -206,15 +231,17 @@ function DiagnosticsCard({
 function CalibrationFields({
   draft,
   setDraft,
+  locked,
 }: {
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
+  locked?: boolean;
 }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      <ToggleField toggle={ADVANCED_CALIBRATION_TOGGLE} draft={draft} setDraft={setDraft} />
+      <ToggleField toggle={ADVANCED_CALIBRATION_TOGGLE} draft={draft} setDraft={setDraft} locked={locked} />
       {ADVANCED_CALIBRATION_KNOBS.map((knob) => (
-        <NumberField key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+        <NumberField key={knob.key} knob={knob} draft={draft} setDraft={setDraft} locked={locked} />
       ))}
     </div>
   );
@@ -232,9 +259,20 @@ export type AutoSupportSettingsBodyProps = {
   /** Whether the panel shows the last run's diagnostics. Session state the panel owns. */
   debugMode: boolean;
   onToggleDebugMode: () => void;
+  /**
+   * The active preset is a built-in, whose block the store refuses to save over.
+   * Every policy field is then disabled and says why on hover: an edit made here
+   * could never be kept, so the dialog does not collect one — `Duplicate` is the
+   * way out, and it selects the copy it makes.
+   *
+   * The diagnostics stay live: they are view switches rather than run policy, they
+   * are excluded from the preset's dirtiness, and needing one to read the scene has
+   * nothing to do with which preset is selected.
+   */
+  presetLocked: boolean;
   /** Called once the footer's Save has written the draft, so the shell can close. */
   onCommitted: () => void;
-};
+}
 
 export function AutoSupportSettingsBody({
   draft,
@@ -245,6 +283,7 @@ export function AutoSupportSettingsBody({
   onToggleDiagnostic,
   debugMode,
   onToggleDebugMode,
+  presetLocked,
   onCommitted,
 }: AutoSupportSettingsBodyProps) {
   const { _ } = useLingui();
@@ -262,11 +301,13 @@ export function AutoSupportSettingsBody({
           {AUTO_SUPPORT_POLICY_SECTIONS.map((section) => (
             <FieldCard key={section.key} section={section}>
               {TOGGLES_BY_SECTION[section.key].map((toggle) => (
-                <ToggleField key={toggle.key} toggle={toggle} draft={draft} setDraft={setDraft} />
+                <ToggleField key={toggle.key} toggle={toggle} draft={draft} setDraft={setDraft} locked={presetLocked} />
               ))}
-              {section.key === 'density' && <AutoSupportSizingTierField draft={draft} setDraft={setDraft} />}
+              {section.key === 'density' && (
+                <AutoSupportSizingTierField draft={draft} setDraft={setDraft} disabled={presetLocked} />
+              )}
               {KNOBS_BY_SECTION[section.key].map((knob) => (
-                <NumberField key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
+                <NumberField key={knob.key} knob={knob} draft={draft} setDraft={setDraft} locked={presetLocked} />
               ))}
             </FieldCard>
           ))}
@@ -298,7 +339,7 @@ export function AutoSupportSettingsBody({
               {_(AUTO_SUPPORT_ADVANCED_SECTION.label)}
             </div>
             <div className="mt-2">
-              <CalibrationFields draft={draft} setDraft={setDraft} />
+              <CalibrationFields draft={draft} setDraft={setDraft} locked={presetLocked} />
             </div>
           </section>
         </div>

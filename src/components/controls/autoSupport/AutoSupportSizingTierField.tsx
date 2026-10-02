@@ -16,6 +16,7 @@ import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { FieldHelpTooltip } from '@/components/settings/profileFormAtoms';
 import {
   ANCHOR_PRESET,
@@ -25,7 +26,7 @@ import {
   subscribeToPresets,
 } from '@/supports/Settings/presets';
 import type { SupportPreset } from '@/supports/Settings/types';
-import { SIZING_TIER_FIELD } from './autoSupportPanelTabs';
+import { LOCKED_PROFILE_HINT, SIZING_TIER_FIELD } from './autoSupportPanelTabs';
 import type { AutoSupportSettings } from '@/supports/autoSupport';
 
 /**
@@ -79,20 +80,26 @@ type AutoSupportSizingTierFieldProps = {
   /** The dialog's draft — the tier id the control shows and writes. */
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
+  /** Locked while the active auto-support preset is a built-in: the tier is part of
+   *  the block a built-in refuses to have saved over. */
+  disabled?: boolean;
 };
 
-export function AutoSupportSizingTierField({ draft, setDraft }: AutoSupportSizingTierFieldProps) {
+export function AutoSupportSizingTierField({ draft, setDraft, disabled = false }: AutoSupportSizingTierFieldProps) {
   const { _ } = useLingui();
   const presets = useSupportStudioPresets();
 
   const label = _(SIZING_TIER_FIELD.label);
   const hint = _(SIZING_TIER_FIELD.hint);
+  // Locked, the tier's help is the lock's, and the browser's own `title` is left off
+  // so the app's tooltip is the only one that appears.
+  const help = disabled ? _(LOCKED_PROFILE_HINT) : hint;
 
-  return (
+  const field = (
     <div className="col-span-2 space-y-1">
       <span className="ui-label font-medium inline-flex items-center gap-1.5">
         {label}
-        <FieldHelpTooltip label={label} help={hint} />
+        <FieldHelpTooltip label={label} help={help} />
       </span>
       <SelectDropdown
         value={draft.sizingPreset}
@@ -104,10 +111,18 @@ export function AutoSupportSizingTierField({ draft, setDraft }: AutoSupportSizin
         }))}
         onChange={(id) => setDraft((current) => ({ ...current, sizingPreset: id }))}
         ariaLabel={label}
-        title={hint}
+        title={disabled ? undefined : hint}
+        disabled={disabled}
         className="space-y-0"
         selectClassName="w-full !h-8 pl-2.5 pr-10 leading-tight text-[12px]"
       />
     </div>
   );
+
+  if (!disabled) return field;
+  // The app's own tooltip, on the whole field: a disabled trigger is dead to the
+  // pointer (hence `disabled:pointer-events-none` in `SelectDropdown`), so the
+  // wrapper is what receives the hover. The child is told to fill the wrapper: it is
+  // a flex container, so without it the field would shrink to its intrinsic width.
+  return <Tooltip content={help} fullWidth wrapperClassName="w-full [&>*]:w-full">{field}</Tooltip>;
 }

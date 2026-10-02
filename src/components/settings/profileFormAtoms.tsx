@@ -321,7 +321,7 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
                             nudge(-1);
                         }
                     }}
-                    className={`ui-input w-full h-[36px] pl-2.5 ${tag ? 'pr-20' : showUnit ? 'pr-14' : 'pr-6'} leading-tight text-sm no-spinners ${disabled ? 'opacity-55 cursor-not-allowed' : ''}`}
+                    className={`ui-input w-full h-[36px] pl-2.5 ${tag ? 'pr-20' : showUnit ? 'pr-14' : 'pr-6'} leading-tight text-sm no-spinners disabled:pointer-events-none ${disabled ? 'opacity-55 cursor-not-allowed' : ''}`}
                     style={accent ? {
                         background: `color-mix(in srgb, ${accent} 7%, var(--surface-1))`,
                         borderColor: `color-mix(in srgb, ${accent} 24%, var(--border-subtle))`,
@@ -345,7 +345,7 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
                 <div className="absolute inset-y-0 right-1 z-20 flex w-4 flex-col items-center justify-center gap-0.5">
                     <button
                         type="button"
-                        className="inline-flex h-3 w-3 items-center justify-center rounded hover:bg-white/10"
+                        className="inline-flex h-3 w-3 items-center justify-center rounded hover:bg-white/10 disabled:pointer-events-none"
                         onClick={() => nudge(1)}
                         disabled={disabled}
                         tabIndex={-1}
@@ -355,7 +355,7 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
                     </button>
                     <button
                         type="button"
-                        className="inline-flex h-3 w-3 items-center justify-center rounded hover:bg-white/10"
+                        className="inline-flex h-3 w-3 items-center justify-center rounded hover:bg-white/10 disabled:pointer-events-none"
                         onClick={() => nudge(-1)}
                         disabled={disabled}
                         tabIndex={-1}
@@ -529,7 +529,7 @@ export function LabeledToggleInput({ label, helpText, checked, onChange, disable
                     onChange(!checked);
                 }}
                 disabled={disabled}
-                className={`ui-input w-full h-[36px] px-2.5 leading-tight text-sm inline-flex items-center justify-between ${disabled ? 'opacity-55 cursor-not-allowed' : ''}`}
+                className={`ui-input w-full h-[36px] px-2.5 leading-tight text-sm inline-flex items-center justify-between disabled:pointer-events-none ${disabled ? 'opacity-55 cursor-not-allowed' : ''}`}
                 style={disabled
                     ? {
                         borderColor: 'var(--border-subtle)',

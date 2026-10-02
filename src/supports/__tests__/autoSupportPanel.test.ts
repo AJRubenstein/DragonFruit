@@ -123,6 +123,7 @@ const BODY_PROPS = {
   onToggleDiagnostic: () => {},
   debugMode: false,
   onToggleDebugMode: () => {},
+  presetLocked: false,
   onCommitted: () => {},
 } satisfies Omit<AutoSupportSettingsBodyProps, 'draft'>;
 
@@ -136,6 +137,7 @@ const FOREST_REPORT = {
 
 function renderBody(
   draft: AutoSupportSettings = getSettings().autoSupport,
+  overrides: Partial<AutoSupportSettingsBodyProps> = {},
 ): string {
   // `createElement` rather than JSX so this stays a `.ts` file, which is the
   // glob the supports suite is run with.
@@ -143,7 +145,7 @@ function renderBody(
     React.createElement(
       I18nProvider,
       { i18n },
-      React.createElement(AutoSupportSettingsBody, { ...BODY_PROPS, draft }),
+      React.createElement(AutoSupportSettingsBody, { ...BODY_PROPS, draft, ...overrides }),
     ),
   );
   // Static markup escapes text ("Density &amp; Sizing"); the assertions read labels.
@@ -270,6 +272,58 @@ test('the diagnostic switches read the store, not the dialog’s draft', () => {
   const switchAfter = (label: string) => /aria-checked="(true|false)"/.exec(markup.slice(markup.indexOf(label)))?.[1];
   assert.equal(switchAfter('Origin Colors'), 'true', 'Origin Colors must show what the store holds');
   assert.equal(switchAfter('No Brace'), 'false', 'No Brace must show what the store holds');
+});
+
+test('a built-in’s fields are locked, and each says to duplicate it', () => {
+  const unlocked = renderBody(undefined, { presetLocked: false });
+  const locked = renderBody(undefined, { presetLocked: true });
+
+  // Every field control — a knob's input, a toggle's switch, the tier's trigger —
+  // is disabled. The dialog's preset selector is *not* a field in this sense: it is
+  // preset management, and it stays live so Duplicate can be reached at all, so the
+  // fields are matched by the class only they carry, and the sweep stops at the
+  // diagnostics card, whose switches are deliberately still live.
+  const fieldControls = (markup: string) => markup.match(/<(?:input|button)[^>]*ui-input w-full h-\[36px\][^>]*>/g) ?? [];
+  // The *attribute*, not the substring: every field carries the class
+  // `disabled:pointer-events-none`, so `includes('disabled')` is always true.
+  const editable = (markup: string) => fieldControls(markup).filter((tag) => !/\sdisabled=""/.test(tag));
+  const policyRegion = (markup: string) => markup.slice(0, markup.indexOf('Origin Colors'));
+
+  assert.ok(
+    editable(policyRegion(unlocked)).length > 0,
+    'a preset of the user’s own must offer fields to edit',
+  );
+  assert.equal(
+    editable(policyRegion(locked)).length,
+    0,
+    'nothing the user could edit on their own preset may stay editable on a built-in',
+  );
+
+  // The tier is one of those fields; its trigger is the dropdown that follows the
+  // tier label, which is how it is found without also catching the selector's.
+  const tierTrigger = (markup: string) => {
+    const at = markup.indexOf('Sizing Tier');
+    return markup.slice(at, markup.indexOf('</button>', at));
+  };
+  assert.match(tierTrigger(locked), /\sdisabled=""/, 'the sizing tier must lock with the fields');
+  assert.doesNotMatch(tierTrigger(unlocked), /\sdisabled=""/, 'and be editable on a custom preset');
+
+  // The lock's text reaches both affordances — the ⓘ's accessible name, which is in
+  // the markup, and the hover popover, whose content is a prop and only mounts on
+  // hover. What a static render can prove is the first; the second is the same
+  // string handed to the app's tooltip.
+  assert.ok(locked.includes('Duplicate it and edit the copy'), 'a locked field must say how to edit it');
+  assert.ok(!unlocked.includes('Duplicate it and edit the copy'), 'an editable field must not claim to be locked');
+
+  // The two switches that are not run policy stay live: a diagnostic is a view
+  // switch, excluded from the preset's dirtiness, and reading the scene with one has
+  // nothing to do with which preset is selected.
+  const diagnosticsCard = (markup: string) => markup.slice(markup.indexOf('Origin Colors'), markup.indexOf('Advanced (calibration)'));
+  assert.doesNotMatch(
+    diagnosticsCard(locked),
+    /\sdisabled=""/,
+    'the diagnostics must stay usable while a built-in is selected',
+  );
 });
 
 test('a numeric knob is a labelled field with its unit and a stepper, never a slider', () => {

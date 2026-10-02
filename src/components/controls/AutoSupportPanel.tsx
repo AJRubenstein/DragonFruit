@@ -112,6 +112,11 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
     getActiveAutoSupportPresetId,
     getActiveAutoSupportPresetId,
   );
+  // Whether the selection is a built-in — the dialog locks its policy fields for one,
+  // because the store refuses to save over a built-in, so an edit made on it could
+  // never be kept. Derived from the subscribed snapshot, not read once, so it follows
+  // a selection the way the selector does.
+  const presetLocked = presets.find((preset) => preset.id === activePresetId)?.isBuiltIn === true;
   const supportSettings = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
   const debugSimpleRender = supportSettings.debugSimpleSupportRender;
 
@@ -587,6 +592,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
               }}
               debugMode={debugMode}
               onToggleDebugMode={() => setDebugMode((current) => !current)}
+              presetLocked={presetLocked}
               onCommitted={closeSettings}
             />
           </div>

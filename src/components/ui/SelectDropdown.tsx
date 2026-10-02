@@ -263,7 +263,7 @@ export function SelectDropdown<T extends string | number = string>({
               setIsOpen(false);
             }
           }}
-          className={`ui-input rounded-[4px] relative w-full h-[36px] px-2.5 pr-10 leading-tight text-sm disabled:opacity-55 disabled:cursor-not-allowed inline-flex items-center text-left ${selectClassName}`}
+          className={`ui-input rounded-[4px] relative w-full h-[36px] px-2.5 pr-10 leading-tight text-sm disabled:pointer-events-none disabled:opacity-55 disabled:cursor-not-allowed inline-flex items-center text-left ${selectClassName}`}
           style={{
             ...selectStyle,
             ...(isOpen

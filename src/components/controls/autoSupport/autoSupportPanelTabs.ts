@@ -253,3 +253,14 @@ export const SIZING_TIER_FIELD = {
   label: msg`Sizing Tier`,
   hint: msg`The Support Studio preset whose tip, shaft and root numbers size this run. Editing that preset changes what auto-support prints — Duplicate it first if you only want to change the run.`,
 } as const;
+
+/**
+ * Why a built-in profile's fields are locked, shown on hover.
+ *
+ * A built-in cannot be saved over — the store refuses — so an edit made on one
+ * could never be kept. The fields are disabled and say this instead of collecting a
+ * change that saving would then silently drop. Shared by every locked control in the
+ * dialog, and carried by the *wrapping* element as well as the control: a disabled
+ * input receives no pointer events, so its own tooltip never appears.
+ */
+export const LOCKED_PROFILE_HINT = msg`This is a built-in profile, so its fields are fixed. Duplicate it and edit the copy — custom settings belong in a custom profile.`;
