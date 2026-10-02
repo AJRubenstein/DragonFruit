@@ -13,6 +13,8 @@
     "build": "next build",
     "build:tauri": "next build && node scripts/prepare-tauri-frontend.mjs",
     "build:thumbnail-providers": "node scripts/build-thumbnail-providers.mjs",
+    "check:cargo-locks": "scripts/check-cargo-locks.sh",
+    "check:cargo-locks:fix": "scripts/check-cargo-locks.sh --fix",
     "check:docs": "node scripts/check-docs-accuracy.mjs",
     "check:generated-plugin-registry": "node scripts/verify-generated-plugin-registry.mjs",
     "check:lint": "node scripts/check-lint-clean.mjs",
