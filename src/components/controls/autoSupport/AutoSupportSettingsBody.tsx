@@ -74,12 +74,16 @@ function NumberField({
 }) {
   const { _ } = useLingui();
   const hint = _(knob.hint);
-  const label = knob.unit ? `${_(knob.label)} (${knob.unit})` : _(knob.label);
+  const label = _(knob.label);
 
   return (
     <div className="space-y-1">
       <LabeledNumberInput
         label={label}
+        // The unit rides inside the field (Support Studio's convention), so the
+        // label is the name alone. A knob with no unit passes none, rather than an
+        // empty box.
+        unit={knob.unit || undefined}
         helpText={hint}
         title={hint}
         value={draft[knob.key]}

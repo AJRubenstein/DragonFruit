@@ -225,10 +225,16 @@ type LabeledNumberInputProps = {
     /** Native tooltip on the input itself, for callers that show the same help
      *  text as a `title` as well as through the ⓘ affordance. */
     title?: string;
+    /** The unit the value is in, e.g. `mm`. Rendered **inside** the field rather
+     *  than in the label, which is the Support Studio convention — so a label reads
+     *  `Min Island Size`, not `Min Island Size (mm²)`. A `tag` chip claims the same
+     *  right-hand space, so a field carries one or the other. The stepper's carets
+     *  still announce the unit either way. */
+    unit?: string;
     onChange: (value: number) => void;
 };
 
-export function LabeledNumberInput({ label, helpText, tag, color, disabled = false, value, step: propStep, precision, title, onChange }: LabeledNumberInputProps) {
+export function LabeledNumberInput({ label, helpText, tag, color, disabled = false, value, step: propStep, precision, title, unit, onChange }: LabeledNumberInputProps) {
     const safeValue = clampNonNegativeNumber(value);
     const formatVal = React.useCallback((val: number) => {
         if (precision !== undefined) return val.toFixed(precision);
@@ -241,6 +247,11 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
     const accent = (typeof color === 'string' && color.trim().length > 0)
         ? color.trim()
         : tone?.fallbackColor ?? null;
+    // A tag chip and a unit want the same right-hand space, so a field shows one.
+    const showUnit = Boolean(unit) && !tag;
+    // The carets name the field for assistive tech, and the unit is part of the
+    // name even though it is no longer part of the visible label.
+    const spokenLabel = showUnit ? `${label} (${unit})` : label;
 
     React.useEffect(() => {
         if (isFocused) return;
@@ -310,7 +321,7 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
                             nudge(-1);
                         }
                     }}
-                    className={`ui-input w-full h-[36px] pl-2.5 ${tag ? 'pr-20' : 'pr-6'} leading-tight text-sm no-spinners ${disabled ? 'opacity-55 cursor-not-allowed' : ''}`}
+                    className={`ui-input w-full h-[36px] pl-2.5 ${tag ? 'pr-20' : showUnit ? 'pr-14' : 'pr-6'} leading-tight text-sm no-spinners ${disabled ? 'opacity-55 cursor-not-allowed' : ''}`}
                     style={accent ? {
                         background: `color-mix(in srgb, ${accent} 7%, var(--surface-1))`,
                         borderColor: `color-mix(in srgb, ${accent} 24%, var(--border-subtle))`,
@@ -319,6 +330,18 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
 
                 <FieldTagChip tag={tag} color={color} />
 
+                {/* The unit, inside the field and to the left of the carets — the
+                    Support Studio convention, which is why the label is the name
+                    alone. `pr-14` above is what it sits in. */}
+                {showUnit && (
+                    <span
+                        className="pointer-events-none absolute inset-y-0 right-6 z-10 flex items-center text-[11px] font-semibold"
+                        style={{ color: 'var(--text-muted)' }}
+                    >
+                        {unit}
+                    </span>
+                )}
+
                 <div className="absolute inset-y-0 right-1 z-20 flex w-4 flex-col items-center justify-center gap-0.5">
                     <button
                         type="button"
@@ -326,7 +349,7 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
                         onClick={() => nudge(1)}
                         disabled={disabled}
                         tabIndex={-1}
-                        aria-label={`Increase ${label}`}
+                        aria-label={`Increase ${spokenLabel}`}
                     >
                         <ChevronUp className="h-2.5 w-2.5" />
                     </button>
@@ -336,7 +359,7 @@ export function LabeledNumberInput({ label, helpText, tag, color, disabled = fal
                         onClick={() => nudge(-1)}
                         disabled={disabled}
                         tabIndex={-1}
-                        aria-label={`Decrease ${label}`}
+                        aria-label={`Decrease ${spokenLabel}`}
                     >
                         <ChevronDown className="h-2.5 w-2.5" />
                     </button>

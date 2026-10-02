@@ -278,11 +278,16 @@ test('a numeric knob is a labelled field with its unit and a stepper, never a sl
   // No slider survives anywhere in the dialog.
   assert.ok(!markup.includes('type="range"'), 'a slider is still rendered');
 
-  // The label carries the unit, the way the material editor's fields do.
-  assert.ok(markup.includes('Min Island Size (mm²)'));
-  assert.ok(markup.includes('Self-Support Angle (°)'));
-  assert.ok(markup.includes('Coverage Target (%)'));
-  // The stepper is the field's own, and its two carets name the field.
+  // The unit rides inside the field (Support Studio's convention), so the label is
+  // the name alone. The visible text is what proves the label half: the carets'
+  // accessible names still carry the unit, which is the other half of this.
+  const visibleText = markup.replace(/<[^>]*>/g, ' ');
+  assert.ok(visibleText.includes('Min Island Size'), 'the name is the label');
+  assert.ok(!visibleText.includes('Min Island Size (mm²)'), 'the unit must not ride on the label');
+  assert.ok(!visibleText.includes('Self-Support Angle (°)'), 'nor on this one');
+  assert.ok(markup.includes('>mm²</span>'), 'the unit renders inside the field');
+  assert.ok(markup.includes('>°</span>'), 'and each field carries its own');
+  // The stepper is the field's own, and its two carets name the field — unit and all.
   assert.ok(markup.includes('aria-label="Increase Min Island Size (mm²)"'));
   assert.ok(markup.includes('aria-label="Decrease Min Island Size (mm²)"'));
 
