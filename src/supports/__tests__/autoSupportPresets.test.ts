@@ -177,16 +177,26 @@ test('create, rename, duplicate and delete persist, and built-ins are not rename
     assert.equal(store.renameAutoSupportPreset('light', 'Pale'), null);
     assert.equal(store.getAutoSupportPreset('light')!.name, 'Light');
 
+    // An edit with no home yet — the case Duplicate exists for, since a built-in
+    // cannot be saved over and this is the live block the copy has to be made from.
+    updateAutoSupportSettings({ sizeScale: 1.2 });
+
     const copy = store.duplicateAutoSupportPreset(created.id)!;
     assert.notEqual(copy.id, created.id);
     assert.deepEqual(copy.settings, store.getAutoSupportPreset(created.id)!.settings);
     assert.notEqual(copy.settings, store.getAutoSupportPreset(created.id)!.settings);
     assert.equal(copy.name, 'Medium (2) copy');
-    // Copying is organising, not switching.
-    assert.equal(store.getActiveAutoSupportPresetId(), created.id);
+    // The copy is what gets worked on next, so the selection moves to it.
+    assert.equal(store.getActiveAutoSupportPresetId(), copy.id);
+    // And the live block is left where it was rather than re-applied: applying the
+    // copy's block (which is the source's) would discard that edit, exactly the work
+    // the duplicate was made to keep. So the copy reads modified, which is the truth
+    // until the edit is saved into it.
+    assert.equal(getAutoSupportSettings().sizeScale, 1.2);
+    assert.equal(store.isAutoSupportPresetDirty(), true);
 
     // One key per fact: records and order in the collection key, the active id on its own.
-    assert.equal(storage.get(ACTIVE_KEY), created.id);
+    assert.equal(storage.get(ACTIVE_KEY), copy.id);
     assert.deepEqual(Object.keys(JSON.parse(storage.get(PRESETS_KEY)!)).sort(), ['allIds', 'byId']);
 
     const reloaded = reloadStore();
@@ -194,7 +204,9 @@ test('create, rename, duplicate and delete persist, and built-ins are not rename
         reloaded.getAutoSupportPresets().map((preset) => preset.name),
         ['Light', 'Medium', 'Heavy', 'Medium (2)', 'Medium (2) copy'],
     );
-    assert.equal(reloaded.getActiveAutoSupportPresetId(), created.id);
+    // The copy is the selection, and it survives the reload: the active id is its
+    // own key, not a field of the collection.
+    assert.equal(reloaded.getActiveAutoSupportPresetId(), copy.id);
     assert.deepEqual(reloaded.getAutoSupportPreset(created.id)!.settings, {
         ...createDefaultAutoSupportSettings(),
         areaPerSupportMm2: 7,

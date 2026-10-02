@@ -536,8 +536,19 @@ export function renameAutoSupportPreset(id: string, name: string): AutoSupportPr
 }
 
 /**
- * Copies a preset under a new name. The copy does not become active — the user
- * is organising their presets, not switching to one.
+ * Copies a preset under a new name, and makes the copy the selection.
+ *
+ * The copy is the way to keep an edit that the store refuses to write where it is
+ * — a built-in cannot be saved over — so the selection has to move with it: `Save`
+ * writes the *selected* preset, and leaving the source selected would send the next
+ * save straight back into the refusal.
+ *
+ * The copy's block is the source's, and the live settings are left where they are
+ * rather than being re-applied. That is what lets a staged edit survive: an edit
+ * the dialog is holding in its draft is not in the source's stored block, so
+ * re-applying would discard exactly the work the duplicate was made to keep. The
+ * copy then reads as modified, which is the truth — the settings on screen are not
+ * its block until they are saved into it.
  */
 export function duplicateAutoSupportPreset(id: string): AutoSupportPreset | null {
     const source = state.byId[id];
@@ -552,7 +563,7 @@ export function duplicateAutoSupportPreset(id: string): AutoSupportPreset | null
         isBuiltIn: false,
         settings: snapshotPresetSettings(source.settings),
         updatedAt: Date.now(),
-    }, false);
+    }, true);
 }
 
 /**
