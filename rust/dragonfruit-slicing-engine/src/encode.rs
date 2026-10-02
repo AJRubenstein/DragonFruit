@@ -13,10 +13,40 @@ use libdeflater::{CompressionLvl, Compressor};
 
 const PNG_SIG: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 
+/// Map a job's PNG compression strategy onto a libdeflate level.
+///
+/// Mirrors `resolveContainerCompressionLevel()` in `sliceExportOrchestrator.ts`,
+/// which already defines what these four words mean for the container; the two
+/// ladders must agree or the same setting compresses the archive and its layers
+/// by different amounts.  `balanced` in particular is not decorative: `auto`
+/// (the shipped default) resolves to it for every job with anti-aliasing on.
 fn png_compression_level(strategy: &str) -> CompressionLvl {
-    match strategy {
-        "smallest" | "optimal" => CompressionLvl::new(6).unwrap_or(CompressionLvl::best()),
-        _ => CompressionLvl::fastest(),
+    let level = match strategy {
+        "fastest" => 1,
+        "balanced" => 3,
+        "smallest" => 6,
+        "optimal" => 9,
+        _ => 1,
+    };
+    CompressionLvl::new(level).unwrap_or(CompressionLvl::best())
+}
+
+#[cfg(test)]
+mod compression_level_tests {
+    use super::png_compression_level;
+
+    #[test]
+    fn compression_strategies_map_to_distinct_levels() {
+        // The four names come from the UI and are already given these levels for
+        // the container in sliceExportOrchestrator.ts; a silent collapse to
+        // "fastest" is what made the settings tab's On button inert.
+        let level = |s: &str| format!("{:?}", png_compression_level(s));
+        assert_ne!(level("balanced"), level("fastest"), "balanced must not be fastest");
+        assert_ne!(level("smallest"), level("balanced"));
+        assert_ne!(level("optimal"), level("smallest"));
+        // Anything unrecognised stays on the fast path rather than silently
+        // costing the user time they did not ask for.
+        assert_eq!(level("nonsense"), level("fastest"));
     }
 }
 
