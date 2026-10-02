@@ -1324,23 +1324,19 @@ fn apply_edge_box_blur_to_mask_in_roi(
     }
 
     // ── Parallel H→V path (large ROIs, release builds) ───────────────────
-    // Thread-local buffer eliminates the ~41 MB per-call heap allocation.
-    // Capacity is retained across calls so only the first call per thread pays
-    // for OS page mapping; subsequent calls are essentially free.
-    //
-    // SAFETY invariant: every element of hpass is written by the H-pass
-    // before the V-pass reads it, so set_len on uninitialized capacity is fine.
+    // Reuse a buffer per thread, but take ownership before Rayon can run another
+    // blur on this worker. A reentrant blur must not overwrite the live H-pass.
+    // SAFETY invariant: H-pass writes every element before V-pass reads it.
     thread_local! {
-        static HPASS: std::cell::UnsafeCell<Vec<u16>> = std::cell::UnsafeCell::new(Vec::new());
+        static HPASS: std::cell::RefCell<Vec<u16>> = std::cell::RefCell::new(Vec::new());
     }
 
     let mask_read = mask.as_ptr() as usize;
     let mask_ptr = mask.as_mut_ptr() as usize;
 
-    HPASS.with(|cell| {
+    {
+        let mut hpass = HPASS.with(|cell| std::mem::take(&mut *cell.borrow_mut()));
         let needed = roi_w * roi_h;
-        // SAFETY: thread_local — only the owning thread accesses this cell.
-        let hpass: &mut Vec<u16> = unsafe { &mut *cell.get() };
         if hpass.capacity() < needed {
             hpass.reserve(needed - hpass.len());
         }
@@ -1376,6 +1372,10 @@ fn apply_edge_box_blur_to_mask_in_roi(
             });
 
         let hpass_ptr = hpass.as_ptr() as usize;
+        // Let a queued nested blur run here so the regression test exercises the
+        // reentrant case deterministically; compiled out in non-test builds.
+        #[cfg(test)]
+        rayon::yield_now();
 
         // V-pass: parallel over columns.
         // Safety: each parallel task writes to a distinct column of `mask`;
@@ -1413,7 +1413,13 @@ fn apply_edge_box_blur_to_mask_in_roi(
                 }
             }
         });
-    }); // end HPASS.with
+        HPASS.with(|cell| {
+            let mut cached = cell.borrow_mut();
+            if cached.capacity() < hpass.capacity() {
+                *cached = hpass;
+            }
+        });
+    }
 }
 
 fn gaussian_blur_weights(radius: usize, sigma: f64) -> Vec<u32> {
@@ -5035,6 +5041,34 @@ mod tests {
                 < 1e-6,
             "total area should equal the sum of component areas in AA RLE path"
         );
+    }
+
+    #[test]
+    fn parallel_box_blurs_on_one_worker_keep_separate_intermediates() {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let width = 1024;
+        let height = 1024;
+        let mut lit = vec![255u8; width * height];
+        let mut dark = vec![0u8; width * height];
+
+        pool.install(|| {
+            rayon::scope_fifo(|scope| {
+                scope.spawn_fifo(|_| {
+                    super::apply_edge_box_blur_to_mask_in_roi(
+                        &mut dark, width, height, 1, 0, 0, width - 1, 0, height - 1,
+                    );
+                });
+                super::apply_edge_box_blur_to_mask_in_roi(
+                    &mut lit, width, height, 1, 0, 0, width - 1, 0, height - 1,
+                );
+            });
+        });
+
+        assert!(lit.iter().all(|&pixel| pixel == 255));
+        assert!(dark.iter().all(|&pixel| pixel == 0));
     }
 
     #[test]

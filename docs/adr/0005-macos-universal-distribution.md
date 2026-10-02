@@ -72,6 +72,11 @@ Ship **one** `universal-apple-darwin` `.dmg`. Concretely:
 - **Shared embed module:** the post-build embed + re-sign + DMG-rebuild was
   extracted from `tauri-build.mjs` into `scripts/macos-embed-appex.mjs`, so the
   local wrapper *and* CI run the identical sequence (single source of truth).
+  *Update (2026-10-02, #703):* Tauri now embeds the `.appex` itself through
+  `bundle.macOS.files`, before it signs and notarizes the `.app`, and
+  `macos-embed-appex.mjs` only verifies the result and notarizes the DMG. The
+  post-build embed signed and notarized the `.app` twice and left the updater's
+  `.app.tar.gz` without the extension.
 - **Canonical entry point:** `npm run tauri:bundle:macos:universal` →
   `scripts/tauri-bundle-macos-universal.mjs` → `tauri-build.mjs --universal` (build
   + embed) → `scripts/verify-universal-bundle.mjs` (assert fat + signed + valid

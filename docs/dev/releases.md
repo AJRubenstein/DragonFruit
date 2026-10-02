@@ -244,6 +244,58 @@ again, so every external build is one a maintainer chose to run. Preview
 branches whose pull request has closed are swept away the next time any
 preview is activated.
 
+## Windows Microsoft C++ prerequisite
+
+Windows installers contain neither Microsoft CRT DLLs nor its redistributable.
+NSIS obtains the runtime directly from [Microsoft's latest-x64 endpoint](https://aka.ms/vc14/vc_redist.x64.exe)
+under Microsoft's terms. DragonFruit's AGPL license is unchanged; see the
+[FSF runtime guidance](https://www.gnu.org/licenses/gpl-faq.html#WindowsRuntimeAndGPL)
+and [Microsoft redistribution rules](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files).
+Build-tool licensing remains the release owner's responsibility.
+
+`scripts/prepare-windows-runtime.ps1` pins the minimum to `14.51.36247.0` and checks
+it against the selected Visual Studio installation's newest x64 CRT using direct
+`vswhere` discovery. It never updates the pin automatically. It generates the
+NSIS/WiX includes and downloads only checksum-pinned
+InetC, the free HTTPS plugin described in `scripts/windows-runtime-download-plugin.json`.
+Its zlib notice, `scripts/inetc-license.txt`, ships as `licenses/InetC.txt`.
+The native-resource build step and Windows pre-bundle hook run preparation.
+
+`src-tauri/nsis/runtime-prerequisite.nsh` checks the registered native x64 runtime
+and numeric system DLL version. If inadequate, an early consent page precedes
+any reinstall/uninstall pages. InetC downloads the latest official installer;
+`scripts/verify-windows-runtime.ps1` requires a valid Microsoft corporate signature
+and a VC14 version at least as new as the build requires, then setup runs
+**`/q /norestart`** and rechecks the runtime. Failure or cancellation stops setup;
+exit `3010` requests a manual restart and rerun, never an automatic reboot/launch.
+Silent `/S` and passive `/P` installations must have the prerequisite provisioned
+first. `src-tauri/wix/runtime-prerequisite.wxs` blocks an inadequate runtime with
+a Microsoft download link; it never nests an installer and allows uninstall.
+Tauri links that fragment through its supported `componentGroupRefs` option; the
+empty group anchors the searches and blocking action without installing a dummy component.
+The MSI search specifies the official CRT's resource language `1033`, not the
+Windows UI locale. MSI also compares language when the installed version equals
+the minimum; leaving it unspecified would reject the tagged Microsoft DLL.
+
+There is no Microsoft installer checksum pin or update bot: Microsoft may update
+its signed download independently. The shipped InetC plugin remains pinned.
+On Windows PowerShell 5.1 or 7:
+
+```powershell
+$minimum = ./scripts/prepare-windows-runtime.ps1
+./scripts/verify-windows-runtime.ps1 -InstallerPath C:\Temp\VC_redist.x64.exe -MinimumVersion $minimum
+```
+
+Preparation accepts `-OutputDirectory` and a higher `-MinimumVersion`; it cannot
+lower the pinned floor. A toolset requiring a newer runtime fails the build rather
+than changing the pin. Output defaults resolve relative to the script after
+parameter binding, including Windows PowerShell `-File` invocations from another
+directory. One Windows validation job checks the current Microsoft
+download. `scripts/verify-windows-bundles.ps1` rejects bundled Microsoft runtime
+payloads and checks the NSIS helpers and plugin notice before publication.
+Windows install/upgrade smoke must still cover missing/old/current runtimes,
+consent/UAC cancellation, failed downloads/signatures, and reboot-required results.
+
 ## Updater implementation notes
 
 - `src-tauri/tauri.conf.json`'s `plugins.updater.endpoints` points at the

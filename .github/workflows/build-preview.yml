@@ -610,6 +610,11 @@ jobs:
           tauriScript: npx tauri
           args: ${{ matrix.args }}
 
+      - name: Verify Windows installer runtime payload
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-windows-bundles.ps1 -Formats nsis
+
       - name: Install Flatpak build tooling
         if: matrix.build_kind == 'flatpak'
         run: sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils
