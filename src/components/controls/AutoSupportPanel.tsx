@@ -138,6 +138,20 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
     }
     setShowSettings(false);
   }, [settingsHaveChanges]);
+
+  /**
+   * The footer's Save has already written the draft (and the preset, where it had
+   * drifted), so there is nothing left to discard and the dialog closes outright.
+   *
+   * It must not go through `closeSettings`: that asks by consulting
+   * `settingsHaveChanges`, which belongs to the render *before* the write — React
+   * has not flushed the store update or `setDraft` when `onCommitted` runs inside
+   * the same handler, so a just-committed dialog would always be asked whether to
+   * discard the change it just saved.
+   */
+  const closeCommitted = React.useCallback(() => {
+    setShowSettings(false);
+  }, []);
   // The dialog is the panel's own overlay, so it registers for Escape itself.
   useEscapeToClose(showSettings, closeSettings);
 
@@ -593,7 +607,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
               debugMode={debugMode}
               onToggleDebugMode={() => setDebugMode((current) => !current)}
               presetLocked={presetLocked}
-              onCommitted={closeSettings}
+              onCommitted={closeCommitted}
             />
           </div>
         </div>,

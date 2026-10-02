@@ -534,7 +534,9 @@ type AutoSupportSettingsFooterActionsProps = {
   /** The dialog's draft — what Save commits and Reset discards. */
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
-  /** Called once the draft has been written, so the dialog can close. */
+  /** Called once the draft has been written, so the shell closes the dialog
+   *  outright — the commit is what makes that safe, so this must not be a close
+   *  that asks whether to discard. */
   onCommitted: () => void;
 };
 
