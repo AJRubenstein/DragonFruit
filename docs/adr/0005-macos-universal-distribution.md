@@ -169,9 +169,13 @@ uniform across platforms.
 to a release tag instead of `branch = "feat/cef"`, so the build cannot silently
 drift when the branch moves.
 
-**Current pin: `tauri-cef-v3.0.0-alpha.22`** (`f5bf953f`, 2026-08-19), adopted
-2026-08-24. All nine entries carry the same tag, so every crate resolves to one
-commit.
+**Current pin: `tauri-cef-v3.0.0-alpha.26`** (`71320305`), adopted 2026-09-30
+(previously alpha.22, `f5bf953f`, 2026-08-19). All nine entries carry the same
+tag, so every crate resolves to one commit. alpha.26 is the newest tag that still
+has the old `tauri/wry` + `tauri/cef` features: alpha.27 (#15985) decouples the
+runtime from the `tauri` crate (apps depend on `tauri-runtime-wry` /
+`tauri-runtime-cef` and call `Builder::runtime(...)`), which needs an app-level
+port before we can adopt it. It also brings wry 0.56 / tao 0.36 from alpha.23+.
 
 **History.** The original pin used two explicit revs — `tauri-plugin` on
 `a94e1b8…`, the other eight crates on `562bc59…` (2026-04-16) — because that was
