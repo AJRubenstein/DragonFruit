@@ -4730,7 +4730,6 @@ export default function Home() {
   React.useEffect(() => {
     if (!isDesktopRuntime()) return;
     if (desktopWindowRevealRequestedRef.current) return;
-    desktopWindowRevealRequestedRef.current = true;
 
     let cancelled = false;
     let timerId: ReturnType<typeof setTimeout> | null = null;
@@ -4753,6 +4752,11 @@ export default function Home() {
     // a short setTimeout gives the browser time to commit the first full frame.
     timerId = setTimeout(() => {
       if (!cancelled) {
+        // Claim the reveal only once it actually fires: StrictMode runs this
+        // effect, cleans it up and runs it again with refs intact, so a claim
+        // taken up front would make the second run bail out and the splash
+        // would never close.
+        desktopWindowRevealRequestedRef.current = true;
         // Signal the splashscreen to fade out gracefully before revealing.
         import('@tauri-apps/api/event').then(({ emit }) => {
           emit('splash-fade-out').catch(() => {});
