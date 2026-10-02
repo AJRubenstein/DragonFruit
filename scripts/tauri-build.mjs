@@ -27,7 +27,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { verifyEmbeddedAppex } from "./macos-embed-appex.mjs";
+import { notarizeDmg, verifyEmbeddedAppex } from "./macos-embed-appex.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -172,6 +172,14 @@ if (process.platform === "darwin" && result.status === 0 && !skipAppex) {
   }
 } else if (process.platform === "darwin" && result.status === 0 && skipAppex) {
   console.log("[tauri-build] --no-appex: bundle built without the QuickLook extension.");
+}
+// Tauri notarizes the .app but not the DMG; with notary credentials in the
+// environment, finish the job the way CI does. Without them this is a no-op.
+if (process.platform === "darwin" && result.status === 0) {
+  const dmg = notarizeDmg({ targetTriple, repoRoot });
+  if (!dmg.ok) {
+    console.warn(`[tauri-build] DMG not notarized: ${dmg.reason}`);
+  }
 }
 
 // ── Linux post-build: produce Flatpak bundle if tooling is available ─────────
