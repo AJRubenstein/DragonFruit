@@ -10005,6 +10005,8 @@ export default function Home() {
                 islands={islandsPoc}
                 hasGeometry={!!scene.geom}
                 activeModelId={scene.activeModelId ?? undefined}
+                autoLift={transformMgr.autoLift}
+                onAutoLiftChange={handleAutoLiftChange}
                 onBeforeRun={requestModifierDecisionBeforeSupports}
               />
             )}

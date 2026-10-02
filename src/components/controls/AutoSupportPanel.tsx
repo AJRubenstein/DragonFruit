@@ -15,17 +15,16 @@ import type { SizingDebugInfo, ForestReport } from '@/supports/autoSupport';
 import { getSettings, subscribeToSettings, updateAutoSupportDiagnostic, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
 import {
   getActiveAutoSupportPresetId,
-  getAutoSupportPresets,
   getAutoSupportPresetsServerSnapshot,
   getAutoSupportPresetsSnapshot,
   subscribeToAutoSupportPresets,
 } from '@/supports/Settings/autoSupportPresets';
-import { translateAutoSupportPresetName } from '@/supports/Settings/autoSupportPresetMessages';
 import { getSnapshot, setSnapshot } from '@/supports/state';
 import { knotHostId, coneKnotHostType, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import type { Knot } from '@/supports/types';
 import { AutoSupportSettingsBody } from './autoSupport/AutoSupportSettingsBody';
 import { AutoSupportRunDiagnostics } from './autoSupport/AutoSupportRunDiagnostics';
+import { AutoSupportPresetRow } from './autoSupport/AutoSupportPresetRow';
 import { selectAutoSupportPreset, useAutoSupportDialogChanges } from './autoSupport/AutoSupportPresets';
 import { AUTO_SUPPORT_SECTION_CARD, TIER_HINTS } from './autoSupport/autoSupportPanelTabs';
 /** Set to true while auto-support is busy (scanning or placing).
@@ -72,20 +71,17 @@ interface AutoSupportPanelProps {
   islands: UseIslandsReturn;
   hasGeometry: boolean;
   activeModelId?: string;
+  /** Auto-lift: the app's one flag for holding the model clear of the plate, so a
+   *  support can stand under it. Owned by the transform manager and shared with
+   *  the Prepare panel's own toggle (see `useTransformManager`). */
+  autoLift: boolean;
+  onAutoLiftChange: (enabled: boolean) => void;
   /** Resolve unapplied hollowing / hole punches before generating. Resolves
    *  false when the user went off to apply them first — the run is abandoned. */
   onBeforeRun?: () => Promise<boolean>;
 }
 
-// Active treatment for the density tier row, matching the bracing card's
-// quick-pick selector so the two panels read as one system.
-const TIER_ACTIVE_STYLE: React.CSSProperties = {
-  borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 30%)',
-  background: 'color-mix(in srgb, var(--accent), var(--surface-1) 85%)',
-  color: 'var(--text-strong)',
-};
-
-export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBeforeRun }: AutoSupportPanelProps) {
+export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift, onAutoLiftChange, onBeforeRun }: AutoSupportPanelProps) {
   const { _ } = useLingui();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
@@ -99,16 +95,23 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
   const [showForestReport, setShowForestReport] = React.useState(false);
   const [forestReport, setForestReportState] = React.useState<ForestReport | null>(null);
-  // The active tier is the store's fact, not one derived from the settings: a
-  // block that happens to equal a built-in's is not a preset the user picked,
-  // and guessing it was would put a name on settings nobody tied to it.
-  React.useSyncExternalStore(
+  // The active preset is the store's fact, not one derived from the settings: a
+  // block that happens to equal a built-in's is not a preset the user picked, and
+  // guessing it was would put a name on settings nobody tied to it.
+  //
+  // Both facts are subscribed rather than read once: React Compiler treats a bare
+  // call to an imported function as pure and evaluates it once, which would freeze
+  // the selector at whatever the store held when the panel mounted.
+  const presets = React.useSyncExternalStore(
     subscribeToAutoSupportPresets,
     getAutoSupportPresetsSnapshot,
     getAutoSupportPresetsServerSnapshot,
   );
-  const builtInPresets = getAutoSupportPresets().filter((preset) => preset.isBuiltIn);
-  const activePresetId = getActiveAutoSupportPresetId();
+  const activePresetId = React.useSyncExternalStore(
+    subscribeToAutoSupportPresets,
+    getActiveAutoSupportPresetId,
+    getActiveAutoSupportPresetId,
+  );
   const supportSettings = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
   const debugSimpleRender = supportSettings.debugSimpleSupportRender;
 
@@ -440,26 +443,20 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               </div>
             </div>
 
-            {/* Density tier quick-select — the store's built-in presets, whose
-                blocks are the Detail / Structure / Anchor trunk presets'
-                `autoSupport` values. The bracing card's quick-pick style:
-                unboxed and on the card surface, so it matches the cards around
-                it (the bracing row keeps its darker inset inside its card). */}
-            <div className="grid grid-cols-3 gap-1.5">
-              {builtInPresets.map((preset) => (
-                <button key={preset.id} type="button"
-                  onClick={() => {
-                    // Applies the whole block on select (the store's contract)
-                    // and copies it into the dialog's draft. The trunk preset
-                    // (manual placement) is deliberately not touched.
-                    selectAutoSupportPreset(preset.id, setDraft);
-                  }}
-                  title={_(TIER_HINTS[preset.id] ?? msg`Apply this preset to the auto-support settings`)}
-                  className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
-                  style={activePresetId === preset.id ? TIER_ACTIVE_STYLE : undefined}
-                >{translateAutoSupportPresetName(preset, _)}</button>
-              ))}
-            </div>
+            {/* Run-policy selector: every preset the store holds, built-in and
+                custom alike, so a profile a user saved is pickable from the panel
+                rather than only from the dialog. Selecting one applies the whole
+                block (the store's contract) and copies it into the dialog's draft;
+                the trunk preset (manual placement) is deliberately not touched.
+                Beside it, the Auto-Lift flag the run's clearance depends on. */}
+            <AutoSupportPresetRow
+              presets={presets}
+              activeId={activePresetId}
+              onSelect={(id) => selectAutoSupportPreset(id, setDraft)}
+              activeHint={activePresetId ? TIER_HINTS[activePresetId] : undefined}
+              autoLift={autoLift}
+              onAutoLiftChange={onAutoLiftChange}
+            />
 
             {/* The last run's diagnostics, behind Debug mode in the settings
                 dialog: the panel is where a run is started, so it is where its

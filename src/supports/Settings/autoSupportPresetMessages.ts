@@ -17,10 +17,17 @@ import type { AutoSupportPreset } from './autoSupportPresets';
 
 type Translate = (descriptor: MessageDescriptor) => string;
 
+/**
+ * What a preset selector shows before the user has ever picked one. Shared by the
+ * panel's dropdown and the settings dialog's strip, so the two surfaces name the
+ * state the same way.
+ */
+export const NO_ACTIVE_PRESET_LABEL = msg`Custom — not a preset`;
+
 const BUILT_IN_NAMES: Record<string, MessageDescriptor> = {
-  light: msg({ message: 'Light', comment: 'Built-in auto-support preset for sparse supports, matching the "light" density tier button on the Auto Support panel.' }),
-  medium: msg({ message: 'Medium', comment: 'Built-in auto-support preset for balanced supports, matching the "medium" density tier button on the Auto Support panel.' }),
-  heavy: msg({ message: 'Heavy', comment: 'Built-in auto-support preset for dense supports, matching the "heavy" density tier button on the Auto Support panel.' }),
+  light: msg({ message: 'Light', comment: "Built-in auto-support preset for sparse supports — the Light tier in the Auto Support panel's preset selector." }),
+  medium: msg({ message: 'Medium', comment: "Built-in auto-support preset for balanced supports — the Medium tier in the Auto Support panel's preset selector." }),
+  heavy: msg({ message: 'Heavy', comment: "Built-in auto-support preset for dense supports — the Heavy tier in the Auto Support panel's preset selector." }),
 };
 
 export function translateAutoSupportPresetName(preset: AutoSupportPreset, translate: Translate): string {

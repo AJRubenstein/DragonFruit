@@ -87,14 +87,12 @@ import {
   savePrintArtifactWithNativeDialog,
 } from '@/features/slicing/tauri/nativeSlicerBridge';
 import { sizingTierName, useSupportStudioPresets } from './AutoSupportSizingTierField';
+import { NO_ACTIVE_PRESET_LABEL } from '@/supports/Settings/autoSupportPresetMessages';
 
 type Translate = (descriptor: MessageDescriptor) => string;
 
 /** Placeholder and starting value for a new preset's name. */
 const NEW_PRESET_NAME = msg`New Preset`;
-
-/** What the selector shows before the user has ever picked a preset. */
-const NO_ACTIVE_PRESET_LABEL = msg`Custom — not a preset`;
 
 /** The selector's "add one" entry — the references' `New Curve` / `+ New Theme`. */
 const NEW_PRESET_ENTRY = msg`New preset…`;

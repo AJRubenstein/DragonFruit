@@ -4,8 +4,10 @@ import { registerHooks } from 'node:module';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '@lingui/react';
+import type { MessageDescriptor } from '@lingui/core';
 import { i18n } from '../../i18n';
 import type { AutoSupportSettings, ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
+import type { AutoSupportPreset } from '@/supports/Settings/autoSupportPresets';
 import type { AutoSupportSettingsBodyProps } from '@/components/controls/autoSupport/AutoSupportSettingsBody';
 import type { AutoSupportRunDiagnosticsProps } from '@/components/controls/autoSupport/AutoSupportRunDiagnostics';
 import type { AutoSupportSectionDef } from '@/components/controls/autoSupport/autoSupportPanelTabs';
@@ -44,10 +46,24 @@ let AutoSupportSettingsBody: React.ComponentType<AutoSupportSettingsBodyProps>;
 let AutoSupportRunDiagnostics: React.ComponentType<AutoSupportRunDiagnosticsProps>;
 let selectAutoSupportPreset: (id: string, setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
 let deleteActiveAutoSupportPreset: (setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>) => void;
+let autoSupportPresetOptions: (
+  presets: readonly AutoSupportPreset[],
+  activeId: string | null,
+  translate: (descriptor: MessageDescriptor) => string,
+) => Array<{ value: string; label: string; disabled?: boolean; rightContent: string }>;
+let AutoSupportPresetRow: React.ComponentType<{
+  presets: readonly AutoSupportPreset[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  activeHint?: MessageDescriptor;
+  autoLift: boolean;
+  onAutoLiftChange: (enabled: boolean) => void;
+}>;
 let autoSupportSections: ReadonlyArray<AutoSupportSectionDef>;
 let policySections: ReadonlyArray<AutoSupportSectionDef>;
 let diagnosticToggles: ReadonlyArray<{ key: string }>;
 let togglesBySection: { debug: ReadonlyArray<{ key: string }> };
+let tierHints: Record<string, MessageDescriptor>;
 
 // Dynamic on purpose: these modules call `msg`, so the resolve hook above must
 // already be registered — a static import would be evaluated first.
@@ -55,11 +71,14 @@ before(async () => {
   ({ AutoSupportSettingsBody } = await import('@/components/controls/autoSupport/AutoSupportSettingsBody'));
   ({ AutoSupportRunDiagnostics } = await import('@/components/controls/autoSupport/AutoSupportRunDiagnostics'));
   ({ selectAutoSupportPreset, deleteActiveAutoSupportPreset } = await import('@/components/controls/autoSupport/AutoSupportPresets'));
+  ({ autoSupportPresetOptions } = await import('@/components/controls/autoSupport/AutoSupportPresetSelect'));
+  ({ AutoSupportPresetRow } = await import('@/components/controls/autoSupport/AutoSupportPresetRow'));
   ({
     AUTO_SUPPORT_SECTIONS: autoSupportSections,
     AUTO_SUPPORT_POLICY_SECTIONS: policySections,
     DIAGNOSTIC_TOGGLES: diagnosticToggles,
     TOGGLES_BY_SECTION: togglesBySection,
+    TIER_HINTS: tierHints,
   } = await import('@/components/controls/autoSupport/autoSupportPanelTabs'));
 });
 
@@ -376,4 +395,134 @@ test('Save refuses a built-in preset and is offered for a custom one', () => {
 
   const custom = renderBody();
   assert.ok(!saveButton(custom).includes('disabled=""'), 'Save must be offered for a custom preset');
+});
+
+/** The panel's own preset row, mounted without a DOM like the dialog's body. */
+function renderPresetRow(activeId: string | null, autoLift = false): string {
+  return renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      { i18n },
+      React.createElement(AutoSupportPresetRow, {
+        presets: getAutoSupportPresets(),
+        activeId,
+        onSelect: () => {},
+        autoLift,
+        onAutoLiftChange: () => {},
+      }),
+    ),
+  );
+}
+
+test('the panel’s selector offers the profiles a user saved, not only the built-ins', () => {
+  // Named apart from the preset the Save test makes, whose name is taken.
+  const mine = createAutoSupportPreset('Panel Profile');
+  const options = autoSupportPresetOptions(
+    getAutoSupportPresets(),
+    getActiveAutoSupportPresetId(),
+    (descriptor) => i18n._(descriptor),
+  );
+
+  // The row the panel used to render was `filter(isBuiltIn)`, so a saved profile
+  // was unreachable from the panel at all. The built-ins lead, the user's follow.
+  assert.deepEqual(
+    options.slice(0, 3).map((option) => option.value),
+    ['light', 'medium', 'heavy'],
+    'the built-ins lead the list',
+  );
+  assert.ok(
+    options.some((option) => option.value === mine.id && option.label === 'Panel Profile'),
+    'a saved profile must be offered under the name it was saved with',
+  );
+  assert.equal(options.find((option) => option.value === 'light')?.label, 'Light', 'built-in names stay translated');
+  assert.equal(
+    options.find((option) => option.value === mine.id)?.rightContent,
+    'Custom',
+    'a saved profile is marked as the user’s own',
+  );
+  assert.equal(
+    options.find((option) => option.value === 'light')?.rightContent,
+    'Built-in',
+    'and a shipped one as built in',
+  );
+
+  // The trigger renders the selected option's label, so a custom profile being
+  // active is what the panel reads while it is selected.
+  const markup = renderPresetRow(mine.id);
+  assert.ok(markup.includes('aria-label="Auto-support preset"'));
+  assert.ok(markup.includes('Panel Profile'), 'the panel must show the custom profile it is on');
+
+  // The tier hint stays with the built-ins it describes.
+  const onBuiltIn = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      { i18n },
+      React.createElement(AutoSupportPresetRow, {
+        presets: getAutoSupportPresets(),
+        activeId: 'light',
+        onSelect: () => {},
+        activeHint: tierHints.light,
+        autoLift: false,
+        onAutoLiftChange: () => {},
+      }),
+    ),
+  );
+  assert.ok(onBuiltIn.includes('Sparse supports'), 'selecting a built-in must explain what it is for');
+});
+
+test('the panel’s preset row is the selector and the Auto-Lift toggle, one to one', () => {
+  const off = renderPresetRow(null, false);
+  const on = renderPresetRow(null, true);
+
+  // The toggle is the row's last button (the dropdown renders its trigger and, while
+  // closed, nothing else), so its own markup is what the state assertions read.
+  const toggle = (markup: string) => markup.slice(markup.lastIndexOf('<button'));
+
+  // A toggle button in the app's standard shape: the pressed state is the
+  // accessibility fact, the accent fill is what carries it visually, and the label
+  // says which way the flag is set.
+  assert.ok(off.includes('Auto-Lift OFF'), 'the off label must state the state');
+  assert.ok(on.includes('Auto-Lift ON'), 'the on label must state the state');
+  assert.ok(off.includes('aria-pressed="false"'), 'auto-lift off must be announced as not pressed');
+  assert.ok(on.includes('aria-pressed="true"'), 'auto-lift on must be announced as pressed');
+  assert.ok(
+    toggle(on).includes('color-mix(in srgb, var(--accent), var(--surface-1) 85%)'),
+    'the accent fill is what marks the toggle as on',
+  );
+  assert.ok(
+    !toggle(off).includes('color-mix(in srgb, var(--accent), var(--surface-1) 85%)'),
+    'the off state must not carry the accent fill',
+  );
+
+  // Off keeps the lighter fill the dropdown beside it uses, so the row holds
+  // together. Nothing is struck through: the state is in the words.
+  assert.ok(toggle(off).includes('background:var(--surface-1)'), 'off takes the dropdown’s lighter fill');
+  assert.ok(toggle(on).includes('background:color-mix'), 'on takes the accent fill instead');
+  assert.ok(!off.includes('line-through'), 'the label must not be crossed out');
+  assert.ok(
+    off.includes('Hold the model clear of the plate'),
+    'the toggle must say what lifting the model does for a run',
+  );
+
+  // Sentence case: the upper-case pill it started as reads as shouting beside a
+  // quiet dropdown.
+  assert.ok(!off.includes('uppercase'), 'the label must not be all caps');
+
+  // The dropdown keeps the Auto Orientation panel's objective-dropdown theme: the
+  // lighter surface-1 fill rather than the input's own, content centred.
+  assert.ok(off.includes('background:var(--surface-1)'), 'the selector takes the surface-1 fill');
+  assert.ok(off.includes('text-align:center'), 'the row follows the centred Auto Orientation dropdown');
+});
+
+test('the panel’s selector names the unselected state instead of rendering an empty trigger', () => {
+  const options = autoSupportPresetOptions(
+    getAutoSupportPresets(),
+    null,
+    (descriptor) => i18n._(descriptor),
+  );
+
+  assert.equal(options[0].value, '', 'the placeholder is the unmatched value the trigger falls back to');
+  assert.equal(options[0].disabled, true, 'the state itself is not a choice');
+  assert.equal(options[0].label, 'Custom — not a preset');
+  assert.ok(renderPresetRow(null).includes('Custom — not a preset'));
 });
