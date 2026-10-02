@@ -174,11 +174,11 @@ msgstr ""
 msgid "3D mouse navigation controls"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:615
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:646
 msgid "A built-in preset cannot be saved over — Duplicate it to make it yours"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:376
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:387
 msgid "A built-in's name is translated and cannot be renamed"
 msgstr ""
 
@@ -257,7 +257,7 @@ msgstr "Ajouter une imprimante"
 msgid "Add Printer"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:685
+#: src/components/controls/AutoSupportPanel.tsx:673
 msgid "Add to existing"
 msgstr ""
 
@@ -315,7 +315,7 @@ msgid "Anti-aliasing: nothing to anti-alias."
 msgstr "Anticrénelage : rien à lisser."
 
 #: src/components/controls/IslandsPanel.tsx:331
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:227
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:231
 msgid "Apply"
 msgstr ""
 
@@ -377,11 +377,11 @@ msgstr ""
 msgid "Auto Supports"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:418
+#: src/components/controls/AutoSupportPanel.tsx:407
 msgid "Auto Supports (Beta)"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:573
+#: src/components/controls/AutoSupportPanel.tsx:562
 msgid "Auto Supports (Beta) Settings"
 msgstr ""
 
@@ -422,21 +422,21 @@ msgstr ""
 msgid "Auto-Repairing Meshes…"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:349
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:360
 #: src/components/controls/autoSupport/AutoSupportPresetSelect.tsx:85
 msgid "Auto-support preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:430
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:441
 msgid "Auto-support preset file"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:349
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:360
 msgid "Auto-support preset, modified"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:422
-#: src/components/controls/AutoSupportPanel.tsx:558
+#: src/components/controls/AutoSupportPanel.tsx:411
+#: src/components/controls/AutoSupportPanel.tsx:547
 msgid "Auto-support settings"
 msgstr ""
 
@@ -638,7 +638,7 @@ msgstr ""
 msgid "Bottom"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:115
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:119
 msgid "Brace Diameter"
 msgstr ""
 
@@ -684,13 +684,13 @@ msgstr ""
 msgid "Build: {0} × {1} × {2} mm"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:288
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:299
 #: src/components/controls/autoSupport/AutoSupportPresetSelect.tsx:57
 #: src/components/controls/autoSupport/AutoSupportSizingTierField.tsx:110
 msgid "Built-in"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:582
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:616
 msgid "Built-in presets cannot be deleted"
 msgstr ""
 
@@ -715,9 +715,9 @@ msgstr ""
 msgid "Camera view mode: {currentLabel}"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:467
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:641
-#: src/components/controls/AutoSupportPanel.tsx:677
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:478
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:673
+#: src/components/controls/AutoSupportPanel.tsx:665
 #: src/components/controls/IslandScanCard.tsx:198
 #: src/components/controls/IslandsPanel.tsx:319
 #: src/components/printers/PrinterVariantPickerModal.tsx:701
@@ -869,7 +869,7 @@ msgstr ""
 msgid "Clear"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:240
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:244
 msgid "Clear All"
 msgstr ""
 
@@ -906,13 +906,13 @@ msgstr ""
 msgid "Client ID"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:529
+#: src/components/controls/AutoSupportPanel.tsx:518
 #: src/components/layout/TopBar.tsx:1223
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
 msgid "Close"
 msgstr "Fermer"
 
-#: src/components/controls/AutoSupportPanel.tsx:584
+#: src/components/controls/AutoSupportPanel.tsx:573
 msgid "Close dialog"
 msgstr ""
 
@@ -945,11 +945,11 @@ msgstr ""
 msgid "Close snapshot details"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:649
+#: src/components/controls/AutoSupportPanel.tsx:637
 msgid "Close the dialog and discard the edits"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:527
+#: src/components/controls/AutoSupportPanel.tsx:516
 msgid "Close the report"
 msgstr ""
 
@@ -961,15 +961,15 @@ msgstr "Fermer l'avertissement"
 msgid "Close window"
 msgstr "Fermer la fenêtre"
 
-#: src/components/controls/AutoSupportPanel.tsx:585
+#: src/components/controls/AutoSupportPanel.tsx:574
 msgid "Close without applying the edits made in this dialog"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:657
+#: src/components/controls/AutoSupportPanel.tsx:645
 msgid "Closing now leaves the auto-support settings as they are. Save in the dialog's footer writes them."
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:181
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:185
 msgid "Cluster Spacing"
 msgstr ""
 
@@ -983,7 +983,7 @@ msgid "Coincident"
 msgstr ""
 
 #: src/components/controls/AutoRotationPanel.tsx:197
-#: src/components/controls/AutoSupportPanel.tsx:405
+#: src/components/controls/AutoSupportPanel.tsx:394
 #: src/components/controls/ModelManagerPanel.tsx:379
 #: src/features/slicing/components/SlicingPanel.tsx:2511
 #: src/features/slicing/components/SlicingPanel.tsx:2548
@@ -1151,7 +1151,7 @@ msgstr ""
 msgid "Cool"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:521
+#: src/components/controls/AutoSupportPanel.tsx:510
 #: src/components/ui/EditorContextMenu.tsx:82
 msgid "Copy"
 msgstr "Copier"
@@ -1164,11 +1164,11 @@ msgstr ""
 msgid "Copy the Client ID and Client Secret into your local <0>.env</0>."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:389
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:400
 msgid "Copy the selected preset under a new name"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:519
+#: src/components/controls/AutoSupportPanel.tsx:508
 msgid "Copy the whole report to the clipboard"
 msgstr ""
 
@@ -1208,7 +1208,7 @@ msgstr ""
 msgid "Crash Recovery"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:480
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:491
 msgid "Create"
 msgstr ""
 
@@ -1224,11 +1224,11 @@ msgstr ""
 msgid "Create cavity or open-face shell"
 msgstr "Créer une cavité ou une coque ouverte"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:450
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:461
 msgid "Create preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:476
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:487
 msgid "Create the preset and select it"
 msgstr ""
 
@@ -1270,7 +1270,7 @@ msgstr ""
 msgid "Curves"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:288
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:299
 #: src/components/controls/autoSupport/AutoSupportPresetSelect.tsx:57
 #: src/components/controls/autoSupport/AutoSupportSizingTierField.tsx:110
 msgid "Custom"
@@ -1322,8 +1322,8 @@ msgstr ""
 msgid "Defective — {0} errors"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:586
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:657
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:620
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:689
 #: src/components/settings/LocalBackupsSettingsTab.tsx:1023
 #: src/components/ui/EditorContextMenu.tsx:80
 #: src/supports/Settings/components/PresetSelector.tsx:810
@@ -1332,7 +1332,7 @@ msgstr ""
 msgid "Delete"
 msgstr "Supprimer"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:135
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:146
 #: src/supports/Settings/presetMessages.ts:46
 msgid "Delete \"{presetName}\"?"
 msgstr ""
@@ -1349,7 +1349,7 @@ msgstr ""
 msgid "Delete Backup Snapshot"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:627
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:659
 #: src/supports/Settings/components/PresetSelector.tsx:776
 msgid "Delete preset"
 msgstr ""
@@ -1363,11 +1363,11 @@ msgstr ""
 msgid "Delete snapshot"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:655
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:687
 msgid "Delete the preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:583
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:617
 msgid "Delete the selected preset"
 msgstr ""
 
@@ -1375,7 +1375,7 @@ msgstr ""
 msgid "Delete this backup snapshot from GitHub history? This cannot be undone."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:690
+#: src/components/controls/AutoSupportPanel.tsx:678
 msgid "Delete this model's existing supports and place the new ones"
 msgstr ""
 
@@ -1405,7 +1405,7 @@ msgstr ""
 msgid "Detected a {bitsLabel} screen that doesn't match any known variant of {presetName}."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:576
+#: src/components/controls/AutoSupportPanel.tsx:565
 msgid "Detected surfaces, density and sizing, stability, and the saved presets a run follows"
 msgstr ""
 
@@ -1436,20 +1436,20 @@ msgstr ""
 msgid "Disabled"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:651
+#: src/components/controls/AutoSupportPanel.tsx:639
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:153
 msgid "Discard"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:619
+#: src/components/controls/AutoSupportPanel.tsx:607
 msgid "Discard auto-support settings changes"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:620
+#: src/components/controls/AutoSupportPanel.tsx:608
 msgid "Discard Changes?"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:598
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:632
 msgid "Discard the edits made in this dialog and reload the selected preset"
 msgstr ""
 
@@ -1563,7 +1563,7 @@ msgstr "Déposez des fichiers pris en charge"
 msgid "Drop supported files to import"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:392
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:403
 msgid "Duplicate"
 msgstr ""
 
@@ -1687,7 +1687,7 @@ msgid "Every great print starts with an empty scene."
 msgstr "Toute grande impression commence par une scène vide."
 
 #: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:83
-#: src/components/controls/AutoSupportPanel.tsx:504
+#: src/components/controls/AutoSupportPanel.tsx:493
 msgid "Every placed support with its size and fan-out groups"
 msgstr ""
 
@@ -1695,16 +1695,16 @@ msgstr ""
 msgid "Existing backup repository detected"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:663
+#: src/components/controls/AutoSupportPanel.tsx:651
 msgid "Existing supports detected"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:664
+#: src/components/controls/AutoSupportPanel.tsx:652
 msgid "Existing Supports Detected"
 msgstr ""
 
 #: src/components/controls/AutoRotationPanel.tsx:197
-#: src/components/controls/AutoSupportPanel.tsx:405
+#: src/components/controls/AutoSupportPanel.tsx:394
 #: src/components/controls/ModelManagerPanel.tsx:379
 #: src/features/slicing/components/SlicingPanel.tsx:2511
 #: src/features/slicing/components/SlicingPanel.tsx:2548
@@ -1741,12 +1741,12 @@ msgstr ""
 msgid "Expert"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:407
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:418
 #: src/components/layout/TopBar.tsx:632
 msgid "Export"
 msgstr "Exporter"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:404
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:415
 msgid "Export the selected preset as a JSON file"
 msgstr ""
 
@@ -1913,11 +1913,11 @@ msgstr ""
 msgid "Force Push Local"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:502
+#: src/components/controls/AutoSupportPanel.tsx:491
 msgid "Forest report"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:503
+#: src/components/controls/AutoSupportPanel.tsx:492
 msgid "Forest Report"
 msgstr ""
 
@@ -1956,7 +1956,7 @@ msgstr ""
 msgid "Generate a secret…"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:444
+#: src/components/controls/AutoSupportPanel.tsx:433
 msgid "Generate Supports"
 msgstr ""
 
@@ -1976,7 +1976,7 @@ msgstr ""
 msgid "GitHub OAuth popup opened."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:632
+#: src/components/controls/AutoSupportPanel.tsx:620
 msgid "Go back to the settings dialog"
 msgstr ""
 
@@ -2137,11 +2137,11 @@ msgstr "Les mains oisives ne laminent pas."
 msgid "If GitHub has a newer backup, DragonFruit pauses sync and asks whether to restore remote or force-push local."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:422
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:433
 msgid "Import"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:419
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:430
 msgid "Import a preset from a JSON file, and apply it"
 msgstr ""
 
@@ -2186,7 +2186,7 @@ msgstr ""
 msgid "Individual lowest-vertex triangles on the mesh surface"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:145
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:149
 msgid "Initial Distance"
 msgstr ""
 
@@ -2285,7 +2285,7 @@ msgstr ""
 msgid "Keep current profiles"
 msgstr "Conserver les profils actuels"
 
-#: src/components/controls/AutoSupportPanel.tsx:634
+#: src/components/controls/AutoSupportPanel.tsx:622
 msgid "Keep Editing"
 msgstr ""
 
@@ -2293,15 +2293,15 @@ msgstr ""
 msgid "Keep going without a printer. You can add one later."
 msgstr "Continuez sans imprimante. Vous pourrez en ajouter une plus tard."
 
-#: src/components/controls/AutoSupportPanel.tsx:675
+#: src/components/controls/AutoSupportPanel.tsx:663
 msgid "Keep the existing supports and do nothing"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:683
+#: src/components/controls/AutoSupportPanel.tsx:671
 msgid "Keep the existing supports and place the new ones around them"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:639
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:671
 msgid "Keep the preset"
 msgstr ""
 
@@ -2392,7 +2392,7 @@ msgstr ""
 msgid "Least Scarring"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:465
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:476
 msgid "Leave the collection as it is"
 msgstr ""
 
@@ -2432,7 +2432,7 @@ msgstr ""
 msgid "Line Width"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:493
+#: src/components/controls/AutoSupportPanel.tsx:482
 msgid "Load a model and scan for islands."
 msgstr ""
 
@@ -2647,7 +2647,7 @@ msgstr ""
 msgid "Max angle from vertical for fan-out leaves"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:128
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:132
 msgid "Max Brace Distance"
 msgstr ""
 
@@ -2728,7 +2728,7 @@ msgstr ""
 msgid "Min Overlap: 4"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:452
+#: src/components/controls/AutoSupportPanel.tsx:441
 #: src/components/controls/IslandsPanel.tsx:212
 #: src/components/controls/IslandsPanel.tsx:274
 msgid "Minima"
@@ -2876,13 +2876,13 @@ msgstr ""
 msgid "Never"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:95
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:451
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:94
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:462
 #: src/supports/Settings/components/PresetSelector.tsx:965
 msgid "New Preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:98
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:97
 msgid "New preset…"
 msgstr ""
 
@@ -3392,8 +3392,8 @@ msgstr ""
 msgid "Preset has unsaved changes"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:490
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:504
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:501
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:515
 msgid "Preset name"
 msgstr ""
 
@@ -3661,7 +3661,7 @@ msgstr ""
 msgid "Removed {count, plural, one {# brace} other {# braces}}."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:380
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:391
 #: src/supports/Settings/components/PresetSelector.tsx:983
 msgid "Rename"
 msgstr ""
@@ -3679,16 +3679,16 @@ msgstr ""
 msgid "Rename model base name"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:450
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:461
 msgid "Rename preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:451
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:462
 msgid "Rename Preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:377
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:477
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:388
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:488
 msgid "Rename the selected preset"
 msgstr ""
 
@@ -3705,11 +3705,11 @@ msgstr "Réparer"
 msgid "Repair mesh…"
 msgstr ""
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:158
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:162
 msgid "Repeat Interval"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:698
+#: src/components/controls/AutoSupportPanel.tsx:686
 msgid "Replace all"
 msgstr ""
 
@@ -3725,7 +3725,7 @@ msgstr ""
 msgid "Required for self-compiled builds that do not ship with backup OAuth env values."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:601
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:635
 #: src/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard.tsx:31
 msgid "Reset"
 msgstr ""
@@ -3868,7 +3868,7 @@ msgstr ""
 msgid "Running"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:444
+#: src/components/controls/AutoSupportPanel.tsx:433
 msgid "Running…"
 msgstr ""
 
@@ -3876,7 +3876,7 @@ msgstr ""
 msgid "Samples"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:620
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
 #: src/supports/Settings/components/PresetSelector.tsx:763
 msgid "Save"
 msgstr ""
@@ -3897,7 +3897,7 @@ msgstr ""
 msgid "Save Material"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:480
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:491
 msgid "Save Name"
 msgstr ""
 
@@ -3921,8 +3921,13 @@ msgstr ""
 msgid "Save snapshots to your local backup folder, then review and restore any point-in-time snapshot in-app."
 msgstr ""
 
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:644
 #: src/supports/Settings/SupportSidebar.tsx:1229
 msgid "Saved"
+msgstr ""
+
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
+msgid "Saved!"
 msgstr ""
 
 #: src/components/organisms/NotificationStack.tsx:65
@@ -3942,7 +3947,7 @@ msgstr ""
 msgid "Scan again"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:436
+#: src/components/controls/AutoSupportPanel.tsx:425
 msgid "Scan for islands if needed, then place automatic supports on this model"
 msgstr ""
 
@@ -4558,11 +4563,11 @@ msgstr "Le plateau d'impression vous attend."
 msgid "The build volume misses you."
 msgstr "Le volume d'impression s'ennuie de vous."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:453
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:464
 msgid "The current settings are saved under this name, and it becomes the selected preset."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:621
+#: src/components/controls/AutoSupportPanel.tsx:609
 msgid "The edits made in this dialog have not been saved."
 msgstr ""
 
@@ -4578,7 +4583,7 @@ msgstr ""
 msgid "The passes after placement"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:663
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:695
 msgid "The preset is removed from the list. The current settings are left as they are."
 msgstr ""
 
@@ -4591,7 +4596,7 @@ msgstr ""
 msgid "The resin is ready. Are you?"
 msgstr "La résine est prête. Et vous ?"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:352
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:363
 msgid "The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you save."
 msgstr ""
 
@@ -4603,11 +4608,11 @@ msgstr ""
 msgid "The selected Machine does not support AA at this time."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:454
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:465
 msgid "The selected preset is renamed; its settings are not touched."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:351
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:362
 msgid "The settings no longer match this preset. Save overwrites it; Reset reloads it."
 msgstr ""
 
@@ -4646,7 +4651,7 @@ msgstr ""
 msgid "This backup snapshot will be permanently removed from disk."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:629
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:661
 msgid "This cannot be undone."
 msgstr ""
 
@@ -4654,7 +4659,7 @@ msgstr ""
 msgid "This is a built-in profile, so its fields are fixed. Duplicate it and edit the copy — custom settings belong in a custom profile."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:665
+#: src/components/controls/AutoSupportPanel.tsx:653
 msgid "This model already has supports. How would you like to proceed?"
 msgstr ""
 
@@ -4736,7 +4741,7 @@ msgstr ""
 msgid "Top"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:453
+#: src/components/controls/AutoSupportPanel.tsx:442
 msgid "Total"
 msgstr ""
 
@@ -4980,7 +4985,7 @@ msgstr ""
 msgid "Volume"
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:451
+#: src/components/controls/AutoSupportPanel.tsx:440
 msgid "Voxel"
 msgstr ""
 
@@ -5104,11 +5109,11 @@ msgstr ""
 msgid "Workspaces"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:618
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:649
 msgid "Write these settings to the auto-support settings"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:617
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:648
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr ""
 
@@ -5129,7 +5134,7 @@ msgstr "Vous pouvez continuer à ajuster les profils, mais il vous sera demandé
 msgid "You can disconnect GitHub at any time. OAuth access is used only for repository checks and syncing backup files."
 msgstr ""
 
-#: src/components/controls/AutoSupportPanel.tsx:705
+#: src/components/controls/AutoSupportPanel.tsx:693
 msgid "You can replace all existing supports with auto-placed ones, or incorporate your existing supports and fill in the gaps."
 msgstr ""
 
@@ -5162,6 +5167,6 @@ msgstr ""
 msgid "Zero polygons. Infinite potential."
 msgstr "Zéro polygone. Potentiel infini."
 
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:159
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:163
 msgid "Zigzag chains step by their own rise — interval has no effect"
 msgstr ""
