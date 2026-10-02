@@ -19,7 +19,7 @@ import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import { SelectDropdown } from '@/components/ui/SelectDropdown';
+import { CENTERED_SELECT_PADDING, SelectDropdown } from '@/components/ui/SelectDropdown';
 import { translateAutoSupportPresetName, NO_ACTIVE_PRESET_LABEL } from '@/supports/Settings/autoSupportPresetMessages';
 import type { AutoSupportPreset } from '@/supports/Settings/autoSupportPresets';
 
@@ -85,11 +85,11 @@ export function AutoSupportPresetSelect({ presets, activeId, onSelect, activeHin
       ariaLabel={_(msg`Auto-support preset`)}
       title={activeHint ? _(activeHint) : _(msg`Apply this preset to the auto-support settings`)}
       className="space-y-0"
-      selectClassName="w-full !h-8 pl-2.5 pr-10 leading-tight text-[12px]"
+      selectClassName="w-full !h-8 leading-tight text-[12px]"
       // The Auto Orientation panel's objective dropdown is the theme this follows:
-      // the lighter surface-1 fill rather than the input's own, and the label
-      // centred in the trigger.
-      selectStyle={{ background: 'var(--surface-1)', textAlign: 'center' }}
+      // the lighter surface-1 fill rather than the input's own. Centring comes from
+      // `CENTERED_SELECT_PADDING`, which also keeps the chevron clear.
+      selectStyle={{ background: 'var(--surface-1)', ...CENTERED_SELECT_PADDING }}
       menuClassName="max-w-[26rem]"
     />
   );
