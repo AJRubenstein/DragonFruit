@@ -5,6 +5,7 @@ import * as THREE from 'three';
 
 import { generateGridCandidates, computeRegionSpacing, GRID_SPACING_FLOOR_MM, MAX_GRID_CANDIDATES_PER_REGION, steepFlatAnchorBandTop, steepFlatSpacingMultiplier, STEEP_FLAT_SPACING_MULTIPLIER, shouldUseDensityGrid } from '../autoSupport/gridPlacement';
 import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
+import { SLOPE_RELAX_RAMP_START } from '../autoSupport/constants';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 
 // ---------------------------------------------------------------------------
@@ -227,6 +228,43 @@ test('spacing never falls below the floor', () => {
     };
     const spacing = computeRegionSpacing(rectRegion('o0', -10, 10, -10, 10, 400, 6.5, 0), settings);
     assert.equal(spacing, GRID_SPACING_FLOOR_MM);
+});
+
+/**
+ * The angle term is the one that starved a part's shallow rims and ledges. It used to
+ * blend linearly from 0° to the self-support threshold, so a 25° underside — a
+ * formation overhang exactly as a flat ceiling is, since it peels and needs the
+ * density — already took 56% of the slope relaxation. Relaxation is for a surface that
+ * prints by itself, which is only the end of the band.
+ */
+test('the slope relaxation is a last stretch, and the flat spacing holds below it', () => {
+    const settings = createDefaultAutoSupportSettings();
+    const selfSupport = settings.overhangSelfSupportAngleDeg;
+    const at = (angleDeg: number) =>
+        computeRegionSpacing(rectRegion('o0', -5, 5, -5, 5, 100, 6.5, angleDeg), settings);
+
+    const flatSpacing = at(0);
+    const slopeSpacing = at(selfSupport);
+    assert.ok(slopeSpacing > flatSpacing, 'the two ends still are the two knobs');
+
+    // Shallow undersides keep the flat spacing, up to the ramp's own start — the
+    // constant, not a number written into the curve.
+    assert.equal(at(25), flatSpacing, 'a 25° underside takes the flat spacing');
+    assert.equal(at(selfSupport * SLOPE_RELAX_RAMP_START), flatSpacing, 'so does the start of the ramp');
+
+    // And the relaxation is still reachable: just under the threshold the surface is
+    // most of the way to the slope spacing.
+    const nearlySelfSupporting = at(selfSupport - 1);
+    assert.ok(nearlySelfSupporting > flatSpacing * 1.5, `44° must be well relaxed (${nearlySelfSupporting.toFixed(2)} mm)`);
+    assert.ok(nearlySelfSupporting < slopeSpacing, 'without passing the slope end');
+
+    // Monotonic in angle, so the ramp is a ramp rather than a step.
+    let previous = -Infinity;
+    for (let angle = 0; angle <= selfSupport; angle += 1) {
+        const spacing = at(angle);
+        assert.ok(spacing >= previous, `spacing must not fall as the surface tilts (${angle}°)`);
+        previous = spacing;
+    }
 });
 
 test('per-region candidate count is capped (densification never exceeds the cap)', () => {

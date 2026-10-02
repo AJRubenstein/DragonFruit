@@ -172,3 +172,20 @@ export const OVERHANG_SELF_SUPPORT_ANGLE_DEG = 45;
  *  spacing × 1.3 (≈0.6×). */
 export const GRID_SPACING_MIN_FACTOR = 0.7;
 export const GRID_SPACING_MAX_FACTOR = 1.3;
+
+/**
+ * Where the relaxation toward the slope spacing *starts*, as a fraction of the
+ * self-support angle (0.6 ⇒ 27° at the 45° default).
+ *
+ * Relaxation is for a surface that prints by itself, and only the end of the band
+ * is that: a 25° underside peels and needs the density exactly as a flat ceiling
+ * does. Blending linearly from 0° put that underside more than half way to the
+ * slope spacing, which starves a part's shallow rims and ledges — the sections a
+ * cauldron's lip is made of — and is what made dropping `slopeRelaxFactor` and
+ * boosting `flatDensityBoost` by hand visibly help.
+ *
+ * Below the start the region keeps the flat spacing; from there to the threshold it
+ * ramps, so the spacing stays continuous and the knob keeps its meaning at the end
+ * of the band it describes.
+ */
+export const SLOPE_RELAX_RAMP_START = 0.6;

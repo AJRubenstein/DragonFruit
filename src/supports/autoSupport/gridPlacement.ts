@@ -5,6 +5,7 @@ import type { CandidatePoint } from './types';
 import {
     OVERHANG_SELF_SUPPORT_ANGLE_DEG,
     GRID_SPACING_MIN_FACTOR,
+    SLOPE_RELAX_RAMP_START,
     GRID_SPACING_MAX_FACTOR,
     ISLAND_TWO_POINT_MAX_MM,
 } from './constants';
@@ -293,8 +294,13 @@ export function computeRegionSpacing(
     const baseSpacing = Math.sqrt(Math.max(settings.areaPerSupportMm2, 0.5));
     const selfSupportAngleDeg = settings.overhangSelfSupportAngleDeg
         ?? OVERHANG_SELF_SUPPORT_ANGLE_DEG;
+    // Relaxation is a last-stretch effect, not a ramp from flat (see
+    // `SLOPE_RELAX_RAMP_START`): below the start the region keeps the flat spacing,
+    // because a shallow underside is a formation overhang like any other ceiling.
+    const relaxStartDeg = selfSupportAngleDeg * SLOPE_RELAX_RAMP_START;
+    const rampDeg = Math.max(1e-6, selfSupportAngleDeg - relaxStartDeg);
     const angleT = Math.min(1, Math.max(0,
-        (island.overhangAngleDeg ?? 0) / selfSupportAngleDeg));
+        ((island.overhangAngleDeg ?? 0) - relaxStartDeg) / rampDeg));
     const minFactor = settings.flatDensityBoost ?? GRID_SPACING_MIN_FACTOR;
     const maxFactor = settings.slopeRelaxFactor ?? GRID_SPACING_MAX_FACTOR;
 
