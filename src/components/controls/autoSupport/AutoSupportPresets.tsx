@@ -56,6 +56,7 @@ import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import type { AutoSupportSettings } from '@/supports/autoSupport';
 import {
+  commitAutoSupportSettings,
   createAutoSupportPreset,
   deleteAutoSupportPreset,
   duplicateAutoSupportPreset,
@@ -69,7 +70,6 @@ import {
   isAutoSupportPresetDirty,
   renameAutoSupportPreset,
   resetToActivePreset,
-  saveAutoSupportPreset,
   setActiveAutoSupportPreset,
   subscribeToAutoSupportPresets,
   type AutoSupportPreset,
@@ -78,7 +78,6 @@ import { translateAutoSupportPresetName } from '@/supports/Settings/autoSupportP
 import {
   getSettings,
   subscribeToSettings,
-  updateAutoSupportSettings,
 } from '@/supports/Settings/state';
 import { isTauriRuntime } from '@/utils/tauriRuntime';
 import {
@@ -108,6 +107,18 @@ const SAVE_STYLE = {
   borderColor: 'var(--accent-secondary-action-border)',
   background: 'var(--accent-secondary-action-bg-92)',
   color: 'var(--accent-secondary-action-color)',
+} as const;
+
+/**
+ * The save's acknowledgement: the app's success treatment, as the updater's
+ * up-to-date banner and the notification stack tint theirs. `.ui-button` already
+ * transitions background, border and colour over 140ms, so the swap animates
+ * without anything extra here.
+ */
+const SAVED_STYLE = {
+  borderColor: 'color-mix(in srgb, var(--success), var(--border-subtle) 40%)',
+  background: 'color-mix(in srgb, var(--success), var(--surface-1) 85%)',
+  color: 'var(--success)',
 } as const;
 
 /**
@@ -534,34 +545,57 @@ type AutoSupportSettingsFooterActionsProps = {
   /** The dialog's draft — what Save commits and Reset discards. */
   draft: AutoSupportSettings;
   setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>>;
-  /** Called once the draft has been written, so the shell closes the dialog
-   *  outright — the commit is what makes that safe, so this must not be a close
-   *  that asks whether to discard. */
-  onCommitted: () => void;
 };
 
 /**
  * The dialog footer's actions, in the reference's arrangement: the destructive
  * one alone on the left, `Reset` and `Save` on the right.
  *
- * `Save` is the dialog's commit — it writes the settings and, when the preset has
- * drifted, saves the active preset over them, the way the material editor's
- * `Save Material` commits its own draft. `Reset` is the LUT's: it discards the
- * dialog's uncommitted changes by reloading the active preset. Both are enabled
- * only when there is something to commit or discard, which includes an edit that
- * is staged in the draft but not yet written anywhere.
+ * `Save` is the dialog's commit — it writes the settings *and* the active preset
+ * when the draft has drifted from it (one call, `commitAutoSupportSettings`), the
+ * way the material editor's `Save Material` commits its own draft. It leaves the
+ * dialog open and acknowledges with the button itself, because the preset list is
+ * behind the dialog: a save that closed the dialog would leave the user to find out
+ * later whether the star cleared. `Reset` is the LUT's: it discards the dialog's
+ * uncommitted changes by reloading the active preset. Both are enabled only when
+ * there is something to commit or discard, which includes an edit that is staged in
+ * the draft but not yet written anywhere.
  */
 export function AutoSupportSettingsFooterActions({
   draft,
   setDraft,
-  onCommitted,
 }: AutoSupportSettingsFooterActionsProps) {
   const { _ } = useLingui();
-  const { activeId, activePreset, dirty } = useAutoSupportPresetState();
+  const { activePreset, dirty } = useAutoSupportPresetState();
   const [pendingDelete, setPendingDelete] = React.useState(false);
+  /**
+   * The save's acknowledgement. The dialog stays open after a commit — the preset
+   * list is where the result shows, and a dialog that vanishes leaves the star it
+   * was supposed to clear to be discovered later — so the button is what says the
+   * write landed. Two seconds of it, then back to the button.
+   */
+  const [saved, setSaved] = React.useState(false);
+  const savedTimeoutRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => () => {
+    if (savedTimeoutRef.current !== null) window.clearTimeout(savedTimeoutRef.current);
+  }, []);
 
   const isBuiltIn = activePreset?.isBuiltIn === true;
   const hasChanges = useAutoSupportDialogChanges(draft);
+
+  const handleSave = React.useCallback(() => {
+    // One call: the live settings and the preset they belong to are one decision
+    // (see `commitAutoSupportSettings`).
+    commitAutoSupportSettings(draft);
+    setDraft(getSettings().autoSupport);
+    setSaved(true);
+    if (savedTimeoutRef.current !== null) window.clearTimeout(savedTimeoutRef.current);
+    savedTimeoutRef.current = window.setTimeout(() => {
+      setSaved(false);
+      savedTimeoutRef.current = null;
+    }, 2000);
+  }, [draft, setDraft]);
 
   return (
     <>
@@ -602,22 +636,20 @@ export function AutoSupportSettingsFooterActions({
           </button>
           <button
             type="button"
-            onClick={() => {
-              updateAutoSupportSettings(draft);
-              if (dirty && activeId) saveAutoSupportPreset(activeId);
-              setDraft(getSettings().autoSupport);
-              onCommitted();
-            }}
+            onClick={handleSave}
             disabled={!hasChanges || isBuiltIn}
             className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5 disabled:cursor-not-allowed"
-            style={!hasChanges || isBuiltIn ? undefined : SAVE_STYLE}
-            title={isBuiltIn
-              ? _(msg`A built-in preset cannot be saved over — Duplicate it to make it yours`)
-              : dirty
-                ? _(msg`Write these settings, and overwrite the selected preset with them`)
-                : _(msg`Write these settings to the auto-support settings`)}
+            style={saved ? SAVED_STYLE : (!hasChanges || isBuiltIn ? undefined : SAVE_STYLE)}
+            title={saved
+              ? _(msg`Saved`)
+              : isBuiltIn
+                ? _(msg`A built-in preset cannot be saved over — Duplicate it to make it yours`)
+                : dirty
+                  ? _(msg`Write these settings, and overwrite the selected preset with them`)
+                  : _(msg`Write these settings to the auto-support settings`)}
           >
-            {_(msg`Save`)}
+            {saved && <Check className="h-3.5 w-3.5" />}
+            {saved ? _(msg`Saved!`) : _(msg`Save`)}
           </button>
         </div>
       </div>

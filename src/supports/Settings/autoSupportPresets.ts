@@ -506,6 +506,28 @@ export function saveAutoSupportPreset(id: string): void {
 }
 
 /**
+ * The settings dialog's commit: the draft becomes the live block, and the active
+ * preset is written with it **when the two differ**.
+ *
+ * One call, because those two halves are one decision. Splitting them is what made
+ * `Save` leave its own preset reading as modified: writing only the live settings
+ * leaves the preset holding the block it had, and the star the user just asked Save
+ * to clear stays on.
+ *
+ * The "do they differ" test is read *after* the write, on purpose. It used to be
+ * read from the pre-write block, which is answerable only for the drift the live
+ * settings had before the draft landed — never for the draft itself.
+ *
+ * A built-in is untouched: `saveAutoSupportPreset` refuses one, which is why the
+ * dialog disables Save for it in the first place.
+ */
+export function commitAutoSupportSettings(draft: AutoSupportSettings): void {
+    updateAutoSupportSettings(draft);
+    const activeId = state.activeId;
+    if (activeId && isAutoSupportPresetDirty()) saveAutoSupportPreset(activeId);
+}
+
+/**
  * Renames a user preset, returning it so the caller can show the name actually
  * applied ("Medium" becomes "Medium (2)" rather than a duplicate).
  *

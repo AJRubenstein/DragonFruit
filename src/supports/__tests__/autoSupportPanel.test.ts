@@ -124,7 +124,6 @@ const BODY_PROPS = {
   debugMode: false,
   onToggleDebugMode: () => {},
   presetLocked: false,
-  onCommitted: () => {},
 } satisfies Omit<AutoSupportSettingsBodyProps, 'draft'>;
 
 /** What a run hands the panel's diagnostics. */

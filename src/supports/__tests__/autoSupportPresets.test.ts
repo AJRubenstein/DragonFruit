@@ -225,6 +225,40 @@ test('create, rename, duplicate and delete persist, and built-ins are not rename
     assert.equal(JSON.parse(storage.get(PRESETS_KEY)!).allIds.length, 3);
 });
 
+test('the commit writes the settings and the preset together, so no star is left behind', () => {
+    updateAutoSupportSettings(createDefaultAutoSupportSettings());
+    const { store } = loadStoreWith();
+
+    const mine = store.createAutoSupportPreset('Mine');
+    // What the dialog holds when the user edits a knob and then presses Save: the
+    // draft has moved, the store has not.
+    const staged = { ...getAutoSupportSettings(), areaPerSupportMm2: 12 };
+
+    store.commitAutoSupportSettings(staged);
+
+    assert.equal(getAutoSupportSettings().areaPerSupportMm2, 12, 'the draft becomes the live block');
+    assert.equal(
+        store.getAutoSupportPreset(mine.id)!.settings.areaPerSupportMm2,
+        12,
+        'and the preset the dialog was saving into holds it',
+    );
+    assert.equal(store.isAutoSupportPresetDirty(), false, 'so nothing is left reading as modified');
+
+    // A commit with nothing staged must not rewrite the record: the same object
+    // still stands, so `updatedAt` is not bumped and no write is issued.
+    store.commitAutoSupportSettings(getAutoSupportSettings());
+    const before = store.getAutoSupportPreset(mine.id)!;
+    store.commitAutoSupportSettings(getAutoSupportSettings());
+    assert.equal(store.getAutoSupportPreset(mine.id), before, 'a clean commit leaves the preset as it is');
+
+    // A built-in is refused by the store, so a commit that reaches one still writes
+    // the live settings and leaves the factory block alone.
+    store.setActiveAutoSupportPreset('light');
+    store.commitAutoSupportSettings({ ...getAutoSupportSettings(), areaPerSupportMm2: 9 });
+    assert.equal(getAutoSupportSettings().areaPerSupportMm2, 9, 'the live settings take the draft');
+    assert.equal(store.getAutoSupportPreset('light')!.settings.areaPerSupportMm2, 16, 'the built-in does not');
+});
+
 test('a knob edit dirties the active preset; save and reset are the two exits', () => {
     updateAutoSupportSettings(createDefaultAutoSupportSettings());
     const { store, storage } = loadStoreWith();

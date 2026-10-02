@@ -270,8 +270,6 @@ export type AutoSupportSettingsBodyProps = {
    * nothing to do with which preset is selected.
    */
   presetLocked: boolean;
-  /** Called once the footer's Save has written the draft, so the shell can close. */
-  onCommitted: () => void;
 }
 
 export function AutoSupportSettingsBody({
@@ -284,7 +282,6 @@ export function AutoSupportSettingsBody({
   debugMode,
   onToggleDebugMode,
   presetLocked,
-  onCommitted,
 }: AutoSupportSettingsBodyProps) {
   const { _ } = useLingui();
 
@@ -347,11 +344,11 @@ export function AutoSupportSettingsBody({
 
       {/* The footer's actions are the preset's, in the reference's arrangement:
           Delete alone on the left, Reset and Save on the right. Save is the
-          dialog's commit, so there is no separate Apply. */}
+          dialog's commit, so there is no separate Apply, and it leaves the dialog
+          open — the preset list behind it is where the result shows. */}
       <AutoSupportSettingsFooterActions
         draft={draft}
         setDraft={setDraft}
-        onCommitted={onCommitted}
       />
     </div>
   );
