@@ -1,4 +1,7 @@
 {
+  "build": {
+    "runner": "../scripts/cargo-universal-runner.sh"
+  },
   "bundle": {
     "macOS": {
       "dmg": {
