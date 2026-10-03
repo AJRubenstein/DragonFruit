@@ -8,6 +8,7 @@ import RaftRenderer from '@/supports/Rafts/Crenelated/rendering/RaftRenderer';
 import LineRaftRenderer from '@/supports/Rafts/Crenelated/rendering/LineRaftRenderer';
 import { getSettings, subscribeToSettings } from '@/supports/Settings/state';
 import type { SupportPlacementPreviews } from '@/supports/rendering';
+import type { PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
 export type ModelAttachedSupportLayerProps = {
   mode?: SupportMode;
   modelFilterId?: string | null;
@@ -57,6 +58,8 @@ export type ModelAttachedSupportLayerProps = {
    * for accurate BVH closest-point queries.
    */
   modelWorldInverseById?: Map<string, THREE.Matrix4>;
+  /** Models whose plate footprint every raft has to clear. */
+  plateClearanceTargets?: readonly PlateFootprintSource[];
 };
 
 export function ModelAttachedSupportLayer({
@@ -98,6 +101,7 @@ export function ModelAttachedSupportLayer({
   interiorView = false,
   cavityGeometryByModelId,
   modelWorldInverseById,
+  plateClearanceTargets,
 }: ModelAttachedSupportLayerProps) {
   // Performance policy: use proxy support/raft rendering everywhere except
   // support workspace, where full editable primitives are required.
@@ -132,6 +136,7 @@ export function ModelAttachedSupportLayer({
           hoverized={raftHoverized}
           navigationLodActive={navigationLodActive}
           passive={passive}
+          plateClearanceTargets={plateClearanceTargets}
         />
       )}
 
@@ -152,6 +157,7 @@ export function ModelAttachedSupportLayer({
             excludeModelIds={excludeModelIds}
             navigationLodActive={navigationLodActive}
             onModelPointerSelect={onModelPointerSelect}
+            plateClearanceTargets={plateClearanceTargets}
           />
           <LineRaftRenderer
             clipLower={clipLower}
@@ -168,6 +174,7 @@ export function ModelAttachedSupportLayer({
             excludeModelIds={excludeModelIds}
             navigationLodActive={navigationLodActive}
             onModelPointerSelect={onModelPointerSelect}
+            plateClearanceTargets={plateClearanceTargets}
           />
         </>
       )}

@@ -10,11 +10,10 @@ import {
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import { getRaftSettings } from '@/supports/Rafts/Crenelated/RaftState';
-import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
-import { generateChamferedBase } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBase';
-import { generatePerimeterWall } from '@/supports/Rafts/Crenelated/geometry/generatePerimeterWall';
-import { generateCrenelatedWallManual } from '@/supports/Rafts/Crenelated/geometry/generateCrenelatedWallManual';
-import { generateUnionedLineRaftMesh } from '@/supports/Rafts/Crenelated/geometry/generateUnionedLineRaftMesh';
+import { buildRaftFootprintMeshes } from '@/supports/Rafts/Crenelated/geometry/generateRaftFromFootprint';
+import { collectModelPlateFootprint, type PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
+import { inflateModelPlateClearance, raftBandTopMm } from '@/supports/Rafts/Crenelated/geometry/computeRaftFootprint';
+import { filterLineRaftEdges, generateUnionedLineRaftMesh } from '@/supports/Rafts/Crenelated/geometry/generateUnionedLineRaftMesh';
 import { generateChamferedBeam } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBeam';
 import { buildLineRaftEdgePairs } from '@/supports/Rafts/Crenelated/geometry/buildLineRaftEdgePairs';
 import type { ContactDisk, Segment, SupportState, Vec3 } from '@/supports/types';
@@ -864,6 +863,8 @@ export function buildSupportAndRaftWorldTriangles(
   visibleModelIds: Set<string>,
   collector?: TriangleFloatCollector,
   supportTipShrinkPercent = 0,
+  /** Visible models, whose plate footprint the raft has to clear. */
+  plateClearanceModels: readonly PlateFootprintSource[] = [],
 ): WorldTriangle[] {
   if (visibleModelIds.size === 0) return [];
 
@@ -1092,48 +1093,25 @@ export function buildSupportAndRaftWorldTriangles(
       rootsByModel.set(modelKey, arr);
     }
 
+    // A model standing on the plate keeps the sliced raft out of itself, exactly
+    // as the viewport does — preview and print must not disagree.
+    const clearance = collectModelPlateFootprint(
+      plateClearanceModels,
+      raftBandTopMm(raft),
+    );
+    const clearanceCut = inflateModelPlateClearance(clearance);
+
     for (const circles of rootsByModel.values()) {
       if (circles.length === 0) continue;
-      const clampedChamfer = Math.min(90, Math.max(45, raft.chamferAngle));
-      const thickness = raft.bottomMode === 'line' ? raft.lineHeightMm : raft.thickness;
-      const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - clampedChamfer));
-      const wallInset = raft.wallEnabled ? Math.max(0, raft.wallThickness) : 0;
-      const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
-      const profile = computeFootprint(circles as any, {
-        marginMm: dynamicMargin,
-        samplesPerCircle: 24,
-      });
-      if (!profile || profile.length < 3) continue;
+      const parts = buildRaftFootprintMeshes({ circles, raft, clearance });
+      if (!parts.baseMesh && parts.footprint.length === 0) continue;
 
-      if (raft.bottomMode === 'solid') {
-        const baseMesh = generateChamferedBase(profile, {
-          thickness: raft.thickness,
-          chamferAngle: raft.chamferAngle,
-        });
-        appendGeometryTriangles(sink, baseMesh.geometry);
-
-        if (raft.wallEnabled) {
-          const useCrenels = raft.crenulationSpacing > 0 && raft.crenulationGapWidth > 0;
-          const wallMesh = useCrenels
-            ? generateCrenelatedWallManual(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              crenulationGapWidth: raft.crenulationGapWidth,
-              crenulationSpacing: raft.crenulationSpacing,
-              thickness: raft.thickness,
-              chamferAngle: raft.chamferAngle,
-            })
-            : generatePerimeterWall(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              thickness: raft.thickness,
-            });
-          appendGeometryTriangles(sink, wallMesh.geometry);
-        }
+      if (parts.baseMesh) {
+        appendGeometryTriangles(sink, parts.baseMesh.geometry);
       } else if (raft.bottomMode === 'line') {
         const nodes2d = circles.map((c) => new THREE.Vector2(c.x, c.y));
-        const hasBorderRing = !!profile && profile.length >= 3;
+        const hasBorderRing = parts.footprint.length > 0;
         const edgePairs = buildLineRaftEdgePairs(nodes2d, {
           hasBorderRing,
           keepFactor: 8,
@@ -1143,7 +1121,14 @@ export function buildSupportAndRaftWorldTriangles(
 
         const beamHeight = Math.max(0.01, raft.lineHeightMm);
 
-        const unionEdges: Array<[THREE.Vector2, THREE.Vector2]> = edgePairs.map(([a, b]) => [nodes2d[a], nodes2d[b]]);
+        // Beams a model on the plate is in the way of are never drawn: cutting them
+    // would leave severed ends to close up again, and two clusters either side of
+    // a model should stay two clusters.
+    const unionEdges: Array<[THREE.Vector2, THREE.Vector2]> = filterLineRaftEdges(
+      edgePairs.map(([a, b]) => [nodes2d[a], nodes2d[b]]),
+      clearanceCut,
+      raft.lineWidthMm,
+    );
         const unionMesh = generateUnionedLineRaftMesh(unionEdges, {
           widthMm: raft.lineWidthMm,
           heightMm: beamHeight,
@@ -1155,9 +1140,9 @@ export function buildSupportAndRaftWorldTriangles(
         if (unionHasGeometry) {
           appendGeometryTriangles(sink, unionMesh.geometry);
         } else {
-          for (const [a, b] of edgePairs) {
-            const start = new THREE.Vector3(nodes2d[a].x, nodes2d[a].y, 0);
-            const end = new THREE.Vector3(nodes2d[b].x, nodes2d[b].y, 0);
+          for (const [a, b] of unionEdges) {
+            const start = new THREE.Vector3(a.x, a.y, 0);
+            const end = new THREE.Vector3(b.x, b.y, 0);
             const beam = generateChamferedBeam(start, end, {
               widthMm: raft.lineWidthMm,
               heightMm: beamHeight,
@@ -1166,25 +1151,10 @@ export function buildSupportAndRaftWorldTriangles(
             appendGeometryTriangles(sink, beam.geometry);
           }
         }
+      }
 
-        if (raft.wallEnabled) {
-          const useCrenels = raft.crenulationSpacing > 0 && raft.crenulationGapWidth > 0;
-          const wallMesh = useCrenels
-            ? generateCrenelatedWallManual(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              crenulationGapWidth: raft.crenulationGapWidth,
-              crenulationSpacing: raft.crenulationSpacing,
-              thickness: raft.lineHeightMm,
-              chamferAngle: raft.chamferAngle,
-            })
-            : generatePerimeterWall(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              thickness: raft.lineHeightMm,
-            });
-          appendGeometryTriangles(sink, wallMesh.geometry);
-        }
+      if (parts.wallMesh) {
+        appendGeometryTriangles(sink, parts.wallMesh.geometry);
       }
     }
   }
@@ -1510,7 +1480,7 @@ function buildWorldTriangles(models: LoadedModel[]): WorldTriangle[] {
   }
 
   const visibleModelIds = new Set(models.filter((model) => model.visible).map((model) => model.id));
-  const supportAndRaftTriangles = buildSupportAndRaftWorldTriangles(visibleModelIds);
+  const supportAndRaftTriangles = buildSupportAndRaftWorldTriangles(visibleModelIds, undefined, 0, models);
   // Avoid stack overflow from spreading huge arrays - push one by one instead
   for (let i = 0; i < supportAndRaftTriangles.length; i++) {
     triangles.push(supportAndRaftTriangles[i]);
@@ -2328,7 +2298,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
   });
 
   const visibleModelIds = new Set(visibleModels.map((model) => model.id));
-  buildSupportAndRaftWorldTriangles(visibleModelIds, collector, options.supportTipShrinkPercent ?? 0);
+  buildSupportAndRaftWorldTriangles(visibleModelIds, collector, options.supportTipShrinkPercent ?? 0, visibleModels);
   emitMeshPrepDiagnostic('Mesh prep: supports', 2, 4, {
     triangleCountAfterSupports: collector.triangleCount,
   });
