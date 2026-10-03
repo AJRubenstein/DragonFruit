@@ -39,6 +39,7 @@ import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types'
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
 import { collectRaftBaseCirclesByModel, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
+import { buildSupportsByModelIndex } from '@/supports/supportsByModelIndex';
 import { collectSupportMarqueeShapes } from './supportMarqueeShapes';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -1566,6 +1567,13 @@ export function SceneCanvas({
     [supportStateForBounds],
   );
 
+  // The same walk for the support collections: the bounds callback runs once per
+  // model, and each pass below reads one model's entities out of this.
+  const supportsByModel = React.useMemo(
+    () => buildSupportsByModelIndex(supportStateForBounds as unknown as Record<string, unknown>),
+    [supportStateForBounds],
+  );
+
   const computeSupportAndRaftWorldBounds = React.useCallback((modelId: string): THREE.Box3 | null => {
     // During active gizmo drags, keep bounds work minimal to preserve interaction FPS.
     if (isGizmoDragging || isGizmoRetargeting) return null;
@@ -1574,15 +1582,17 @@ export function SceneCanvas({
     let hasAny = false;
     const BUILD_PLATE_Z = 0;
 
+    // Called once per joint, contact and raft vertex, so the corners are scratch
+    // vectors rather than two allocations apiece.
+    const corner = new THREE.Vector3();
     const expandByRadius = (pos: { x: number; y: number; z: number } | THREE.Vector3, radiusMm: number) => {
-      const p = pos instanceof THREE.Vector3 ? pos : new THREE.Vector3(pos.x, pos.y, pos.z);
       const r = Math.max(0, radiusMm);
-      bounds.expandByPoint(new THREE.Vector3(p.x - r, p.y - r, Math.max(BUILD_PLATE_Z, p.z - r)));
-      bounds.expandByPoint(new THREE.Vector3(p.x + r, p.y + r, p.z + r));
+      bounds.expandByPoint(corner.set(pos.x - r, pos.y - r, Math.max(BUILD_PLATE_Z, pos.z - r)));
+      bounds.expandByPoint(corner.set(pos.x + r, pos.y + r, pos.z + r));
       hasAny = true;
     };
 
-    const rootsForModel = Object.values(supportStateForBounds.roots).filter((root) => root.modelId === modelId);
+    const rootsForModel = supportsByModel.get('roots', modelId) as unknown as typeof supportStateForBounds.roots[string][];
     for (const root of rootsForModel) {
       const rootRadius = Math.max(0.001, root.diameter / 2);
       const rootBase = root.transform.pos;
@@ -1601,10 +1611,7 @@ export function SceneCanvas({
     for (const descriptor of SUPPORT_TYPES) {
       const knotFields = hostKnotFieldsFor(descriptor.id);
       if (knotFields.length === 0) continue;
-      const collection = supportStateForBounds[descriptor.location.key] as unknown as
-        Record<string, Record<string, unknown>> | undefined;
-      for (const entity of Object.values(collection ?? {})) {
-        if (entity.modelId !== modelId) continue;
+      for (const entity of supportsByModel.get(descriptor.location.key, modelId)) {
         for (const field of knotFields) {
           const knotId = entity[field];
           if (typeof knotId === 'string') modelKnotIds.add(knotId);
@@ -1622,11 +1629,7 @@ export function SceneCanvas({
     // the frustum IS the root. Nothing else here is type-specific, so the rest
     // of such a type is covered by the segment and contact passes below.
     for (const placement of INLINE_ROOT_TYPES) {
-      const entities = supportStateForBounds[placement.collectionKey] as unknown as
-        | Record<string, Record<string, unknown>>
-        | undefined;
-      for (const entity of Object.values(entities ?? {})) {
-        if (entity.modelId !== modelId) continue;
+      for (const entity of supportsByModel.get(placement.collectionKey, modelId)) {
         const base = entity[placement.posField] as { x: number; y: number; z: number } | undefined;
         const radius = entity[placement.radiusField];
         if (!base) continue;
@@ -1641,15 +1644,10 @@ export function SceneCanvas({
     // two radii; a disk's socket is the joint the segment pass already
     // expanded, so it contributes one.
     for (const descriptor of SUPPORT_TYPES) {
-      const entities = supportStateForBounds[descriptor.location.key] as unknown as
-        | Record<string, Record<string, unknown>>
-        | undefined;
       // Read once per type, not once per entity: this allocates.
       const contactEndpoints = contactEndpointsFor(descriptor.id);
 
-      for (const entity of Object.values(entities ?? {})) {
-        if (entity.modelId !== modelId) continue;
-
+      for (const entity of supportsByModel.get(descriptor.location.key, modelId)) {
         // The two passes are not the same set of types: a leaf declares a
         // contact and no segments, so skipping a type for having no shaft would
         // drop its tip from the bounds entirely.
@@ -1727,7 +1725,7 @@ export function SceneCanvas({
     }
 
     return hasAny ? bounds : null;
-  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
+  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds, supportsByModel]);
 
   const computeModelWorldBounds = React.useCallback((
     model: LoadedModel,
