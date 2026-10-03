@@ -7,6 +7,7 @@ import {
 import { getProfileLocalMaterialSettingsAdapter } from '@/features/plugins/pluginRegistry';
 import { computePhysicalAaConfig, type AaPreset } from './autoAaPhysics';
 import { resolveOutputSettingsMode, resolveSlicingFormatDefinition } from './formats/registry';
+import { clampSliceJobNumber } from './sliceJobLimits';
 import {
   DEFAULT_CLEAR_EXP_100_CURVE,
   DEFAULT_OPAQUE_EXP_120_230_CURVE,
@@ -369,5 +370,101 @@ export function resolveSliceAntiAliasing(input: SliceAntiAliasingInput): SliceAn
       duplicateZSupported,
       minimumAaAlpha,
     },
+  };
+}
+
+// ── The job's anti-aliasing fields ────────────────────────────────────────────
+
+/**
+ * What a caller asks for: everything `resolveSliceAntiAliasing` needs besides
+ * the printer, the material and the layer height, which the job already has.
+ */
+export type SliceJobAntiAliasingRequest = Pick<SliceAntiAliasingInput, 'preset' | 'override' | 'lutCurves' | 'autoPending'>;
+
+/** The anti-aliasing fields of the native slice job. */
+export type SliceJobAntiAliasing = {
+  antiAliasingLevel: AntiAliasingLevel;
+  antiAliasingMode: 'Blur' | '3DAA' | 'Vertical2' | 'Coverage';
+  blurBrushRadiusPx: number;
+  blurBrushKernel: 'box' | 'gaussian';
+  blurBrushSigmaX: number;
+  blurBrushSigmaY: number;
+  zBlurRadiusLayers: number;
+  zBlurKernel: 'box' | 'gaussian';
+  zBlurSigma: number;
+  zBlendLookBack: number;
+  zBlendMinimumAlphaPercent: number;
+  zBlendMaxAlphaPercent: number;
+  zBlendCustomLut: number[] | undefined;
+  zaaKernel: 'perturb' | undefined;
+  zaaPattern: 'uniform' | 'halton' | 'base2' | undefined;
+  zaaDuplicateZ: boolean | undefined;
+  /** Undefined when nothing was requested; the export falls back to the performance setting. */
+  aaOnSupports: boolean | undefined;
+  minimumAaAlphaPercent: number;
+  /**
+   * How much support contact tips shrink before slicing. Geometry, applied
+   * while the mesh is prepared — not a field the native slicer receives.
+   */
+  supportTipShrinkPercent: number;
+};
+
+/**
+ * The anti-aliasing fields of a slice job. Without a request, the job gets the
+ * engine defaults: anti-aliasing off.
+ */
+export function resolveSliceJobAntiAliasing(input: {
+  printerProfile: PrinterProfile;
+  materialProfile: MaterialProfile;
+  layerHeightMm: number;
+  request?: SliceJobAntiAliasingRequest;
+}): SliceJobAntiAliasing {
+  const { materialProfile } = input;
+  const options: Partial<SliceAntiAliasingOptions> = input.request
+    ? resolveSliceAntiAliasing({
+        printerProfile: input.printerProfile,
+        materialProfile,
+        layerHeightMm: input.layerHeightMm,
+        ...input.request,
+      }).options
+    : {};
+
+  const requestedTipShrinkPercent = options.supportTipShrinkPercent
+    ?? materialProfile.antiAliasingSettings?.supportTipShrinkPercent
+    ?? DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS.supportTipShrinkPercent;
+  const supportTipShrinkPercent = (
+    (options.antiAliasingMode === 'Vertical2' || options.antiAliasingMode === '3DAA')
+    && (options.antiAliasingLevel ?? 'Off') !== 'Off'
+  ) ? Math.round(Math.max(0, Math.min(90,
+      Number.isFinite(requestedTipShrinkPercent)
+        ? requestedTipShrinkPercent
+        : DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS.supportTipShrinkPercent,
+    ))) : 0;
+
+  return {
+    antiAliasingLevel: options.antiAliasingLevel ?? 'Off',
+    antiAliasingMode: options.antiAliasingMode ?? 'Blur',
+    blurBrushRadiusPx: clampSliceJobNumber('blurBrushRadiusPx', options.blurBrushRadiusPx),
+    blurBrushKernel: options.blurBrushKernel ?? 'gaussian',
+    blurBrushSigmaX: clampSliceJobNumber('blurBrushSigmaX', options.blurBrushSigmaX),
+    blurBrushSigmaY: clampSliceJobNumber('blurBrushSigmaY', options.blurBrushSigmaY),
+    zBlurRadiusLayers: clampSliceJobNumber('zBlurRadiusLayers', options.zBlurRadiusLayers),
+    zBlurKernel: options.zBlurKernel ?? 'box',
+    zBlurSigma: clampSliceJobNumber('zBlurSigma', options.zBlurSigma),
+    zBlendLookBack: clampSliceJobNumber('zBlendLookBack', options.zBlendLookBack),
+    zBlendMinimumAlphaPercent: clampSliceJobNumber('zBlendMinimumAlphaPercent', options.zBlendMinimumAlphaPercent),
+    zBlendMaxAlphaPercent: clampSliceJobNumber('zBlendMaxAlphaPercent', options.zBlendMaxAlphaPercent),
+    zBlendCustomLut: options.zBlendCustomLut,
+    zaaKernel: options.zaaKernel,
+    zaaPattern: options.zaaPattern,
+    zaaDuplicateZ: options.zaaDuplicateZ,
+    aaOnSupports: options.aaOnSupports,
+    minimumAaAlphaPercent: clampSliceJobNumber(
+      'minimumAaAlphaPercent',
+      options.minimumAaAlphaPercentOverride
+      ?? materialProfile.minimumAaAlphaPercent
+      ?? 50,
+    ),
+    supportTipShrinkPercent,
   };
 }

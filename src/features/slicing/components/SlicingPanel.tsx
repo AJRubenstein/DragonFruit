@@ -1935,7 +1935,12 @@ export function SlicingPanel({
         materialProfile: materialProfileForSlicing,
         filenameBase: sliceFilenameBase || activePrinterProfile.name || 'slice_export',
         outputPath: resolvedOutputPath.length > 0 ? resolvedOutputPath : null,
-        ...sliceAntiAliasing.options,
+        antiAliasing: {
+          preset: aaAutoPreset,
+          override: sessionAaOverrideDraft,
+          lutCurves: savedCurves,
+          autoPending: isAutoAaCalculating,
+        },
         ditherEnabled: effectiveDitherEnabledForSlice,
         ditherBitDepth: effectiveDitherBitDepthForSlice,
         ditherDeviceGamma: effectiveDitherDeviceGammaForSlice,

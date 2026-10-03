@@ -1,10 +1,9 @@
-import { DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS, type MaterialProfile, type PrinterProfile } from '@/features/profiles/profileStore';
+import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profileStore';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { Box3, Vector3 } from 'three';
 import { computeApproxModelWorldBounds, computePreciseModelWorldBounds, isBoundsDisjointFromVolume } from '@/utils/modelBounds';
 import { buildSolidSliceMeshForWasm } from './rasterLayerZipExport';
 import { attachJobMetadataPayloads, getJobMetadataPayloadDeclarations } from './jobMetadataPayloads';
-import { clampSliceJobNumber } from './sliceJobLimits';
 import { prepareLoadedModelsForOutput } from '@/features/mesh-modifiers/prepareModelGeometry';
 import { resolveOutputFileExtension, resolveSlicingFormatDefinition } from './formats/registry';
 import { getSavedSlicingPerformanceSettings, type PngCompressionStrategy } from '@/components/settings/performancePreferences';
@@ -16,7 +15,8 @@ import {
     type NativeSlicerRuntimeMetrics,
 } from './tauri/nativeSlicerBridge';
 import { invoke } from '@tauri-apps/api/core';
-import { assembleSliceJob } from './sliceJobAssembly';
+import { assembleSliceJob, resolveSliceRasterSettings } from './sliceJobAssembly';
+import { resolveSliceJobAntiAliasing, type SliceJobAntiAliasingRequest } from './sliceAntiAliasing';
 
 function resolvePngCompressionStrategy(
     mode: PngCompressionStrategy,
@@ -119,26 +119,8 @@ export type SliceExportOrchestratorOptions = {
     materialProfile: MaterialProfile;
     filenameBase: string;
     outputPath?: string | null;
-    antiAliasingLevel?: AntiAliasingLevel;
-    antiAliasingMode?: 'Blur' | '3DAA' | 'Vertical2' | 'Coverage';
-    supportTipShrinkPercent?: number;
-    blurBrushRadiusPx?: number;
-    blurBrushKernel?: 'box' | 'gaussian';
-    blurBrushSigma?: number;
-    blurBrushSigmaX?: number;
-    blurBrushSigmaY?: number;
-    zBlurRadiusLayers?: number;
-    zBlurKernel?: 'box' | 'gaussian';
-    zBlurSigma?: number;
-    zBlendLookBack?: number;
-    zBlendMinimumAlphaPercent?: number;
-    zBlendMaxAlphaPercent?: number;
-    zBlendCustomLut?: number[];
-    zaaKernel?: 'perturb';
-    zaaPattern?: 'uniform' | 'halton' | 'base2';
-    zaaDuplicateZ?: boolean;
-    minimumAaAlphaPercentOverride?: number;
-    aaOnSupports?: boolean;
+    /** The user's anti-aliasing choice; without one the job slices with anti-aliasing off. */
+    antiAliasing?: SliceJobAntiAliasingRequest;
     ditherEnabled?: boolean;
     ditherBitDepth?: number;
     ditherDeviceGamma?: number;
@@ -479,17 +461,18 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
         modifiedModelCount: preparedModelsForOutput.modifiedModelCount,
         modifierBakeMs,
     });
-    const requestedTipShrinkPercent = options.supportTipShrinkPercent
-        ?? options.materialProfile.antiAliasingSettings?.supportTipShrinkPercent
-        ?? DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS.supportTipShrinkPercent;
-    const supportTipShrinkPercent = (
-        (options.antiAliasingMode === 'Vertical2' || options.antiAliasingMode === '3DAA')
-        && (options.antiAliasingLevel ?? 'Off') !== 'Off'
-    ) ? Math.round(Math.max(0, Math.min(90,
-        Number.isFinite(requestedTipShrinkPercent)
-            ? requestedTipShrinkPercent
-            : DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS.supportTipShrinkPercent,
-    ))) : 0;
+    // Support tips shrink while the mesh is prepared, before the job is
+    // assembled, so the anti-aliasing is resolved here first; assembleSliceJob
+    // resolves the same request again below.
+    const { supportTipShrinkPercent } = resolveSliceJobAntiAliasing({
+        printerProfile: options.printerProfile,
+        materialProfile: options.materialProfile,
+        layerHeightMm: resolveSliceRasterSettings({
+            printerProfile: options.printerProfile,
+            materialProfile: options.materialProfile,
+        }).layerHeightMm,
+        request: options.antiAliasing,
+    });
     const meshPrepStartMs = performance.now();
     let solidMesh: Awaited<ReturnType<typeof buildSolidSliceMeshForWasm>>;
     try {
@@ -591,12 +574,6 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
 
     const perfSettings = getSavedSlicingPerformanceSettings();
 
-    const resolvedPngStrategy = resolvePngCompressionStrategy(
-        solidMesh.pngCompressionStrategy,
-        options.antiAliasingLevel ?? 'Off',
-        format.layerDataKind === 'png',
-    );
-
     const assembled = assembleSliceJob({
         printerProfile: options.printerProfile,
         materialProfile: options.materialProfile,
@@ -606,7 +583,15 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
             models: solidMesh.models,
         },
         dither: options,
+        antiAliasing: options.antiAliasing,
     });
+    const antiAliasing = assembled.antiAliasing;
+
+    const resolvedPngStrategy = resolvePngCompressionStrategy(
+        solidMesh.pngCompressionStrategy,
+        antiAliasing.antiAliasingLevel,
+        format.layerDataKind === 'png',
+    );
 
     const nativeJob = {
         outputFormat: assembled.outputFormat,
@@ -618,29 +603,24 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
         heightPx: assembled.heightPx,
         xPackingMode: assembled.xPackingMode,
         pngCompressionStrategy: resolvedPngStrategy,
-        antiAliasingLevel: options.antiAliasingLevel ?? 'Off',
-        antiAliasingMode: options.antiAliasingMode ?? 'Blur',
-        blurBrushRadiusPx: clampSliceJobNumber('blurBrushRadiusPx', options.blurBrushRadiusPx),
-        blurBrushKernel: options.blurBrushKernel ?? 'gaussian',
-        blurBrushSigmaX: clampSliceJobNumber('blurBrushSigmaX', options.blurBrushSigmaX ?? options.blurBrushSigma),
-        blurBrushSigmaY: clampSliceJobNumber('blurBrushSigmaY', options.blurBrushSigmaY ?? options.blurBrushSigma),
-        zBlurRadiusLayers: clampSliceJobNumber('zBlurRadiusLayers', options.zBlurRadiusLayers),
-        zBlurKernel: options.zBlurKernel ?? 'box',
-        zBlurSigma: clampSliceJobNumber('zBlurSigma', options.zBlurSigma),
-        zBlendLookBack: clampSliceJobNumber('zBlendLookBack', options.zBlendLookBack),
-        zBlendMinimumAlphaPercent: clampSliceJobNumber('zBlendMinimumAlphaPercent', options.zBlendMinimumAlphaPercent),
-        zBlendMaxAlphaPercent: clampSliceJobNumber('zBlendMaxAlphaPercent', options.zBlendMaxAlphaPercent),
-        zBlendCustomLut: options.zBlendCustomLut,
-        zaaKernel: options.zaaKernel,
-        zaaPattern: options.zaaPattern,
-        zaaDuplicateZ: options.zaaDuplicateZ,
-        aaOnSupports: options.aaOnSupports ?? (perfSettings.aaOnSupportsExperimental === true),
-        minimumAaAlphaPercent: clampSliceJobNumber(
-            'minimumAaAlphaPercent',
-            options.minimumAaAlphaPercentOverride
-            ?? options.materialProfile.minimumAaAlphaPercent
-            ?? 50,
-        ),
+        antiAliasingLevel: antiAliasing.antiAliasingLevel,
+        antiAliasingMode: antiAliasing.antiAliasingMode,
+        blurBrushRadiusPx: antiAliasing.blurBrushRadiusPx,
+        blurBrushKernel: antiAliasing.blurBrushKernel,
+        blurBrushSigmaX: antiAliasing.blurBrushSigmaX,
+        blurBrushSigmaY: antiAliasing.blurBrushSigmaY,
+        zBlurRadiusLayers: antiAliasing.zBlurRadiusLayers,
+        zBlurKernel: antiAliasing.zBlurKernel,
+        zBlurSigma: antiAliasing.zBlurSigma,
+        zBlendLookBack: antiAliasing.zBlendLookBack,
+        zBlendMinimumAlphaPercent: antiAliasing.zBlendMinimumAlphaPercent,
+        zBlendMaxAlphaPercent: antiAliasing.zBlendMaxAlphaPercent,
+        zBlendCustomLut: antiAliasing.zBlendCustomLut,
+        zaaKernel: antiAliasing.zaaKernel,
+        zaaPattern: antiAliasing.zaaPattern,
+        zaaDuplicateZ: antiAliasing.zaaDuplicateZ,
+        aaOnSupports: antiAliasing.aaOnSupports ?? (perfSettings.aaOnSupportsExperimental === true),
+        minimumAaAlphaPercent: antiAliasing.minimumAaAlphaPercent,
         mirrorX: assembled.mirrorX,
         mirrorY: assembled.mirrorY,
         ditherEnabled: assembled.ditherEnabled,
