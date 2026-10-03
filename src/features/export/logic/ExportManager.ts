@@ -13,11 +13,10 @@ import { info as logInfo } from '@tauri-apps/plugin-log';
 import { getSnapshot } from '@/supports/state';
 import { SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
 import { getRaftSettings, getRaftSettingsForModel } from '@/supports/Rafts/Crenelated/RaftState';
-import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
-import { generateChamferedBase } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBase';
-import { generatePerimeterWall } from '@/supports/Rafts/Crenelated/geometry/generatePerimeterWall';
-import { generateCrenelatedWallManual } from '@/supports/Rafts/Crenelated/geometry/generateCrenelatedWallManual';
-import { generateUnionedLineRaftMesh } from '@/supports/Rafts/Crenelated/geometry/generateUnionedLineRaftMesh';
+import { buildRaftFootprintMeshes } from '@/supports/Rafts/Crenelated/geometry/generateRaftFromFootprint';
+import { collectModelPlateFootprint } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
+import { inflateModelPlateClearance, raftBandTopMm } from '@/supports/Rafts/Crenelated/geometry/computeRaftFootprint';
+import { filterLineRaftEdges, generateUnionedLineRaftMesh } from '@/supports/Rafts/Crenelated/geometry/generateUnionedLineRaftMesh';
 import { generateChamferedBeam } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBeam';
 import { buildLineRaftEdgePairs } from '@/supports/Rafts/Crenelated/geometry/buildLineRaftEdgePairs';
 import { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
@@ -992,6 +991,8 @@ export class ExportManager {
           arr.push(root);
         }
 
+        const clearanceTargets = (sceneContext?.models ?? []).filter((model) => model.visible);
+
         for (const [modelKey, roots] of rootsByModel) {
           if (roots.length === 0) continue;
 
@@ -999,35 +1000,26 @@ export class ExportManager {
           const modelId = modelKey === '__orphan__' ? null : modelKey;
           const raftSettings = modelId ? getRaftSettingsForModel(modelId) : globalRaftSettings;
 
-          const thickness = raftSettings.bottomMode === 'line' ? raftSettings.lineHeightMm : raftSettings.thickness;
-          const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))));
-          const wallInset = raftSettings.wallEnabled ? Math.max(0, raftSettings.wallThickness) : 0;
-          const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
-
           const circles: SupportBaseCircle[] = roots.map(r => ({
             x: r.transform.pos.x,
             y: r.transform.pos.y,
             r: r.diameter / 2
           }));
 
-          const profile = computeFootprint(circles, { marginMm: dynamicMargin, samplesPerCircle: 24 });
-
-          if (!profile || profile.length < 3) continue;
+          // The raft keeps clear of any model standing on the plate, so the
+          // exported solid matches the viewport (and the slice).
+          const clearance = collectModelPlateFootprint(clearanceTargets, raftBandTopMm(raftSettings));
+          const parts = buildRaftFootprintMeshes({ circles, raft: raftSettings, clearance });
+          if (!parts.baseMesh && parts.footprint.length === 0) continue;
 
           const raftGroup = new THREE.Group();
           raftGroup.name = 'Raft';
 
-          if (raftSettings.bottomMode === 'solid') {
-            const baseMesh = generateChamferedBase(profile, {
-              thickness: raftSettings.thickness,
-              chamferAngle: raftSettings.chamferAngle
-            });
-            raftGroup.add(baseMesh);
-          }
+          if (parts.baseMesh) raftGroup.add(parts.baseMesh);
 
           if (raftSettings.bottomMode === 'line') {
             const nodes2d = roots.map((r) => new THREE.Vector2(r.transform.pos.x, r.transform.pos.y));
-            const hasBorderRing = !!profile && profile.length >= 3;
+            const hasBorderRing = parts.footprint.length > 0;
             const edgePairs = buildLineRaftEdgePairs(nodes2d, {
               hasBorderRing,
               keepFactor: 8,
@@ -1037,7 +1029,14 @@ export class ExportManager {
 
             const beamHeight = Math.max(0.01, raftSettings.lineHeightMm);
 
-            const unionEdges: Array<[THREE.Vector2, THREE.Vector2]> = edgePairs.map(([a, b]) => [nodes2d[a], nodes2d[b]]);
+            // Beams a model on the plate is in the way of are never drawn: cutting them
+    // would leave severed ends to close up again, and two clusters either side of
+    // a model should stay two clusters.
+    const unionEdges: Array<[THREE.Vector2, THREE.Vector2]> = filterLineRaftEdges(
+      edgePairs.map(([a, b]) => [nodes2d[a], nodes2d[b]]),
+      inflateModelPlateClearance(clearance),
+      raftSettings.lineWidthMm,
+    );
             const unionMesh = generateUnionedLineRaftMesh(unionEdges, {
               widthMm: raftSettings.lineWidthMm,
               heightMm: beamHeight,
@@ -1049,9 +1048,9 @@ export class ExportManager {
             if (unionHasGeometry) {
               raftGroup.add(unionMesh);
             } else {
-              for (const [a, b] of edgePairs) {
-                const start = new THREE.Vector3(nodes2d[a].x, nodes2d[a].y, 0);
-                const end = new THREE.Vector3(nodes2d[b].x, nodes2d[b].y, 0);
+              for (const [a, b] of unionEdges) {
+                const start = new THREE.Vector3(a.x, a.y, 0);
+                const end = new THREE.Vector3(b.x, b.y, 0);
                 const beam = generateChamferedBeam(start, end, {
                   widthMm: raftSettings.lineWidthMm,
                   heightMm: beamHeight,
@@ -1060,30 +1059,9 @@ export class ExportManager {
                 raftGroup.add(beam);
               }
             }
-
           }
 
-          const shouldRenderWall = raftSettings.wallEnabled;
-          if (shouldRenderWall) {
-            const useCrenels = raftSettings.crenulationSpacing > 0 && raftSettings.crenulationGapWidth > 0;
-            const thickness = raftSettings.bottomMode === 'line' ? Math.max(0.01, raftSettings.lineHeightMm) : raftSettings.thickness;
-            const wallMesh = useCrenels
-              ? generateCrenelatedWallManual(profile, {
-                  wallHeight: raftSettings.wallHeight,
-                  wallThickness: raftSettings.wallThickness,
-                  crenulationGapWidth: raftSettings.crenulationGapWidth,
-                  crenulationSpacing: raftSettings.crenulationSpacing,
-                  thickness,
-                  chamferAngle: raftSettings.chamferAngle,
-                })
-              : generatePerimeterWall(profile, {
-                  wallHeight: raftSettings.wallHeight,
-                  wallThickness: raftSettings.wallThickness,
-                  thickness
-                });
-
-            if (wallMesh) raftGroup.add(wallMesh);
-          }
+          if (parts.wallMesh) raftGroup.add(parts.wallMesh);
 
           raftGroup.updateMatrixWorld(true);
           exportObjects.push(raftGroup);
