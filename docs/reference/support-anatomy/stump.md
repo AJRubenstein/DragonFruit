@@ -33,6 +33,9 @@ The contact cone is **stretched to fit**, not placed at its authored length: the
 ## Constraints
 
 - The root seats on the plate or raft only.
+- A contact closer to the plate than the root height (`1.0 mm`) cannot be served: the
+  cone would have to sink below the root joint, so the build refuses it as
+  `STUMP_BELOW_ROOT` rather than printing a support into the model or the plate.
 - The entity must stay JSON-serializable: it round-trips through save/load and through the import format's collection key. A scene saved under the former name loads through `src/supports/importMigrations.ts`.
 - Stumps are skipped by the render-lookup worker used for primitive picking; a fallback loop handles their selection instead.
 
