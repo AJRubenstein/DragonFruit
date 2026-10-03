@@ -9,6 +9,7 @@ import { Fast3MFLoader, fast3mfBuilder } from 'fast-3mf-loader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { accelerateGeometry } from '@/utils/bvh';
+import { creaseWeldGeometry } from '@/utils/creaseWeldGeometry';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import { repairGeometryWithManifold } from '@/utils/manifoldRepair';
 import {
@@ -580,6 +581,23 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   }
   geometry.computeBoundingBox();
   console.log(`[${new Date().toISOString()}] [processGeometry] Geometry Prep finished. Took ${(performance.now() - startPrep).toFixed(2)}ms`);
+
+  // Native classification hands back a triangle soup, so every corner is its own
+  // vertex. Sharing the ones whose faces agree removes most of them, and the
+  // crease split keeps the model faceted. Before the BVH, which indexes whatever
+  // layout it is given and would otherwise describe the discarded one.
+  const weldStart = performance.now();
+  const welded = creaseWeldGeometry(geometry);
+  if (welded !== geometry) {
+    console.log(
+      `[${new Date().toISOString()}] [processGeometry] Welded `
+      + `${geometry.getAttribute('position').count.toLocaleString()} -> `
+      + `${welded.getAttribute('position').count.toLocaleString()} vertices `
+      + `in ${(performance.now() - weldStart).toFixed(0)}ms`,
+    );
+    geometry.dispose();
+    geometry = welded;
+  }
 
   // Yield before BVH (expensive synchronous tree build)
   await new Promise<void>(r => setTimeout(r, 0));
