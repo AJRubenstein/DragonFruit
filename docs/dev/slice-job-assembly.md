@@ -19,6 +19,7 @@ files with the wrong exposure or the wrong size.
 | Symbol | What it does |
 | --- | --- |
 | `assembleSliceJob` | The whole profile-driven part of a job: returns an `AssembledSliceJob` with the job fields, the anti-aliasing fields (`antiAliasing`) and the final `metadataJson`. |
+| `buildNativeSliceJob` | Turns an `AssembledSliceJob` into the native job's fields, short of the mesh, the thumbnail and the output path; the PNG and container compression rules live here. The app's export and `scene slice` both send its output. |
 | `describeSliceJobModel` | Turns a model (anything with `id`, `name`, `polygonCount` and a position/rotation/scale transform) into the plain `SliceJobManifestModel` the metadata lists. Use it instead of passing THREE objects, which serialize their internals. |
 | `buildSliceJobManifestNodes` | The `slicer`, `printer`, `material`, `effective` and `models` nodes of a manifest. Shared by the native manifest and the JS fallback's. |
 | `resolveSliceRasterSettings` | Raster grid, X-packing (only for formats whose definition declares `bitdepth-packed-x`), mirroring and layer height. |
@@ -106,9 +107,10 @@ const job = assembleSliceJob({
   diff of `fixtures/appSliceJobs.golden.json` like code.
 - `src/features/slicing/__tests__/sliceJobAssembly.test.ts` checks that `assembleSliceJob` alone,
   without the orchestrator, gives the same fields.
-- `src/features/slicing/__tests__/cliJobParity.test.ts` compares the `scene slice` CLI's job with the
-  app's, field by field and including the whole metadata, for four anti-aliasing choices. It checks
-  the anti-aliasing fields `slice run` has flags for.
+- `src/features/slicing/__tests__/cliJobParity.test.ts` compares the job `scene slice` hands
+  `slice run --job` with the one the app hands the native slicer, every field and the whole metadata,
+  for four anti-aliasing choices. Only the mesh transport, the model triangle count, the thumbnail
+  and the output path are left out.
 - `src/features/slicing/__tests__/sliceAntiAliasing.test.ts` pins the anti-aliasing decision for
   every printer, auto preset and eight overrides; regenerate with `UPDATE_SLICE_AA_GOLDEN=1` and
   review the diff of `fixtures/sliceAntiAliasing.golden.json` like code.

@@ -24,8 +24,10 @@ import {
   type MaterialProfile,
   type PrinterProfile,
 } from '../../src/features/profiles/profileStore';
+import { toNativeMetadataPayload } from '../../src/features/slicing/tauri/nativeSlicerBridge';
 import {
   assembleSliceJob,
+  buildNativeSliceJob,
   resolveSliceLayerCount,
   resolveSliceRasterSettings,
   type AssembledSliceJob,
@@ -223,6 +225,12 @@ export type SceneSliceRun = {
   args: string[];
   /** The assembled job, when a printer was given. */
   assembled: AssembledSliceJob | null;
+  /**
+   * The job `slice run --job` reads, when a printer was given: the payload the
+   * app hands the native slicer, without the mesh. The caller writes it to the
+   * `jobPath` it passed.
+   */
+  jobJson: string | null;
 };
 
 export function buildSceneSliceRun(
@@ -230,6 +238,7 @@ export function buildSceneSliceRun(
   geometry: SceneSliceGeometry,
   inputPath: string,
   outputPath: string,
+  jobPath: string,
 ): SceneSliceRun {
   if (!job.printer || !job.material) {
     // No printer: raw engine defaults, as `slice run` itself would use.
@@ -242,6 +251,7 @@ export function buildSceneSliceRun(
         '--json',
       ],
       assembled: null,
+      jobJson: null,
     };
   }
 
@@ -254,48 +264,19 @@ export function buildSceneSliceRun(
     dither: job.dither,
     antiAliasing: job.antiAliasing ?? undefined,
   });
-  const aa = assembled.antiAliasing;
-  if (aa.warnings.length > 0) {
-    throw new Error(`scene slice will not fall back silently: ${aa.warnings.join(' ')}`);
+  if (assembled.antiAliasing.warnings.length > 0) {
+    throw new Error(`scene slice will not fall back silently: ${assembled.antiAliasing.warnings.join(' ')}`);
   }
 
-  const args = [
-    'slice', 'run',
-    inputPath,
-    '-o', outputPath,
-    '--layer-height', String(assembled.layerHeightMm),
-    '--build-width-mm', String(assembled.buildWidthMm),
-    '--build-depth-mm', String(assembled.buildDepthMm),
-    '--source-width-px', String(assembled.sourceWidthPx),
-    '--source-height-px', String(assembled.sourceHeightPx),
-    '--x-packing-mode', assembled.xPackingMode,
-  ];
-  if (assembled.mirrorX) args.push('--mirror-x');
-  if (assembled.mirrorY) args.push('--mirror-y');
-  if (assembled.formatVersion) args.push('--format-version', assembled.formatVersion);
-  // Every anti-aliasing field `slice run` has a flag for. The Z-blend alphas,
-  // the LUT and the 3DAA sampling settings have none; they reach the engine
-  // once the job is handed over whole.
-  args.push(
-    '--anti-aliasing', aa.antiAliasingLevel,
-    '--anti-aliasing-mode', aa.antiAliasingMode,
-    '--blur-brush-radius-px', String(aa.blurBrushRadiusPx),
-    '--blur-brush-kernel', aa.blurBrushKernel,
-    '--blur-brush-sigma-x', String(aa.blurBrushSigmaX),
-    '--blur-brush-sigma-y', String(aa.blurBrushSigmaY),
-    '--z-blur-radius-layers', String(aa.zBlurRadiusLayers),
-    '--z-blur-kernel', aa.zBlurKernel,
-    '--z-blur-sigma', String(aa.zBlurSigma),
-    '--z-blend-look-back', String(aa.zBlendLookBack),
-    '--min-aa-alpha', String(aa.minimumAaAlphaPercent),
-  );
-  if (aa.aaOnSupports) args.push('--aa-on-supports');
-  if (assembled.ditherEnabled) {
-    args.push('--dither');
-    args.push('--dither-bit-depth', String(assembled.ditherBitDepth));
-    args.push('--dither-device-gamma', String(assembled.ditherDeviceGamma));
-  }
-  args.push('--metadata-json', assembled.metadataJson);
-  args.push('--json');
-  return { args, assembled };
+  // The app's defaults for what its performance settings decide, and no model
+  // triangle count: `slice run` counts the triangles in the mesh it loads.
+  const payload = toNativeMetadataPayload({
+    ...buildNativeSliceJob(assembled, { pngCompressionMode: 'auto', aaOnSupportsFallback: false, modelTriangleCount: 0 }),
+    trianglesXYZ: new Float32Array(0),
+  });
+  return {
+    args: ['slice', 'run', inputPath, '-o', outputPath, '--job', jobPath, '--json'],
+    assembled,
+    jobJson: JSON.stringify(payload),
+  };
 }
