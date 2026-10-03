@@ -380,6 +380,18 @@ enum SliceCommands {
         /// Metadata JSON string
         #[arg(long, default_value = "{}")]
         metadata_json: String,
+        /// A whole slice job, as the app hands it to the native slicer
+        /// (`toNativeMetadataPayload`), without the mesh. Replaces every job flag;
+        /// the mesh still comes from INPUT.
+        #[arg(long, conflicts_with_all = [
+            "layer_height", "build_width_mm", "build_depth_mm", "source_width_px", "source_height_px",
+            "png_compression", "anti_aliasing", "anti_aliasing_mode", "blur_brush_radius_px",
+            "blur_brush_kernel", "blur_brush_sigma_x", "blur_brush_sigma_y", "z_blur_radius_layers",
+            "z_blur_kernel", "z_blur_sigma", "z_blend_look_back", "aa_on_supports", "x_packing_mode",
+            "mirror_x", "mirror_y", "format_version", "min_aa_alpha", "dither", "dither_bit_depth",
+            "dither_device_gamma", "metadata_json",
+        ])]
+        job: Option<PathBuf>,
         /// Output as JSON to stdout
         #[arg(long)]
         json: bool,
@@ -1158,6 +1170,7 @@ fn cmd_slice_run(
     dither_device_gamma: f64,
     sample_interval_ms: u64,
     metadata_json: &str,
+    job_path: &Option<PathBuf>,
     json_output: bool,
 ) -> Result<(), String> {
     let width_px = match x_packing_mode {
@@ -1219,63 +1232,69 @@ fn cmd_slice_run(
         return Err(format!("Invalid triangle buffer length: {}", flat.len()));
     }
 
-    let triangles = parse_triangles(&flat);
-    let bbox = compute_bbox(&triangles);
+    let job = if let Some(path) = job_path {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read --job {}: {e}", path.display()))?;
+        slice_job_from_json(&text, flat, model_tri_count)?
+    } else {
+        let triangles = parse_triangles(&flat);
+        let bbox = compute_bbox(&triangles);
 
-    let model_height = bbox.max_z - bbox.min_z;
-    let total_layers = (model_height / layer_height).ceil() as u32;
-    if total_layers == 0 {
-        return Err("Model has zero height".into());
-    }
+        let model_height = bbox.max_z - bbox.min_z;
+        let total_layers = (model_height / layer_height).ceil() as u32;
+        if total_layers == 0 {
+            return Err("Model has zero height".into());
+        }
 
-    // Determine output format from extension (same as Tauri: ext → find_encoder)
-    let ext = output.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| format!(".{}", e))
-        .unwrap_or_else(|| ".nanodlp".to_string());
+        // Determine output format from extension (same as Tauri: ext → find_encoder)
+        let ext = output.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e))
+            .unwrap_or_else(|| ".nanodlp".to_string());
 
-    let job = SliceJobV3 {
-        output_format: ext.clone(),
-        source_width_px,
-        source_height_px,
-        width_px,
-        height_px: source_height_px,
-        x_packing_mode: x_packing_mode.to_string(),
-        build_width_mm,
-        build_depth_mm,
-        layer_height_mm: layer_height,
-        total_layers,
-        export_thumbnail_png_base64: None,
-        png_compression_strategy: png_compression.to_string(),
-        container_compression_level: 2,
-        anti_aliasing_level: anti_aliasing.to_string(),
-        anti_aliasing_mode: anti_aliasing_mode.to_string(),
-        blur_brush_radius_px,
-        blur_brush_kernel: blur_brush_kernel.to_string(),
-        blur_brush_sigma_x: blur_brush_sigma_x as f64,
-        blur_brush_sigma_y: blur_brush_sigma_y as f64,
-        z_blur_radius_layers,
-        z_blur_kernel: z_blur_kernel.to_string(),
-        z_blur_sigma: z_blur_sigma as f64,
-        aa_on_supports,
-        model_triangle_count: model_tri_count,
-        mirror_x,
-        mirror_y,
-        z_blend_look_back,
-        z_blend_minimum_alpha_percent: 0.0,
-        z_blend_max_alpha_percent: 90.0,
-        z_blend_custom_lut: None,
-        zaa_kernel: None,
-        zaa_pattern: None,
-        zaa_duplicate_z: None,
-        dither_enabled: dither,
-        dither_bit_depth,
-        dither_device_gamma,
-        triangles_xyz: flat,
-        metadata_json: metadata_json.to_string(),
-        format_version: format_version.clone(),
-        minimum_aa_alpha_percent: min_aa_alpha,
-        ..Default::default()
+        SliceJobV3 {
+            output_format: ext.clone(),
+            source_width_px,
+            source_height_px,
+            width_px,
+            height_px: source_height_px,
+            x_packing_mode: x_packing_mode.to_string(),
+            build_width_mm,
+            build_depth_mm,
+            layer_height_mm: layer_height,
+            total_layers,
+            export_thumbnail_png_base64: None,
+            png_compression_strategy: png_compression.to_string(),
+            container_compression_level: 2,
+            anti_aliasing_level: anti_aliasing.to_string(),
+            anti_aliasing_mode: anti_aliasing_mode.to_string(),
+            blur_brush_radius_px,
+            blur_brush_kernel: blur_brush_kernel.to_string(),
+            blur_brush_sigma_x: blur_brush_sigma_x as f64,
+            blur_brush_sigma_y: blur_brush_sigma_y as f64,
+            z_blur_radius_layers,
+            z_blur_kernel: z_blur_kernel.to_string(),
+            z_blur_sigma: z_blur_sigma as f64,
+            aa_on_supports,
+            model_triangle_count: model_tri_count,
+            mirror_x,
+            mirror_y,
+            z_blend_look_back,
+            z_blend_minimum_alpha_percent: 0.0,
+            z_blend_max_alpha_percent: 90.0,
+            z_blend_custom_lut: None,
+            zaa_kernel: None,
+            zaa_pattern: None,
+            zaa_duplicate_z: None,
+            dither_enabled: dither,
+            dither_bit_depth,
+            dither_device_gamma,
+            triangles_xyz: flat,
+            metadata_json: metadata_json.to_string(),
+            format_version: format_version.clone(),
+            minimum_aa_alpha_percent: min_aa_alpha,
+            ..Default::default()
+        }
     };
 
     // Periodic RSS/CPU sampler: a background thread records the process's
@@ -1344,20 +1363,20 @@ fn cmd_slice_run(
 
     let result = serde_json::json!({
         "output": output.display().to_string(),
-        "format": ext,
-        "layers": total_layers,
-        "layer_height_mm": layer_height,
-        "build_width_mm": build_width_mm,
-        "build_depth_mm": build_depth_mm,
-        "resolution_px": [source_width_px, source_height_px],
-        "x_packing_mode": x_packing_mode,
+        "format": job.output_format,
+        "layers": job.total_layers,
+        "layer_height_mm": job.layer_height_mm,
+        "build_width_mm": job.build_width_mm,
+        "build_depth_mm": job.build_depth_mm,
+        "resolution_px": [job.source_width_px, job.source_height_px],
+        "x_packing_mode": job.x_packing_mode,
         "model_triangle_count": job.model_triangle_count,
         "mesh_encoding": mesh_encoding,
-        "anti_aliasing": { "level": anti_aliasing, "mode": anti_aliasing_mode,
-            "blur_brush_radius_px": blur_brush_radius_px,
-            "z_blur_radius_layers": z_blur_radius_layers,
-            "z_blend_look_back": z_blend_look_back },
-        "dither": { "enabled": dither, "bit_depth": dither_bit_depth, "device_gamma": dither_device_gamma },
+        "anti_aliasing": { "level": job.anti_aliasing_level, "mode": job.anti_aliasing_mode,
+            "blur_brush_radius_px": job.blur_brush_radius_px,
+            "z_blur_radius_layers": job.z_blur_radius_layers,
+            "z_blend_look_back": job.z_blend_look_back },
+        "dither": { "enabled": job.dither_enabled, "bit_depth": job.dither_bit_depth, "device_gamma": job.dither_device_gamma },
         "total_s": perf.total_s(),
         "wall_s": wall_s,
         "layers_per_second": perf.layers_per_second(),
@@ -1394,7 +1413,7 @@ fn cmd_slice_run(
         println!("{}", serde_json::to_string_pretty(&result).unwrap());
     } else {
         eprintln!("slice: {} layers, {:.2}s ({:.0} layers/s) -> {}",
-            total_layers, perf.total_s(), perf.layers_per_second(), output.display());
+            job.total_layers, perf.total_s(), perf.layers_per_second(), output.display());
     }
     Ok(())
 }
@@ -1939,7 +1958,7 @@ fn main() {
                 blur_brush_sigma_y, z_blur_radius_layers, z_blur_kernel, z_blur_sigma,
                 z_blend_look_back, aa_on_supports, x_packing_mode, mirror_x, mirror_y,
                 format_version, min_aa_alpha, dither, dither_bit_depth, dither_device_gamma,
-                sample_interval_ms, metadata_json, json } =>
+                sample_interval_ms, metadata_json, job, json } =>
                 cmd_slice_run(&input, &output, layer_height, build_width_mm, build_depth_mm,
                     source_width_px, source_height_px, &png_compression, &anti_aliasing,
                     &anti_aliasing_mode, blur_brush_radius_px, &blur_brush_kernel,
@@ -1947,7 +1966,7 @@ fn main() {
                     &z_blur_kernel, z_blur_sigma, z_blend_look_back, aa_on_supports,
                     &x_packing_mode, mirror_x, mirror_y, &format_version,
                     min_aa_alpha, dither, dither_bit_depth, dither_device_gamma,
-                    sample_interval_ms, &metadata_json, json),
+                    sample_interval_ms, &metadata_json, &job, json),
             SliceCommands::Formats => { cmd_slice_formats(); Ok(()) },
             SliceCommands::PreviewLayer { input, layer, output } =>
                 extract_layer_png(&input, layer, &output),
