@@ -11,6 +11,7 @@ import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { KNOWN_SOURCE_EXTENSION_STRIP_RE } from '@/features/plugins/pluginFileTypeExtensions';
 import { Button, Card, CardHeader, IconButton } from '@/components/atoms';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
+import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import { openProfileSettingsModal } from '@/components/settings/profileModalEvents';
 import { MaterialAntiAliasingSection, type MaterialDraft } from '@/components/settings/profileFormAtoms';
@@ -66,6 +67,7 @@ export type SliceIntent = 'file' | 'upload' | 'print' | 'preview' | 'uvtools';
 
 interface SlicingPanelProps {
   models: LoadedModel[];
+  excludedModelIds?: readonly string[];
   activeModel: LoadedModel | null;
   estimatedLayerCountOverride?: number | null;
   estimatedLayerHeightMmOverride?: number | null;
@@ -787,6 +789,7 @@ const AUTO_AA_PRESET_OPTIONS: ReadonlyArray<{
 
 export function SlicingPanel({
   models,
+  excludedModelIds = [],
   activeModel,
   estimatedLayerCountOverride,
   estimatedLayerHeightMmOverride,
@@ -840,6 +843,8 @@ export function SlicingPanel({
   const [showAaWarningModal, setShowAaWarningModal] = useState(false);
   const [pendingAaTarget, setPendingAaTarget] = useState<'Off' | 'Blur' | '3DAA' | null>(null);
   const [aaWarningModelName, setAaWarningModelName] = useState('');
+  const [showOutOfBoundsWarningModal, setShowOutOfBoundsWarningModal] = useState(false);
+  const outOfBoundsWarningResolveRef = useRef<((proceed: boolean) => void) | null>(null);
   const [aaLevel, setAaLevel] = useState<AaStrengthLevel>(resolveInitialAaLevel);
   const [useCustomAaLevel, setUseCustomAaLevel] = useState<boolean>(() => {
     const initialSteps = parseAaLevelSteps(resolveInitialAaLevel()) ?? 4;
@@ -980,9 +985,7 @@ export function SlicingPanel({
     ...(activeMaterialProfile?.antiAliasingSettings ?? {}),
     ...(sessionAaOverrideDraft?.antiAliasingSettings ?? {}),
   }), [activeMaterialProfile?.antiAliasingSettings, sessionAaOverrideDraft?.antiAliasingSettings]);
-  const aaOnSupportsEnabled = profileAntiAliasingSettings.enableOverride === true
-    ? profileAntiAliasingSettings.aaOnSupports
-    : getSavedSlicingPerformanceSettings().aaOnSupportsExperimental === true;
+  const aaOnSupportsEnabled = profileAntiAliasingSettings.aaOnSupports === true;
   const effectiveMaterialProfile = useMemo(() => {
     if (!activeMaterialProfile) return null;
     if (!activePrinterProfile) return activeMaterialProfile;
@@ -1288,7 +1291,30 @@ export function SlicingPanel({
     setPendingAaTarget(null);
   }, []);
 
-  const visibleModels = useMemo(() => models.filter((model) => model.visible), [models]);
+  const excludedModelIdSet = useMemo(() => new Set(excludedModelIds), [excludedModelIds]);
+  const visibleModels = useMemo(
+    () => models.filter((model) => model.visible && !excludedModelIdSet.has(model.id)),
+    [excludedModelIdSet, models],
+  );
+  const excludedVisibleModelCount = useMemo(
+    () => models.filter((model) => model.visible && excludedModelIdSet.has(model.id)).length,
+    [excludedModelIdSet, models],
+  );
+  const requestOutOfBoundsSliceConfirmation = useCallback(() => new Promise<boolean>((resolve) => {
+    outOfBoundsWarningResolveRef.current?.(false);
+    outOfBoundsWarningResolveRef.current = resolve;
+    setShowOutOfBoundsWarningModal(true);
+  }), []);
+  const settleOutOfBoundsSliceConfirmation = useCallback((proceed: boolean) => {
+    const resolve = outOfBoundsWarningResolveRef.current;
+    outOfBoundsWarningResolveRef.current = null;
+    setShowOutOfBoundsWarningModal(false);
+    resolve?.(proceed);
+  }, []);
+  useEffect(() => () => {
+    outOfBoundsWarningResolveRef.current?.(false);
+    outOfBoundsWarningResolveRef.current = null;
+  }, []);
   const activePrinterProfileId = (activePrinterProfile?.id ?? '').trim();
   const isShiftHeld = useKeyPressed('shift');
 
@@ -1304,8 +1330,8 @@ export function SlicingPanel({
   }, [canPrint, canUpload, canUvTools, isShiftHeld, sliceIntent]);
   // 'preview' is always available regardless of network state
   const sliceFilenameBase = useMemo(
-    () => resolveSliceFilenameBase(models, activeModel),
-    [activeModel, models],
+    () => resolveSliceFilenameBase(visibleModels, activeModel),
+    [activeModel, visibleModels],
   );
 
   useEffect(() => {
@@ -2061,11 +2087,14 @@ export function SlicingPanel({
       return;
     }
 
-    const visibleModels = models.filter((model) => model.visible);
     if (visibleModels.length === 0) {
-      alert(_(msg`No visible models available for slicing.`));
+      alert(excludedVisibleModelCount > 0
+        ? _(msg`All visible models are outside the build volume.`)
+        : _(msg`No visible models available for slicing.`));
       return;
     }
+
+    if (excludedVisibleModelCount > 0 && !(await requestOutOfBoundsSliceConfirmation())) return;
 
     const proceed = await Promise.resolve(onBeforeSliceStart?.(effectiveSliceIntent) ?? true).catch(() => false);
     if (!proceed) {
@@ -2134,13 +2163,15 @@ export function SlicingPanel({
 
       const result = await runSliceExportOrchestrator({
         aaOnSupports: aaOnSupportsEnabled,
-        models: visibleModels,
+        models,
+        excludedModelIds,
         printerProfile: activePrinterProfile,
         materialProfile: materialProfileForSlicing,
         filenameBase: sliceFilenameBase || activePrinterProfile.name || 'slice_export',
         outputPath: resolvedOutputPath.length > 0 ? resolvedOutputPath : null,
         antiAliasingLevel: effectiveAntiAliasingLevel,
         antiAliasingMode: effectiveAntiAliasingMode,
+        supportTipShrinkPercent: profileAntiAliasingSettings.supportTipShrinkPercent,
         blurBrushRadiusPx: resolvedBlurBrushRadiusPx,
         blurBrushKernel: resolvedBlurBrushKernel,
         blurBrushSigmaX: resolvedBlurBrushSigmaX,
@@ -4070,6 +4101,47 @@ export function SlicingPanel({
         </div>,
         document.body,
       )}
+
+      <StructuredDialogModal
+        open={showOutOfBoundsWarningModal}
+        ariaLabel="Out-of-bounds models will be excluded"
+        title={<Trans>Models Outside Build Volume</Trans>}
+        subtitle={<Trans>Only printable models will be sliced</Trans>}
+        icon={<AlertTriangle className="h-4 w-4" />}
+        iconTone="warning"
+        zIndexClassName="z-[130]"
+        closeAriaLabel="Close modal"
+        onClose={() => settleOutOfBoundsSliceConfirmation(false)}
+        onBackdropClick={() => settleOutOfBoundsSliceConfirmation(false)}
+        actions={(
+          <>
+            <Button
+              variant="secondary"
+              className="!h-9 text-xs"
+              onClick={() => settleOutOfBoundsSliceConfirmation(false)}
+            >
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button
+              className="!h-9 text-xs"
+              onClick={() => settleOutOfBoundsSliceConfirmation(true)}
+            >
+              <Trans>Slice Printable Models</Trans>
+            </Button>
+          </>
+        )}
+      >
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {excludedVisibleModelCount === 1 ? (
+            <Trans>One visible model outside the build volume will be excluded from this slice.</Trans>
+          ) : (
+            <>
+              <strong style={{ color: 'var(--text-strong)' }}>{excludedVisibleModelCount}</strong>{' '}
+              <Trans>visible models outside the build volume will be excluded from this slice.</Trans>
+            </>
+          )}
+        </p>
+      </StructuredDialogModal>
 
       <AaSupportWarningModal
         isOpen={showAaWarningModal}

@@ -329,19 +329,6 @@
 - Why: decide with the AA owner whether this is parked or abandoned. Left
   untranslated in the i18n pass on purpose — wrapping it would add ~80 strings
   nobody can see; if it comes back, it needs that pass plus an AA glossary.
-### [fix] Trunk promotion bypasses maxAttachmentsPerTrunk — M · medium risk
-- Where: src/supports/autoSupport/autoPlace.ts `case 'replace_trunk'` (~line
-  1014) → `applyTrunkReplacement` (Trunk/TrunkReplacement/applyTrunkReplacement.ts,
-  the `connectedBranchIds` / `connectedLeafIds` rehost loops).
-- What: the promoted branch's trunk inherits every branch/leaf rehosted off the
-  replaced trunk with no capacity check — the only member-adding path in the auto
-  pipeline that does not consult `countAttachmentsOnHost`/`isHostAtAttachmentCapacity`.
-  A host already at the cap, plus its inherited set, can end up over it.
-- Why: the report cannot explain a host with more members than the setting allows
-  (e.g. 36 members on one hub with cap 12 in the fan-out groups), and the layer
-  that would fix it is store-bound and shared with manual placement.
-- Context: docs/dev/auto-supports.md § "Rules worth knowing before you change placement".
-
 ### [fix] Consolidation gives grid hosts the regular 8 mm fan radius — S · medium risk
 - Where: src/supports/autoSupport/autoPlace.ts, `fanLeafToHost(...)` call in the
   consolidation pass (~line 2372) passes `new Set()` as `gridHostIds`.

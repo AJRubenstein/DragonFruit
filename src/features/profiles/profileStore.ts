@@ -18,6 +18,7 @@ import {
     normalizeWebcamRotationDeg,
     DEFAULT_WEBCAM_ROTATION_DEG,
 } from '@/features/profiles/outputFormatUtils';
+import { hasWindow } from '@/utils/dom';
 
 export type PrinterOutputFormat = string;
 export type PrinterNetworkSupport = string;
@@ -254,6 +255,7 @@ export type MaterialAntiAliasingSettings = {
     tipOffsetMode: 'disabled' | 'auto' | 'manual';
     tipOffsetMm: number;
     tipOffsetDisplayInUi: boolean;
+    supportTipShrinkPercent: number;
 };
 
 export const DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS: MaterialAntiAliasingSettings = {
@@ -283,9 +285,10 @@ export const DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS: MaterialAntiAliasingSettin
     ditherEnabled: false,
     ditherBitDepth: 8,
     ditherDeviceGamma: 2.2,
-    tipOffsetMode: 'disabled',
+    tipOffsetMode: 'auto',
     tipOffsetMm: 0.05,
     tipOffsetDisplayInUi: false,
+    supportTipShrinkPercent: 10,
 };
 
 const MATERIAL_PROFILE_LOCAL_OVERRIDE_KEYS = new Set<keyof MaterialProfile>([
@@ -365,8 +368,8 @@ function sanitizeMaterialAntiAliasingSettings(input: unknown): MaterialAntiAlias
     const levelRaw = typeof source.level === 'string' ? source.level.trim().toLowerCase() : defaults.level;
     const levelSteps = Number(levelRaw.endsWith('x') ? levelRaw.slice(0, -1) : levelRaw);
     const level = `${Math.max(2, Math.min(64, Number.isFinite(levelSteps) ? Math.round(levelSteps) : 4))}x`;
-    const tipOffsetMode = source.tipOffsetMode === 'auto' || source.tipOffsetMode === 'manual' 
-        ? source.tipOffsetMode 
+    const tipOffsetMode = source.tipOffsetMode === 'auto' || source.tipOffsetMode === 'manual' || source.tipOffsetMode === 'disabled'
+        ? source.tipOffsetMode
         : defaults.tipOffsetMode;
 
     const enableCustomSettings = typeof source.enableCustomSettings === 'boolean'
@@ -405,6 +408,9 @@ function sanitizeMaterialAntiAliasingSettings(input: unknown): MaterialAntiAlias
         tipOffsetMode,
         tipOffsetMm: Number.isFinite(Number(source.tipOffsetMm)) ? Number(source.tipOffsetMm) : defaults.tipOffsetMm,
         tipOffsetDisplayInUi: Boolean(source.tipOffsetDisplayInUi ?? defaults.tipOffsetDisplayInUi),
+        supportTipShrinkPercent: source.supportTipShrinkPercent == null
+            ? defaults.supportTipShrinkPercent
+            : Math.round(clampNumber(source.supportTipShrinkPercent, defaults.supportTipShrinkPercent, 0, 90)),
     };
 }
 
@@ -603,7 +609,7 @@ function readActiveMaterialByPrinterProfileFromStorage(): Record<string, string>
         return { ...activeMaterialByPrinterProfileCache };
     }
 
-    if (typeof window === 'undefined') return {};
+    if (!hasWindow()) return {};
 
     const raw = window.localStorage.getItem(ACTIVE_MATERIAL_BY_PRINTER_PROFILE_STORAGE_KEY)
         ?? window.sessionStorage.getItem(ACTIVE_MATERIAL_BY_PRINTER_PROFILE_STORAGE_KEY);
@@ -631,7 +637,7 @@ function readActiveMaterialByPrinterProfileFromStorage(): Record<string, string>
 }
 
 function writeActiveMaterialByPrinterProfileToStorage(next: Record<string, string>): void {
-    if (typeof window === 'undefined') return;
+    if (!hasWindow()) return;
 
     const sanitized: Record<string, string> = {};
     Object.entries(next).forEach(([printerId, materialId]) => {
@@ -1304,7 +1310,7 @@ function sanitizeState(input: Partial<ProfileStoreState> | null | undefined): Pr
 }
 
 function persist(next: ProfileStoreState): void {
-    if (typeof window === 'undefined') return;
+    if (!hasWindow()) return;
     try {
         const payload: PersistedProfileStoreEnvelope = {
             version: PROFILE_STORE_SCHEMA_VERSION,
@@ -1338,14 +1344,14 @@ function parsePersistedState(raw: string | null): Partial<ProfileStoreState> | n
 }
 
 function ensureHydrated(): void {
-    if (typeof window === 'undefined') return;
+    if (!hasWindow()) return;
     if (isHydrated) return;
     hydratePluginRegistry();
     hydrateProfilesFromStorage();
 }
 
 export function hydrateProfilesFromStorage(): void {
-    if (typeof window === 'undefined') return;
+    if (!hasWindow()) return;
     if (isHydrated) return;
 
     isHydrated = true;

@@ -15,9 +15,12 @@ import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
  * The gridless merge's BRANCH promotion: a merged candidate whose knot-to-tip
  * span exceeds `MAX_LEAF_SPAN_BEFORE_BRANCH_MM` becomes a branch, not a leaf.
  *
- * Reaching the arm needs a real built trunk and a candidate beside a MID-SHAFT
- * joint: `findMergeHost` only sees a host's tip and segment joints, so the
- * middle of a shaft is otherwise invisible to it.
+ * Reaching the arm needs a genuinely long span, and an accurate knot search
+ * leaves little room for one: the knot snaps to the highest sample that clears
+ * the steep minimum, so a candidate at the host's own height bridges about
+ * 2 × its lateral distance. The candidates here sit ABOVE the host's shaft top
+ * instead — level with its contact cone — so the highest legal knot is the top
+ * of the shaft and the member really is long (8.4mm knot→tip).
  */
 
 const MODEL = 'model-a';
@@ -79,9 +82,9 @@ function runAgainstHost(
     } as never);
 }
 
-test('a long merge onto a mid-shaft joint becomes a BRANCH, not a leaf', () => {
+test('a long merge onto a host becomes a BRANCH, not a leaf', () => {
     const host = builtHost(40);
-    const result = runAgainstHost(host, islandAt(3.8, host.midJointZ), 20);
+    const result = runAgainstHost(host, islandAt(3.8, host.midJointZ + 20), 20);
 
     assert.equal(result.placed.branch, 1, 'the long member should be a branch');
     assert.equal(result.placed.leaf, 0, 'and not a leaf');
@@ -90,7 +93,7 @@ test('a long merge onto a mid-shaft joint becomes a BRANCH, not a leaf', () => {
 
 test('the same scene under DEFAULT settings places a standalone trunk instead', () => {
     const host = builtHost(40);
-    const result = runAgainstHost(host, islandAt(3.8, host.midJointZ), 60);
+    const result = runAgainstHost(host, islandAt(3.8, host.midJointZ + 20), 60);
 
     assert.equal(result.placed.branch, 0);
     assert.equal(result.placed.trunk, 1, 'the merge is refused and the candidate stands alone');
@@ -102,26 +105,30 @@ test('the same scene under DEFAULT settings places a standalone trunk instead', 
  */
 test('the branch arm turns on grid.minBranchAngleDeg within one degree', () => {
     const host = builtHost(40);
-    const refused = runAgainstHost(host, islandAt(3.8, host.midJointZ), 28);
-    const admitted = runAgainstHost(host, islandAt(3.8, host.midJointZ), 27);
+    const refused = runAgainstHost(host, islandAt(3.8, host.midJointZ + 20), 51);
+    const admitted = runAgainstHost(host, islandAt(3.8, host.midJointZ + 20), 50);
 
-    assert.equal(refused.placed.branch, 0, 'gate 62° refuses the 62° departure');
-    assert.equal(admitted.placed.branch, 1, 'gate 63° admits it');
+    assert.equal(refused.placed.branch, 0, 'gate 51 (39° from vertical) refuses the 40° departure');
+    assert.equal(admitted.placed.branch, 1, 'gate 50 (40°) admits it');
 });
 
 /**
- * And the arm is bounded: a candidate far from the host's tip and joints is not
- * a merge at all, so it stands alone. Without this the two tests above could be
- * passing for the wrong reason — if EVERY candidate branched, they would too.
+ * And the arm is bounded: the reach is a PLAN radius, so a candidate outside it
+ * is not a merge at all and stands alone. Height is not part of the bound, so a
+ * candidate level with (or above) the host's joints is still in reach and
+ * attaches lower down the shaft. Without this the two tests above could be
+ * passing for the wrong reason: if EVERY candidate branched, they would too.
  */
 test('a candidate out of merge reach stands alone', () => {
     const host = builtHost(40);
-    const result = runAgainstHost(host, islandAt(3.8, host.midJointZ + 20), 20);
-    assert.ok(
-        result.placed.leaf + result.placed.branch + result.placed.trunk === 1,
-        'exactly one member is placed',
-    );
-    assert.equal(result.placed.trunk, 1, 'a candidate 20mm above the joint is out of merge reach');
+    const outOfReach = runAgainstHost(host, islandAt(8, host.midJointZ), 20);
+    assert.equal(outOfReach.placed.trunk, 1, '8mm away in plan is out of the 4mm merge reach');
+    assert.equal(outOfReach.placed.branch + outOfReach.placed.leaf, 0, 'and nothing was bridged');
+
+    const sameHeight = runAgainstHost(host, islandAt(3.8, host.midJointZ + 20), 20);
+    assert.equal(sameHeight.placed.trunk, 0,
+        'inside the plan reach a second plate contact is not stood, whatever the height');
+    assert.equal(sameHeight.placed.branch, 1, 'the arm attaches lower down the host shaft');
 });
 
 test('the run is deterministic', () => {

@@ -22,7 +22,10 @@ import {
 import {
     applyAutoSupportSettingsPatch,
     normalizeAutoSupportSettings,
+    type AutoSupportDiagnosticKey,
 } from '../autoSupport/settings';
+import { SUPPORT_DEFAULTS_VERSION_KEY } from './defaultMigrations';
+
 
 // --- Store ---
 
@@ -293,6 +296,24 @@ export function updateDebugSimpleSupportRender(enabled: boolean): void {
     notify();
 }
 
+/**
+ * A diagnostic switch from the auto-support settings dialog. Applied the moment
+ * it is toggled, not staged for `Save`: it exists to be flipped while reading the
+ * scene, and the dialog's dirty state ignores it (see
+ * `DIAGNOSTIC_AUTO_SUPPORT_KEYS`). Like `debugSimpleSupportRender` it is not
+ * written to storage by itself; the next full save carries it.
+ */
+export function updateAutoSupportDiagnostic(key: AutoSupportDiagnosticKey, enabled: boolean): void {
+    currentSettings = {
+        ...currentSettings,
+        autoSupport: {
+            ...currentSettings.autoSupport,
+            [key]: enabled,
+        },
+    };
+    notify();
+}
+
 /** The eye button in the Support Studio header: contact discs only, lines for the rest. */
 export function updateNavigationDiscsOnly(enabled: boolean): void {
     currentSettings = {
@@ -354,6 +375,13 @@ export function loadSettingsFromLocalStorage(): boolean {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (!stored) return false;
         const parsed = JSON.parse(stored) as SupportSettings;
+        // An install that ran a build carrying the auto-support defaults table
+        // stamped its batch into this blob. The studio's own settings are the
+        // user's and are never migrated (see defaultMigrations), so the field is
+        // only dropped here: `mergeWithDefaults` spreads what it loads, so a
+        // stray key would ride into the live block and back out to storage on the
+        // next save.
+        delete (parsed as Partial<Record<typeof SUPPORT_DEFAULTS_VERSION_KEY, unknown>>)[SUPPORT_DEFAULTS_VERSION_KEY];
         // Force reset dev tools on load
         parsed.devToolsEnabled = false;
         parsed.devTools = createDefaultSettings().devTools;

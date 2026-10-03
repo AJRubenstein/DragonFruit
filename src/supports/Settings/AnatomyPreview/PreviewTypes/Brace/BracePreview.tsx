@@ -113,11 +113,11 @@ export function BracePreview({
     previewState,
 }: BracePreviewProps) {
     const autoBracing = settings.autoBracing ?? {};
-    const braceDiameter = autoBracing.braceDiameterMm ?? 0.7;
-    const initialPattern: string = autoBracing.initialPattern ?? 'zigZag';
+    const braceDiameter = autoBracing.braceDiameterMm ?? 1.0;
+    const initialPattern: string = autoBracing.initialPattern ?? 'crossDiagonal';
     const initialDistance = autoBracing.initialDistanceMm ?? 2.0;
-    const repeatingPattern: string = autoBracing.repeatingPattern ?? 'zigZag';
-    const patternInterval = autoBracing.patternIntervalMm ?? 10.0;
+    const repeatingPattern: string = autoBracing.repeatingPattern ?? 'crossDiagonal';
+    const patternInterval = autoBracing.patternIntervalMm ?? 8.0;
     const shaftDiameterMm = Math.max(0.5, settings.shaft?.diameterMm ?? 1.0);
     const rootsDiameterMm = settings.roots?.diameterMm ?? 2.0;
     const rootsDiskHeightMm = settings.roots?.diskHeightMm ?? 0.2;

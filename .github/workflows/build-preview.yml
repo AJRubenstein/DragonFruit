@@ -515,6 +515,12 @@ jobs:
   # ── Build matrix ────────────────────────────────────────────────────────
   build-tauri:
     name: Build ${{ matrix.artifact_name }}
+    # The shipped profile, stated here as well as in Cargo.toml so that
+    # `swatinem/rust-cache` keys on it (see `env-vars` below): the compile check
+    # links thin and keeps its artifacts under a different key.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: fat
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
     needs:
       - derive
     strategy:
@@ -551,17 +557,42 @@ jobs:
           node-version: "22.23.2"
           cache: npm
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned, not `@stable`: the floating channel is what churns the Rust cache
+      # key (see warm-rust-cache.yml).
+      - name: Read the pinned Rust toolchain
+        id: rust_toolchain
+        # bash, not the runner's default shell: Windows would run this as pwsh,
+        # where `$(sed …)` is a module path, and the step died there.
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust_toolchain.outputs.channel }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: ./src-tauri -> target
           shared-key: tauri
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES
 
       - name: Install frontend dependencies
         run: npm ci
+
+      # Next asks for this on every run ("No build cache found"): its compiler and
+      # fetch caches live in `.next/cache`, and restoring that across runs is worth
+      # a minute or two of each frontend build.
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'next.config.ts', 'tsconfig.json') }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
       - name: Enable Windows long paths
         if: runner.os == 'Windows'
@@ -578,6 +609,11 @@ jobs:
         with:
           tauriScript: npx tauri
           args: ${{ matrix.args }}
+
+      - name: Verify Windows installer runtime payload
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-windows-bundles.ps1 -Formats nsis
 
       - name: Install Flatpak build tooling
         if: matrix.build_kind == 'flatpak'
@@ -654,6 +690,15 @@ jobs:
   # ── Fallback: build macOS Universal natively (manual dispatch, no PR check) ─
   build-macos-fallback:
     name: Build macOS Universal (fallback)
+    # The shipped profile, stated here as well as in Cargo.toml so that the cache it
+    # restores is the one the warmer wrote (see `env-vars` below); the compile check
+    # links thin and keeps its artifacts under a different key.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: fat
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+      # Stated at job level so `swatinem/rust-cache` sees them (see `env-vars`).
+      CMAKE_OSX_ARCHITECTURES: "arm64;x86_64"
+      DF_BUILD_TARGET_TRIPLE: universal-apple-darwin
     if: always() && github.event_name == 'workflow_dispatch' && (!inputs.pr_run_id || needs.fetch-macos-artifacts.result != 'success')
     needs:
       - derive
@@ -679,9 +724,21 @@ jobs:
           node-version: "22.23.2"
           cache: npm
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned, not `@stable`: the floating channel is what churns the Rust cache
+      # key (see warm-rust-cache.yml).
+      - name: Read the pinned Rust toolchain
+        id: rust_toolchain
+        # bash, not the runner's default shell: Windows would run this as pwsh,
+        # where `$(sed …)` is a module path, and the step died there.
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust_toolchain.outputs.channel }}
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Install Apple Certificate
@@ -695,9 +752,21 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
           shared-key: tauri
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES
 
       - name: Install frontend dependencies
         run: npm ci
+
+      # Next asks for this on every run ("No build cache found"): its compiler and
+      # fetch caches live in `.next/cache`, and restoring that across runs is worth
+      # a minute or two of each frontend build.
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'next.config.ts', 'tsconfig.json') }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
       - name: Build Tauri universal macOS bundle
         uses: tauri-apps/tauri-action@v0

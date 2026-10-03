@@ -82,6 +82,35 @@ jobs:
       - name: Check support id prefixes are derived
         run: npm run check:support-prefixes
 
+  support-metrics:
+    name: Auto-support metrics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.2"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Placement metrics, against the baseline in scripts/bench. A deliberate
+      # change updates that file in the same pull request; an unintended one
+      # fails here with the metric that moved.
+      - name: Compare auto-support metrics with the baseline
+        run: npm run bench:auto-supports -- --check
+
+      # Grid mode has its own baseline: the two modes measure different runs
+      # (node-snapped placement, and the fallback for tips the lattice refuses).
+      - name: Compare grid-mode auto-support metrics with the grid baseline
+        run: npm run bench:auto-supports -- --grid --baseline scripts/bench/auto-support-baseline-grid.json --check
+
   cargo-locks:
     name: Cargo lockfiles
     runs-on: ubuntu-latest
@@ -102,22 +131,8 @@ jobs:
           echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
 
       - name: Check every Cargo.lock matches its manifest
-        # `cargo update --workspace` only touches entries the manifests no
-        # longer match, so without --locked it is also the minimal fix.
-        run: |
-          fail=0
-          for lock in $(git ls-files '*Cargo.lock'); do
-            m="${lock%.lock}.toml"
-            if ! err=$(cargo update --workspace --locked --manifest-path "$m" 2>&1 >/dev/null); then
-              if grep -q -- '--locked was passed' <<<"$err"; then
-                echo "::error file=$lock,title=Cargo.lock out of date::Run: cargo update --workspace --manifest-path $m"
-              else
-                echo "::error file=$lock,title=Cargo.lock could not be resolved::$(grep -m1 '^error' <<<"$err")"
-              fi
-              fail=1
-            fi
-          done
-          exit $fail
+        # Locally: `npm run check:cargo-locks`, or `npm run check:cargo-locks:fix` to fix.
+        run: scripts/check-cargo-locks.sh
 
   crate-versions:
     name: Crate versions

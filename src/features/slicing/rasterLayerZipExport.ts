@@ -26,6 +26,13 @@ import { resolveSlicingFormatDefinition } from '@/features/slicing/formats/regis
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
 
+// The app, not the engine: format encoders stamp this as the slicer that made the
+// file. Left out when unknown (e.g. under tests) so no encoder writes a guess.
+const SLICER_IDENTITY = {
+  name: 'DragonFruit',
+  version: process.env.NEXT_PUBLIC_APP_VERSION || undefined,
+};
+
 const MAX_CANVAS_PIXELS = 24_000_000;
 const DEFAULT_MESH_CHUNK_TARGET_BYTES = 64 * 1024 * 1024;
 const MIN_MESH_CHUNK_TARGET_BYTES = 16 * 1024 * 1024;
@@ -36,6 +43,7 @@ export type RasterLayerZipExportOptions = {
   printerProfile: PrinterProfile;
   materialProfile: MaterialProfile;
   filenameBase: string;
+  supportTipShrinkPercent?: number;
   outputMode?: 'download' | 'return';
   abortSignal?: AbortSignal;
   onProgress?: (done: number, total: number, phase: string) => void;
@@ -791,6 +799,7 @@ function appendContactConePrimitive(
   },
   radialSegments = 12,
   penetrationMm = 0,
+  tipScale = 1,
 ): void {
   const socket = getFinalSocketPosition(cone as any);
   const effectiveNormal = cone.surfaceNormal ?? cone.normal;
@@ -803,7 +812,7 @@ function appendContactConePrimitive(
   const g = createFrustumGeometryBetween(
     start,
     end,
-    Math.max(0.05, cone.profile.contactDiameterMm * 0.5),
+    Math.max(0.05, cone.profile.contactDiameterMm * 0.5 * tipScale),
     Math.max(0.05, cone.profile.bodyDiameterMm * 0.5),
     Math.max(4, Math.floor(radialSegments)),
   );
@@ -817,9 +826,10 @@ function appendContactDiskPrimitive(
   disk: ContactDisk,
   radialSegments: number,
   penetrationMm = 0.05,
+  tipScale = 1,
 ): void {
   const thickness = disk.diskLengthOverride ?? calculateDiskThickness(disk.surfaceNormal, disk.coneAxis, disk.profile);
-  const radius = Math.max(0.01, disk.contactDiameterMm * 0.5);
+  const radius = Math.max(0.01, disk.contactDiameterMm * 0.5 * tipScale);
 
   const center = getDiskCenter(disk.pos, disk.surfaceNormal, thickness);
   const rotation = getDiskRotation(disk.surfaceNormal);
@@ -853,12 +863,14 @@ function appendContactDiskPrimitive(
 export function buildSupportAndRaftWorldTriangles(
   visibleModelIds: Set<string>,
   collector?: TriangleFloatCollector,
+  supportTipShrinkPercent = 0,
 ): WorldTriangle[] {
   if (visibleModelIds.size === 0) return [];
 
   const out: WorldTriangle[] = [];
   const supportState = getSupportSnapshot();
   const sink: TriangleSink = collector ?? out;
+  const tipScale = 1 - supportTipShrinkPercent / 100;
   const raftSettings = getRaftSettings();
   const hasSolidBottom = raftSettings.bottomMode === 'solid';
   const raftThickness = raftSettings.thickness;
@@ -1056,9 +1068,9 @@ export function buildSupportAndRaftWorldTriangles(
         if (!contact) continue;
         const kind = field === descriptor.lower.field ? descriptor.lower.kind : descriptor.upper.kind;
         if (kind === 'disk') {
-          appendContactDiskPrimitive(sink, contact as ContactDisk, tessellation.contactConeRadialSegments, tipPenetrationMm);
+          appendContactDiskPrimitive(sink, contact as ContactDisk, tessellation.contactConeRadialSegments, tipPenetrationMm, tipScale);
         } else {
-          appendContactConePrimitive(sink, contact as any, tessellation.contactConeRadialSegments, tipPenetrationMm);
+          appendContactConePrimitive(sink, contact as any, tessellation.contactConeRadialSegments, tipPenetrationMm, tipScale);
         }
       }
     }
@@ -2166,6 +2178,7 @@ async function rasterizeLayerStack(options: RasterLayerZipExportOptions): Promis
       'JS fallback generates solid cross-sections via plane intersections and scanline fill.',
       'Used when plugin-owned WASM encoding path is unavailable or fails.',
     ],
+    slicer: SLICER_IDENTITY,
     printer: {
       id: options.printerProfile.id,
       name: options.printerProfile.name,
@@ -2261,7 +2274,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
   const settings = resolveEffectiveSettings(options);
   const perfSettings = getSavedSlicingPerformanceSettings();
 
-  const modelTriangleCount = countModelWorldTriangles(visibleModels);
+  const modelTriangleEstimate = countModelWorldTriangles(visibleModels);
   console.warn('[SupportAA] collector input partitions', {
     models: visibleModels.map((model) => {
       const totalTriangles = getModelTriangleCount(model);
@@ -2281,10 +2294,12 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
         scale: model.transform.scale.toArray(),
       };
     }),
-    modelTriangleCount,
+    modelTriangleEstimate,
   });
+  // Preserve closed surfaces, including their out-of-volume portions. The
+  // rasterizer needs those crossings to determine winding at the plate edge.
   const collector = new TriangleFloatCollector(
-    modelTriangleCount + 4096,
+    modelTriangleEstimate + 4096,
     options.flushBinaryMeshChunk,
     options.meshChunkTargetBytes,
   );
@@ -2297,6 +2312,9 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
       appendModelTrianglesInRange(model, collector, 0, modelTriCount);
     }
   }
+  // The native side splits the buffer here, before support-classified meshes
+  // and generated support/raft geometry are appended.
+  const modelTriangleCount = collector.triangleCount;
   for (const model of visibleModels) {
     const totalTris = getModelTriangleCount(model);
     const modelTriCount = effectiveModelTriangleCount(model);
@@ -2305,12 +2323,12 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     }
   }
   emitMeshPrepDiagnostic('Mesh prep: models', 1, 4, {
-    modelTriangleEstimate: modelTriangleCount,
+    modelTriangleEstimate,
     triangleCountAfterModels: collector.triangleCount,
   });
 
   const visibleModelIds = new Set(visibleModels.map((model) => model.id));
-  buildSupportAndRaftWorldTriangles(visibleModelIds, collector);
+  buildSupportAndRaftWorldTriangles(visibleModelIds, collector, options.supportTipShrinkPercent ?? 0);
   emitMeshPrepDiagnostic('Mesh prep: supports', 2, 4, {
     triangleCountAfterSupports: collector.triangleCount,
   });
@@ -2373,6 +2391,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
       'Solid cross-sections are generated in Rust/WASM from transformed triangle meshes.',
       'Container packaging is encoded by plugin-owned format encoders.',
     ],
+    slicer: SLICER_IDENTITY,
     printer: {
       id: options.printerProfile.id,
       name: options.printerProfile.name,

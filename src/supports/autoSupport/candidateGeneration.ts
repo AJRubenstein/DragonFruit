@@ -5,6 +5,7 @@ import { SMALL_ISLAND_TIP_AREA_MM2, SUPPORT_RESTSTACK_DELTA_MM, influenceRadiusM
 import { footprintX, footprintY } from '../../volumeAnalysis/Islands/voxelFootprint';
 import { smallIslandTipDiameterMm } from './parameterSizing';
 import { TIP_COVERAGE_RADIUS_MM } from './coverage';
+import { applyContactTipCaps } from './contactTipCap';
 import type * as THREE from 'three';
 import { isSupportBlockedContact } from './supportBlockers';
 
@@ -31,14 +32,17 @@ export function generateCandidates(
     // Note: grounded/plate-contact filtering is handled upstream by the
     // Islands panel's Plate toggle — filteredIslands already reflects it.
     const eligible = islands.filter(island => {
-        // Minima islands don't have area — they represent sharp geometric
-        // features that need support regardless of size.
-        const isMinima = island.source === 'minima' && island.class === 'minimaOnly';
-        if (!isMinima) {
-            const area = island.areaMm2 ?? 0;
-            if (area < settings.minIslandAreaMm2) return false;
-        }
-        return true;
+        // A minima is a sharp geometric feature that needs support regardless of
+        // size, and it carries no area of its own: the detector reports a vertex,
+        // not a footprint. The exemption reads the source for that reason. It
+        // used to also require `class === 'minimaOnly'`, which `classifyIntersection`
+        // rewrites to `intersection` for every minima a voxel island covers, so a
+        // covered minima fell through to the area test as "0 mm²" and was dropped
+        // whenever that voxel island was itself below the floor: a silent miss on
+        // a real minimum, with nothing in the report to show for it.
+        if (island.source === 'minima') return true;
+        const area = island.areaMm2 ?? 0;
+        return area >= settings.minIslandAreaMm2;
     });
 
     // Map to candidates
@@ -51,6 +55,10 @@ export function generateCandidates(
             (c) => !isSupportBlockedContact(modelId, mesh, c.tipPos.x, c.tipPos.y, c.tipPos.z),
         );
     }
+    // Cap the tip contact by the local free width at each contact: a tip must
+    // fit the feature it lands on. Same pass the lattice runs, so both
+    // producers size their tips the same way (see contactTipCap.ts).
+    applyContactTipCaps(candidates, prune?.mesh);
     // Score and sort
     if (candidates.length === 0) return [];
     const maxZ = Math.max(...candidates.map(c => c.zHeight), 1);
@@ -90,7 +98,8 @@ export function candidateFromIsland(island: DetectedIsland): CandidatePoint {
         zHeight: z,
         priority: 0, // computed later
         // Fine detail keeps a shrunk (detail-band) tip; grid/overhang points
-        // and larger islands take the active band default (undefined).
+        // and larger islands take the active band default (undefined) — until
+        // `generateCandidates` runs the free-width cap over the batch.
         tipDiameterMm: area < SMALL_ISLAND_TIP_AREA_MM2 ? smallIslandTipDiameterMm() : undefined,
     };
 }

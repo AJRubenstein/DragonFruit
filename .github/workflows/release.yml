@@ -185,6 +185,17 @@ jobs:
 
   build-tauri:
     name: Build ${{ matrix.artifact_name }}
+    # The shipped profile, stated here as well as in Cargo.toml so that
+    # `swatinem/rust-cache` keys on it (see `env-vars` below): the compile check
+    # links thin and keeps its artifacts under a different key.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: fat
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+      # The matrix already carries these per platform; they are stated at job level
+      # so `swatinem/rust-cache` sees them (see `env-vars`) and a macOS release reads
+      # the same cache the warmer writes.
+      CMAKE_OSX_ARCHITECTURES: ${{ matrix.cmake_archs || '' }}
+      DF_BUILD_TARGET_TRIPLE: ${{ matrix.df_build_triple || '' }}
     needs:
       - detect-version-bump
     if: needs.detect-version-bump.outputs.should_release == 'true'
@@ -227,9 +238,21 @@ jobs:
           node-version: "22.23.2"
           cache: npm
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned, not `@stable`: the floating channel is what churns the Rust cache
+      # key (see warm-rust-cache.yml).
+      - name: Read the pinned Rust toolchain
+        id: rust_toolchain
+        # bash, not the runner's default shell: Windows would run this as pwsh,
+        # where `$(sed …)` is a module path, and the step died there.
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust_toolchain.outputs.channel }}
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install Apple Certificate
@@ -244,6 +267,7 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
           shared-key: tauri
+          env-vars: CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS DF_BUILD_TARGET_TRIPLE CMAKE_OSX_ARCHITECTURES
 
       - name: Install frontend dependencies
         run: npm ci
@@ -269,6 +293,11 @@ jobs:
         with:
           tauriScript: npx tauri
           args: ${{ matrix.args }}
+
+      - name: Verify Windows installer runtime payloads
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-windows-bundles.ps1
 
       - name: Embed QuickLook extension + verify universal bundle
         if: matrix.platform == 'macos-latest'

@@ -8,11 +8,14 @@
   },
   "scripts": {
     "bench:import-postprocess": "node --import tsx scripts/bench-import-postprocess.ts",
+    "bench:auto-supports": "node --import tsx scripts/bench-auto-supports.ts",
     "bench:support-drag": "node --import tsx scripts/support-drag-perf.ts",
     "bench:voxl-tick": "node --max-old-space-size=8192 --import tsx scripts/bench-voxl-tick.ts",
     "build": "next build",
     "build:tauri": "next build && node scripts/prepare-tauri-frontend.mjs",
     "build:thumbnail-providers": "node scripts/build-thumbnail-providers.mjs",
+    "check:cargo-locks": "scripts/check-cargo-locks.sh",
+    "check:cargo-locks:fix": "scripts/check-cargo-locks.sh --fix",
     "check:docs": "node scripts/check-docs-accuracy.mjs",
     "check:generated-plugin-registry": "node scripts/verify-generated-plugin-registry.mjs",
     "check:lint": "node scripts/check-lint-clean.mjs",
@@ -58,7 +61,8 @@
     "test": "node --import tsx --test 'src/**/*.test.{ts,tsx}' 'plugins/**/*.test.{ts,tsx}'",
     "test:watch": "node --import tsx --test --watch 'src/**/*.test.{ts,tsx}' 'plugins/**/*.test.{ts,tsx}'",
     "generate:support-registrations": "node scripts/generate-support-registrations.mjs",
-    "generate:support-renderers": "node scripts/generate-support-renderers.mjs"
+    "generate:support-renderers": "node scripts/generate-support-renderers.mjs",
+    "prebench:auto-supports": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins && npm run generate:support-registrations && npm run generate:support-renderers"
   },
   "dependencies": {
     "@lingui/core": "^6.3.0",
@@ -78,7 +82,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.563.0",
     "manifold-3d": "^3.4.1",
-    "next": "^16.2.11",
+    "next": "^16.3.8",
     "react": "19.2.0",
     "react-colorful": "^5.6.1",
     "react-dom": "19.2.0",
@@ -101,7 +105,7 @@
     "@types/three": "^0.181.0",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9.39.3",
-    "eslint-config-next": "^16.0.7",
+    "eslint-config-next": "^16.3.8",
     "tailwindcss": "^4.1.16",
     "tsx": "^4.7.0",
     "typescript": "^5.9.3"

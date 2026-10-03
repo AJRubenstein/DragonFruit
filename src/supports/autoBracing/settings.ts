@@ -35,15 +35,15 @@ type NumericAutoBracingSettingKey =
     | 'maxBraceLengthMm';
 
 export const AUTO_BRACING_PATTERN_OPTIONS: readonly AutoBracingPattern[] = [
-    'zigZag',
-    'singleDiagonal',
     'crossDiagonal',
+    'singleDiagonal',
+    'zigZag',
 ];
 
 export const AUTO_BRACING_CONSTRAINTS = {
-    braceDiameterMm: { min: 0.5, max: 2.0, step: 0.05, defaultValue: 0.7 },
+    braceDiameterMm: { min: 0.5, max: 2.0, step: 0.05, defaultValue: 1.0 },
     initialDistanceMm: { min: 0.1, max: 25, step: 0.1, defaultValue: 2.0 },
-    patternIntervalMm: { min: 1.0, max: 50, step: 0.1, defaultValue: 10.0 },
+    patternIntervalMm: { min: 1.0, max: 50, step: 0.1, defaultValue: 8.0 },
     seedSpacingMm: { min: 2.0, max: 60, step: 0.5, defaultValue: 10.0 },
     seedJitterMm: { min: 0.0, max: 20, step: 0.25, defaultValue: 1.0 },
     maxBraceLengthMm: { min: 1.0, max: 50, step: 0.1, defaultValue: 10.0 },
@@ -117,9 +117,9 @@ function normalizeBoolean(value: unknown, fallback: boolean): boolean {
 export function createDefaultAutoBracingSettings(): AutoBracingSettings {
     return {
         braceDiameterMm: AUTO_BRACING_CONSTRAINTS.braceDiameterMm.defaultValue,
-        initialPattern: 'zigZag',
+        initialPattern: 'crossDiagonal',
         initialDistanceMm: AUTO_BRACING_CONSTRAINTS.initialDistanceMm.defaultValue,
-        repeatingPattern: 'zigZag',
+        repeatingPattern: 'crossDiagonal',
         patternIntervalMm: AUTO_BRACING_CONSTRAINTS.patternIntervalMm.defaultValue,
         seedSpacingMm: AUTO_BRACING_CONSTRAINTS.seedSpacingMm.defaultValue,
         seedJitterMm: AUTO_BRACING_CONSTRAINTS.seedJitterMm.defaultValue,
