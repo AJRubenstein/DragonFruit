@@ -6,7 +6,7 @@ import { msg } from '@lingui/core/macro';
 import { Trash2, WandSparkles } from 'lucide-react';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Button, Toast, ToastViewport } from '@/components/atoms';
-import { SelectDropdown } from '@/components/ui/SelectDropdown';
+import { CENTERED_SELECT_PADDING, SelectDropdown } from '@/components/ui/SelectDropdown';
 import {
     AUTO_BRACING_PATTERN_OPTIONS,
     type AutoBracingSettings,
@@ -98,10 +98,14 @@ export function AutoBracingSettingsCard({
                     onChange={(nextValue) => onPatternChange(nextValue as AutoBracingPattern)}
                     options={AUTO_BRACING_PATTERN_OPTIONS.map((pattern) => ({
                         value: pattern,
-                        label: pattern === 'singleDiagonal' ? 'Single Diagonal' : pattern === 'zigZag' ? 'Zig Zag' : 'Cross Diagonal',
+                        label: pattern === 'singleDiagonal' ? 'Single Diagonal' : pattern === 'zigZag' ? 'Zig Zag' : 'Crosses',
                     }))}
                     className="min-w-0 space-y-0"
-                    selectClassName="h-[36px] px-3 py-2 text-base !text-center"
+                    selectClassName="h-[36px] py-2 text-base"
+                    // Same centring as the Auto Support panel's preset selector:
+                    // equal insets either side of the label, so it sits on the
+                    // control's centre instead of clear of the chevron.
+                    selectStyle={CENTERED_SELECT_PADDING}
                 />
             </label>
         );

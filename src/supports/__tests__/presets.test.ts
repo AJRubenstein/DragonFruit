@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET, setActivePreset } from '../Settings/presets';
 import { getSettings, updateAutoSupportSettings } from '../Settings/state';
-import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
+import { createDefaultAutoSupportSettings, SIZING_BANDS } from '../autoSupport/settings';
 import type { AutoSupportSettings } from '../autoSupport/settings';
 
 test('built-in presets carry distinct density tiers (Auto Support panel light/medium/heavy)', () => {
@@ -86,27 +86,29 @@ test('switching the active trunk preset never touches auto-support settings', ()
     }
 });
 
-test('preset autoSupport blocks equal defaults except the density (quick-select determinism)', () => {
+test('preset autoSupport blocks equal defaults except the density and the band (quick-select determinism)', () => {
     // The panel quick-select applies the FULL preset autoSupport block, so a
-    // preset must differ from the defaults ONLY in areaPerSupportMm2 —
-    // otherwise selecting medium after a load wouldn't reproduce the built-in
-    // medium (the stale-keys bug: "default medium" ≠ round-tripped medium).
+    // preset must differ from the defaults ONLY in areaPerSupportMm2 and its
+    // band — otherwise selecting medium after a load wouldn't reproduce the
+    // built-in medium (the stale-keys bug: "default medium" ≠ round-tripped
+    // medium).
     const defaults = createDefaultAutoSupportSettings();
     const cases: Array<[typeof STRUCTURE_PRESET, number]> = [
         [DETAIL_PRESET, 16],
         [STRUCTURE_PRESET, 10],
         [ANCHOR_PRESET, 5],
     ];
-    const tiers: Record<string, string> = { detail: 'detail', structure: 'structure', anchor: 'anchor' };
+    const tiers = { detail: 'detail', structure: 'structure', anchor: 'anchor' };
     for (const [preset, area] of cases) {
         const block = preset.settings.autoSupport;
         for (const key of Object.keys(defaults) as Array<keyof AutoSupportSettings>) {
             if (key === 'areaPerSupportMm2') {
                 assert.equal(block.areaPerSupportMm2, area, `${preset.id} density`);
             } else if (key === 'sizingPreset') {
-                assert.equal(block.sizingPreset, tiers[preset.id], `${preset.id} sizing tier`);
+                assert.equal(block.sizingPreset, tiers[preset.id as keyof typeof tiers],
+                    `${preset.id} sizing tier`);
             } else {
-                assert.equal(block[key], defaults[key], `${key} matches defaults for ${preset.id}`);
+                assert.deepEqual(block[key], defaults[key], `${key} matches defaults for ${preset.id}`);
             }
         }
     }

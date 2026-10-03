@@ -43,6 +43,31 @@ function makeIsland(overrides: Partial<DetectedIsland> = {}): DetectedIsland {
 // Tests
 // ---------------------------------------------------------------------------
 
+test('a minima below the island floor still gets a contact once a voxel island covers it', () => {
+    // What `classifyIntersection` hands the plan for a covered minimum: the voxel
+    // island the scan let through, and the minima it matched, whose class it
+    // rewrote to `intersection` and which carries no area of its own.
+    const settings = { ...createDefaultAutoSupportSettings(), minIslandAreaMm2: 0.2 };
+    const minima: DetectedIsland = {
+        id: 'm0',
+        source: 'minima',
+        class: 'intersection',
+        contact: new THREE.Vector3(10, 20, 30),
+        baseZ: 30,
+    };
+
+    const covered = generateCandidates(
+        [makeIsland({ id: 'v0', areaMm2: 0.05 }), minima],
+        settings,
+    );
+    assert.deepEqual(covered.map((candidate) => candidate.id), ['m0'],
+        'the minima keeps its contact while its voxel partner is filtered out');
+
+    // The floor still rules for everything else: that same voxel island on its
+    // own is below it and yields nothing.
+    assert.deepEqual(generateCandidates([makeIsland({ id: 'v0', areaMm2: 0.05 })], settings), []);
+});
+
 test('generateCandidates does not filter by supported flag (handled by filterAlreadySupported)', () => {
     const islands = [
         makeIsland({ id: 'a' }),

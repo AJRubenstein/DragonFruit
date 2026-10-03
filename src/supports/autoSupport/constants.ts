@@ -10,6 +10,20 @@ export const MAX_AUTO_LEAF_SPAN_MM = 2.5;
  *  instead of the active band contact — matches the detail preset boundary. */
 export const SMALL_ISLAND_TIP_AREA_MM2 = 0.15;
 
+/** Tangent-plane reach (mm) each side of the free-width probe looks out to.
+ *  The cap only binds while the free width is under
+ *  `bandTip / autoSupport.tipContactMarginScale` (at the widest band,
+ *  0.4 / 0.9 ≈ 0.44 mm), so a 0.5 mm reach — above the
+ *  widest width the cap can act on — covers it with headroom while staying
+ *  short of the ~1 mm tooth/gap pitch a scalloped surface repeats at. A probe
+ *  that reached across a whole pitch would read the next tooth as solid ground
+ *  and miss the gap between them entirely. The reach is also a floor on the
+ *  reported width — a contact on a silhouette edge reads its inward side in
+ *  full — and that floor must stay above the 0.67 mm threshold or every
+ *  boundary contact would cap. Past the reach the width reads full and the cap
+ *  is a no-op, which is the correct answer for a feature wider than the tip. */
+export const CONTACT_WIDTH_PROBE_MM = 0.5;
+
 /** Islands with bbox extent at/below this (mm) get a single tip at the bbox
  *  center — robust for specks where centroid/medial math is noise. */
 export const ISLAND_SUB_HEAD_MM = 0.5;
@@ -80,12 +94,37 @@ export const CAVITY_FAN_RADIUS_MM = 12;
 /** Distance (mm) within which an existing support tip counts a candidate as already supported. */
 export const ALREADY_SUPPORTED_RADIUS_MM = 3.0;
 
+/** Minima reinforcement: radius (mm) of the ring of contacts drawn around a mesh
+ *  minima's own contact. Close enough to land on the feature it reinforces (a
+ *  minima is a sharp local low point, not a broad face) and outside the contact
+ *  cone's own body, so the ring never collides with the tip support it rings. */
+export const MINIMA_RING_RADIUS_MM = 2.5;
+
+/** Minima reinforcement: contact directions sampled on the ring (mm apart at
+ *  the default radius ≈ the default density-grid spacing). Directions whose
+ *  ray finds no valid flank are dropped, so this is an upper bound. */
+export const MINIMA_RING_COUNT = 6;
+
+/** Minima reinforcement: least rise (mm) at the ring radius for a contact to
+ *  count as the feature's flank. Below it the surface around the minima is flat
+ *  as far as detection is concerned (the voxel mask is 0.25 mm) — a flat is the
+ *  density grid's job, and a sub-voxel dip is served by its single tip. */
+export const MINIMA_RING_MIN_RISE_MM = 0.2;
+
 /** Gridless mode: merge candidates within this 3D distance of an existing trunk. */
 export const GRIDLESS_MERGE_RADIUS_MM = 4.0;
 
 /** Merge host choice weights longest already-hosted member span this much
  *  (mm-equivalent per mm) against raw distance — Dumas Score = Gain − k·lmax
  *  shape with k explicit. Zero hosted members → pure nearest-first. */
+/**
+ * How far short of a tip a fan's pre-test stops walking. The contact disk stands
+ * the cone off the surface, so a member is never asked to reach inside the
+ * surface's keep-out; the same reasoning the orphan validator applies when it
+ * checks a member at build time.
+ */
+export const FAN_LINK_TIP_INSET_MM = 0.5;
+
 export const MERGE_HOST_LOAD_WEIGHT = 0.5;
 /** Leaf fanning: the least reach the fan is allowed (mm). Every path floors here. */
 export const MIN_LEAF_FAN_RADIUS_MM = 8;
@@ -133,3 +172,20 @@ export const OVERHANG_SELF_SUPPORT_ANGLE_DEG = 45;
  *  spacing × 1.3 (≈0.6×). */
 export const GRID_SPACING_MIN_FACTOR = 0.7;
 export const GRID_SPACING_MAX_FACTOR = 1.3;
+
+/**
+ * Where the relaxation toward the slope spacing *starts*, as a fraction of the
+ * self-support angle (0.6 ⇒ 27° at the 45° default).
+ *
+ * Relaxation is for a surface that prints by itself, and only the end of the band
+ * is that: a 25° underside peels and needs the density exactly as a flat ceiling
+ * does. Blending linearly from 0° put that underside more than half way to the
+ * slope spacing, which starves a part's shallow rims and ledges — the sections a
+ * cauldron's lip is made of — and is what made dropping `slopeRelaxFactor` and
+ * boosting `flatDensityBoost` by hand visibly help.
+ *
+ * Below the start the region keeps the flat spacing; from there to the threshold it
+ * ramps, so the spacing stays continuous and the knob keeps its meaning at the end
+ * of the band it describes.
+ */
+export const SLOPE_RELAX_RAMP_START = 0.6;

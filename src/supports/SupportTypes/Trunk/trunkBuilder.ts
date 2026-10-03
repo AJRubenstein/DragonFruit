@@ -133,6 +133,14 @@ export interface TrunkBuildInput {
     };
     /** Small islands (voxel/minima <5mm² or z<15) bypass SDF — true straight, no central joint */
     isSmallIsland?: boolean;
+    /**
+     * Build as if grid mode were off: the base is routed to wherever the model
+     * allows instead of snapping to a lattice node. The auto run's fallback for a
+     * candidate the grid could not serve uses this, so the rescued support is an
+     * ordinary free-standing pillar rather than a node placement that failed its
+     * own gates.
+     */
+    ignoreGrid?: boolean;
 }
 export interface TrunkBuildResult {
     root: Roots;
@@ -193,7 +201,10 @@ export function buildTrunkData(input: TrunkBuildInput): TrunkBuildResult {
         // then refuses. V3 costs a few dozen SDF probes (measured ~0.04mm warm),
         // which is not worth a cache that can only make the two paths disagree.
         perfMark('trunk:v3-placement');
-        placement = calculateSmartPlacementV3({ ...placementInput, mesh, modelId, isPreview });
+        placement = calculateSmartPlacementV3(
+            { ...placementInput, mesh, modelId, isPreview },
+            input.ignoreGrid ? { ignoreGrid: true } : undefined,
+        );
         perfMeasureWithSpike('trunk:v3-placement', 'trunk:v3-placement');
     } else {
         placement = calculateStandardPlacement(placementInput);

@@ -7,7 +7,14 @@
 import { SupportPreset, PresetCollection, SupportSettings, createDefaultSettings } from './types';
 import { getSettings, setSettings, saveSettingsToLocalStorage } from './state';
 import { createDefaultAutoBracingSettings } from '../autoBracing/settings';
-import { createDefaultAutoSupportSettings } from '../autoSupport/settings';
+import { createDefaultAutoSupportSettings, migrateLegacySizingPreset } from '../autoSupport/settings';
+import type { AutoSupportSettings } from '../autoSupport/settings';
+import {
+    CURRENT_AUTO_SUPPORT_DEFAULTS_VERSION,
+    SUPPORT_DEFAULTS_VERSION_KEY,
+    applyAutoSupportDefaultMigrations,
+    readWrittenDefaultsVersion,
+} from './defaultMigrations';
 
 function normalizePresetSettings(
     settings: Partial<SupportSettings> | undefined,
@@ -63,7 +70,11 @@ function normalizePresetSettings(
         autoSupport: {
             ...defaults.autoSupport,
             ...fallback.autoSupport,
-            ...(source.autoSupport ?? {}),
+            // A stored preset written before the band became data names a tier:
+            // migrate it here so the preset record carries a band, not the
+            // obsolete key (and so `migrateLegacyPresetAutoSupport`'s
+            // comparison below compares like with like).
+            ...migrateLegacySizingPreset(source.autoSupport ?? {}),
         },
     };
 }
@@ -88,6 +99,48 @@ function migrateLegacyPresetAutoSupport(
         return { ...normalized, autoSupport: fallbackSettings.autoSupport };
     }
     return normalized;
+}
+
+/**
+ * The `autoSupport` keys a preset *states* itself, rather than inheriting from
+ * the code defaults. A shipped preset writes its own density (detail 16, anchor
+ * 5) and inherits the rest, so a stated value is a design decision: the
+ * default-migration table must not move it, even when its value happens to equal
+ * an old default. Everything else in the preset came from the defaults and
+ * follows them.
+ */
+function designedAutoSupportKeysOf(presetSettings: SupportSettings): Set<string> {
+    const defaults = createDefaultSettings();
+    const keys = new Set<string>();
+
+    for (const key of Object.keys(presetSettings.autoSupport) as Array<keyof AutoSupportSettings>) {
+        if (presetSettings.autoSupport[key] !== defaults.autoSupport[key]) keys.add(key);
+    }
+    return keys;
+}
+
+/**
+ * The auto-support block of a *factory* preset, migrated against the batch the
+ * blob was written at. Nothing else in the block is touched: the studio's own
+ * sections are the user's configuration, and a preset the user made is theirs
+ * outright (see defaultMigrations).
+ */
+function migrateFactoryPresetAutoSupport(
+    presetSettings: SupportSettings,
+    fallbackPreset: SupportSettings,
+    writtenAtVersion: number,
+): SupportSettings {
+    return {
+        ...presetSettings,
+        autoSupport: {
+            ...presetSettings.autoSupport,
+            ...applyAutoSupportDefaultMigrations(
+                presetSettings.autoSupport,
+                writtenAtVersion,
+                { skip: designedAutoSupportKeysOf(fallbackPreset) },
+            ),
+        },
+    };
 }
 
 const DETAIL_PRESET: SupportPreset = {
@@ -280,6 +333,10 @@ function loadPresetsFromStorage(): PresetCollection {
         const stored = localStorage.getItem(PRESET_STORAGE_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
+            // A factory preset's auto-support block pins defaults the same way the
+            // code defaults do, so it carries the batch it was written at: a
+            // preset saved since the last migration keeps whatever it holds.
+            const writtenAtVersion = readWrittenDefaultsVersion(parsed);
 
             // Merge stored presets into defaults (preserves new structure if code updates)
             // But allows stored names/settings to win.
@@ -296,9 +353,13 @@ function loadPresetsFromStorage(): PresetCollection {
                         pinnedSlot: parsedPreset.pinnedSlot === undefined
                             ? fallbackPreset.pinnedSlot
                             : parsedPreset.pinnedSlot,
-                        settings: migrateLegacyPresetAutoSupport(
-                            parsedPreset.settings,
+                        settings: migrateFactoryPresetAutoSupport(
+                            migrateLegacyPresetAutoSupport(
+                                parsedPreset.settings,
+                                fallbackPreset.settings,
+                            ),
                             fallbackPreset.settings,
+                            writtenAtVersion,
                         ),
                         updatedAt: parsedPreset.updatedAt,
                     };
@@ -319,6 +380,10 @@ function loadPresetsFromStorage(): PresetCollection {
                         icon: parsedPreset.icon || '👤',
                         isBuiltIn: false,
                         pinnedSlot: parsedPreset.pinnedSlot ?? undefined,
+                        // A user's own preset is their artifact: its block is what
+                        // they made, not a copy of a shipped default, so the
+                        // default-migration table does not touch it. Only the
+                        // factory presets above follow the code.
                         settings: normalizePresetSettings(
                             parsedPreset.settings,
                             createDefaultSettings(),
@@ -396,7 +461,14 @@ function loadPresetsFromStorage(): PresetCollection {
 function savePresetsToStorage() {
     if (typeof window === 'undefined') return;
     try {
-        localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets));
+        localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify({
+            ...presets,
+            // The batch this blob was written at, so a later auto-support default
+            // change knows which stored factory presets are still ours (see
+            // defaultMigrations). The live `support-settings` blob carries no
+            // such field: the studio's settings are never migrated.
+            [SUPPORT_DEFAULTS_VERSION_KEY]: CURRENT_AUTO_SUPPORT_DEFAULTS_VERSION,
+        }));
         if (presets.activePresetId) {
             localStorage.setItem(ACTIVE_PRESET_STORAGE_KEY, presets.activePresetId);
         } else {

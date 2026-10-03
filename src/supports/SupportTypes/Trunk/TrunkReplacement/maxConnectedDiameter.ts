@@ -27,9 +27,11 @@ function collectSegmentDiameters(entity: { segments: { diameter: number }[] }): 
  * The diameter a support contributes to its connected graph.
  *
  * A shafted type reports its widest segment; a brace its profile; a leaf its
- * contact cone.
+ * contact cone. Exported because the Forest Report prints the same number the
+ * resize's demand reads — one definition, so the report and the resize cannot
+ * drift apart.
  */
-function memberDiameterOf(descriptor: SupportTypeDescriptor, entity: Record<string, unknown>): number {
+export function memberDiameterOf(descriptor: SupportTypeDescriptor, entity: Record<string, unknown>): number {
     if (descriptor.hasSegments) {
         return collectSegmentDiameters(entity as unknown as { segments: { diameter: number }[] });
     }

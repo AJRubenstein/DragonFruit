@@ -18,6 +18,7 @@ import { isShaftBlocked } from '../CollisionAvoidance';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 import { buildLeafData } from '../../SupportTypes/Leaf/leafBuilder';
+import { memberShaftDiameterMm } from '../../constants';
 import { perfMark, perfMeasureWithSpike } from '../Pathfinding/pathfindingPerf';
 import {
     MAX_AUTO_LEAF_SPAN_MM,
@@ -30,7 +31,6 @@ import {
     getLengthAwareMaxAngleFromVerticalDeg,
     memberDepartureAngleFromVerticalDeg,
     SHORT_SPAN_DETOUR_MAX_ANGLE_FROM_VERTICAL_DEG,
-    SHORT_SPAN_DETOUR_MAX_LENGTH_MM,
     SOCKET_ELBOW_MAX_ANGLE_FROM_VERTICAL_DEG,
     TRUNK_DIAGONAL_LEAN_FROM_VERTICAL_DEG,
 } from '../smartPlacementSearchUtils';
@@ -526,16 +526,20 @@ function selectAttachmentDecision(args: {
     // host stands only as tall as the region's clearance and nothing could ever
     // leave it at a flat 30 degrees. Without it every tip but the one that
     // placed the host was refused outright.
+    //
+    // 60 degrees is the whole allowance, occupied node included. An occupied
+    // node used to add the socket elbow on top (75 degrees, 15 above flat) on
+    // the argument that refusing the graft leaves the tip unplaced; the measured
+    // cost of that extra is the near-horizontal member at a junction, and the
+    // measured cost of dropping it is nothing — the flat-region case is served
+    // entirely by the 60 degrees below, and tightening past it is what starts
+    // refusing tips (35 attachments at 55 degrees against 60+ at 60).
     const baseMaxFromVerticalDeg = 90 - minAngleDeg;
-    const memberAllowanceFromVerticalDeg = (segmentMm: number): number => {
-        const branchAllowance = getLengthAwareMaxAngleFromVerticalDeg(
-            segmentMm,
-            baseMaxFromVerticalDeg,
-            baseMaxFromVerticalDeg,
-        );
-        if (!occupiedPoint || segmentMm > SHORT_SPAN_DETOUR_MAX_LENGTH_MM) return branchAllowance;
-        return Math.max(branchAllowance, SOCKET_ELBOW_MAX_ANGLE_FROM_VERTICAL_DEG);
-    };
+    const memberAllowanceFromVerticalDeg = (segmentMm: number): number => getLengthAwareMaxAngleFromVerticalDeg(
+        segmentMm,
+        baseMaxFromVerticalDeg,
+        baseMaxFromVerticalDeg,
+    );
 
     // Iterate segments from top (last) to bottom (first).
     let best: GridPlacementDecision | null = null;
@@ -607,8 +611,12 @@ function selectAttachmentDecision(args: {
                 if (collides) continue;
             }
 
-            // A short span becomes a leaf, and a leaf's single segment IS the
-            // chord the gate above measured, so its departure is covered there.
+            // A short span becomes a leaf, and a leaf is one tapered cone, so
+            // the chord IS the member and its whole span is the segment the
+            // length-aware rule measures. The chord pre-filter above is the
+            // loosest bound a member could ever be granted; this is the bound
+            // this member actually earns, which is where the occupied node's
+            // 75-degree socket elbow stops applying to a leaf.
             const leafDecision = tryBuildAutoLeafDecision({
                 nodeKey,
                 hostTypeId,
@@ -621,6 +629,7 @@ function selectAttachmentDecision(args: {
             });
             if (leafDecision) {
                 const departureDeg = memberDepartureAngleFromVerticalDeg(pos, tipPos);
+                if (departureDeg > memberAllowanceFromVerticalDeg(distance3D(pos, tipPos))) continue;
                 if (departureDeg <= TRUNK_DIAGONAL_LEAN_FROM_VERTICAL_DEG) return leafDecision;
                 if (departureDeg < bestDepartureDeg) {
                     best = leafDecision;
@@ -637,13 +646,26 @@ function selectAttachmentDecision(args: {
             // whose shaft holds 45 degrees wins outright; otherwise the
             // steepest built shaft below takes the fallback.
             perfMark('grid:branch-build');
-            const { branch, supportData } = buildBranchData({
+            const bandShaftMm = settings.shaft.diameterMm;
+            const hostDiameterMm = getHostDiameterMmFromKnot(knot, settings);
+            const flooredShaftMm = memberShaftDiameterMm(bandShaftMm, hostDiameterMm, settings.autoSupport.memberHostShaftRatio);
+            const buildAt = (shaftMm: number) => buildBranchData({
                 tipPos,
                 tipNormal,
                 modelId,
                 parentKnot: knot,
                 mesh,
+                shaftDiameterMm: shaftMm,
             });
+            let { branch, supportData } = buildAt(flooredShaftMm);
+            // The floor is a fit rule for the step at the knot, not a licence to
+            // lose a graft: when the thicker member does not clear where the band
+            // one did, fall back to the band — the member the pre-floor run placed.
+            if (flooredShaftMm > bandShaftMm
+                && mesh
+                && branchCollidesWithMesh(knot, tipPos, tipNormal, modelId, mesh, flooredShaftMm)) {
+                ({ branch, supportData } = buildAt(bandShaftMm));
+            }
             perfMeasureWithSpike('grid:branch-build', 'branch:build');
             const firstJoint = branch.segments[0]?.topJoint?.pos;
             const departureDeg = firstJoint

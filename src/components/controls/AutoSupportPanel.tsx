@@ -1,21 +1,32 @@
 "use client";
 
 import React from 'react';
-import { Settings } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Settings, Settings2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { Card, CardHeader, IconButton } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
-import { runAutoPlace, forestReportToText } from '@/supports/autoSupport';
-import { DETAIL_PRESET, STRUCTURE_PRESET, ANCHOR_PRESET } from '@/supports/Settings/presets';
-import type { SizingDebugInfo, AutoSupportSettings, ForestReport } from '@/supports/autoSupport';
-import { getSettings, updateAutoSupportSettings, subscribeToSettings, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
+import { forestReportToText, runAutoPlaceInWorker } from '@/supports/autoSupport';
+import type { SizingDebugInfo, ForestReport } from '@/supports/autoSupport';
+import { getSettings, subscribeToSettings, updateAutoSupportDiagnostic, updateDebugSimpleSupportRender } from '@/supports/Settings/state';
+import {
+  getActiveAutoSupportPresetId,
+  getAutoSupportPresetsServerSnapshot,
+  getAutoSupportPresetsSnapshot,
+  subscribeToAutoSupportPresets,
+} from '@/supports/Settings/autoSupportPresets';
 import { getSnapshot, setSnapshot } from '@/supports/state';
 import { knotHostId, coneKnotHostType, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey } from '@/supports/supportTypeRegistry';
 import type { Knot } from '@/supports/types';
+import { AutoSupportSettingsBody } from './autoSupport/AutoSupportSettingsBody';
+import { AutoSupportRunDiagnostics } from './autoSupport/AutoSupportRunDiagnostics';
+import { AutoSupportPresetRow } from './autoSupport/AutoSupportPresetRow';
+import { selectAutoSupportPreset, useAutoSupportDialogChanges } from './autoSupport/AutoSupportPresets';
+import { AUTO_SUPPORT_SECTION_CARD, TIER_HINTS } from './autoSupport/autoSupportPanelTabs';
 /** Set to true while auto-support is busy (scanning or placing).
  *  Page-level overlay reads this to show the "Generating Supports"
  *  full-screen modal, matching the native island-scan modal style. */
@@ -30,166 +41,120 @@ export function subscribeAutoSupportBusy(fn: () => void): () => void {
 function setAutoSupportBusy(v: boolean) {
   if (_autoSupportBusy !== v) {
     _autoSupportBusy = v;
+    // The progress belongs to the run, so it goes when the run does.
+    if (!v) setAutoSupportProgress(null);
     for (const fn of _busyListeners) fn();
   }
+}
+
+/** What the worker last reported, for the modal's progress bar. `null` while
+ *  nothing is known (before the run starts, or after it ends). */
+export type AutoSupportProgress = { phase: string; done: number; total: number };
+let _autoSupportProgress: AutoSupportProgress | null = null;
+const _progressListeners = new Set<() => void>();
+
+export function getAutoSupportProgress(): AutoSupportProgress | null { return _autoSupportProgress; }
+export function subscribeAutoSupportProgress(fn: () => void): () => void {
+  _progressListeners.add(fn);
+  return () => _progressListeners.delete(fn);
+}
+export function setAutoSupportProgress(p: AutoSupportProgress | null) {
+  _autoSupportProgress = p;
+  for (const fn of _progressListeners) fn();
 }
 
 /** Set to true while auto-support is driving its own scan, so the
  *  native island-scan overlay can be suppressed. */
 export let autoSupportDrivingScan = false;
 
-const SECTION_CARD: React.CSSProperties = {
-  borderColor: 'var(--border-subtle)',
-  background: 'var(--surface-1)',
-};
-
 interface AutoSupportPanelProps {
   islands: UseIslandsReturn;
   hasGeometry: boolean;
   activeModelId?: string;
+  /** Auto-lift: the app's one flag for holding the model clear of the plate, so a
+   *  support can stand under it. Owned by the transform manager and shared with
+   *  the Prepare panel's own toggle (see `useTransformManager`). */
+  autoLift: boolean;
+  onAutoLiftChange: (enabled: boolean) => void;
   /** Resolve unapplied hollowing / hole punches before generating. Resolves
    *  false when the user went off to apply them first — the run is abandoned. */
   onBeforeRun?: () => Promise<boolean>;
 }
 
-type KnobDef = {
-  key: NumericAutoSupportSettingKey;
-  label: MessageDescriptor;
-  min: number;
-  max: number;
-  step: number;
-  unit: string;
-  hint: MessageDescriptor;
-};
-
-type NumericAutoSupportSettingKey =
-  | 'minIslandAreaMm2'
-  | 'tipInfluenceRadiusMm'
-  | 'maxAttachmentsPerTrunk'
-  | 'areaPerSupportMm2'
-  | 'gridAreaThresholdMm2'
-  | 'overhangSelfSupportAngleDeg'
-  | 'sizeScale'
-  | 'flatDensityBoost'
-  | 'slopeRelaxFactor'
-  | 'suctionAreaExponent'
-  | 'coverageTargetPercent'
-  | 'leafFanRadiusMm'
-  | 'leafFanMaxAngleDeg';
-
-const KNOBS: KnobDef[] = [
-  { key: 'overhangSelfSupportAngleDeg', label: msg`Self-Support Angle`,  min: 20,   max: 75,  step: 5,  unit: '°',   hint: msg`Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts.` },
-  { key: 'minIslandAreaMm2',     label: msg`Min Island Size`,       min: 0.01, max: 2,    step: 0.01, unit: 'mm²', hint: msg`Skip detected areas smaller than this — tiny specks rarely need supports` },
-  { key: 'tipInfluenceRadiusMm',  label: msg`Merge Radius`,  min: 0.1,  max: 10,   step: 0.1,  unit: 'mm',  hint: msg`A candidate within this 3D distance of an existing support merges into it instead of starting a new trunk` },
-  { key: 'areaPerSupportMm2',     label: msg`Support Density`,      min: 1,    max: 30,   step: 0.5, unit: 'mm²', hint: msg`Projected area each support carries — smaller = more, tighter supports (grid spacing ≈ √value)` },
-  { key: 'gridAreaThresholdMm2',  label: msg`Grid Threshold`,       min: 5,    max: 200,  step: 5,   unit: 'mm²', hint: msg`Flat regions at/above this area get a full grid; smaller regions get a single support` },
-  { key: 'flatDensityBoost',      label: msg`Flat Boost`,           min: 0.5,  max: 1,    step: 0.05, unit: '×',   hint: msg`Grid spacing on flat ceilings — lower = denser supports on anchor surfaces (0.7 = ~2× the supports)` },
-  { key: 'slopeRelaxFactor',      label: msg`Slope Relax`,          min: 1,    max: 2,    step: 0.1,  unit: '×',   hint: msg`Grid spacing on slopes at the self-support angle — higher = sparser` },
-  { key: 'suctionAreaExponent',   label: msg`Suction Scale`,        min: 0,    max: 0.4,  step: 0.05, unit: '',   hint: msg`How strongly flat density grows with region area — large shallow ceilings carry more peel. 0 = off` },
-  { key: 'sizeScale',             label: msg`Support Size`,         min: 0.5,  max: 2,    step: 0.05, unit: '×',   hint: msg`Master multiplier over the preset sizing bands — thicker or thinner everywhere` },
-  { key: 'coverageTargetPercent', label: msg`Coverage Target`,      min: 75,   max: 100,  step: 5,   unit: '%',   hint: msg`How much of each region's footprint the grid must cover before gap-filling stops` },
-  { key: 'leafFanRadiusMm',       label: msg`Fan Reach`,            min: 2,    max: 15,   step: 0.5, unit: 'mm',  hint: msg`Max horizontal distance a fan-out leaf may span from a trunk shaft` },
-  { key: 'leafFanMaxAngleDeg',    label: msg`Fan Angle`,            min: 20,   max: 80,   step: 5,   unit: '°',   hint: msg`Max angle from vertical for fan-out leaves` },
-  { key: 'maxAttachmentsPerTrunk',         label: msg`Branches per Column`,   min: 2,  max: 50, step: 1,   unit: '',   hint: msg`Max branches + leaves one trunk may carry before new trunks are started` },
-];
-
-const PRESETS = {
-    // Quick-select applies the FULL built-in preset autoSupport block (not a
-    // 4-key patch): selecting a preset deterministically reproduces the
-    // built-in density AND resets any stale keys from a previously loaded or
-    // persisted profile. Otherwise "medium" shown on load can differ from the
-    // medium reached by round-tripping light → medium.
-    light: { ...DETAIL_PRESET.settings.autoSupport },
-    medium: { ...STRUCTURE_PRESET.settings.autoSupport },
-    heavy: { ...ANCHOR_PRESET.settings.autoSupport },
-} satisfies Record<string, Partial<AutoSupportSettings>>;
-
-/** Density tiers on the quick-select row. Module level so React Compiler cannot
- *  rename anything the Lingui macro depends on. */
-const PRESET_LABELS: Record<keyof typeof PRESETS, MessageDescriptor> = {
-  light: msg({ message: 'light', comment: 'Auto-support density tier, rendered capitalised on a narrow button next to "medium" and "heavy".' }),
-  medium: msg({ message: 'medium', comment: 'Auto-support density tier, rendered capitalised on a narrow button next to "light" and "heavy".' }),
-  heavy: msg({ message: 'heavy', comment: 'Auto-support density tier, rendered capitalised on a narrow button next to "light" and "medium".' }),
-};
-
-function SliderRow({ knob, draft, setDraft }: { knob: KnobDef; draft: AutoSupportSettings; setDraft: React.Dispatch<React.SetStateAction<AutoSupportSettings>> }) {
-  const { _ } = useLingui();
-  const value = draft[knob.key];
-  const { min, max, step } = knob;
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }} title={_(knob.hint)}>{_(knob.label)}</span>
-        <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{value.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0)}{knob.unit}</span>
-      </div>
-      <input type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => setDraft((d) => ({ ...d, [knob.key]: parseFloat(e.target.value) }))}
-        className="ui-range w-full"
-      />
-    </div>
-  );
-}
-
-// Active treatment for the density tier row, matching the bracing card's
-// quick-pick selector so the two panels read as one system.
-const TIER_ACTIVE_STYLE: React.CSSProperties = {
-  borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 30%)',
-  background: 'color-mix(in srgb, var(--accent), var(--surface-1) 85%)',
-  color: 'var(--text-strong)',
-};
-
-export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBeforeRun }: AutoSupportPanelProps) {
+export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift, onAutoLiftChange, onBeforeRun }: AutoSupportPanelProps) {
   const { _ } = useLingui();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [busy, setBusy] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
-  const [settingsTab, setSettingsTab] = React.useState<'detection' | 'distribution' | 'density'>('detection');
+  const [showDiscardSettingsDialog, setShowDiscardSettingsDialog] = React.useState(false);
   const [showReplaceDialog, setShowReplaceDialog] = React.useState(false);
-  const [showSizingDebug, setShowSizingDebug] = React.useState(false);
-  const [showDebug, setShowDebug] = React.useState(false);
+  // The last run's diagnostics are a view switch, not a setting: Debug mode in
+  // the settings dialog is what shows them here, where a run is started. Panel
+  // state, like the Debug button that used to sit in the debug row.
+  const [debugMode, setDebugMode] = React.useState(false);
   const [sizingDebug, setSizingDebugState] = React.useState<SizingDebugInfo | null>(null);
   const [showForestReport, setShowForestReport] = React.useState(false);
   const [forestReport, setForestReportState] = React.useState<ForestReport | null>(null);
-  // Derive the quick-select label from the ACTUAL settings on mount — the
-  // loaded/persisted profile may not match the built-in medium preset, and a
-  // hardcoded 'medium' would lie about what the current settings are.
-  const [activePreset, setActivePreset] = React.useState<string | null>(() => {
-    const current = getSettings().autoSupport;
-    const matchesPreset = (block: Partial<AutoSupportSettings>): boolean => {
-      for (const key of Object.keys(block) as Array<keyof AutoSupportSettings>) {
-        if (current[key] !== block[key]) return false;
-      }
-      return true;
-    };
-    if (matchesPreset(DETAIL_PRESET.settings.autoSupport)) return 'light';
-    if (matchesPreset(STRUCTURE_PRESET.settings.autoSupport)) return 'medium';
-    if (matchesPreset(ANCHOR_PRESET.settings.autoSupport)) return 'heavy';
-    return 'medium';
-  });
-  const debugSimpleRender = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings).debugSimpleSupportRender;
+  // The active preset is the store's fact, not one derived from the settings: a
+  // block that happens to equal a built-in's is not a preset the user picked, and
+  // guessing it was would put a name on settings nobody tied to it.
+  //
+  // Both facts are subscribed rather than read once: React Compiler treats a bare
+  // call to an imported function as pure and evaluates it once, which would freeze
+  // the selector at whatever the store held when the panel mounted.
+  const presets = React.useSyncExternalStore(
+    subscribeToAutoSupportPresets,
+    getAutoSupportPresetsSnapshot,
+    getAutoSupportPresetsServerSnapshot,
+  );
+  const activePresetId = React.useSyncExternalStore(
+    subscribeToAutoSupportPresets,
+    getActiveAutoSupportPresetId,
+    getActiveAutoSupportPresetId,
+  );
+  // Whether the selection is a built-in — the dialog locks its policy fields for one,
+  // because the store refuses to save over a built-in, so an edit made on it could
+  // never be kept. Derived from the subscribed snapshot, not read once, so it follows
+  // a selection the way the selector does.
+  const presetLocked = presets.find((preset) => preset.id === activePresetId)?.isBuiltIn === true;
+  const supportSettings = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
+  const debugSimpleRender = supportSettings.debugSimpleSupportRender;
 
   const settings = getSettings().autoSupport;
   const [draft, setDraft] = React.useState(settings);
 
   const openSettings = React.useCallback(() => {
     setDraft(getSettings().autoSupport);
-    setSettingsTab('detection');
     setShowSettings(true);
   }, []);
 
-  const applySettings = React.useCallback(() => {
-    updateAutoSupportSettings(draft);
+  // Closing the dialog throws the draft away, so a dirty one asks first — the
+  // same fact the footer's Save and Reset key off. The footer's Save does not come
+  // through here: it does not close at all (the preset list behind the dialog is
+  // where a save shows), so Escape, the backdrop and the ✕ are the whole of the
+  // ask-first path.
+  const settingsHaveChanges = useAutoSupportDialogChanges(draft);
+  const closeSettings = React.useCallback(() => {
+    if (settingsHaveChanges) {
+      setShowDiscardSettingsDialog(true);
+      return;
+    }
     setShowSettings(false);
-  }, [draft]);
+  }, [settingsHaveChanges]);
+  // The dialog is the panel's own overlay, so it registers for Escape itself.
+  useEscapeToClose(showSettings, closeSettings);
+
 
   const pendingRef = React.useRef(false);
   const islandsRef = React.useRef(islands);
   islandsRef.current = islands;
 
-  const runAutoSupports = React.useCallback((list: UseIslandsReturn['filteredIslands']) => {
+  // Runs on a worker thread: the plan is seconds of work on a big model, and
+  // the panel used to block the main thread (and the modal) for all of it.
+  const runAutoSupports = React.useCallback(async (list: UseIslandsReturn['filteredIslands']) => {
     if (!activeModelId) return;
     try {
-      const result = runAutoPlace(list, activeModelId, getSettings().autoSupport);
+      const result = await runAutoPlaceInWorker(list, activeModelId, getSettings().autoSupport, setAutoSupportProgress);
       if (result.analytics?.sizingDebug) setSizingDebugState(result.analytics.sizingDebug);
       if (result.analytics?.forestReport) setForestReportState(result.analytics.forestReport);
     } catch (e) {
@@ -207,12 +172,10 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
     autoSupportDrivingScan = false;
     const list = islands.filteredIslands;
     if (list.length > 0 && getSettings().autoSupport.enabled) {
-      try {
-        runAutoSupports(list);
-      } finally {
+      void runAutoSupports(list).finally(() => {
         setAutoSupportBusy(false);
         setBusy(false);
-      }
+      });
     } else {
       setAutoSupportBusy(false);
       setBusy(false);
@@ -345,13 +308,20 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
                 return;
               }
               if (list.length > 0 && getSettings().autoSupport.enabled) {
-                runAutoSupports(list);
-              }
-            } finally {
-              if (!pendingRef.current) {
+                void runAutoSupports(list).finally(() => {
+                  if (!pendingRef.current) {
+                    setAutoSupportBusy(false);
+                    setBusy(false);
+                  }
+                });
+              } else {
                 setAutoSupportBusy(false);
                 setBusy(false);
               }
+            } catch (e) {
+              console.error('[AutoSupport] run failed:', e);
+              setAutoSupportBusy(false);
+              setBusy(false);
             }
           }, 0);
         });
@@ -372,11 +342,12 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
     // before the heavy synchronous work blocks the main thread.
     requestAnimationFrame(() => {
       setTimeout(() => {
-        try {
-          if (list.length > 0 && getSettings().autoSupport.enabled) {
-            runAutoSupports(list);
-          }
-        } finally {
+        if (list.length > 0 && getSettings().autoSupport.enabled) {
+          void runAutoSupports(list).finally(() => {
+            setAutoSupportBusy(false);
+            setBusy(false);
+          });
+        } else {
           setAutoSupportBusy(false);
           setBusy(false);
         }
@@ -451,6 +422,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               type="button"
               onClick={() => { void handleRun(); }}
               disabled={!canRun}
+              title={_(msg`Scan for islands if needed, then place automatic supports on this model`)}
               className="ui-button w-full !h-8 text-[11px] disabled:opacity-50"
               style={{
                 borderColor: 'var(--accent)',
@@ -462,7 +434,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
             </button>
 
             {/* Island counts */}
-            <div className="rounded-md border p-2" style={SECTION_CARD}>
+            <div className="rounded-md border p-2" style={AUTO_SUPPORT_SECTION_CARD}>
               <div className="grid grid-cols-3 gap-2 text-center">
                 {([
                   { id: 'voxel', label: _(msg`Voxel`), count: islands.voxelIslands.length },
@@ -479,71 +451,30 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               </div>
             </div>
 
-            {/* Density tier quick-select — the bracing card's quick-pick button
-                style, unboxed and on the card surface: the row sits directly on
-                the panel, so the plain secondary surface is what matches the cards
-                around it (the bracing row keeps its darker inset inside its card). */}
-            <div className="grid grid-cols-3 gap-1.5">
-              {(['light', 'medium', 'heavy'] as const).map((key) => (
-                <button key={key} type="button"
-                  onClick={() => {
-                    // Density + sizing tier only — the trunk preset
-                    // (manual placement) is deliberately not touched.
-                    updateAutoSupportSettings(PRESETS[key]);
-                    setActivePreset(key);
-                  }}
-                  className="ui-button ui-button-secondary !h-8 whitespace-nowrap px-1.5 text-[10px] capitalize sm:text-[11px]"
-                  style={activePreset === key ? TIER_ACTIVE_STYLE : undefined}
-                >{_(PRESET_LABELS[key])}</button>
-              ))}
-            </div>
+            {/* Run-policy selector: every preset the store holds, built-in and
+                custom alike, so a profile a user saved is pickable from the panel
+                rather than only from the dialog. Selecting one applies the whole
+                block (the store's contract) and copies it into the dialog's draft;
+                the trunk preset (manual placement) is deliberately not touched.
+                Beside it, the Auto-Lift flag the run's clearance depends on. */}
+            <AutoSupportPresetRow
+              presets={presets}
+              activeId={activePresetId}
+              onSelect={(id) => selectAutoSupportPreset(id, setDraft)}
+              activeHint={activePresetId ? TIER_HINTS[activePresetId] : undefined}
+              autoLift={autoLift}
+              onAutoLiftChange={onAutoLiftChange}
+            />
 
-            {/* Sizing debug */}
-            {showDebug && sizingDebug && (
-              <div className="rounded-md border" style={SECTION_CARD}>
-                <button type="button" onClick={() => setShowSizingDebug(!showSizingDebug)}
-                  className="w-full flex items-center justify-between px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  <span>{_(msg`Sizing Debug`)}</span>
-                  <svg className="w-3 h-3 transition-transform" style={{ transform: showSizingDebug ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showSizingDebug && (
-                  <div className="px-2.5 pb-2 space-y-1 text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                    <div className="flex justify-between border-t pt-1.5" style={{ borderColor: 'var(--border-subtle)' }}>
-                      <span>{_(msg`Model volume`)}</span><span style={{ color: 'var(--text-strong)' }}>{(sizingDebug.modelVolumeMm3 / 1000).toFixed(1)} cm³</span>
-                    </div>
-                    <div className="flex justify-between"><span>{_(msg`Est. weight`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.estimatedWeightG.toFixed(1)} g</span></div>
-                    <div className="flex justify-between"><span>{_(msg`Candidates`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.totalCandidates}</span></div>
-                    <div className="flex justify-between"><span>{_(msg`Weight / support`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.weightPerSupportG.toFixed(2)} g</span></div>
-                    <div className="flex justify-between"><span>{_(msg`Avg island area`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.avgIslandAreaMm2.toFixed(2)} mm²</span></div>
-                    <div className="flex justify-between"><span>{_(msg`Standalone trunks`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.standaloneHosts}</span></div>
-                    <div className="flex justify-between"><span>{_(msg`Grid infill trunks`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.gridInfillHosts}</span></div>
-                    <div className="flex justify-between" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 2, marginTop: 2 }}>
-                      <span>{_(msg`Shaft Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.shaftDiameterRange.min.toFixed(2)}–{sizingDebug.shaftDiameterRange.max.toFixed(2)} mm</span>
-                    </div>
-                    <div className="flex justify-between"><span>{_(msg`Tip Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.tipContactRange.min.toFixed(2)}–{sizingDebug.tipContactRange.max.toFixed(2)} mm</span></div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Forest Report */}
-            {showDebug && forestReport && (
-              <button
-                type="button"
-                onClick={() => setShowForestReport(true)}
-                className="w-full rounded-md border px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide flex items-center justify-between"
-                style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
-              >
-                <span>{_(msg`Forest Report`)}</span>
-                <span className="text-[9px] normal-case tracking-normal">
-                  {forestReport.hostCount}H {forestReport.leafCount}L {forestReport.branchCount}B · {forestReport.trees.length} trees
-                </span>
-              </button>
+            {/* The last run's diagnostics, behind Debug mode in the settings
+                dialog: the panel is where a run is started, so it is where its
+                report is read. */}
+            {debugMode && (
+              <AutoSupportRunDiagnostics
+                sizingDebug={sizingDebug}
+                forestReport={forestReport}
+                onShowForestReport={() => setShowForestReport(true)}
+              />
             )}
 
             {!hasGeometry && (
@@ -574,6 +505,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
                 }
               }}
               className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Copy the whole report to the clipboard`)}
             >
               {_(msg`Copy`)}
             </button>
@@ -581,6 +513,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               type="button"
               onClick={() => setShowForestReport(false)}
               className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Close the report`)}
             >
               {_(msg`Close`)}
             </button>
@@ -588,7 +521,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
         }
       >
         {forestReport && (
-          <div className="rounded-md border overflow-hidden" style={SECTION_CARD}>
+          <div className="rounded-md border overflow-hidden" style={AUTO_SUPPORT_SECTION_CARD}>
             <pre
               className="px-3 py-2 text-[10px] leading-relaxed whitespace-pre-wrap break-words tabular-nums overflow-y-auto"
               style={{ color: 'var(--text-muted)', maxHeight: '70vh' }}
@@ -599,124 +532,118 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
         )}
       </StructuredDialogModal>
 
+      {showSettings && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/58 backdrop-blur-sm p-5 ui-modal-backdrop-enter"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeSettings();
+          }}
+        >
+          <div
+            className="w-full max-w-[1120px] h-full flex flex-col rounded-xl border shadow-2xl overflow-hidden ui-modal-panel-enter"
+            style={{ background: 'var(--surface-0)', borderColor: 'var(--border-strong)' }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={_(msg`Auto-support settings`)}
+          >
+            <div className="flex items-center justify-between gap-4 px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
+                  style={{
+                    borderColor: 'var(--border-subtle)',
+                    background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent), var(--surface-1) 84%), color-mix(in srgb, var(--accent-secondary), var(--surface-1) 90%))',
+                  }}
+                >
+                  <Settings2 className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold" style={{ color: 'var(--text-strong)' }}>
+                    {_(msg`Auto Supports (Beta) Settings`)}
+                  </h2>
+                  <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--text-muted)' }}>
+                    {_(msg`Detected surfaces, density and sizing, stability, and the saved presets a run follows`)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeSettings}
+                className="ui-button ui-button-secondary inline-flex h-8 w-8 shrink-0 items-center justify-center leading-none !p-0"
+                aria-label={_(msg`Close dialog`)}
+                title={_(msg`Close without applying the edits made in this dialog`)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <AutoSupportSettingsBody
+              draft={draft}
+              setDraft={setDraft}
+              debugSimpleRender={debugSimpleRender}
+              onToggleDebugSimpleRender={() => updateDebugSimpleSupportRender(!debugSimpleRender)}
+              diagnostics={{
+                debugSupportOriginColors: supportSettings.autoSupport.debugSupportOriginColors,
+                debugSkipAutoBracing: supportSettings.autoSupport.debugSkipAutoBracing,
+              }}
+              onToggleDiagnostic={(key, enabled) => {
+                // Applied at once, so closing the dialog does not ask whether to
+                // discard a view switch. The draft follows, or a later Save would
+                // write the value the toggle just replaced.
+                updateAutoSupportDiagnostic(key, enabled);
+                setDraft((current) => ({ ...current, [key]: enabled }));
+              }}
+              debugMode={debugMode}
+              onToggleDebugMode={() => setDebugMode((current) => !current)}
+              presetLocked={presetLocked}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
+
       <StructuredDialogModal
-        open={showSettings}
-        ariaLabel={_(msg`Auto-support settings`)}
-        title={_(msg`Auto Supports (Beta) Settings`)}
-        subtitle={_(msg`Tune candidate generation, clustering, and fan-out`)}
-        iconTone="neutral"
-        maxWidthClassName="max-w-2xl"
-        onClose={() => setShowSettings(false)}
-        onBackdropClick={() => setShowSettings(false)}
+        open={showDiscardSettingsDialog}
+        ariaLabel={_(msg`Discard auto-support settings changes`)}
+        title={_(msg`Discard Changes?`)}
+        subtitle={_(msg`The edits made in this dialog have not been saved.`)}
+        iconTone="warning"
+        zIndexClassName="z-[120]"
+        onClose={() => setShowDiscardSettingsDialog(false)}
+        onBackdropClick={() => setShowDiscardSettingsDialog(false)}
         actions={
           <>
             <button
               type="button"
-              onClick={() => setShowSettings(false)}
+              onClick={() => setShowDiscardSettingsDialog(false)}
               className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Go back to the settings dialog`)}
             >
-              {_(msg`Cancel`)}
+              {_(msg`Keep Editing`)}
             </button>
             <button
               type="button"
-              onClick={applySettings}
-              className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
-              style={{
-                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
-                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 86%)',
-                color: 'var(--accent)',
+              onClick={() => {
+                setShowDiscardSettingsDialog(false);
+                setDraft(getSettings().autoSupport);
+                setShowSettings(false);
               }}
+              className="ui-button !h-9 px-3 text-xs"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 45%)',
+                background: 'color-mix(in srgb, var(--danger), var(--surface-1) 88%)',
+                color: 'var(--danger)',
+              }}
+              title={_(msg`Close the dialog and discard the edits`)}
             >
-              {_(msg`Apply`)}
+              {_(msg`Discard`)}
             </button>
           </>
         }
       >
-        <div className="space-y-3">
-          {/* ── Toggles row — full width ────────────────────────── */}
-          <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-            <div className="grid grid-cols-6 gap-2">
-              {([
-                { key: 'enabled' as const, label: _(msg`Enabled`), title: _(msg`Generate supports automatically on scan`) },
-                { key: 'prioritizeIntersection' as const, label: _(msg`Prioritize Dual`), title: _(msg`Islands found by BOTH the slice and mesh scans are placed first (they are the most certain)`) },
-                { key: 'debugSupportOriginColors' as const, label: _(msg`Origin Colors`), title: _(msg`Debug: color supports by origin — stump (red), overhang (orange), island (blue), standalone (purple)`) },
-                { key: 'debugSkipAutoBracing' as const, label: _(msg`No Brace`), title: _(msg`Debug: skip automatic bracing for this run`) },
-              ]).map((t) => (
-                <button key={t.key} type="button" title={t.title}
-                  onClick={() => setDraft((d) => ({ ...d, [t.key]: !d[t.key] }))}
-                  className="min-h-[36px] w-full rounded-md border px-2 text-[11px] font-semibold uppercase tracking-wide transition-colors flex items-center justify-center"
-                  style={draft[t.key]
-                    ? { borderColor: 'color-mix(in srgb, var(--accent-secondary), white 10%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 84%)', color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 25%)' }
-                    : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
-                >{t.label}</button>
-              ))}
-              <button type="button" title={_(msg`Debug: simplified support render — contact disks/cones plus line vectors instead of full shafts`)}
-                onClick={() => updateDebugSimpleSupportRender(!debugSimpleRender)}
-                className="min-h-[36px] w-full rounded-md border px-2 text-[11px] font-semibold uppercase tracking-wide transition-colors flex items-center justify-center"
-                style={debugSimpleRender
-                  ? { borderColor: 'color-mix(in srgb, var(--accent-secondary), white 10%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 84%)', color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 25%)' }
-                  : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
-              >{_(msg`Simplified`)}</button>
-              <button type="button" title={_(msg`Debug: show sizing and forest diagnostics in the panel`)}
-                onClick={() => setShowDebug(!showDebug)}
-                className="min-h-[36px] w-full rounded-md border px-2 text-[11px] font-semibold uppercase tracking-wide transition-colors flex items-center justify-center"
-                style={showDebug
-                  ? { borderColor: 'color-mix(in srgb, var(--accent-secondary), white 10%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 84%)', color: 'color-mix(in srgb, var(--accent-secondary), var(--text-strong) 25%)' }
-                  : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
-              >{_(msg`Debug`)}</button>
-            </div>
-          </div>
-
-          {/* ── Tabbed settings body ────────────────────────────── */}
-          <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-            <div className="grid grid-cols-3 gap-1.5">
-              {([
-                { key: 'detection' as const, label: _(msg`Detection`) },
-                { key: 'distribution' as const, label: _(msg`Distribution`) },
-                { key: 'density' as const, label: _(msg`Density & Sizing`) },
-              ]).map((tab) => (
-                <button key={tab.key} type="button"
-                  onClick={() => setSettingsTab(tab.key)}
-                  className="h-8 rounded-md border text-[11px] font-semibold uppercase tracking-wide transition-colors"
-                  title={tab.key === 'detection'
-                    ? _(msg`What counts as a support-needing surface and how tightly regions merge`)
-                    : tab.key === 'distribution'
-                      ? _(msg`How points scatter (grid vs Poisson) and how leaves fan out from trunks`)
-                      : _(msg`How dense and thick the supports are`)}
-                  style={settingsTab === tab.key
-                    ? { borderColor: 'color-mix(in srgb, var(--accent), white 10%)', background: 'color-mix(in srgb, var(--accent), var(--surface-1) 84%)', color: 'var(--accent)' }
-                    : { borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
-                >{tab.label}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-md border p-2.5" style={SECTION_CARD}>
-            {settingsTab === 'detection' && (
-              <div className="space-y-2.5">
-                {KNOBS.filter(k => ['overhangSelfSupportAngleDeg', 'minIslandAreaMm2', 'tipInfluenceRadiusMm', 'coverageTargetPercent'].includes(k.key)).map(knob => (
-                  <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                ))}
-              </div>
-            )}
-            {settingsTab === 'distribution' && (
-              <>
-                <div className="space-y-2.5">
-                  {KNOBS.filter(k => ['leafFanRadiusMm', 'leafFanMaxAngleDeg'].includes(k.key)).map(knob => (
-                    <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                  ))}
-                </div>
-              </>
-            )}
-            {settingsTab === 'density' && (
-              <div className="space-y-2.5">
-                {KNOBS.filter(k => ['areaPerSupportMm2', 'gridAreaThresholdMm2', 'flatDensityBoost', 'slopeRelaxFactor', 'suctionAreaExponent', 'sizeScale', 'maxAttachmentsPerTrunk'].includes(k.key)).map(knob => (
-                  <SliderRow key={knob.key} knob={knob} draft={draft} setDraft={setDraft} />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {_(msg`Closing now leaves the auto-support settings as they are. Save in the dialog's footer writes them.`)}
+        </p>
       </StructuredDialogModal>
 
       <StructuredDialogModal
@@ -733,6 +660,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               type="button"
               onClick={() => setShowReplaceDialog(false)}
               className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Keep the existing supports and do nothing`)}
             >
               {_(msg`Cancel`)}
             </button>
@@ -740,12 +668,14 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
               type="button"
               onClick={() => { setShowReplaceDialog(false); doRun(false); }}
               className="ui-button ui-button-secondary !h-9 px-3 text-xs"
+              title={_(msg`Keep the existing supports and place the new ones around them`)}
             >
               {_(msg`Add to existing`)}
             </button>
             <button
               type="button"
               onClick={() => { setShowReplaceDialog(false); doRun(true); }}
+              title={_(msg`Delete this model's existing supports and place the new ones`)}
               className="ui-button !h-9 px-3 text-xs inline-flex items-center justify-center gap-1.5"
               style={{
                 borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
@@ -758,7 +688,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, onBefore
           </>
         }
       >
-        <div className="rounded-md border p-3" style={SECTION_CARD}>
+        <div className="rounded-md border p-3" style={AUTO_SUPPORT_SECTION_CARD}>
           <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
             {_(msg`You can replace all existing supports with auto-placed ones, or incorporate your existing supports and fill in the gaps.`)}
           </p>

@@ -182,6 +182,7 @@ const ORIGIN_COLORS: Record<SupportOrigin, string> = {
     overhang: '#ff9f0a',
     island: '#0a84ff',
     standalone: '#bf5af2',
+    reinforcement: '#30d5c8',
 };
 /** Origin coloring: gray = entity generated before origin stamping existed —
  * regenerate the supports to get colors. */

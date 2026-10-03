@@ -130,6 +130,8 @@ test('buildForestReport groups fan-out trees and lists bare trunks with sizing',
     assert.equal(tree.members[0].kind, 'leaf');
     // Knot at z=9.4, tip at z=15.9, dx=1.1 → span ≈ 6.51mm, angle ≈ 10°.
     assert.ok(Math.abs(tree.members[0].spanMm - Math.hypot(1.1, 6.5)) < 0.01);
+    // The member's own diameter: the leaf's cone body (its widest end).
+    assert.equal(tree.members[0].diameterMm, 0.5);
     assert.ok(tree.sizingNote.includes('base Ø1.00'));
 
     const bare = report.bareHosts[0];
@@ -189,6 +191,7 @@ test('forestReportToText renders the copyable plain-text report', () => {
     assert.ok(text.includes('1 trunks · 1 leaves'), 'the host count names the declared host type');
     assert.ok(text.includes('v19 @ Z=15.9mm'));
     assert.ok(text.includes('leaf-a(L 6.6mm/'));
+    assert.ok(text.includes('Ø0.50)'), 'the member line carries the member\'s own diameter');
     assert.ok(text.includes('SCAN'), 'scan section rendered');
     assert.ok(text.includes('184 islands (voxel 150 · minima 30 · intersection 0 · overhang 4)'));
     assert.ok(text.includes('coverage 100% of 1280mm² (5 uncovered) · 10 rejected'));

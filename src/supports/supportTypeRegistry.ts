@@ -1764,6 +1764,10 @@ export const SUPPORT_ORIGINS = {
     overhang: { convertibleToTree: true },
     island: { convertibleToTree: false },
     standalone: { convertibleToTree: true },
+    // A mesh minima's reinforcement ring: one to six contacts 2.5mm apart,
+    // the closest neighbours in the whole forest. Converting them onto the
+    // pillar they ring turns a crown of pillars into one plate contact.
+    reinforcement: { convertibleToTree: true },
 } as const;
 
 export type SupportOriginId = keyof typeof SUPPORT_ORIGINS;

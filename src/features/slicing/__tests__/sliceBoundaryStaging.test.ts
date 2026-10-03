@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profileStore';
 import { runSliceExportOrchestrator } from '../sliceExportOrchestrator';
+import { installFakeWindow } from '@/utils/__tests__/helpers/fakeWindow';
 
 function boxModel(id: string, x: number, y: number, z: number): LoadedModel {
   const source = new THREE.BoxGeometry(8, 6, 10);
@@ -62,14 +63,10 @@ for (const transfer of ['single-shot', 'streamed'] as const) {
         default: throw new Error(`Unexpected native command: ${command}`);
       }
     };
-    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: {
-        dispatchEvent: () => true,
-        __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
-        __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
-      },
+    const restoreWindow = installFakeWindow({
+      dispatchEvent: () => true,
+      __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
+      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
     });
     try {
       await assert.rejects(runSliceExportOrchestrator({
@@ -120,8 +117,7 @@ for (const transfer of ['single-shot', 'streamed'] as const) {
       assert.deepEqual([Math.min(...ys), Math.max(...ys)], [-13, 13]);
       assert.deepEqual([Math.min(...zs), Math.max(...zs)], [-2, 24]);
     } finally {
-      if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-      else Reflect.deleteProperty(globalThis, 'window');
+      restoreWindow();
       for (const model of scene) model.geometry.geometry.dispose();
     }
   });

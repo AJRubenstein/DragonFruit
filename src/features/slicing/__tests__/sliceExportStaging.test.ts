@@ -6,6 +6,7 @@ import type { MaterialProfile, PrinterProfile } from '@/features/profiles/profil
 import { storeModelMeshModifiers, getStoredMeshModifiers, deleteStoredMeshModifiers } from '@/features/mesh-modifiers/meshModifierStore';
 import { clearPreparedGeometryCacheForModel } from '@/features/mesh-modifiers/prepareModelGeometry';
 import { runSliceExportOrchestrator } from '../sliceExportOrchestrator';
+import { installFakeWindow } from '@/utils/__tests__/helpers/fakeWindow';
 import { getSnapshot, setSnapshot } from '@/supports/state';
 import { createEmptySupportCollections } from '@/supports/supportTypeRegistry';
 
@@ -93,14 +94,10 @@ test('streamed slice input excludes raw hollowing output and preserves the model
         throw new Error(`Unexpected native command: ${command}`);
     }
   };
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {
-      dispatchEvent: () => true,
-      __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
-      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
-    },
+  const restoreWindow = installFakeWindow({
+    dispatchEvent: () => true,
+    __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
+    __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   });
   const stage = async (currentModel: LoadedModel) => {
     await assert.rejects(runSliceExportOrchestrator({
@@ -165,8 +162,7 @@ test('streamed slice input excludes raw hollowing output and preserves the model
     assert.deepEqual(new Float32Array(flagsOnly.bytes.buffer, flagsOnly.bytes.byteOffset, flagsOnly.bytes.byteLength / 4), originalEncoded);
     assert.equal(hollowCalls, 1, 'enabled/unbaked flags without a source must not invoke native hollowing');
   } finally {
-    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-    else Reflect.deleteProperty(globalThis, 'window');
+    restoreWindow();
     model.geometry.geometry.dispose();
     supportModel.geometry.geometry.dispose();
     redoneModel.geometry.geometry.dispose();
@@ -212,14 +208,10 @@ test('slice input excludes models marked outside the build volume', async () => 
         throw new Error(`Unexpected native command: ${command}`);
     }
   };
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {
-      dispatchEvent: () => true,
-      __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
-      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
-    },
+  const restoreWindow = installFakeWindow({
+    dispatchEvent: () => true,
+    __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
+    __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   });
 
   try {
@@ -241,8 +233,7 @@ test('slice input excludes models marked outside the build volume', async () => 
     assert.equal(captured.totalLayers, 20);
     assert.equal(captured.bytes.length, 36, 'only the selected model reaches the native slicer');
   } finally {
-    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-    else Reflect.deleteProperty(globalThis, 'window');
+    restoreWindow();
     inside.geometry.geometry.dispose();
     outside.geometry.geometry.dispose();
   }
@@ -276,7 +267,6 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
     },
   };
   const previousSupportState = getSnapshot();
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   let staged = new Uint8Array(0);
   let captured: { bytes: Uint8Array; modelCount: number } | undefined;
   const getCaptured = () => captured;
@@ -304,13 +294,10 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
         throw new Error(`Unexpected native command: ${command}`);
     }
   };
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {
-      dispatchEvent: () => true,
-      __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
-      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
-    },
+  const restoreWindow = installFakeWindow({
+    dispatchEvent: () => true,
+    __TAURI_INTERNALS__: { invoke, transformCallback: () => 1 },
+    __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   });
   try {
     setSnapshot({
@@ -378,8 +365,7 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
     }
   } finally {
     setSnapshot(previousSupportState);
-    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-    else Reflect.deleteProperty(globalThis, 'window');
+    restoreWindow();
     model.geometry.geometry.dispose();
   }
 });

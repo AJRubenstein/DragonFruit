@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { initializeBVH, accelerateGeometry } from '../../../utils/bvh';
 import { calculateSmartPlacementV3 } from '../SmartPlacementV3';
 import { findEscapeJoint, findGridJoint } from '../EscapeJointSearch';
+import { coneKeepsContactHighest } from '../../PlacementLogic/ConeAxisPolicy';
 import type { SDFCache } from '../../PlacementLogic/Pathfinding/SDFCache';
 import { setSettings } from '../../Settings/state';
 import { createDefaultSettings } from '../../Settings/types';
@@ -154,6 +155,13 @@ const TIP_PROFILE = {
     standoffAngleThreshold: Math.PI / 4,
 };
 
+/** Stubbier than the default: its socket end rises over the tip sooner. */
+const WALL_TIP_PROFILE = {
+    ...TIP_PROFILE,
+    bodyDiameterMm: 1.6,
+    lengthMm: 2.5,
+};
+
 function angleFromVerticalDeg(a: Vec3, b: Vec3): number {
     return (Math.atan2(Math.hypot(b.x - a.x, b.y - a.y), Math.abs(b.z - a.z)) * 180) / Math.PI;
 }
@@ -226,4 +234,63 @@ test('with the grid on, the joint is the node and the drop stays vertical', () =
         assert.ok(Math.abs(cells - Math.round(cells)) < 1e-9,
             `joint ${axis}=${joint[axis]} sits on a ${spacingMm}mm node`);
     }
+});
+
+/**
+ * A wall: the tip hangs on a vertical face, so the cone the surface asks for
+ * lies flat off it — the shape that put a socket end over the contact it hangs
+ * from. `normal` mode renders the face's own normal, 90° off vertical.
+ */
+const WALL_TIP = { x: 0, y: 0, z: 15 };
+const WALL_TIP_NORMAL = { x: -1, y: 0, z: 0 };
+
+function placeOnWall() {
+    initializeBVH();
+    const geometry = new THREE.BoxGeometry(10, 20, 30);
+    geometry.translate(5, 0, 15); // the face the tip sits on is x = 0
+    accelerateGeometry(geometry);
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+    mesh.updateMatrixWorld(true);
+
+    const settings = createDefaultSettings();
+    settings.grid.enabled = false;
+    settings.tip.coneAngleMode = 'normal';
+    setSettings(settings);
+    return calculateSmartPlacementV3({
+        tipPos: WALL_TIP,
+        tipNormal: WALL_TIP_NORMAL,
+        tipProfile: WALL_TIP_PROFILE,
+        modelId: 'model-wall',
+        mesh,
+        rootsTopZ: 2,
+    });
+}
+
+test('a cone swung off a wall keeps its socket end under the contact, not over it', () => {
+    const result = placeOnWall();
+    assert.equal(result.error, undefined, 'the wall contact stays placeable');
+
+    const socket = result.socketPos!;
+    const axis = result.coneAxis!;
+
+    // The contact is the highest point of the member: the cone's own socket end
+    // may not rise over the tip it hangs from. The face's own cone reaches 80°
+    // off vertical and lifts its socket rim 0.79mm over the tip, which is the
+    // support-growing-out-of-a-cone shape this refuses.
+    assert.ok(
+        coneKeepsContactHighest({
+            coneAxis: axis,
+            socketPos: socket,
+            tipPos: WALL_TIP,
+            bodyDiameterMm: WALL_TIP_PROFILE.bodyDiameterMm,
+        }),
+        `socket end over the contact: socket z=${socket.z.toFixed(3)}, tip z=${WALL_TIP.z}, `
+        + `lean ${angleFromVerticalDeg({ x: 0, y: 0, z: 0 }, axis).toFixed(1)}°`,
+    );
+
+    // So the cone leaves the contact downward and well short of flat, and what
+    // the shaft hangs from stays under the point that touches the model.
+    assert.ok(axis.z < 0, `the cone points at the plate, got z=${axis.z.toFixed(3)}`);
+    assert.ok(WALL_TIP.z - socket.z > 0.5,
+        `the cone descends from the contact, got ${(WALL_TIP.z - socket.z).toFixed(3)}mm`);
 });

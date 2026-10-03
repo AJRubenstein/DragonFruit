@@ -467,6 +467,8 @@ export function SceneCanvas({
   islandMarkers,
   islandInstances,
   overhangIslands,
+  toppleCoverage,
+  dragTotalMm3,
   overlayBrushRadius,
   overlayColor,
   overlayOpacity,
@@ -578,6 +580,12 @@ export function SceneCanvas({
   /** World-space contact footprints to draw as instanced discs. */
   islandInstances?: IslandInstances | null;
   overhangIslands?: DetectedIsland[];
+  /** False when the scan's pose needs no anti-topple contact, so the overlay
+   *  mutes the steep-flat patches it will not cover. */
+  toppleCoverage?: boolean;
+  /** The pose's total drag moment (mm³), so the overlay can weigh a patch's
+   *  share of it exactly as the placement does. */
+  dragTotalMm3?: number;
   overlayBrushRadius?: number;
   overlayColor?: string;
   overlayOpacity?: number;
@@ -6153,6 +6161,8 @@ export function SceneCanvas({
                         <IslandOverhangOverlay
                           geometry={model.geometry.geometry}
                           regions={overhangIslands}
+                          toppleCoverage={toppleCoverage !== false}
+                          dragTotalMm3={dragTotalMm3}
                         />
                       )}
                       <SupportBlockerOverlay

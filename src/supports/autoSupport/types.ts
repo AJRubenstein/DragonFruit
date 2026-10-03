@@ -24,7 +24,7 @@ export interface CandidatePoint {
     /** The model this candidate belongs to. */
     modelId: string;
     /** Which detector produced this candidate. */
-    source: 'voxel' | 'minima' | 'intersection' | 'overhang' | 'stabilization';
+    source: 'voxel' | 'minima' | 'intersection' | 'overhang' | 'stabilization' | 'reinforcement';
     /** Contact footprint area of the unsupported region (mm²). 0 for minima-only. */
     islandAreaMm2: number;
     /** Z-height above build plate (mm). */
@@ -32,8 +32,10 @@ export interface CandidatePoint {
     /** Computed placement priority. Higher = place first. */
     priority: number;
     /** Per-point tip contact override (mm). Set for small-island candidates
-     *  so fine detail gets a shrunk tip without dragging the shaft down;
-     *  undefined = active band default (full contact for grid/overhang points). */
+     *  (fine detail gets a shrunk tip without dragging the shaft down) and for
+     *  any candidate the free-width cap shrinks (see `contactTipCap.ts`);
+     *  undefined = active band default (full contact for grid/overhang points),
+     *  which is also what a candidate with room keeps. */
     tipDiameterMm?: number;
     /** Density-grid point: must become its own standalone trunk (never merged
      *  into a nearby host) so flat regions get independent supports. */
@@ -72,7 +74,9 @@ export interface ForestTree {
     hostZ: number;
     shaftDiameterMm: number;
     sizingNote: string;
-    members: Array<{ id: string; kind: AttachmentKind; spanMm: number; angleDeg: number }>;
+    /** One attachment: id, kind, post-resize knot→tip span/angle, and the
+     *  diameter the member itself contributes (see `memberDiameterOf`). */
+    members: Array<{ id: string; kind: AttachmentKind; spanMm: number; angleDeg: number; diameterMm: number }>;
 }
 
 /** Input-side metrics from the island/overhang scan for the Forest Report. */
@@ -122,12 +126,16 @@ export interface ForestReport {
     scan?: ForestScanMetrics;
     /** Leaves/branches whose host knot drifted, crossed, or lost its host segment. */
     orphans?: OrphanInfo[];
+    /** What a deficit budget would add and cull, when the run computed one. */
+    loadBudget?: LoadBudgetReport;
     /** Placement diagnostics: why trunks are where they are, fan/merge refusal counts */
     diagnostics?: {
-        candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number };
+        candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number; reinforcement: number };
         hostsByKind: { gridInfill: number; coverageFill: number; standalone: number };
         fanRefusals: Partial<Record<string, number>>;
         mergeRefusals: Partial<Record<string, number>>;
+        /** Candidates the grid refused and the fallback then placed without it. */
+        gridFallbacks: number;
         /** Why consolidation (chunk fanning) refused candidates — sameZ means
          *  the surface is too flat for side-leaves at the consolidation
          *  angle (raft/connector territory). */
@@ -150,6 +158,31 @@ export interface OrphanInfo {
 }
 
 
+
+/**
+ * The load budget, as the report carries it. Report only: the run prints what a
+ * deficit model would add and cull and moves nothing. See `loadBudget.ts` for the
+ * units and why they are what they are.
+ */
+export interface LoadBudgetIsland {
+    islandId: string;
+    demandMm2: number;
+    capacityMm2: number;
+    deficitMm2: number;
+}
+
+export interface LoadBudgetReport {
+    /** One row per island with an area of its own, in island order. */
+    rows: LoadBudgetIsland[];
+    totalDemandMm2: number;
+    totalCapacityMm2: number;
+    wouldAdd: number;
+    wouldCull: number;
+    islandsInDeficit: number;
+    islandsInSurplus: number;
+    islandsWithoutArea: number;
+    worst: LoadBudgetIsland | null;
+}
 
 /** Competitive distribution bake-off result for anchor surfaces. */
 export interface CompetitiveBakeoffAnalytics {
@@ -181,6 +214,56 @@ export interface AutoPlaceAnalytics {
     sizingDebug?: SizingDebugInfo;
     /** Per-run forest summary: every support's id, size, and fan groups. */
     forestReport?: ForestReport;
+    /** Where the run's wall-clock time went. Logged as one line per run. */
+    timings?: AutoPlaceTimings;
+}
+
+/**
+ * Where a run spent its time.
+ *
+ * `phases` is the run's own coarse breakdown, in order. `detail` is the inner
+ * work the perf module measures (`trunk:v3-placement`, `branch:cone-search`, …),
+ * summed by label with its call count — those nest inside `phases`, so the two
+ * do not add up to `totalMs` between them.
+ */
+export interface AutoPlaceTimings {
+    totalMs: number;
+    phases: Array<{ label: string; durationMs: number }>;
+    detail: Array<{ label: string; durationMs: number; calls: number }>;
+    /** Phases that exceeded the perf module's thresholds. */
+    spikes: Array<{ label: string; durationMs: number; thresholdMs: number }>;
+    /**
+     * What the distance field did during the run. `cellReads` is the router's
+     * probe volume and `bvhQueries` the part of it that was new geometry work:
+     * the pair says whether the next win is fewer probes or a faster field.
+     */
+    sdf?: {
+        cellReads: number;
+        bvhQueries: number;
+        cachedCells: number;
+        /** Which cell store answered: the open-addressed table, or its Map fallback. */
+        store?: string;
+    };
+    /**
+     * What the router asked for. The cost of a placement is the number of
+     * questions, not the cost of one answer, so these counts say which stage to
+     * attack: cones tested, joint searches and their probes, root-volume checks
+     * and their samples, base candidates.
+     */
+    router?: {
+        placements: number;
+        conesTested: number;
+        coneGates: number;
+        jointSearches: number;
+        jointProbes: number;
+        rootsChecks: number;
+        rootsSamples: number;
+        baseCandidates: number;
+        jointOutcomes: Record<string, number>;
+        foundProbeBuckets: number[];
+        /** Worst *successful* search's probe count, against the search budget. */
+        maxFoundProbes: number;
+    };
 }
 
 /** Why a fan-leaf attempt was refused. */
@@ -196,7 +279,7 @@ export type FanLeafRefusal =
 /** Why a trunk was placed standalone instead of fanning/merging. */
 export interface PlacementDiagnostics {
     /** Candidate counts by detector source. */
-    candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number };
+    candidatesBySource: { voxel: number; minima: number; intersection: number; overhang: number; stabilization: number; reinforcement: number };
     /** Placed trunks by origin. */
     hostsByKind: {
         /** Fixed-density grid points (boundary ring + lattice infill). */
@@ -210,6 +293,8 @@ export interface PlacementDiagnostics {
     fanRefusals: Partial<Record<FanLeafRefusal, number>>;
     /** Why candidates failed to merge (no host vs host rejected the attachment). */
     mergeRefusals: Partial<Record<'noHost' | 'rejected', number>>;
+    /** Candidates the grid refused and the fallback then placed without it. */
+    gridFallbacks: number;
     /** Candidates whose trunk could not reach the plate and were bridged
      *  model-to-model instead -- by whichever type registered a bridge
      *  builder. Tip = where the bridge
@@ -217,12 +302,19 @@ export interface PlacementDiagnostics {
     cavityFallbacks: Array<{ id: string; kind: SupportTypeId; tip: { x: number; y: number; z: number }; fanRefusal?: string }>;
 }
 
-/** Physics-based sizing debug data. */
+/** Sizing debug data: what the run read, and the diameters that came out. */
 export interface SizingDebugInfo {
     modelVolumeMm3: number;
     estimatedWeightG: number;
     totalCandidates: number;
     weightPerSupportG: number;
+    /** Model extent (mm) the size term read. */
+    modelSizeMm: number;
+    /** Resin grams per support the load term read, at placement time. */
+    loadShareG: number;
+    /** Print-scale and mass-share factors on the profile band (each ≥ 1). */
+    sizeFactor: number;
+    loadFactor: number;
     avgIslandAreaMm2: number;
     /** Standalone trunks (neither fanned nor merged) — the over-supply signal. */
     standaloneHosts: number;

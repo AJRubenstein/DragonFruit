@@ -118,6 +118,31 @@ Reporting a shaft-aligned axis while leaving the socket on the pre-routing axis
 is what the previous engine did, and the builder then silently replaced the axis
 with its own derivation. There is now one authority for the pair.
 
+## The contact is the top of the member
+
+The cone is the piece that can grow back up over the point it touches. It ends at
+its socket, a body of radius `bodyDiameterMm / 2` standing on the axis, so an
+axis swung flat lifts the socket's rim over the tip: on a wall, the 80° axis
+`normal` mode resolves puts the default profile's rim 0.79 mm above the contact,
+and the member reads as a cone pointing down with the support growing out of the
+top of it.
+
+Every cone the router commits therefore passes `coneKeepsContactHighest`
+(`PlacementLogic/ConeAxisPolicy.ts`): the resolved axis and the socket it lands
+must leave the socket's rim at or below the tip. Measured on the resolved axis,
+not the surface normal, because that is what renders — `isSideWallContact`'s 75°
+reads the policy axis, and the deviation walk that follows it moves the socket
+anywhere inside its own budget. The gate sits on both candidate sets (the
+straight-drop loop and the sockets the joint search starts from) and on the
+joint-aimed socket, where a cone that would rise is dropped for the socket the
+walk already cleared rather than refusing the contact.
+
+The bound is profile-derived rather than a second magic angle —
+`atan(lengthMm / (bodyDiameterMm / 2))`, 78.7° for the default 2.5 mm cone on a
+1.0 mm body. The default `adaptive` axis renders a wall contact at 60° and stays;
+`normal` mode's 80° on the same face does not, and the trunk leaves from
+whichever deviation still clears.
+
 ## Shared geometry rules
 
 These still apply and are shared with the manual placement paths.

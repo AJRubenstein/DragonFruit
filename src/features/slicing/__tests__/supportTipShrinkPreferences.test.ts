@@ -8,18 +8,17 @@ import {
   updateMaterialProfile,
   type MaterialAntiAliasingSettings,
 } from '@/features/profiles/profileStore';
+import { installFakeWindow } from '@/utils/__tests__/helpers/fakeWindow';
 
 test('material AA tip shrink and Auto compensation persist without AA override', () => {
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const storage = new Map<string, string>();
   const localStorage = {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => { storage.set(key, value); },
     removeItem: (key: string) => { storage.delete(key); },
   };
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: { localStorage, sessionStorage: localStorage, dispatchEvent: () => true },
+  const restoreWindow = installFakeWindow({
+    localStorage, sessionStorage: localStorage, dispatchEvent: () => true,
   });
 
   try {
@@ -63,7 +62,6 @@ test('material AA tip shrink and Auto compensation persist without AA override',
     assert.equal(settings().tipOffsetMm, 0.2);
     assert.equal(settings().tipOffsetDisplayInUi, true);
   } finally {
-    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-    else Reflect.deleteProperty(globalThis, 'window');
+    restoreWindow();
   }
 });

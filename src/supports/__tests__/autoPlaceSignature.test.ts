@@ -229,15 +229,36 @@ function runSignature(gridEnabled: boolean): RunSignature {
  * counts: grid mode attaches to the trunk already standing on a node instead of
  * standing a second one (so fewer trunks, the tips becoming leaves), and a long
  * overhang fan link becomes a branch rather than staying a leaf.
+ *
+ * Re-recorded once more when model-scale sizing landed (`parameterSizing.ts`):
+ * the grid-on run moves 2 members from branch to leaf (151/21 → 149/23). The
+ * height term is what moves them — long supports are thicker now — and
+ * neutering the model terms leaves these counts unchanged, so tuning the
+ * print-scale/mass-share constants does not churn this signature. The grid-off
+ * run does not move at all.
+ *
+ * Re-recorded for the contact-tip cap (`contactTipCap.ts`): the grid-on run
+ * moved 4 members from leaf to branch (149/23 → 153/19), and the corpus moved on
+ * `steep-flat-wedge` (coverage 40.4 → 41.0%) and `sloped-cantilever`.
+ *
+ * Re-recorded BACK to 149/23 for the cap's two corrections
+ * (`autoSupport.tipContactMarginScale` 0.6 → 0.9, and no cap when `localFreeWidthMm` returns
+ * 0 because the probe found no clearance either way). Both benches are now
+ * **byte-identical to the pre-cap baselines on all seven fixtures in both
+ * modes**: every contact the cap had been moving on the corpus read a zero
+ * width, i.e. it was the inconclusive kind the new rule leaves alone, and a
+ * 0.9 margin no longer shrinks a 0.28 mm tip inside a 0.4 mm feature. The cap
+ * still binds where a width is genuinely measured under `bandTip / 0.9`
+ * (`contactTipCap.test.ts` pins the 0.3 mm rib and the anchor band).
  */
 const RECORDED = {
     /** Grid enabled: candidates resolve through `decideGridPlacement`, branch-heavy. */
     gridOn: {
-        placed: [28, 151, 21, 197, 0, 0, 1, 0],
+        placed: [28, 149, 23, 197, 0, 0, 1, 0],
         rejectedCandidates: 0,
         changed: true,
-        inStore: { trunks: 28, branches: 151, leaves: 21, twigs: 197, sticks: 0, anchors: 1, knots: 172, roots: 28 },
-        forest: { hostCount: 28, leafCount: 21, branchCount: 151, bareHosts: 2 },
+        inStore: { trunks: 28, branches: 149, leaves: 23, twigs: 197, sticks: 0, anchors: 1, knots: 172, roots: 28 },
+        forest: { hostCount: 28, leafCount: 23, branchCount: 149, bareHosts: 2 },
     },
     /** Grid disabled: candidates resolve through the merge/trunk/cavity ladder, leaf-heavy. */
     gridOff: {
