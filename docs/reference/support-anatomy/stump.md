@@ -36,6 +36,11 @@ The contact cone is **stretched to fit**, not placed at its authored length: the
 - A contact closer to the plate than the root height (`1.0 mm`) cannot be served: the
   cone would have to sink below the root joint, so the build refuses it as
   `STUMP_BELOW_ROOT` rather than printing a support into the model or the plate.
+- The built body must clear the model. The cone, the joint ball and the root column
+  are sampled against the model's distance field and the build refuses as
+  `COLLISION_WITH_MODEL` when any of them reaches it: a stump stands where the model
+  is close to the plate, and its fixed root height puts a wide socket end where a
+  sloping underside can still meet it.
 - The entity must stay JSON-serializable: it round-trips through save/load and through the import format's collection key. A scene saved under the former name loads through `src/supports/importMigrations.ts`.
 - Stumps are skipped by the render-lookup worker used for primitive picking; a fallback loop handles their selection instead.
 
