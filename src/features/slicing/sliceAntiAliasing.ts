@@ -101,6 +101,12 @@ export type SliceAntiAliasingDecision = {
 export type SliceAntiAliasing = {
   options: SliceAntiAliasingOptions;
   decision: SliceAntiAliasingDecision;
+  /**
+   * Choices that could not be honoured and what was used instead. The panel
+   * slices anyway; the CLI refuses, since a silent fallback in a test run is
+   * a wrong result.
+   */
+  warnings: string[];
 };
 
 const AA_STRENGTH_MIN_STEPS = 2;
@@ -317,6 +323,10 @@ export function resolveSliceAntiAliasing(input: SliceAntiAliasingInput): SliceAn
   const customLutCurve = overrideEnabled
     ? (input.lutCurves ?? []).find((curve) => curve.id === settings.selectedLutCurveId) ?? null
     : null;
+  const warnings: string[] = [];
+  if (zBlendResinType === 'custom' && !customLutCurve) {
+    warnings.push(`LUT curve '${settings.selectedLutCurveId}' is not in the curve library; using the default opaque curve.`);
+  }
   const defaults = getDefaultLuts();
   const customLut = customLutCurve ? sampleCurveToLut(customLutCurve.points) : defaults.opaque;
   const zBlendMaxAlphaPercent = zBlendResinType === 'clear'
@@ -370,6 +380,7 @@ export function resolveSliceAntiAliasing(input: SliceAntiAliasingInput): SliceAn
       duplicateZSupported,
       minimumAaAlpha,
     },
+    warnings,
   };
 }
 
@@ -407,6 +418,8 @@ export type SliceJobAntiAliasing = {
    * while the mesh is prepared — not a field the native slicer receives.
    */
   supportTipShrinkPercent: number;
+  /** See `SliceAntiAliasing.warnings`. Not part of the job. */
+  warnings: string[];
 };
 
 /**
@@ -420,14 +433,15 @@ export function resolveSliceJobAntiAliasing(input: {
   request?: SliceJobAntiAliasingRequest;
 }): SliceJobAntiAliasing {
   const { materialProfile } = input;
-  const options: Partial<SliceAntiAliasingOptions> = input.request
+  const resolved = input.request
     ? resolveSliceAntiAliasing({
         printerProfile: input.printerProfile,
         materialProfile,
         layerHeightMm: input.layerHeightMm,
         ...input.request,
-      }).options
-    : {};
+      })
+    : null;
+  const options: Partial<SliceAntiAliasingOptions> = resolved?.options ?? {};
 
   const requestedTipShrinkPercent = options.supportTipShrinkPercent
     ?? materialProfile.antiAliasingSettings?.supportTipShrinkPercent
@@ -466,5 +480,6 @@ export function resolveSliceJobAntiAliasing(input: {
       ?? 50,
     ),
     supportTipShrinkPercent,
+    warnings: resolved?.warnings ?? [],
   };
 }

@@ -186,7 +186,7 @@ and prints `[command] Xms` to stderr.
 | `scene transform-model <voxl> --id <id> [--position x,y,z] [--rotate x,y,z] [--scale x,y,z]` | Set transform | VOXL mutation |
 | `scene duplicate <voxl> --id <id> [--count N] [--offset x,y,z]` | Duplicate model | VOXL mutation |
 | `scene arrange <voxl> --mesh-dir <dir> [--spacing 2] [--build-width-mm 218] [--build-depth-mm 122] [--anchor center]` | Auto-arrange on plate | `highPrecisionArrange` (SAT nesting) |
-| `scene slice <voxl> --o <out> --mesh-dir <dir> [--printer <profile.json>] [--material <material.json>]` | Merge + slice via Rust, with the job the app would build | Loads STLs → applies transforms → `assembleSliceJob` → `dragonfruit-cli slice run` |
+| `scene slice <voxl> --o <out> --mesh-dir <dir> [--printer <profile.json>] [--material <material.json>] [--aa-preset P] [--aa-settings <aa.json>] [--lut-curves <curves.json>]` | Merge + slice via Rust, with the job the app would build | Loads STLs → applies transforms → `assembleSliceJob` → `dragonfruit-cli slice run` |
 | `scene load <voxl> [--json]` | Dump full scene | `voxl/codec::parseVoxlDocument` |
 
 **`scene slice` builds the same job as the app.** With `--printer` (an official
@@ -194,17 +194,42 @@ preset, a custom profile, a list of either with `--printer-id`, or an
 app-exported bundle), the printer and material go through the profile store the
 way the app adds them, and the job fields plus `metadata_json` come from
 `assembleSliceJob` (see [Slice Job Assembly](../dev/slice-job-assembly.md)):
-format version, X-packing, build plate, layer height, dithering, and the
-material's exposure and per-format settings. The material is `--material`, else
+format version, X-packing, build plate, layer height, dithering, anti-aliasing,
+and the material's exposure and per-format settings. The material is `--material`, else
 the bundle's first material, else the app's default for a new material.
 `--layer-height`, `--build-width-mm`, `--build-depth-mm` and `--dither*` override
 the material and printer. Without `--printer`, `slice run` gets raw engine
 defaults and no metadata.
 
+Anti-aliasing is resolved by the same code as the slicing panel. Without flags
+the job gets what the panel does by default: the `balanced` auto preset and
+whatever the material's own anti-aliasing settings say.
+
+- `--aa-preset sharp|balanced|smooth|raw` picks the auto preset.
+- `--aa-settings <aa.json>` applies anti-aliasing settings on top of the
+  material's, as the panel's session override does. The file has the shape a
+  material stores them in; `enableOverride` is implied:
+
+  ```json
+  {
+    "antiAliasingSettings": { "mode": "3DAA", "level": "16x", "zBlendResinType": "custom", "selectedLutCurveId": "steep" },
+    "minimumAaAlphaPercent": 20
+  }
+  ```
+
+- `--lut-curves <curves.json>` is the curve library a custom LUT is looked up
+  in: a list of `{ "id", "name", "points": [{ "x", "y" }, …] }`, as the panel
+  keeps them.
+
+Where the app would fall back silently (a custom curve that is not in the
+library), `scene slice` stops with an error instead. `slice run` has no flags
+yet for the Z-blend alphas, the LUT or the 3DAA sampling pattern, so those still
+take the engine's defaults.
+
 It needs the generated plugin registry (`npm run generate:plugin-registry` and
 `npm run generate:builtin-simple-plugins`); the other commands do not.
 
-Not covered: anti-aliasing beyond `--aa-preset`, support and raft geometry
+Not covered: support and raft geometry
 (supports in the scene are not sliced), plugin metadata payloads such as the
 VOXL scene in `.lumen`, and thumbnails.
 

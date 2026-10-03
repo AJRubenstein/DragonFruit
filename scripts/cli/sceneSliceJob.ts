@@ -11,7 +11,9 @@
  * `scene slice`.
  */
 
-import { computePhysicalAaConfig, type AaPreset } from '../../src/features/slicing/autoAaPhysics';
+import type { AaPreset } from '../../src/features/slicing/autoAaPhysics';
+import type { SavedCurve } from '../../src/features/slicing/lutCurves';
+import type { SliceAntiAliasingOverride, SliceJobAntiAliasingRequest } from '../../src/features/slicing/sliceAntiAliasing';
 import {
   addMaterialProfile,
   addPrinterProfileFromPreset,
@@ -40,6 +42,13 @@ export interface SceneSliceJobOptions {
   buildWidthMm?: string;
   buildDepthMm?: string;
   aaPreset?: AaPreset | 'raw';
+  /**
+   * Parsed `--aa-settings` JSON: `{ antiAliasingSettings?, minimumAaAlphaPercent? }`,
+   * applied on top of the material's own like the panel's session override.
+   */
+  aaSettings?: unknown;
+  /** Parsed `--lut-curves` JSON: the curve library a custom LUT is looked up in. */
+  lutCurves?: unknown;
   dither?: string;
   ditherBitDepth?: string;
   ditherDeviceGamma?: string;
@@ -50,7 +59,8 @@ export interface SceneSliceJob {
   printer: PrinterProfile | null;
   /** The material as the profile store holds it, with `--layer-height` applied. */
   material: MaterialProfile | null;
-  aaPreset?: AaPreset | 'raw';
+  /** What the job's anti-aliasing is resolved from; null without a printer. */
+  antiAliasing: SliceJobAntiAliasingRequest | null;
   dither: { ditherEnabled?: boolean; ditherBitDepth?: number; ditherDeviceGamma?: number };
   /** Raw engine values, used only without a printer. */
   layerHeight: string;
@@ -116,6 +126,39 @@ function storedMaterial(printerId: string, raw: unknown): MaterialProfile {
   return getMaterialProfilesForPrinter(printerId).find((entry) => entry.id === defaultId)!;
 }
 
+const AA_PRESETS = ['raw', 'sharp', 'balanced', 'smooth'] as const;
+
+function parseAaOverride(raw: unknown): SliceAntiAliasingOverride {
+  if (!isObject(raw) || !('antiAliasingSettings' in raw || 'minimumAaAlphaPercent' in raw)) {
+    throw new Error(
+      '--aa-settings must be a JSON object with antiAliasingSettings and/or minimumAaAlphaPercent, '
+      + 'the shape a material stores them in',
+    );
+  }
+  if (raw.antiAliasingSettings !== undefined && !isObject(raw.antiAliasingSettings)) {
+    throw new Error('--aa-settings: antiAliasingSettings must be an object');
+  }
+  if (raw.minimumAaAlphaPercent !== undefined && typeof raw.minimumAaAlphaPercent !== 'number') {
+    throw new Error('--aa-settings: minimumAaAlphaPercent must be a number');
+  }
+  return {
+    // Passing settings is asking for them: the override is on, as when the
+    // panel opens a session override.
+    antiAliasingSettings: { ...(raw.antiAliasingSettings as Profile | undefined), enableOverride: true },
+    ...(raw.minimumAaAlphaPercent === undefined ? {} : { minimumAaAlphaPercent: raw.minimumAaAlphaPercent }),
+  };
+}
+
+function parseLutCurves(raw: unknown): SavedCurve[] {
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map((entry, index) => {
+    if (!isObject(entry) || typeof entry.id !== 'string' || !Array.isArray(entry.points)) {
+      throw new Error(`--lut-curves: entry ${index} needs an id and a points array`);
+    }
+    return entry as unknown as SavedCurve;
+  });
+}
+
 export function resolveSceneSliceJob(options: SceneSliceJobOptions): SceneSliceJob {
   const ditherFlag = options.dither; // 'on' | 'off' | undefined
   const dither = {
@@ -141,14 +184,27 @@ export function resolveSceneSliceJob(options: SceneSliceJobOptions): SceneSliceJ
     material = options.layerHeight ? { ...storedMat, layerHeightMm: Number(options.layerHeight) } : storedMat;
   }
 
-  if (options.aaPreset && options.aaPreset !== 'raw' && !printer) {
-    throw new Error('--aa-preset requires --printer (pixel pitch comes from the printer profile)');
+  if (options.aaPreset && !(AA_PRESETS as readonly string[]).includes(options.aaPreset)) {
+    throw new Error(`--aa-preset must be one of ${AA_PRESETS.join(', ')}`);
   }
+  if (!printer && (options.aaPreset || options.aaSettings !== undefined || options.lutCurves !== undefined)) {
+    throw new Error('--aa-preset, --aa-settings and --lut-curves require --printer');
+  }
+
+  // The app's choice when nothing is given: the balanced preset, and whatever
+  // the material's own anti-aliasing settings say.
+  const antiAliasing: SliceJobAntiAliasingRequest | null = printer
+    ? {
+        preset: options.aaPreset ?? 'balanced',
+        override: options.aaSettings === undefined ? null : parseAaOverride(options.aaSettings),
+        lutCurves: options.lutCurves === undefined ? [] : parseLutCurves(options.lutCurves),
+      }
+    : null;
 
   return {
     printer,
     material,
-    aaPreset: options.aaPreset,
+    antiAliasing,
     dither,
     layerHeight: options.layerHeight ?? '0.05',
     buildWidth: options.buildWidthMm ?? '218',
@@ -167,26 +223,7 @@ export type SceneSliceRun = {
   args: string[];
   /** The assembled job, when a printer was given. */
   assembled: AssembledSliceJob | null;
-  aa: ReturnType<typeof computePhysicalAaConfig> | null;
 };
-
-// Physical XY pixel pitch (mm) for the AA preset. Prefers explicit pixelSize (µm)
-// for non-square pixels; falls back to build volume ÷ resolution, as the panel does.
-// Anti-aliasing is outside the shared job assembly, so this stays here.
-function resolvePixelPitchMm(printer: PrinterProfile): { x: number; y: number } {
-  const pxX = Number(printer.pixelSize?.x);
-  const pxY = Number(printer.pixelSize?.y);
-  if (Number.isFinite(pxX) && Number.isFinite(pxY) && pxX > 0 && pxY > 0) {
-    return { x: pxX / 1000, y: pxY / 1000 }; // µm → mm
-  }
-  const resX = Number(printer.display?.resolutionX);
-  const resY = Number(printer.display?.resolutionY);
-  const buildW = Number(printer.buildVolumeMm?.width);
-  const buildD = Number(printer.buildVolumeMm?.depth);
-  const pitchX = Number.isFinite(resX) && Number.isFinite(buildW) && resX > 0 && buildW > 0 ? buildW / resX : null;
-  const pitchY = Number.isFinite(resY) && Number.isFinite(buildD) && resY > 0 && buildD > 0 ? buildD / resY : null;
-  return { x: pitchX ?? pitchY ?? 0.05, y: pitchY ?? pitchX ?? 0.05 };
-}
 
 export function buildSceneSliceRun(
   job: SceneSliceJob,
@@ -205,7 +242,6 @@ export function buildSceneSliceRun(
         '--json',
       ],
       assembled: null,
-      aa: null,
     };
   }
 
@@ -216,12 +252,11 @@ export function buildSceneSliceRun(
     materialProfile: job.material,
     scene: { ...layers, models: geometry.models },
     dither: job.dither,
+    antiAliasing: job.antiAliasing ?? undefined,
   });
-
-  let aa: ReturnType<typeof computePhysicalAaConfig> | null = null;
-  if (job.aaPreset && job.aaPreset !== 'raw') {
-    const pitch = resolvePixelPitchMm(job.printer);
-    aa = computePhysicalAaConfig(job.aaPreset, pitch.x, assembled.layerHeightMm, pitch.y);
+  const aa = assembled.antiAliasing;
+  if (aa.warnings.length > 0) {
+    throw new Error(`scene slice will not fall back silently: ${aa.warnings.join(' ')}`);
   }
 
   const args = [
@@ -238,13 +273,23 @@ export function buildSceneSliceRun(
   if (assembled.mirrorX) args.push('--mirror-x');
   if (assembled.mirrorY) args.push('--mirror-y');
   if (assembled.formatVersion) args.push('--format-version', assembled.formatVersion);
-  if (aa) {
-    args.push('--anti-aliasing', `${aa.aaSteps}x`);
-    args.push('--anti-aliasing-mode', aa.antiAliasingMode); // Coverage | Blur | Vertical2
-    args.push('--blur-brush-radius-px', String(aa.blurBrushRadiusPx));
-    args.push('--z-blur-radius-layers', String(aa.zBlurRadiusLayers));
-    args.push('--z-blend-look-back', String(aa.zBlendLookBack));
-  }
+  // Every anti-aliasing field `slice run` has a flag for. The Z-blend alphas,
+  // the LUT and the 3DAA sampling settings have none; they reach the engine
+  // once the job is handed over whole.
+  args.push(
+    '--anti-aliasing', aa.antiAliasingLevel,
+    '--anti-aliasing-mode', aa.antiAliasingMode,
+    '--blur-brush-radius-px', String(aa.blurBrushRadiusPx),
+    '--blur-brush-kernel', aa.blurBrushKernel,
+    '--blur-brush-sigma-x', String(aa.blurBrushSigmaX),
+    '--blur-brush-sigma-y', String(aa.blurBrushSigmaY),
+    '--z-blur-radius-layers', String(aa.zBlurRadiusLayers),
+    '--z-blur-kernel', aa.zBlurKernel,
+    '--z-blur-sigma', String(aa.zBlurSigma),
+    '--z-blend-look-back', String(aa.zBlendLookBack),
+    '--min-aa-alpha', String(aa.minimumAaAlphaPercent),
+  );
+  if (aa.aaOnSupports) args.push('--aa-on-supports');
   if (assembled.ditherEnabled) {
     args.push('--dither');
     args.push('--dither-bit-depth', String(assembled.ditherBitDepth));
@@ -252,5 +297,5 @@ export function buildSceneSliceRun(
   }
   args.push('--metadata-json', assembled.metadataJson);
   args.push('--json');
-  return { args, assembled, aa };
+  return { args, assembled };
 }

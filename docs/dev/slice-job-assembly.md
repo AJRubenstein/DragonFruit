@@ -2,8 +2,8 @@
 
 The slicing engine is shared, but the engine only slices what it is told to. Someone has to turn a
 printer profile, a material profile and the prepared scene into the native slice job: the raster
-grid, X-packing, build plate, layer height, dithering, format version and settings mode, plus the
-`metadata_json` that every format encoder reads its exposure and motion settings from.
+grid, X-packing, build plate, layer height, dithering, anti-aliasing, format version and settings
+mode, plus the `metadata_json` that every format encoder reads its exposure and motion settings from.
 
 That is **job assembly**, and it lives in one pure module:
 `src/features/slicing/sliceJobAssembly.ts`. The app's export (`runSliceExportOrchestrator`) and the
@@ -18,7 +18,7 @@ files with the wrong exposure or the wrong size.
 
 | Symbol | What it does |
 | --- | --- |
-| `assembleSliceJob` | The whole profile-driven half of a job: returns an `AssembledSliceJob` with the job fields and the final `metadataJson`. |
+| `assembleSliceJob` | The whole profile-driven part of a job: returns an `AssembledSliceJob` with the job fields, the anti-aliasing fields (`antiAliasing`) and the final `metadataJson`. |
 | `describeSliceJobModel` | Turns a model (anything with `id`, `name`, `polygonCount` and a position/rotation/scale transform) into the plain `SliceJobManifestModel` the metadata lists. Use it instead of passing THREE objects, which serialize their internals. |
 | `buildSliceJobManifestNodes` | The `slicer`, `printer`, `material`, `effective` and `models` nodes of a manifest. Shared by the native manifest and the JS fallback's. |
 | `resolveSliceRasterSettings` | Raster grid, X-packing (only for formats whose definition declares `bitdepth-packed-x`), mirroring and layer height. |
@@ -28,6 +28,38 @@ files with the wrong exposure or the wrong size.
 
 Dithering goes through `resolveEffectiveDitherPolicy` (in `resolveEffectiveDitherPolicy.ts`), which
 `assembleSliceJob` calls; pass the user's choice in `dither` and the panel bit depth decides the rest.
+
+Anti-aliasing goes through `resolveSliceJobAntiAliasing` (in `sliceAntiAliasing.ts`), which
+`assembleSliceJob` calls; pass the user's choice in `antiAliasing` (see below). Without it the job
+slices with anti-aliasing off.
+
+## Anti-aliasing
+
+`src/features/slicing/sliceAntiAliasing.ts` turns what the user chose into the anti-aliasing half of
+the job. It is the decision the slicing panel used to make inline, moved out unchanged.
+
+The request (`SliceJobAntiAliasingRequest`) has the panel's inputs, minus what the job already has:
+
+| Field | What it is |
+| --- | --- |
+| `preset` | The auto AA preset: `sharp`, `balanced`, `smooth` or `raw` (off). The panel's default is `balanced`. |
+| `override` | A session override: `{ antiAliasingSettings?, minimumAaAlphaPercent? }`, merged over the material's own. Its `enableOverride` decides whether the material settings or the auto preset drive the job. |
+| `lutCurves` | The user's LUT curve library; a custom resin type looks its curve up here by `selectedLutCurveId`. |
+| `autoPending` | Panel only: while true, the auto preset resolves to the placeholder the panel shows during its one-tick recompute. |
+
+`resolveSliceAntiAliasing` is the lower-level call the panel also uses for its controls: it returns
+the panel's options, a `decision` (mode, level, the auto config, the minimum alpha) and `warnings`.
+`resolveSliceJobAntiAliasing` adds the engine clamps and the support tip shrink rule, and returns the
+job fields.
+
+A warning is a choice that could not be honoured, such as a custom curve missing from the library.
+The panel slices anyway with the fallback; `scene slice` refuses.
+
+The support tip shrink is geometry, applied while the mesh is prepared, so the export orchestrator
+resolves the request once before mesh preparation and `assembleSliceJob` resolves it again; both use
+the same function and input. `aaOnSupports` is undefined without a request, and only the
+orchestrator falls back to the performance setting there, because that one is read from browser
+storage.
 
 ## Example
 
@@ -64,7 +96,7 @@ const job = assembleSliceJob({
   Lumen), the merged metadata carries the material's stored per-format values, or the plugin's
   defaults when none are stored, in place of the material profile's own exposure fields. NanoDLP has
   no such adapter and keeps the profile's values.
-- **Not here:** anti-aliasing settings, mesh transport, thumbnails and plugin metadata payloads
+- **Not here:** mesh transport, thumbnails and plugin metadata payloads
   (`attachJobMetadataPayloads`). The caller adds those.
 
 ## Tests
@@ -76,7 +108,11 @@ const job = assembleSliceJob({
 - `src/features/slicing/__tests__/sliceJobAssembly.test.ts` checks that `assembleSliceJob` alone,
   without the orchestrator, gives the same fields.
 - `src/features/slicing/__tests__/cliJobParity.test.ts` compares the `scene slice` CLI's job with the
-  app's, field by field and including the whole metadata.
+  app's, field by field and including the whole metadata, for four anti-aliasing choices. It checks
+  the anti-aliasing fields `slice run` has flags for.
+- `src/features/slicing/__tests__/sliceAntiAliasing.test.ts` pins the anti-aliasing decision for
+  every printer, auto preset and eight overrides; regenerate with `UPDATE_SLICE_AA_GOLDEN=1` and
+  review the diff of `fixtures/sliceAntiAliasing.golden.json` like code.
 
 ## Related pages
 

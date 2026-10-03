@@ -208,11 +208,20 @@ test('quirk: in auto mode the blur sigmas still come from the material', () => {
   assert.equal(options.zBlurSigma, 3);
 });
 
-test('quirk: a custom curve missing from the library falls back to the opaque LUT silently', () => {
-  const { options } = resolveSliceAntiAliasing(input({
+test('a custom curve missing from the library falls back to the opaque LUT, with a warning', () => {
+  const { options, warnings } = resolveSliceAntiAliasing(input({
     override: override({ mode: '3DAA', level: '8x', zBlendResinType: 'custom', selectedLutCurveId: 'not-here' }),
   }));
   assert.equal(lutSummary(options.zBlendCustomLut), 'default opaque');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /not-here/);
+});
+
+test('no warnings when every choice is honoured', () => {
+  assert.deepStrictEqual(resolveSliceAntiAliasing(input()).warnings, []);
+  assert.deepStrictEqual(resolveSliceAntiAliasing(input({
+    override: override({ mode: '3DAA', level: '8x', zBlendResinType: 'custom', selectedLutCurveId: 'steep' }),
+  })).warnings, []);
 });
 
 test('quirk: support tip shrink is passed through even when it will not apply', () => {
