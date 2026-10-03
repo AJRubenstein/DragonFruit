@@ -5,7 +5,7 @@ import { Trans } from '@lingui/react/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ChevronDown, CircleHelp, Cpu, Download, Edit3, ExternalLink, Layers3, Loader2, Play, Printer, Timer, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, CircleHelp, Cpu, Download, Edit3, ExternalLink, Layers3, Play, Printer, Timer, X } from 'lucide-react';
 import { MouseTooltip } from '@/components/ui/MouseTooltip';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { KNOWN_SOURCE_EXTENSION_STRIP_RE } from '@/features/plugins/pluginFileTypeExtensions';
@@ -53,7 +53,6 @@ import {
   clampBlurSigma,
   formatAaLevel,
   parseAaLevelSteps,
-  resolvePixelPitchMm,
   resolveSliceAntiAliasing,
 } from '@/features/slicing/sliceAntiAliasing';
 import { AaSupportWarningModal } from '@/components/modals/AaSupportWarningModal';
@@ -857,7 +856,6 @@ export function SlicingPanel({
   const [showAaOnSupports, setShowAaOnSupports] = useState(false);       // item 7: default closed
   const [aaQualityMode, setAaQualityMode] = useState<'auto' | 'expert'>(resolveInitialAaQualityMode);
   const [aaAutoPreset, setAaAutoPreset] = useState<AaAutoUiPreset>(resolveInitialAaAutoPreset);
-  const [isAutoAaCalculating, setIsAutoAaCalculating] = useState(false);
   const [materialAaEditorDraft, setMaterialAaEditorDraft] = useState<MaterialDraft | null>(null);
   const [isMaterialAaEditorOpen, setIsMaterialAaEditorOpen] = useState(false);
   const [sessionAaOverrideDraft, setSessionAaOverrideDraft] = useState<MaterialDraft | null>(null);
@@ -1390,26 +1388,6 @@ export function SlicingPanel({
     return formatClockFromSeconds(totalSec);
   }, [effectiveMaterialProfile, estimatedLayerCount]);
 
-  const pixelPitchMm = resolvePixelPitchMm(activePrinterProfile);
-
-  // The auto AA preset resolves synchronously in resolveSliceAntiAliasing; the
-  // panel still shows a pending state for one tick after an input changes so
-  // the Export-page transition can paint first.
-  useEffect(() => {
-    let cancelled = false;
-    setIsAutoAaCalculating(true);
-
-    const timeoutId = window.setTimeout(() => {
-      if (cancelled) return;
-      setIsAutoAaCalculating(false);
-    }, 0);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [aaAutoPreset, effectiveLayerHeightMm, pixelPitchMm.x, pixelPitchMm.y]);
-
   const sliceAntiAliasing = useMemo(() => resolveSliceAntiAliasing({
     printerProfile: activePrinterProfile,
     materialProfile: materialProfileForSlicing,
@@ -1417,12 +1395,10 @@ export function SlicingPanel({
     preset: aaAutoPreset,
     layerHeightMm: effectiveLayerHeightMm,
     lutCurves: savedCurves,
-    autoPending: isAutoAaCalculating,
   }), [
     aaAutoPreset,
     activePrinterProfile,
     effectiveLayerHeightMm,
-    isAutoAaCalculating,
     materialProfileForSlicing,
     savedCurves,
     sessionAaOverrideDraft,
@@ -1939,7 +1915,6 @@ export function SlicingPanel({
           preset: aaAutoPreset,
           override: sessionAaOverrideDraft,
           lutCurves: savedCurves,
-          autoPending: isAutoAaCalculating,
         },
         ditherEnabled: effectiveDitherEnabledForSlice,
         ditherBitDepth: effectiveDitherBitDepthForSlice,
@@ -2195,10 +2170,6 @@ export function SlicingPanel({
 
   // Auto-trigger slice when shouldAutoSlice becomes true
   useEffect(() => {
-    if (aaQualityMode === 'auto' && isAutoAaCalculating) {
-      return;
-    }
-
     if (!shouldAutoSlice) {
       if (autoSliceTimeoutRef.current !== null) {
         window.clearTimeout(autoSliceTimeoutRef.current);
@@ -2227,7 +2198,7 @@ export function SlicingPanel({
         autoSliceTimeoutRef.current = null;
       }
     };
-  }, [aaQualityMode, isAutoAaCalculating, isSlicingZip, shouldAutoSlice]);
+  }, [isSlicingZip, shouldAutoSlice]);
 
   const selectedLayerPreviewUrl = useMemo(() => {
     if (previewSelectedLayer < 1) return null;
@@ -2507,19 +2478,6 @@ export function SlicingPanel({
                           );
                         })}
                       </div>
-                      {isAutoAaCalculating && (
-                        <div
-                          className="flex items-center justify-center gap-1 rounded border px-2 py-1 text-[10px] font-medium"
-                          style={{
-                            borderColor: 'var(--border-subtle)',
-                            background: 'var(--surface-0)',
-                            color: 'var(--text-muted)',
-                          }}
-                        >
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          <span><Trans>Calculating AA profile…</Trans></span>
-                        </div>
-                      )}
                       <div className="h-1.5" />
                       <div
                         className="grid grid-cols-2 overflow-hidden rounded"
@@ -3431,8 +3389,7 @@ export function SlicingPanel({
 
           {/* Slice intent split-button */}
           {(() => {
-            const isAutoAaPending = aaQualityMode === 'auto' && isAutoAaCalculating;
-            const isDisabled = isSlicingZip || isAutoAaPending || !activePrinterProfile || !materialProfileForSlicing || models.length === 0;
+            const isDisabled = isSlicingZip || !activePrinterProfile || !materialProfileForSlicing || models.length === 0;
             type IconType = React.FC<{ className?: string }>;
             const intentOptions: { key: SliceIntent; label: string; Icon: IconType; enabled: boolean; menuOnly?: boolean }[] = [
               { key: 'file',    label: _(msg`Slice to File`),   Icon: Download as IconType, enabled: true },
@@ -3454,7 +3411,7 @@ export function SlicingPanel({
                     className={`ui-button ui-button-primary flex-1 !h-9 text-sm inline-flex items-center justify-center gap-1.5 ${hasMenuOptions && !isShiftHeld ? 'rounded-r-none' : ''} ${isSlicingZip ? 'cursor-wait opacity-70' : ''}`}
                   >
                     <CurrentIcon className="w-4 h-4 shrink-0" />
-                    {isSlicingZip ? _(msg`Slicing…`) : isAutoAaPending ? _(msg`Profiling AA…`) : current.label}
+                    {isSlicingZip ? _(msg`Slicing…`) : current.label}
                   </button>
                   {hasMenuOptions && !isShiftHeld && (
                     <button

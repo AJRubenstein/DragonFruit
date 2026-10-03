@@ -47,11 +47,6 @@ export type SliceAntiAliasingInput = {
   layerHeightMm: number | null;
   /** The user's LUT curve library, looked up by `selectedLutCurveId`. */
   lutCurves?: readonly SavedCurve[];
-  /**
-   * The panel recomputes the auto preset a tick after it changes and shows a
-   * placeholder meanwhile; while this is true the placeholder is what resolves.
-   */
-  autoPending?: boolean;
 };
 
 export type AutoAaResolvedConfig = {
@@ -117,17 +112,6 @@ const Z_BLEND_MAX_ALPHA_BY_RESIN = {
   opaque: 90,
   clear: 65,
 } as const;
-
-const DEFAULT_AUTO_Z_BLEND_LOOK_BACK = 2;
-
-const PENDING_AUTO_AA_CONFIG: AutoAaResolvedConfig = {
-  aaMode: 'Blur',
-  antiAliasingMode: 'Blur',
-  aaSteps: 4,
-  blurBrushRadiusPx: 1,
-  zBlurRadiusLayers: 0,
-  zBlendLookBack: DEFAULT_AUTO_Z_BLEND_LOOK_BACK,
-};
 
 const RAW_AUTO_AA_CONFIG: AutoAaResolvedConfig = {
   aaMode: 'Off',
@@ -268,17 +252,10 @@ export function resolveSliceAntiAliasing(input: SliceAntiAliasingInput): SliceAn
   const safeLayerH = Number.isFinite(layerHeightMm) && layerHeightMm > 0 ? layerHeightMm : 0.05;
   const pixelPitchMm = resolvePixelPitchMm(printerProfile);
 
-  let autoConfig: AutoAaResolvedConfig;
-  let autoZBlendLookBack: number;
-  if (input.autoPending) {
-    autoConfig = PENDING_AUTO_AA_CONFIG;
-    autoZBlendLookBack = DEFAULT_AUTO_Z_BLEND_LOOK_BACK;
-  } else {
-    autoConfig = input.preset === 'raw'
-      ? RAW_AUTO_AA_CONFIG
-      : computePhysicalAaConfig(input.preset, pixelPitchMm.x, safeLayerH, pixelPitchMm.y);
-    autoZBlendLookBack = computePhysicalAaConfig('balanced', pixelPitchMm.x, safeLayerH, pixelPitchMm.y).zBlendLookBack;
-  }
+  const autoConfig: AutoAaResolvedConfig = input.preset === 'raw'
+    ? RAW_AUTO_AA_CONFIG
+    : computePhysicalAaConfig(input.preset, pixelPitchMm.x, safeLayerH, pixelPitchMm.y);
+  const autoZBlendLookBack = computePhysicalAaConfig('balanced', pixelPitchMm.x, safeLayerH, pixelPitchMm.y).zBlendLookBack;
 
   const overrideEnabled = settings.enableOverride === true;
 
@@ -390,7 +367,7 @@ export function resolveSliceAntiAliasing(input: SliceAntiAliasingInput): SliceAn
  * What a caller asks for: everything `resolveSliceAntiAliasing` needs besides
  * the printer, the material and the layer height, which the job already has.
  */
-export type SliceJobAntiAliasingRequest = Pick<SliceAntiAliasingInput, 'preset' | 'override' | 'lutCurves' | 'autoPending'>;
+export type SliceJobAntiAliasingRequest = Pick<SliceAntiAliasingInput, 'preset' | 'override' | 'lutCurves'>;
 
 /** The anti-aliasing fields of the native slice job. */
 export type SliceJobAntiAliasing = {

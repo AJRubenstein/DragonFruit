@@ -224,22 +224,10 @@ test('no warnings when every choice is honoured', () => {
   })).warnings, []);
 });
 
-test('quirk: support tip shrink is passed through even when it will not apply', () => {
+test('support tip shrink is passed through; the job decides whether it applies', () => {
   const { options } = resolveSliceAntiAliasing(input({ override: override({ mode: 'Blur', supportTipShrinkPercent: 25 }) }));
   assert.equal(options.antiAliasingMode, 'Blur');
   assert.equal(options.supportTipShrinkPercent, 25);
-});
-
-test('a pending auto preset resolves to the placeholder', () => {
-  const { decision } = resolveSliceAntiAliasing(input({ preset: 'smooth', autoPending: true }));
-  assert.deepStrictEqual(decision.autoConfig, {
-    aaMode: 'Blur',
-    antiAliasingMode: 'Blur',
-    aaSteps: 4,
-    blurBrushRadiusPx: 1,
-    zBlurRadiusLayers: 0,
-    zBlendLookBack: 2,
-  });
 });
 
 test('LUT plus Blur zeroes the minimum alpha the engine is sent', () => {

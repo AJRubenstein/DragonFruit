@@ -45,7 +45,6 @@ The request (`SliceJobAntiAliasingRequest`) has the panel's inputs, minus what t
 | `preset` | The auto AA preset: `sharp`, `balanced`, `smooth` or `raw` (off). The panel's default is `balanced`. |
 | `override` | A session override: `{ antiAliasingSettings?, minimumAaAlphaPercent? }`, merged over the material's own. Its `enableOverride` decides whether the material settings or the auto preset drive the job. |
 | `lutCurves` | The user's LUT curve library; a custom resin type looks its curve up here by `selectedLutCurveId`. |
-| `autoPending` | Panel only: while true, the auto preset resolves to the placeholder the panel shows during its one-tick recompute. |
 
 `resolveSliceAntiAliasing` is the lower-level call the panel also uses for its controls: it returns
 the panel's options, a `decision` (mode, level, the auto config, the minimum alpha) and `warnings`.
