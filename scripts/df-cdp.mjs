@@ -315,14 +315,31 @@ const wall = Date.now() - t0;
 const { profile } = await send('Profiler.stop');
 
 const self = new Map();
+const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+const frameName = (n) => `${n.callFrame.functionName || '(anonymous)'} @ ${n.callFrame.url.split('/').slice(-1)[0]}:${n.callFrame.lineNumber + 1}`;
 for (const node of profile.nodes) {
-  const f = node.callFrame;
-  const name = `${f.functionName || '(anonymous)'} @ ${f.url.split('/').slice(-1)[0]}:${f.lineNumber + 1}`;
-  self.set(name, (self.get(name) ?? 0) + (node.hitCount ?? 0));
+  self.set(frameName(node), (self.get(frameName(node)) ?? 0) + (node.hitCount ?? 0));
 }
 const total = [...self.values()].reduce((a, b) => a + b, 0) || 1;
 const durationMs = (profile.endTime - profile.startTime) / 1000;
 console.log(`${label}: ${moves} ${mode}(s), ${wall} ms wall, ${durationMs.toFixed(1)} ms profiled, ${total} samples`);
+if (process.env.CDP_STACK) {
+  // Name the caller of a hot frame: the ancestry of the node with the most hits.
+  const re = new RegExp(process.env.CDP_STACK, 'i');
+  const target = profile.nodes.filter((n) => re.test(frameName(n))).sort((a, b) => (b.hitCount ?? 0) - (a.hitCount ?? 0))[0];
+  if (target) {
+    const chain = [];
+    let node = target;
+    while (node && chain.length < 12) {
+      chain.push(frameName(node));
+      node = byId.get(node.parent);
+    }
+    console.log('\nstack for ' + frameName(target) + ':');
+    for (const [depth, name] of chain.entries()) console.log(`  ${'  '.repeat(depth)}${name}`);
+  } else {
+    console.log('no frame matched', process.env.CDP_STACK);
+  }
+}
 const filter = process.env.CDP_FILTER ? new RegExp(process.env.CDP_FILTER, 'i') : null;
 const ranked = [...self.entries()].sort((a, b) => b[1] - a[1]);
 const shown = filter ? ranked.filter(([n]) => filter.test(n)) : ranked;

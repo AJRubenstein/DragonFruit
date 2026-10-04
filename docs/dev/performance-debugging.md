@@ -266,6 +266,18 @@ objects, but they are through the context: patch
 `eval` and sample for a second. That is how the 3282 draw calls behind a 53 fps
 frame were found (see `docs/dev/backlog.md`).
 
+`CDP_STACK=<regex>` prints the ancestry of the hottest frame matching it, which is
+how a 19-second stall was traced to the raft clustering rather than the supports
+that looked responsible. When a frame's *caller* is what you need and the profile
+cannot name it — a memo body, a closure — write a counter or a stack into a global
+from the code under suspicion and read it back with `eval`:
+
+```js
+const g = globalThis; (g.__calls ??= []).push(new Error().stack);
+```
+
+That is a temporary edit, and it must be reverted before committing.
+
 Input goes through CDP, so it is trusted and the app's handlers run; the profile
 covers the React commits and R3F renders that follow the gesture, not just the
 handler. Two things it taught, worth knowing before trusting a number: a gesture

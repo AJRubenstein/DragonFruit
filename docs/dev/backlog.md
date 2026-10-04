@@ -46,6 +46,43 @@ For contrast, the same measurement on a plate of 18 poussin models (3.1M
 triangles, one support profile each) is a handful of buckets and holds 165 fps —
 which is what the scene above should reach.
 
+**Fixed** by putting the dimensions in the instance matrix: the cone batch is
+keyed on the tip's shape ratio alone, the primitives are unit-sized, and the
+matrix carries the scale. three corrects instance normals for a non-uniform
+scale (`defaultnormal_vertex`, "in lieu of a per-instance normal-matrix"), so the
+frustum body shades correctly at any ratio. Measured on the same scene: **3282 ->
+291 draw calls per frame, 53 -> 163 fps**, median frame 18.2 -> 6.1 ms.
+
+## Known cost: a model selection rebuilt the raft
+
+Selecting a model took 19 seconds on that scene, and the whole of it was the
+crenellated raft's footprint clustering: 1109 roots, every pair asked whether the
+segment between them clears the model, answered against every edge of the models'
+plate footprint.
+
+Two fixes, both measured on the same scene:
+
+| | selection cost |
+| --- | --- |
+| as found | 18,861 ms (`segmentDistanceMm` 73%) |
+| edges in a grid (`buildClearanceEdgeGrid`) | 937 ms |
+| containment hoisted out of the pair loop | 685 ms |
+| clearance no longer follows the live transform | **295 ms, all React** |
+
+The last one is the interesting one. `plateClearanceTargets` substituted the
+active model's *live* transform, which made it depend on `activeModelId`; the live
+transform is also a frame behind a selection, so choosing a model rebuilt the
+array twice — once with the previous model's transform — and with it the clearance,
+every raft mesh and the clustering behind them. The clearance is where the models
+stand, not where a gizmo drags them, so it now takes the stored transforms and the
+outline display keeps its own live-transform targets.
+
+Still open: `bakedAoVersion` rides on the `models` entries, so each of the AO
+bakes that run after a load replaces the `models` array and invalidates the
+clearance and the raft with it — 17 rebuilds in the fifteen seconds after a load.
+The version is render-only state read by `StlMesh`; a store of its own would keep
+it out of the scene array.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the
