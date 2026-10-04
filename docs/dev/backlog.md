@@ -689,29 +689,41 @@ batches then rewrote every instance matrix.
 Fixed so far:
 
 - hover on the proxy batches moved to one invisible box per model
-  (`computeProxyHoverBoxes`), O(models) per move;
+  (`computeProxyHoverBoxes`), O(models) per move, and the per-model bounds it
+  reads are cached against the support state rather than re-walked on every
+  selection;
 - clicks and drag starts moved to those boxes too, so the batches carry no
   pointer handlers at all and are never raycast. A press or click in a model's
   support volume now selects that model; the marquee is unaffected, because it
   needs Shift and the model drag bails on Shift;
-- selection draws as an overlay per selected model (`computeProxyOverlayEntries`)
-  instead of re-partitioning the scene, so the base batch never changes on a
-  selection. Measured per selection: 23.6 ms to 2.1 ms at 25k primitives, 62.2 ms
-  to 1.3 ms at 100k;
+- a selection recolours the batch instances (`instanceColor`, and a colour
+  attribute on the merged curved-shaft tubes) instead of drawing one overlay per
+  selected model. Selecting all models costs one colour pass (~2 ms at 100k
+  instances) with no extra meshes and no second draw of the same geometry. The
+  colour pass is a separate layout effect from the matrices;
+- the layouts stopped minting a `Vector3`/`Quaternion` per instance per pass
+  (the cone batch ran six passes), and each curved shaft's swept tube is cached
+  by the shaft object, so a re-layout merges cached tubes instead of building
+  them again;
 - the raft proxy geometries got a bounds tree: without one their raycast is a
   per-triangle walk paid per visible raft on every pointer move (measured ~7 ms
   for 20×5k triangles, ~50 ms for 20×20k, against ~0.12 ms with a tree).
 
 Still open:
 
-1. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
+1. **A selection still re-lays-out the batches.** The active model is excluded
+   from the world layer and drawn by its own attached layer (so it can follow a
+   live transform), so making a model active rebuilds the world layer's arrays
+   and re-derives every instance matrix (~10 ms at 25k instances, ~40 ms at
+   100k). Keeping the excluded model's primitives in the arrays and hiding them
+   per instance (a zero-scale matrix written by a targeted pass, and a draw range
+   on the merged curved tubes) would make an activation change O(changed) and
+   remove the last per-selection cost.
+2. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
    module cache keyed on the whole support-store snapshot, so any store write
    (including hover and selection writes) rebuilds every proxy primitive.
-2. `sharedProxyCache`'s geometries are never disposed when the cache is
+3. `sharedProxyCache`'s geometries are never disposed when the cache is
    replaced; the raft cache leaks its per-model geometries the same way.
-3. Every overlay mount re-derives its instance matrices from the primitive
-   positions (~1 µs each). Caching the matrix per primitive object would make
-   a hover or a selection a typed-array copy instead.
 4. A model drop offset (`modelDropOffsetsById`, live during a drag or a drop
    animation) re-appends every primitive in the scene with the offset, so the
    base batch rebuilds and re-uploads all of its matrices per frame. The offset
