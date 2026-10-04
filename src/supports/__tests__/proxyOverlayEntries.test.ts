@@ -14,6 +14,7 @@ function geometryByModel(...modelIds: string[]) {
 
 function input(overrides: Partial<Parameters<typeof computeProxyOverlayEntries>[0]> = {}) {
   return {
+    selectedModelIds: new Set<string>(),
     hoverModelId: null,
     marqueeCandidateModelIds: [],
     geometryByModel: geometryByModel('model-a', 'model-b'),
@@ -49,6 +50,16 @@ describe('proxy overlay entries', () => {
     assert.equal(entries.length, 1);
     assert.equal(entries[0].key, 'hover:model-a');
     assert.equal(entries[0].opacity, 0.35, 'the hover wins over the lighter candidate tint');
+  });
+
+  it('does not tint a selected model, which already carries the active colour', () => {
+    const entries = computeProxyOverlayEntries(input({
+      selectedModelIds: new Set(['model-a']),
+      hoverModelId: 'model-a',
+      marqueeCandidateModelIds: ['model-a'],
+    }));
+
+    assert.equal(entries.length, 0, 'a selected model is not lightened by its own hover');
   });
 
   it('skips a model with no proxy geometry, and one that is not visible', () => {

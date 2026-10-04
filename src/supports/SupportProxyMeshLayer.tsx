@@ -112,6 +112,7 @@ export type ProxyOverlayEntry = {
 };
 
 export type ProxyOverlayInput = {
+  selectedModelIds: ReadonlySet<string>;
   hoverModelId: string | null;
   marqueeCandidateModelIds: readonly string[];
   geometryByModel: ReadonlyMap<string, ProxyModelGeometry>;
@@ -126,7 +127,9 @@ export type ProxyOverlayInput = {
  * model, supports and raft at once still reads apart from a hover.
  *
  * A selection is not in here: it rides on the base batch's per-instance colours,
- * so selecting all models does not mount one overlay per model.
+ * so selecting all models does not mount one overlay per model. A selected model
+ * is not tinted for hover either, because its instances already carry the active
+ * colour and an overlay would lighten them.
  */
 export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverlayEntry[] {
   const entries: ProxyOverlayEntry[] = [];
@@ -154,6 +157,7 @@ export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverl
   for (const modelId of input.marqueeCandidateModelIds) hoveredModelIds.add(modelId);
 
   for (const modelId of hoveredModelIds) {
+    if (input.selectedModelIds.has(modelId)) continue;
     const opacity = modelId === input.hoverModelId
       ? input.hoverOpacity
       : input.hoverOpacity * MARQUEE_CANDIDATE_TINT_FACTOR;
@@ -873,6 +877,7 @@ export function SupportProxyMeshLayer({
 
   const overlayEntries = React.useMemo<ProxyOverlayEntry[]>(
     () => computeProxyOverlayEntries({
+      selectedModelIds: highlightedModelIdSet,
       hoverModelId: effectiveHoverModelId,
       marqueeCandidateModelIds,
       geometryByModel: baseProxyByModel,
@@ -883,6 +888,7 @@ export function SupportProxyMeshLayer({
     [
       effectiveHoverModelId,
       marqueeCandidateModelIds,
+      highlightedModelIdSet,
       resolveModelVisible,
       baseProxyByModel,
       modelDropOffsetsById,
