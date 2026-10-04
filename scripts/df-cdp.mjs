@@ -11,6 +11,7 @@
 //   npm run profile:df -- drag <x1> <y1> <x2> <y2> [right|middle] [steps]
 //   npm run profile:df -- fps <seconds> [move] [moves]
 //   npm run profile:df -- clickdom <css selector> [index]
+//   npm run profile:df -- blockdrag <x1> <y1> <x2> <y2>   long tasks at a drag's start
 //   npm run profile:df -- dragshot <x1> <y1> <x2> <y2> [file] [steps]   screenshot mid-drag
 //   npm run profile:df -- block <xPct> <yPct>     long tasks and frame gaps after a click
 //
@@ -264,12 +265,14 @@ if (mode === 'block') {
     const g = globalThis;
     g.__lt = [];
     g.__frames = [];
+    g.__ltObserver?.disconnect();
+    g.__rafId && cancelAnimationFrame(g.__rafId);
     try {
-      new PerformanceObserver((list) => { for (const e of list.getEntries()) g.__lt.push({ start: +e.startTime.toFixed(1), ms: +e.duration.toFixed(1) }); }).observe({ entryTypes: ['longtask'] });
+      g.__ltObserver = new PerformanceObserver((list) => { for (const e of list.getEntries()) g.__lt.push({ start: +e.startTime.toFixed(1), ms: +e.duration.toFixed(1) }); });
+      g.__ltObserver.observe({ entryTypes: ['longtask'] });
     } catch {}
-    let raf = 0;
-    const tick = (t) => { g.__frames.push(t); raf = requestAnimationFrame(tick); };
-    raf = requestAnimationFrame(tick);
+    const tick = (t) => { g.__frames.push(t); g.__rafId = requestAnimationFrame(tick); };
+    g.__rafId = requestAnimationFrame(tick);
     return 'armed';
   })()`);
   const t0 = Date.now();
@@ -277,6 +280,7 @@ if (mode === 'block') {
   await frame();
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+  const { profile } = await send('Profiler.stop');
   await new Promise((r) => setTimeout(r, 1500));
   const out = await evaluate(`(() => {
     const g = globalThis;
@@ -321,6 +325,71 @@ if (mode === 'dragshot') {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px(x2), y: py(y2), button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
   await frame();
   console.log('dragged', x1, y1, '->', x2, y2, '; shot while held:', file);
+  ws.close();
+  process.exit(0);
+}
+
+if (mode === 'blockdrag') {
+  // Press a model, cross the drag threshold, then hold still while the long task
+  // observer runs: the chug a drag reports is at its start, not while it moves.
+  const [x1, y1, x2, y2] = rest.slice(0, 4).map(Number);
+  const px = (v) => rect.left + rect.width * v;
+  const py = (v) => rect.top + rect.height * v;
+  await evaluate(`(() => {
+    const g = globalThis;
+    g.__lt = []; g.__frames = [];
+    g.__ltObserver?.disconnect();
+    g.__rafId && cancelAnimationFrame(g.__rafId);
+    try { g.__ltObserver = new PerformanceObserver((l) => { for (const e of l.getEntries()) g.__lt.push({ start: +e.startTime.toFixed(1), ms: +e.duration.toFixed(1) }); }); g.__ltObserver.observe({ entryTypes: ['longtask'] }); } catch {}
+    const tick = (t) => { g.__frames.push(t); g.__rafId = requestAnimationFrame(tick); }; g.__rafId = requestAnimationFrame(tick);
+    return 'armed';
+  })()`);
+  const t0 = Date.now();
+  await send('Profiler.start');
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: px(x1), y: py(y1), buttons: 0, pointerType: 'mouse' });
+  await frame();
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: px(x1), y: py(y1), button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+  await frame();
+  for (let i = 1; i <= 6; i += 1) {
+    const t = i / 6;
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: px(x1 + (x2 - x1) * t), y: py(y1 + (y2 - y1) * t), button: 'left', buttons: 1, pointerType: 'mouse' });
+    await frame();
+  }
+  const { profile } = await send('Profiler.stop');
+  await new Promise((r) => setTimeout(r, 1500));
+  const out = await evaluate(`(() => {
+    const g = globalThis;
+    const frames = g.__frames ?? [];
+    const gaps = frames.slice(1).map((t, i) => t - frames[i]).sort((a, b) => b - a);
+    return { longTasks: g.__lt, frames: frames.length, worstGaps: gaps.slice(0, 5).map((v) => +v.toFixed(1)) };
+  })()`);
+  console.log(`${mode} ${x1},${y1} -> ${x2},${y2}: total ${Date.now() - t0} ms`);
+  console.log(JSON.stringify(out, null, 1));
+  {
+    const self = new Map();
+    const parentOf = new Map();
+    for (const node of profile.nodes) for (const child of node.children ?? []) parentOf.set(child, node.id);
+    const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+    const frameName = (n) => `${n.callFrame.functionName || '(anonymous)'} @ ${n.callFrame.url.split('/').slice(-1)[0]}:${n.callFrame.lineNumber + 1}`;
+    for (const node of profile.nodes) self.set(frameName(node), (self.get(frameName(node)) ?? 0) + (node.hitCount ?? 0));
+    const total = [...self.values()].reduce((a, b) => a + b, 0) || 1;
+    console.log(`\nprofile: ${((profile.endTime - profile.startTime) / 1000).toFixed(1)} ms, ${total} samples`);
+    for (const [name, hits] of [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 18)) {
+      console.log(`  ${((hits / total) * 100).toFixed(1).padStart(5)}%  ${hits.toString().padStart(5)}  ${name}`);
+    }
+    if (process.env.CDP_STACK) {
+      const re = new RegExp(process.env.CDP_STACK, 'i');
+      const target = profile.nodes.filter((n) => re.test(frameName(n))).sort((a, b) => (b.hitCount ?? 0) - (a.hitCount ?? 0))[0];
+      if (target) {
+        const chain = [];
+        let node = target;
+        while (node && chain.length < 12) { chain.push(frameName(node)); node = byId.get(parentOf.get(node.id)); }
+        console.log('\nstack for ' + frameName(target) + ':');
+        for (const [depth, name] of chain.entries()) console.log(`  ${'  '.repeat(depth)}${name}`);
+      }
+    }
+  }
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px(x2), y: py(y2), button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
   ws.close();
   process.exit(0);
 }

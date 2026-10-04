@@ -6010,6 +6010,7 @@ export function SceneCanvas({
         <OrthoPickRayAlignment />
         {/* GPU Picking Provider - wraps all pickable content when enabled */}
         <PickingProviderWrapper
+          dragActive={isGizmoDragging || isGizmoRetargeting}
           enabled={gpuPickingTest}
           mode={mode}
           transformMode={transformMode}
