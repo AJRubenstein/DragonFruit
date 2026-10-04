@@ -10165,7 +10165,7 @@ export default function Home() {
               resolveSelection: resolveBlockedHollowVoxelMarqueeSelection,
               onSelectionChange: handleBlockedHollowVoxelMarqueeSelection,
             }}
-            renderSceneOverlays={({ raycastActiveModelFromRay }) => {
+            renderSceneOverlays={({ raycastActiveModelFromRay, isDragging }) => {
               // Update raycast ref for island co-visibility checks
               modelRaycastRef.current = (start, end) => {
                 const dir = new THREE.Vector3().subVectors(end, start).normalize();
@@ -10180,6 +10180,7 @@ export default function Home() {
               return (
               <SceneOverlays
                 raycastActiveModelFromRay={raycastActiveModelFromRay}
+                modelDragging={isDragging}
                 scene={scene}
                 transformMgr={transformMgr}
                 ghostData={ghostData}

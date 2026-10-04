@@ -670,6 +670,8 @@ export function SceneCanvas({
   supportDragTransactionId?: number;
   renderSceneOverlays?: (context: {
     raycastActiveModelFromRay: (ray: THREE.Ray) => THREE.Intersection | null;
+    /** Whether a model is being dragged, so overlays anchored to it can stand down. */
+    isDragging: boolean;
   }) => React.ReactNode;
   customPrepareMarqueeSelection?: {
     enabled: boolean;
@@ -7326,7 +7328,14 @@ export function SceneCanvas({
                 return <Controller key={typeId} activeModelId={activeModelId} />;
               })}
 
-              {renderSceneOverlays?.({ raycastActiveModelFromRay })}
+              {renderSceneOverlays?.({
+                raycastActiveModelFromRay,
+                // The post-gesture guard is part of the gesture for this purpose:
+                // the commit that recomputes the overlays runs inside it, so
+                // standing down only while the pointer is down would flash them
+                // back at their pre-commit positions.
+                isDragging: isGizmoDragging || isPostGizmoInteractionGuardActive,
+              })}
 
             </React.Suspense>
           </SelectionProvider>
