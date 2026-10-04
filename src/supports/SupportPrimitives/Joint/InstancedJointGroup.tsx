@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
 import { writeInstanceColors } from '../instanceColorWriter';
 
 /** One scratch object per batch kind: layouts are synchronous, so they share it. */
@@ -205,7 +206,7 @@ export function InstancedJointGroup({
                 args={[undefined, undefined, validJoints.length]}
                 frustumCulled={false}
                 renderOrder={100000}
-                raycast={raycast ?? THREE.Mesh.prototype.raycast}
+                raycast={raycast ?? INSTANCED_MESH_RAYCAST}
                 onClick={onJointClick ? handleClick : undefined}
                 onPointerDown={onJointPointerDown ? handlePointerDown : undefined}
                 onPointerMove={onJointPointerMove ? handlePointerMove : undefined}

@@ -4,6 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import { quantizeToScale } from '@/utils/math';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
 import { writeInstanceColors } from '../instanceColorWriter';
 
 /**
@@ -283,7 +284,7 @@ function RootBucketMesh({
                 args={[undefined, undefined, bucket.roots.length]}
                 frustumCulled={false}
                 renderOrder={100000}
-                raycast={raycast ?? THREE.Mesh.prototype.raycast}
+                raycast={raycast ?? INSTANCED_MESH_RAYCAST}
                 onClick={onRootClick ? handleClick : undefined}
                 onPointerDown={onRootPointerDown ? handlePointerDown : undefined}
                 onPointerMove={onRootPointerMove ? handlePointerMove : undefined}

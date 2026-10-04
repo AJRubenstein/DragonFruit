@@ -6,6 +6,7 @@ import type { SupportTipProfile } from './types';
 import { getConeCenterPosition, getConeQuaternionInto } from './contactConeUtils';
 import { calculateDiskThickness, getDiskCenter, getDiskRotationInto } from '../ContactDisk/contactDiskUtils';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
 import { writeInstanceColors } from '../instanceColorWriter';
 import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
 import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
@@ -422,7 +423,7 @@ function ConeBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     {...sharedHandlers}
-                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
+                    raycast={raycast ?? INSTANCED_MESH_RAYCAST}
                 >
                     <cylinderGeometry args={[1, 1, 1, 10]} />
                     <meshStandardMaterial
@@ -453,7 +454,7 @@ function ConeBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     {...sharedHandlers}
-                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
+                    raycast={raycast ?? INSTANCED_MESH_RAYCAST}
                 >
                     <cylinderGeometry args={[1, bucket.shapeRatio, 1, 10]} />
                     <meshStandardMaterial
@@ -479,7 +480,7 @@ function ConeBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     {...sharedHandlers}
-                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
+                    raycast={raycast ?? INSTANCED_MESH_RAYCAST}
                 >
                     <sphereGeometry args={[1, 10, 8]} />
                     <meshStandardMaterial

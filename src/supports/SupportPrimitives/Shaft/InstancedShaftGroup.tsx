@@ -9,6 +9,7 @@ import {
 } from '../../Curves/batchedBezierTubeGeometry';
 import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
 import { writeInstanceColors } from '../instanceColorWriter';
 
 export interface InstancedShaft {
@@ -323,7 +324,7 @@ export function InstancedShaftGroup({
                     args={[undefined, undefined, straightShafts.length]}
                     frustumCulled={false}
                     renderOrder={100000}
-                    raycast={straightRaycast ?? THREE.Mesh.prototype.raycast}
+                    raycast={straightRaycast ?? INSTANCED_MESH_RAYCAST}
                     onClick={onShaftClick ? handleClick : undefined}
                     onPointerDown={onShaftPointerDown ? handlePointerDown : undefined}
                     onPointerMove={onShaftPointerMove ? handlePointerMove : undefined}
