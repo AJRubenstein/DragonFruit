@@ -144,38 +144,4 @@ describe('buildBatchedBezierTubes', () => {
         assertClosedSurface(result.geometry);
     });
 
-    it('writes the caller\'s colour on every vertex of a curve, caps included', () => {
-        const a = makeCurvedShaft({ id: 'seg-a' });
-        const b = makeCurvedShaft({ id: 'seg-b', start: { x: 20, y: 0, z: 0 }, controlPoint1: { x: 20, y: 5, z: 4 }, controlPoint2: { x: 24, y: 5, z: 8 }, end: { x: 24, y: 0, z: 12 } });
-        const selected = new THREE.Color('#c8752a');
-        const plain = new THREE.Color('#9a9a9a');
-
-        const result = buildBatchedBezierTubes([a, b], RADIAL_SEGMENTS, (shaft) => (shaft === a ? selected : plain))!;
-        const color = result.geometry.getAttribute('color') as THREE.BufferAttribute;
-        const position = result.geometry.getAttribute('position') as THREE.BufferAttribute;
-        assert.ok(color, 'a colour attribute is written when a colour is asked for');
-        assert.strictEqual(color.count, position.count, 'one colour per vertex, caps included');
-
-        // The second curve starts where the first one's triangles end, so its
-        // vertices carry the second colour from there on.
-        const firstCurveTriangles = result.triangleRangeEnds[0];
-        const index = result.geometry.getIndex()!;
-        const firstCurveVertices = new Set<number>();
-        for (let i = 0; i < firstCurveTriangles * 3; i += 1) firstCurveVertices.add(index.getX(i));
-
-        for (let i = 0; i < color.count; i += 1) {
-            const expected = firstCurveVertices.has(i) ? selected : plain;
-            assert.ok(
-                Math.abs(color.getX(i) - expected.r) < 1e-6
-                && Math.abs(color.getY(i) - expected.g) < 1e-6
-                && Math.abs(color.getZ(i) - expected.b) < 1e-6,
-                `vertex ${i} is not ${expected.getHexString()}`,
-            );
-        }
-    });
-
-    it('writes no colour attribute when the caller asks for none', () => {
-        const result = buildBatchedBezierTubes([makeCurvedShaft()], RADIAL_SEGMENTS)!;
-        assert.strictEqual(result.geometry.getAttribute('color'), undefined);
-    });
 });

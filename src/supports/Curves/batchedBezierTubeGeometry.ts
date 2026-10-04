@@ -50,21 +50,21 @@ export function resolveCurvedShaftIndexForFace(triangleRangeEnds: number[], face
  * detailed BezierRenderer and closed with flat end caps so the proxy-layer
  * scene graph stays serializable as a closed mesh by the STL/3MF export path.
  *
- * `colorOf` writes a colour per vertex, which is how a caller tints a subset of
- * the batch: a merged mesh has one material, so the selection cannot ride on the
- * material colour.
+ *
+ * A caller that tints some of its shafts builds one of these per colour and gives
+ * each its own material, rather than writing a colour attribute here: a merged
+ * mesh has one material, and the colour then takes the same route as an
+ * instanced shaft's.
  */
 export function buildBatchedBezierTubes(
     curvedShafts: InstancedShaft[],
     radialSegments: number,
-    colorOf?: (shaft: InstancedShaft) => THREE.Color | null,
 ): BatchedBezierTubes | null {
     if (curvedShafts.length === 0) return null;
 
     const positions: number[] = [];
     const normals: number[] = [];
     const indices: number[] = [];
-    const colors: number[] = [];
     const triangleRangeEnds: number[] = [];
 
     const addCap = (ringStartVertex: number, center: THREE.Vector3, outward: THREE.Vector3) => {
@@ -106,8 +106,6 @@ export function buildBatchedBezierTubes(
     };
 
     for (const shaft of curvedShafts) {
-        const colorVertexStart = positions.length / 3;
-
         let swept = tubeGeometryCache.get(shaft);
         if (!swept) {
             const curve = new THREE.CubicBezierCurve3(
@@ -156,22 +154,12 @@ export function buildBatchedBezierTubes(
         addCap(vertexBase, curve.getPoint(0), startOutward);
         addCap(vertexBase + tubularSegments * (radialSegments + 1), curve.getPoint(1), endOutward);
 
-        if (colorOf) {
-            const color = colorOf(shaft);
-            if (color) {
-                for (let i = colorVertexStart; i < positions.length / 3; i += 1) {
-                    colors.push(color.r, color.g, color.b);
-                }
-            }
-        }
-
         triangleRangeEnds.push(indices.length / 3);
     }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    if (colorOf) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.setIndex(indices);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();

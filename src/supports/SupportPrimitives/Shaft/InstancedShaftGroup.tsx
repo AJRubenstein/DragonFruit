@@ -63,6 +63,9 @@ interface InstancedShaftGroupProps {
 const UP = new THREE.Vector3(0, 1, 0);
 const NOOP_RAYCAST: THREE.Object3D['raycast'] = () => {};
 
+/** Grouping key for curved shafts a caller does not tint: not a colour. */
+const NO_TINT_KEY = 'no-tint';
+
 /** Layout scratch: layouts are synchronous, so the batch kinds can share it. */
 const scratchObject = new THREE.Object3D();
 const shaftStart = new THREE.Vector3();
@@ -116,16 +119,31 @@ export function InstancedShaftGroup({
         return { straightShafts: straight, curvedShafts: curved };
     }, [shafts]);
 
-    const curvedTubes = useMemo(
-        () => buildBatchedBezierTubes(curvedShafts, radialSegments, instanceColor),
-        [curvedShafts, radialSegments, instanceColor],
-    );
+    // A merged tube mesh has one material, so a caller that tints individual
+    // shafts gets one merged mesh per colour rather than vertex colours: the
+    // colour then rides on the material, the same way an instanced shaft's does,
+    // and two shafts that should look alike cannot diverge by which path drew
+    // them. The selection tints at most two colours.
+    const curvedTubeGroups = useMemo(() => {
+        const byColor = new Map<string, InstancedShaft[]>();
+        for (const shaft of curvedShafts) {
+            const color = instanceColor ? instanceColor(shaft).getHexString() : NO_TINT_KEY;
+            const bucket = byColor.get(color);
+            if (bucket) bucket.push(shaft);
+            else byColor.set(color, [shaft]);
+        }
+
+        return [...byColor.entries()].flatMap(([color, group]) => {
+            const tubes = buildBatchedBezierTubes(group, radialSegments);
+            return tubes ? [{ color, shafts: group, tubes }] : [];
+        });
+    }, [curvedShafts, radialSegments, instanceColor]);
 
     useEffect(() => {
         return () => {
-            curvedTubes?.geometry.dispose();
+            for (const group of curvedTubeGroups) group.tubes.geometry.dispose();
         };
-    }, [curvedTubes]);
+    }, [curvedTubeGroups]);
 
     const hasOverlay = !!outOfBoundsMaterial;
 
@@ -212,7 +230,7 @@ export function InstancedShaftGroup({
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }, [straightShafts, instanceColor]);
 
-    if (straightShafts.length === 0 && !curvedTubes) return null;
+    if (straightShafts.length === 0 && curvedTubeGroups.length === 0) return null;
 
     const handleClick = (event: ThreeEvent<MouseEvent>) => {
         if (!onShaftClick) return;
@@ -252,12 +270,16 @@ export function InstancedShaftGroup({
         lastHoveredShaftRef.current = null;
     };
 
-    const resolveCurvedShaft = (event: { faceIndex?: number | null }): InstancedShaft | null => {
-        if (!curvedTubes) return null;
+    const resolveCurvedShaft = (event: { faceIndex?: number | null; object?: THREE.Object3D }): InstancedShaft | null => {
         const faceIndex = event.faceIndex;
         if (faceIndex == null) return null;
-        const index = resolveCurvedShaftIndexForFace(curvedTubes.triangleRangeEnds, faceIndex);
-        return index >= 0 ? curvedShafts[index] ?? null : null;
+        // The tube meshes share one handler set, so which one was hit decides
+        // which curve list the face index belongs to.
+        const hitGeometry = event.object && 'geometry' in event.object ? event.object.geometry : null;
+        const group = curvedTubeGroups.find((candidate) => candidate.tubes.geometry === hitGeometry);
+        if (!group) return null;
+        const index = resolveCurvedShaftIndexForFace(group.tubes.triangleRangeEnds, faceIndex);
+        return index >= 0 ? group.shafts[index] ?? null : null;
     };
 
     const handleCurvedClick = (event: ThreeEvent<MouseEvent>) => {
@@ -326,9 +348,10 @@ export function InstancedShaftGroup({
                     <cylinderGeometry args={[0.5, 0.5, 1, radialSegments, 1, false]} />
                 </instancedMesh>
             )}
-            {curvedTubes && (
+            {curvedTubeGroups.map((group) => (
                 <mesh
-                    geometry={curvedTubes.geometry}
+                    key={`curved:${group.color}`}
+                    geometry={group.tubes.geometry}
                     frustumCulled={false}
                     renderOrder={100000}
                     onClick={onShaftClick ? handleCurvedClick : undefined}
@@ -337,8 +360,7 @@ export function InstancedShaftGroup({
                     onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
                 >
                     <meshStandardMaterial
-                        color={instanceColor ? '#ffffff' : color}
-                        vertexColors={Boolean(instanceColor)}
+                        color={instanceColor ? `#${group.color}` : color}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}
@@ -347,16 +369,17 @@ export function InstancedShaftGroup({
                         clippingPlanes={clippingPlanes ?? undefined}
                     />
                 </mesh>
-            )}
-            {curvedTubes && outOfBoundsMaterial && (
+            ))}
+            {curvedTubeGroups.map((group) => (outOfBoundsMaterial ? (
                 <mesh
-                    geometry={curvedTubes.geometry}
+                    key={`curved-overlay:${group.color}`}
+                    geometry={group.tubes.geometry}
                     frustumCulled={false}
                     raycast={NOOP_RAYCAST}
                     renderOrder={100000}
                     material={outOfBoundsMaterial}
                 />
-            )}
+            ) : null))}
         </>
     );
 }
