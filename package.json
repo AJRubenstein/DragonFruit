@@ -12,6 +12,7 @@
     "bench:duplicate-confirm": "node --import tsx scripts/bench-duplicate-confirm.ts",
     "bench:support-drag": "node --import tsx scripts/support-drag-perf.ts",
     "bench:voxl-tick": "node --max-old-space-size=8192 --import tsx scripts/bench-voxl-tick.ts",
+    "profile:df": "node scripts/df-cdp.mjs",
     "build": "next build",
     "build:tauri": "next build && node scripts/prepare-tauri-frontend.mjs",
     "build:thumbnail-providers": "node scripts/build-thumbnail-providers.mjs",

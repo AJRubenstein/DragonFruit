@@ -196,10 +196,31 @@ cursor. Two shapes dominate, both measured with the app's own three.js:
 `InstancedMesh.raycast` loops every instance once the mesh's whole bounding
 sphere is hit, and a support batch spans the plate, so any ray over the plate
 pays for all of it. three-mesh-bvh cannot accelerate it. A batch that must
-answer hover therefore needs a `raycast` of its own: the support batches index
-their instances into cells and test only the cells the ray crosses
+answer hover therefore needs a `raycast` of its own: the shaft batch indexes its
+instances into cells and tests only the cells the ray crosses
 (`src/supports/proxyHoverIndex.ts`). Give raycast-only merged geometries a bounds
 tree.
+
+**A grid belongs to a mesh, not to a kind of primitive.** The shafts, roots,
+joints and cones are drawn by four different components, and three of them split
+their instances into buckets by geometry parameters — hundreds of small meshes,
+some holding a single instance. Handing one whole-kind grid to those groups means
+every bucket asks the *whole* grid: measured on an 18-model plate, 448 meshes per
+pointer move, 157k segment tests and 35 ms, against 2 meshes, 727 tests and 14 ms
+with three's own raycast on the buckets. The index in a target is also the index
+inside the batch the grid was built from, which a bucket's `instanceId` is not.
+Grids go to the batch that spans the plate and is 1:1 with its instances; a small
+bucket is better off with three's own raycast.
+
+**A colour change is per model, so write it per model.** The proxy batches tint
+by writing per-instance colours, and a selection or a hover moves the colour of
+one or two models. Rewriting every instance and re-uploading the whole buffer
+made a hover that moves between models cost ~70 ms in a development build, with
+~18% of it in the colour pass — mostly `Color.toArray` inside `setColorAt`, run
+once per instance per bucket. `writeInstanceColors`
+(`src/supports/SupportPrimitives/instanceColorWriter.ts`) groups a batch by model
+once, compares the resolved colour per model, and writes only the instances of
+the models that moved.
 
 **The observer is a suspect.** In one session the Web Inspector killed the
 process, editing the worktree restarted the app under a running test, the stall
@@ -208,6 +229,42 @@ runtime. When a measurement surprises you, question the instrument before the
 code.
 
 ## External profilers
+
+### Windows: drive the app over CDP
+
+WebView2 takes `--remote-debugging-port`, so the real app — with its Tauri
+commands, its own file loading and a real GPU — can be driven and profiled from a
+script. No Playwright install: `npm run profile:df` talks CDP over Node's built-in
+`WebSocket`.
+
+```bash
+npm run dev                                              # the debug exe loads localhost:3005
+WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 \
+  src-tauri/target/debug/dragonfruit-desktop.exe path/to/scene.voxl
+```
+
+```bash
+npm run profile:df -- eval "document.title"
+npm run profile:df -- hover 0.58 0.5 40          # 40 trusted moves, profiled
+npm run profile:df -- sweep 0 0 60 '[[0.25,0.5],[0.583,0.5]]'   # between two models
+npm run profile:df -- click 0.35 0.6
+npm run profile:df -- scan 6 5                   # which screen cells hit a model
+npm run profile:df -- shot out.png 0.35 0.6      # screenshot, pointer parked there
+CDP_FILTER=raycast npm run profile:df -- hover 0.58 0.5 60
+```
+
+Input goes through CDP, so it is trusted and the app's handlers run; the profile
+covers the React commits and R3F renders that follow the gesture, not just the
+handler. Two things it taught, worth knowing before trusting a number: a gesture
+that lands on the *same* model every time never changes the hover state, so it
+measures the raycast and nothing else — `sweep` between two models to see the
+colour path; and the development build's `jsxDEV`, `measure` and React element
+churn dominate any profile that re-renders the scene, so compare two runs of the
+same build rather than reading absolute milliseconds.
+
+`scan` prints what a cell resolves to, which is how you find a point over a model
+without guessing the camera: hover a grid and read back
+`window.__dragonfruitLastImmediateModelHoverId`.
 
 ### macOS: `sample` and flame graphs
 

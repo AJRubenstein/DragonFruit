@@ -956,10 +956,19 @@ export function SupportProxyMeshLayer({
     return base;
   }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives]);
 
-  // One grid per batch kind, over the instances that batch draws. A batch's
-  // raycast asks its own grid, so a hover costs the cells the ray crosses rather
-  // than every instance in the batch. The instance index in a target is the
-  // index inside that batch, which is what the raycast reports back.
+  // A grid for the straight shafts, the one batch that draws every shaft of
+  // every model in a single mesh: it spans the plate, so three's own raycast
+  // would walk all of them (measured at ~0.11 us per instance, 13 ms at 100k)
+  // for every pointer move. The grid answers in the cells the ray crosses.
+  //
+  // It is deliberately not built for the other kinds. The joints, cones and
+  // roots are bucketed by their geometry parameters, so the group that draws
+  // them mounts hundreds of small meshes, and a grid handed to that group would
+  // be asked once per bucket - 448 full-plate queries per pointer move, measured
+  // at 157k segment tests and 35 ms, against 727 tests and 14 ms for the same
+  // move with three's own raycast. The index in a target is also the index
+  // inside the batch the grid was built from, which a bucket's `instanceId` is
+  // not. A small bucket needs no help; the shaft batch does.
   const hoverIndexes = React.useMemo(() => {
     const shaftTargets: ProxyHoverTarget[] = baseGeometry.straightShafts.map((shaft, index) => ({
       modelId: shaft.modelId,
@@ -968,48 +977,8 @@ export function SupportProxyMeshLayer({
       end: shaft.end,
       radius: Math.max(0.2, shaft.diameter / 2),
     }));
-    const rootTargets: ProxyHoverTarget[] = baseGeometry.roots.map((root, index) => ({
-      modelId: root.modelId,
-      index,
-      start: root.basePos,
-      end: {
-        x: root.basePos.x,
-        y: root.basePos.y,
-        z: root.basePos.z + root.effectiveDiskHeight + root.coneHeight,
-      },
-      radius: Math.max(0.2, root.bottomRadius),
-    }));
-    // A joint is a point; the index takes it as a segment that never moves.
-    const jointTargets: ProxyHoverTarget[] = baseGeometry.joints.map((joint, index) => ({
-      modelId: joint.modelId,
-      index,
-      start: joint.pos,
-      end: joint.pos,
-      radius: Math.max(0.2, joint.diameter / 2),
-    }));
-    // A cone's body runs from its contact point along its normal.
-    const coneTargets: ProxyHoverTarget[] = baseGeometry.cones.map((cone, index) => {
-      const normal = cone.surfaceNormal ?? cone.normal;
-      const length = Math.max(0.5, cone.profile.lengthMm ?? 0);
-      return {
-        modelId: cone.modelId,
-        index,
-        start: cone.pos,
-        end: {
-          x: cone.pos.x + normal.x * length,
-          y: cone.pos.y + normal.y * length,
-          z: cone.pos.z + normal.z * length,
-        },
-        radius: Math.max(0.2, (cone.profile.bodyDiameterMm ?? 1) / 2),
-      };
-    });
 
-    return {
-      shafts: buildProxyHoverIndex(shaftTargets),
-      roots: buildProxyHoverIndex(rootTargets),
-      joints: buildProxyHoverIndex(jointTargets),
-      cones: buildProxyHoverIndex(coneTargets),
-    };
+    return { shafts: buildProxyHoverIndex(shaftTargets) };
   }, [baseGeometry]);
 
   // A support a fraction of a pixel wide must still be grabbable, so the grab
@@ -1033,12 +1002,7 @@ export function SupportProxyMeshLayer({
     const raycastFor = (index: ProxyHoverIndex | null) =>
       index ? createProxyHoverRaycast(index, worldPerPixelAt) : undefined;
 
-    return {
-      shafts: raycastFor(hoverIndexes.shafts),
-      roots: raycastFor(hoverIndexes.roots),
-      joints: raycastFor(hoverIndexes.joints),
-      cones: raycastFor(hoverIndexes.cones),
-    };
+    return { shafts: raycastFor(hoverIndexes.shafts) };
   }, [camera, hoverIndexes, size.height]);
 
   if (visibleModelEntries.length === 0) {
@@ -1098,7 +1062,6 @@ export function SupportProxyMeshLayer({
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
-              raycast={hoverRaycasts.roots}
               onRootClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
               onRootPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
@@ -1114,7 +1077,6 @@ export function SupportProxyMeshLayer({
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
-              raycast={hoverRaycasts.joints}
               onJointClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
               onJointPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
@@ -1130,7 +1092,6 @@ export function SupportProxyMeshLayer({
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
-              raycast={hoverRaycasts.cones}
               onConeClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
               onConePointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}

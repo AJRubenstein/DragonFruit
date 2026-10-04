@@ -6,6 +6,7 @@ import type { SupportTipProfile } from './types';
 import { getConeCenterPosition, getConeQuaternionInto } from './contactConeUtils';
 import { calculateDiskThickness, getDiskCenter, getDiskRotationInto } from '../ContactDisk/contactDiskUtils';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { writeInstanceColors } from '../instanceColorWriter';
 import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 import { quantizeToScale } from '@/utils/math';
@@ -273,10 +274,7 @@ function ConeBucketMesh({
         if (!instanceColor) return;
         for (const mesh of [diskRef.current, bodyRef.current, tipSphereRef.current]) {
             if (!mesh) continue;
-            for (let i = 0; i < bucket.cones.length; i += 1) {
-                mesh.setColorAt(i, instanceColor(bucket.cones[i]));
-            }
-            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+            writeInstanceColors(mesh, bucket.cones, instanceColor);
         }
     }, [bucket, instanceColor]);
 

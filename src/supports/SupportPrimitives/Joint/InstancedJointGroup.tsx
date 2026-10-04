@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { writeInstanceColors } from '../instanceColorWriter';
 
 /** One scratch object per batch kind: layouts are synchronous, so they share it. */
 const scratchObject = new THREE.Object3D();
@@ -146,10 +147,7 @@ export function InstancedJointGroup({
     useLayoutEffect(() => {
         const mesh = meshRef.current;
         if (!mesh || !instanceColor) return;
-        for (let i = 0; i < validJoints.length; i += 1) {
-            mesh.setColorAt(i, instanceColor(validJoints[i]));
-        }
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        writeInstanceColors(mesh, validJoints, instanceColor);
     }, [validJoints, instanceColor]);
 
     if (validJoints.length === 0) return null;

@@ -4,6 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import { quantizeToScale } from '@/utils/math';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { writeInstanceColors } from '../instanceColorWriter';
 
 export interface InstancedRoot {
     id: string;
@@ -211,10 +212,7 @@ function RootBucketMesh({
         if (!instanceColor) return;
         for (const mesh of [diskRef.current, coneRef.current, sphereRef.current]) {
             if (!mesh) continue;
-            for (let i = 0; i < bucket.roots.length; i += 1) {
-                mesh.setColorAt(i, instanceColor(bucket.roots[i]));
-            }
-            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+            writeInstanceColors(mesh, bucket.roots, instanceColor);
         }
     }, [bucket, instanceColor]);
 

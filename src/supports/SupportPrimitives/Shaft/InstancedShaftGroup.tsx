@@ -8,6 +8,7 @@ import {
     resolveCurvedShaftIndexForFace,
 } from '../../Curves/batchedBezierTubeGeometry';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+import { writeInstanceColors } from '../instanceColorWriter';
 
 export interface InstancedShaft {
     id: string;
@@ -224,10 +225,7 @@ export function InstancedShaftGroup({
     useLayoutEffect(() => {
         const mesh = meshRef.current;
         if (!mesh || !instanceColor) return;
-        for (let i = 0; i < straightShafts.length; i += 1) {
-            mesh.setColorAt(i, instanceColor(straightShafts[i]));
-        }
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        writeInstanceColors(mesh, straightShafts, instanceColor);
     }, [straightShafts, instanceColor]);
 
     if (straightShafts.length === 0 && curvedTubeGroups.length === 0) return null;
