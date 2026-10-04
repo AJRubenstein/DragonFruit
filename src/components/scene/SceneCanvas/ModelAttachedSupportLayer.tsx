@@ -108,10 +108,22 @@ export function ModelAttachedSupportLayer({
   const useUltraLazySupports = mode !== 'support';
   const proxyPointerSelectionEnabled = mode === 'prepare' && !navigationLodActive && !disableSelectionAndHover && !passive;
   const proxyIncludeDetailedPrimitives = supportProxyIncludeDetailedPrimitives;
-  const settingsForSimpleRender = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
+  // Both flags answer one question, and a preset switch rewrites the whole
+  // settings object. The snapshot is the answer itself, so only a change to it
+  // re-renders this layer and the raft and support meshes under it.
+  const simpleRender = React.useSyncExternalStore(
+    subscribeToSettings,
+    () => {
+      const settings = getSettings();
+      return settings.debugSimpleSupportRender || settings.navigationDiscsOnly;
+    },
+    () => {
+      const settings = getSettings();
+      return settings.debugSimpleSupportRender || settings.navigationDiscsOnly;
+    },
+  );
   // The navigation view (the Studio's eye button) is a line view too, so the
   // raft goes with the shafts: it is the biggest solid thing on screen.
-  const simpleRender = settingsForSimpleRender.debugSimpleSupportRender || settingsForSimpleRender.navigationDiscsOnly;
   const hideRaftPrimitivesEffective = hideRaftPrimitives || simpleRender;
 
   return (

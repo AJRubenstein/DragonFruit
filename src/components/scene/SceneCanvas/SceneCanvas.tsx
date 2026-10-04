@@ -882,10 +882,14 @@ export function SceneCanvas({
     getSupportSnapshot,
     getSupportSnapshot,
   );
-  const supportSettings = React.useSyncExternalStore(
+  // The only support setting this canvas reads is the tip's contact diameter, and
+  // a preset switch rewrites the whole settings object. Subscribing to the object
+  // re-rendered this canvas - and the scene tree under it - for a field that may
+  // not have moved; the snapshot is the number, so only a change to it does.
+  const tipContactDiameterMm = React.useSyncExternalStore(
     subscribeToSettings,
-    getSettings,
-    getSettings,
+    () => getSettings().tip.contactDiameterMm,
+    () => getSettings().tip.contactDiameterMm,
   );
   const isLinux = useIsLinux();
   const sceneHoveredSupportId = useSceneHoveredSupportId();
@@ -2040,11 +2044,11 @@ export function SceneCanvas({
       if (diameter != null) return toGuideWidthMm(diameter);
     }
 
-    return toGuideWidthMm(supportSettings.tip.contactDiameterMm || DEFAULT_TIP_CONTACT_DIAMETER_MM);
+    return toGuideWidthMm(tipContactDiameterMm || DEFAULT_TIP_CONTACT_DIAMETER_MM);
   }, [
     activePlacementModes,
     placementPreviews,
-    supportSettings.tip.contactDiameterMm,
+    tipContactDiameterMm,
   ]);
 
   const branchHoverDotVisible = Boolean(

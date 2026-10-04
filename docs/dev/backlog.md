@@ -163,6 +163,38 @@ colour-in-key remount is inherent to partitioning the batches into one mesh per
 colour - the per-instance colour path the proxy groups already expose is what
 removes it.
 
+## Known cost: a preset switch re-rendered everything that reads a support setting
+
+Pressing a preset hotkey while placing a support hitched. `setSettings` rebuilds
+the whole settings object through `mergeWithDefaults`, so every consumer of
+`subscribeToSettings` re-ran, and most of them read a field the switch had not
+touched:
+
+- `SceneCanvas` read exactly one value from the settings - the tip's contact
+  diameter - but subscribed to the object, so the whole scene canvas and the tree
+  under it re-rendered for a number that usually did not move.
+- `ModelAttachedSupportLayer` read two debug flags as one question.
+- `SupportRenderer` read four debug flags, one of them nested.
+- `usePresetHotkeys` held six `useActionActive` subscriptions to find a rising
+  edge, so the keypress alone re-rendered the settings sidebar - which holds the
+  anatomy preview canvas - before the settings write re-rendered it again.
+
+**Fixed**: each of those carries a snapshot of the values it actually reads, so a
+write that leaves them alone costs no render, and the preset hook reads its rising
+edges inside a single store subscription whose snapshot never changes, so a
+keypress costs no render at all.
+
+**Measured, and left alone**: the raft anatomy preview build is **1.3 ms** over
+its five-circle pattern, so it is not the hitch. Still on this path, in order of
+size: `setActivePreset` makes three synchronous `localStorage.setItem` calls, two
+of them `JSON.stringify` - one stringifying the *entire preset collection* on a
+switch that only moved `activePresetId`; `checkPresetDrift` runs four
+`JSON.stringify` round-trips from a raw settings listener on every notify; and the
+anatomy preview's own support-geometry memo depends on the whole settings object,
+so it rebuilds twice (once from the settings render, once from the `liveConfig`
+effect that follows it). Persistence is the one to treat carefully - it is
+synchronous on purpose, and a deferred write trades durability for the frame.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the

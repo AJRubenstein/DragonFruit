@@ -556,19 +556,22 @@ function supportCollectionRefs(state: SupportState, ...extra: unknown[]): readon
 export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
     const resolvedSelection = useResolvedSelectionState();
-    const settings = useSyncExternalStore(subscribeToSettings, getSettingsSnapshot, getSettingsSnapshot);
+    // These debug flags are all this renderer reads from the support settings, and
+    // a preset switch rewrites the whole settings object. Each snapshot is the flag
+    // itself, so a preset that leaves them alone no longer re-renders the renderer
+    // and every batch group under it.
+    const discsOnly = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().navigationDiscsOnly, () => getSettingsSnapshot().navigationDiscsOnly);
+    const debugSimple = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().debugSimpleSupportRender, () => getSettingsSnapshot().debugSimpleSupportRender);
+    const debugOriginColors = useSyncExternalStore(subscribeToSettings, () => !!getSettingsSnapshot().autoSupport?.debugSupportOriginColors, () => !!getSettingsSnapshot().autoSupport?.debugSupportOriginColors);
+    const debugSectionColors = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().autoBracing.debugSectionColorsEnabled, () => getSettingsSnapshot().autoBracing.debugSectionColorsEnabled);
+    const debugVoronoiSeeds = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().autoBracing.debugVoronoiSeedsEnabled, () => getSettingsSnapshot().autoBracing.debugVoronoiSeedsEnabled);
     // The simple views size their pick tubes in screen pixels, so they need the
     // projection and the viewport the lines are drawn into.
     const camera = useThree((three) => three.camera);
     const viewport = useThree((three) => three.size);
     // The eye button's navigation view is the simple render plus cones reduced
     // to lines, so it takes every gate below and adds the cone handling.
-    const discsOnly = settings.navigationDiscsOnly;
-    const simpleRender = settings.debugSimpleSupportRender || discsOnly;
-    // Hover and marquee highlights still reveal joints and roots in the
-    // navigation view, whose static batches strip them; only the debug simple
-    // render suppresses those overlays.
-    const debugSimple = settings.debugSimpleSupportRender;
+    const simpleRender = debugSimple || discsOnly;
     const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
     // The knots kickstands host and the roots they own, derived from the
     // registry's edges rather than a kickstand-specific store.
@@ -1271,8 +1274,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             return baseHex;
         };
     }, [effectiveHoverModelId, marqueeCandidateModelIdSet, selectedModelIdSet]);
-
-    const debugOriginColors = !!settings.autoSupport?.debugSupportOriginColors;
 
     // Support id → origin lookup for the debug origin coloring.
     const originById = useMemo(() => {
@@ -2180,7 +2181,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const sceneBatchedBraceShaftGroups = useMemo(() => {
         const grouped = new Map<string, { color: string; shafts: InstancedShaft[] }>();
 
-        const sectionColorsEnabled = !!settings.autoBracing.debugSectionColorsEnabled;
+        const sectionColorsEnabled = !!debugSectionColors;
         const splitByDebugSection = sectionColorsEnabled && !dimNonSelected;
 
         for (const brace of renderBraceList) {
@@ -2209,7 +2210,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return Array.from(grouped.values());
-    }, [renderBraceList, braceShaftsBySupport, selectedBraceIds, ghostedBraceIdSet, isModelVisible, applyDropToInstancedShaft, settings.autoBracing.debugSectionColorsEnabled, dimNonSelected, resolveSceneSupportColor]);
+    }, [renderBraceList, braceShaftsBySupport, selectedBraceIds, ghostedBraceIdSet, isModelVisible, applyDropToInstancedShaft, debugSectionColors, dimNonSelected, resolveSceneSupportColor]);
 
     /** Scene-batched shaft groups per type, from that type's shaft set. */
     /** Stable empty set, so a non-batching type does not remount readers. */
@@ -3245,7 +3246,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         ghostOpacityClamped,
         suppressHover,
         isInteractable,
-        debugSectionColorsEnabled: settings.autoBracing.debugSectionColorsEnabled,
+        debugSectionColorsEnabled: debugSectionColors,
         braceShaftsBySupport,
     }), [
         state.roots,
@@ -3259,7 +3260,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         ghostOpacityClamped,
         suppressHover,
         isInteractable,
-        settings.autoBracing.debugSectionColorsEnabled,
+        debugSectionColors,
         braceShaftsBySupport,
     ]);
 
@@ -3661,7 +3662,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
               - If needed later, this block can be safely commented out or removed.
             */}
             <VoronoiSeedDebugMarkers
-                enabled={!!settings.autoBracing.debugVoronoiSeedsEnabled}
+                enabled={debugVoronoiSeeds}
                 ghostRenderOrder={ghostRenderOrder}
                 isModelVisible={isModelVisible}
                 applyDropToVec3Like={applyDropToVec3Like}
