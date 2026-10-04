@@ -89,6 +89,47 @@ type RaftProxyCacheEntry = {
 };
 
 let raftProxyCache: RaftProxyCacheEntry | null = null;
+
+/**
+ * The last clearance, and the model footprints it was built from.
+ *
+ * Module-level, and keyed on the *elements* rather than the array, because a
+ * re-render of a parent hands this component a fresh array of the same models.
+ * Keyed on the array's identity the clearance was rebuilt on every model
+ * selection, and with it every raft mesh, re-running the plate footprint's
+ * Clipper offsets - ~130 ms of blocking work on a click, measured in a
+ * production build. The elements are the models' own geometry and transform
+ * objects, so they survive a new array.
+ */
+let clearanceCache: {
+  sources: readonly { geometry: unknown; transform: unknown }[];
+  bandTop: number;
+  value: PolygonWithHoles[];
+} | null = null;
+
+function clearanceFor(
+  sources: readonly { geometry: unknown; transform: unknown }[],
+  bandTop: number,
+): PolygonWithHoles[] {
+  const cache = clearanceCache;
+  if (
+    cache
+    && cache.bandTop === bandTop
+    && cache.sources.length === sources.length
+    && cache.sources.every((source, i) => (
+      source.geometry === sources[i].geometry && source.transform === sources[i].transform
+    ))
+  ) {
+    return cache.value;
+  }
+  const value = collectModelPlateFootprint(sources as never, bandTop);
+  clearanceCache = {
+    sources: sources.map((source) => ({ geometry: source.geometry, transform: source.transform })),
+    bandTop,
+    value,
+  };
+  return value;
+}
 const EMPTY_RAFT_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const RAFT_BASE_COLOR = '#a3a3a3';
 const SOLID_BOTTOM_TINT_COLOR = '#3b82f6';
@@ -255,7 +296,7 @@ export function RaftProxyMeshLayer({
   const clearance = React.useMemo(
     () => (raft.bottomMode === 'off'
       ? []
-      : collectModelPlateFootprint(plateClearanceTargets, raftBandTopMm(raft))),
+      : clearanceFor(plateClearanceTargets, raftBandTopMm(raft))),
     [plateClearanceTargets, raft],
   );
 

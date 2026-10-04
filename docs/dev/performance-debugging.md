@@ -306,7 +306,11 @@ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222" \
 ```
 
 The separate user-data folder isolates localStorage, so nothing of theirs is
-restored into the sandbox. Check that no instance is running before launching,
+restored into the sandbox. **Delete the copy's autosave sidecar before every
+launch.** The app autosaves next to the scene it opened, so a sandbox scene copy
+grows a `<name>_autosave.voxl`; the next launch restores *that* and then loads the
+CLI argument on top, and the scene quietly doubles - 17 models became 34, twice,
+before the sidecar was noticed. Check that no instance is running before launching,
 and when shutting down kill only the PID you started — never every
 `dragonfruit-desktop.exe` on the machine. The log file is shared and cannot be
 redirected, so the sandbox's lines land in the user's log.

@@ -11,6 +11,7 @@
 //   npm run profile:df -- drag <x1> <y1> <x2> <y2> [right|middle] [steps]
 //   npm run profile:df -- fps <seconds> [move] [moves]
 //   npm run profile:df -- clickdom <css selector> [index]
+//   npm run profile:df -- block <xPct> <yPct>     long tasks and frame gaps after a click
 //
 // Start the app with the port open first:
 //
@@ -253,6 +254,41 @@ if (mode === 'clickdom') {
   process.exit(0);
 }
 
+if (mode === 'block') {
+  // What a click costs the user: the long tasks it starts and the frames it
+  // delays, measured in the page while trusted input is dispatched.
+  const x = rect.left + rect.width * Number(rest[0]);
+  const y = rect.top + rect.height * Number(rest[1]);
+  await evaluate(`(() => {
+    const g = globalThis;
+    g.__lt = [];
+    g.__frames = [];
+    try {
+      new PerformanceObserver((list) => { for (const e of list.getEntries()) g.__lt.push({ start: +e.startTime.toFixed(1), ms: +e.duration.toFixed(1) }); }).observe({ entryTypes: ['longtask'] });
+    } catch {}
+    let raf = 0;
+    const tick = (t) => { g.__frames.push(t); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return 'armed';
+  })()`);
+  const t0 = Date.now();
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, buttons: 0, pointerType: 'mouse' });
+  await frame();
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+  await new Promise((r) => setTimeout(r, 1500));
+  const out = await evaluate(`(() => {
+    const g = globalThis;
+    const frames = g.__frames ?? [];
+    const gaps = frames.slice(1).map((t, i) => t - frames[i]).sort((a, b) => b - a);
+    return { longTasks: g.__lt, frames: frames.length, worstGaps: gaps.slice(0, 5).map((g) => +g.toFixed(1)) };
+  })()`);
+  console.log(`${mode} ${rest[0]},${rest[1]}: dispatch wall ${Date.now() - t0} ms`);
+  console.log(JSON.stringify(out, null, 1));
+  ws.close();
+  process.exit(0);
+}
+
 const keyMods = { ctrl: 2, shift: 8, alt: 1 };
 const xPct = Number(rest[0]);
 const yPct = Number(rest[1]);
@@ -316,6 +352,12 @@ const { profile } = await send('Profiler.stop');
 
 const self = new Map();
 const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+// V8 profile nodes link downwards (`children`), not upwards: build the parent
+// map from those, or an ancestry walk stops at the frame it started from.
+const parentOf = new Map();
+for (const node of profile.nodes) {
+  for (const child of node.children ?? []) parentOf.set(child, node.id);
+}
 const frameName = (n) => `${n.callFrame.functionName || '(anonymous)'} @ ${n.callFrame.url.split('/').slice(-1)[0]}:${n.callFrame.lineNumber + 1}`;
 for (const node of profile.nodes) {
   self.set(frameName(node), (self.get(frameName(node)) ?? 0) + (node.hitCount ?? 0));
@@ -332,7 +374,7 @@ if (process.env.CDP_STACK) {
     let node = target;
     while (node && chain.length < 12) {
       chain.push(frameName(node));
-      node = byId.get(node.parent);
+      node = byId.get(parentOf.get(node.id));
     }
     console.log('\nstack for ' + frameName(target) + ':');
     for (const [depth, name] of chain.entries()) console.log(`  ${'  '.repeat(depth)}${name}`);

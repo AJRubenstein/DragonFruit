@@ -83,6 +83,20 @@ clearance and the raft with it — 17 rebuilds in the fifteen seconds after a lo
 The version is render-only state read by `StlMesh`; a store of its own would keep
 it out of the scene array.
 
+**And the last one, found by measuring the production build rather than the dev
+server.** The clearance is keyed on the array of visible models, and a re-render
+of a parent hands `RaftProxyMeshLayer` a *fresh array of the same models*, so
+every selection rebuilt the plate footprint — Clipper offsets over all 17 models,
+128-232 ms of blocking long tasks on a click. The dev server's element churn hid
+it behind `jsxDEV`. `clearanceFor` caches the clearance at module level, keyed on
+the *elements* (each model's own geometry and transform objects, which survive a
+new array) rather than on the array, which also covers a remount.
+
+Measured after: no long task on a selection change, worst frame 24-42 ms, and a
+steady 165 fps with a 6.2 ms worst frame. Two lessons that generalise: an identity
+key on a *container* is not the same as a key on its *contents*, and a dev-server
+profile cannot tell you what a production build will do.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the

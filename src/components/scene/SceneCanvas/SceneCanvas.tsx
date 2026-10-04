@@ -38,7 +38,7 @@ import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types';
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
-import { collectRaftBaseCirclesByModel, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
+import { collectRaftBaseCirclesByModel, raftFootprintSourceRefs, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
 import { collectSupportMarqueeShapes } from './supportMarqueeShapes';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -1560,16 +1560,60 @@ export function SceneCanvas({
 
   // One walk per state change, keyed by model, so the per-model bounds callback
   // below does not re-walk every collection for every model.
+  //
+  // Keyed on the collections the walk reads, not on the snapshot: the snapshot's
+  // identity changes on any store write, including the ones a model selection
+  // makes, and a new identity here poisoned the per-model bounds cache below -
+  // which re-ran the raft's polygon booleans for every model, ~120 ms of blocking
+  // work on a click in a production build.
   const raftBaseCirclesByModelKey = React.useMemo(
     () => collectRaftBaseCirclesByModel(supportStateForBounds, {
       fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
     }),
-    [supportStateForBounds],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections the walk reads; the helper returns exactly those, in a fixed order.
+    raftFootprintSourceRefs(supportStateForBounds),
   );
+
+  /**
+   * A model's support-and-raft extent, kept per model until the supports or the
+   * raft settings change.
+   *
+   * Nothing in it depends on a model's transform, but its callers do: the scene's
+   * per-model bounds are rebuilt whenever the active transform moves, which a
+   * selection does. Recomputing the extent then re-ran the raft's polygon
+   * booleans (Clipper) for all 17 models, measured at 215 ms of blocking long
+   * tasks on a click in a production build. Keyed on the collections, a selection
+   * finds every entry already there.
+   */
+  const supportRaftBoundsCacheRef = React.useRef<{
+    key: readonly unknown[];
+    byModel: Map<string, THREE.Box3 | null>;
+  } | null>(null);
 
   const computeSupportAndRaftWorldBounds = React.useCallback((modelId: string): THREE.Box3 | null => {
     // During active gizmo drags, keep bounds work minimal to preserve interaction FPS.
     if (isGizmoDragging || isGizmoRetargeting) return null;
+
+    const key = [
+      raftSettingsForBounds,
+      raftBaseCirclesByModelKey,
+      supportStateForBounds.knots,
+      ...SUPPORT_COLLECTION_KEYS.map((collectionKey) => supportStateForBounds[collectionKey]),
+    ];
+    let cache = supportRaftBoundsCacheRef.current;
+    if (!cache || cache.key.length !== key.length || !cache.key.every((ref, i) => ref === key[i])) {
+      cache = { key, byModel: new Map() };
+      supportRaftBoundsCacheRef.current = cache;
+    } else if (cache.byModel.has(modelId)) {
+      return cache.byModel.get(modelId) ?? null;
+    }
+
+    const computed = computeSupportAndRaftWorldBoundsUncached(modelId);
+    cache.byModel.set(modelId, computed);
+    return computed;
+  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
+
+  const computeSupportAndRaftWorldBoundsUncached = React.useCallback((modelId: string): THREE.Box3 | null => {
 
     const bounds = new THREE.Box3();
     let hasAny = false;
@@ -1728,7 +1772,7 @@ export function SceneCanvas({
     }
 
     return hasAny ? bounds : null;
-  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
+  }, [raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
 
   const computeModelWorldBounds = React.useCallback((
     model: LoadedModel,
