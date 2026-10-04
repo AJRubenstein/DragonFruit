@@ -1058,6 +1058,7 @@ export function SupportProxyMeshLayer({
           {includeDetailedPrimitives && baseGeometry.cones.length > 0 && (
             <InstancedContactConeGroup
               cones={baseGeometry.cones}
+              grabRadiusAt={grabRadiusAt}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               isHidden={isHiddenPrimitive}

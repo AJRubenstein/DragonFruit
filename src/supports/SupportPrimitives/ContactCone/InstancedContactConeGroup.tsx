@@ -7,6 +7,7 @@ import { getConeCenterPosition, getConeQuaternionInto } from './contactConeUtils
 import { calculateDiskThickness, getDiskCenter, getDiskRotationInto } from '../ContactDisk/contactDiskUtils';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { writeInstanceColors } from '../instanceColorWriter';
+import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
 import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 import { quantizeToScale } from '@/utils/math';
@@ -59,8 +60,14 @@ interface InstancedContactConeGroupProps {
      */
     isHidden?: (cone: InstancedContactCone) => boolean;
     /**
-     * Raycast override, for a caller whose batch is too large for three's
-     * per-instance walk. The hover grid answers it in O(cells crossed).
+     * Grab radius in world units at a distance along the ray. Given one, each
+     * bucket answers hover through an index of its own instances rather than
+     * three's walk over every one of them, which matters because the buckets are
+     * few and large: the batch is keyed on the tip's shape ratio alone.
+     */
+    grabRadiusAt?: (distance: number) => number;
+    /**
+     * Raycast override, for a caller that wants to answer hover itself.
      */
     raycast?: THREE.Object3D['raycast'];
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
@@ -73,11 +80,58 @@ interface ConeBucket {
     key: string;
     cones: InstancedContactCone[];
     profileType: 'disk' | 'sphere' | 'legacy';
-    contactRadius: number;
-    bodyRadius: number;
-    length: number;
-    diskThickness: number;
-    penetration: number;
+    /** How much wider the body is than the contact end. */
+    shapeRatio: number;
+}
+
+/**
+ * The one shape parameter the geometry cannot carry in an instance matrix.
+ *
+ * The primitives are unit-sized and every dimension rides the instance matrix's
+ * scale, so two cones that differ only in size share a mesh. What scale cannot
+ * express is the *ratio* between the frustum's ends: a unit frustum scaled by
+ * (r, h, r) keeps that ratio, so it is part of the geometry, and the batch is
+ * keyed on it alone.
+ *
+ * That is the whole point of the key. It used to include contactRadius,
+ * bodyRadius, length, diskThickness and penetration, each quantized to 0.001 mm,
+ * and `penetration` varies with the model surface - so on a scene of 1885 cones
+ * the batch became 842 meshes of one or two instances, and each mesh is a draw
+ * call on every frame. Keyed on the ratio, the same scene is 41.
+ */
+export function coneShapeRatio(cone: InstancedContactCone): number {
+    const contactRadius = Math.max(0.001, cone.profile.contactDiameterMm / 2);
+    const bodyRadius = Math.max(0.001, cone.profile.bodyDiameterMm / 2);
+    return bodyRadius / contactRadius;
+}
+
+/**
+ * The key one cone's mesh is grouped under: its profile type and shape ratio, and
+ * nothing else. Two cones that differ only in size share a mesh.
+ */
+export function coneBucketKey(cone: InstancedContactCone): string {
+    return `${getProfileType(cone.profile)}:${quantizeToScale(coneShapeRatio(cone), 1000)}`;
+}
+
+/**
+ * The scale that turns each unit primitive into this cone's dimensions.
+ *
+ * three corrects instance normals for a non-uniform scale (`defaultnormal_vertex`
+ * divides by the squared column lengths, in lieu of a per-instance normal
+ * matrix), so the frustum body shades correctly at any ratio. Shear is the one
+ * thing it does not support, and an axis-aligned scale never introduces it.
+ */
+export function conePrimitiveScales(
+    cone: InstancedContactCone,
+    diskThickness: number,
+    penetration: number,
+): { disk: [number, number, number]; body: [number, number, number]; tip: [number, number, number] } {
+    const contactRadius = Math.max(0.001, cone.profile.contactDiameterMm / 2);
+    return {
+        disk: [contactRadius, Math.max(0.001, diskThickness + penetration), contactRadius],
+        body: [contactRadius, Math.max(0.001, cone.profile.lengthMm), contactRadius],
+        tip: [contactRadius, contactRadius, contactRadius],
+    };
 }
 
 const getProfileType = (profile: SupportTipProfile): 'disk' | 'sphere' | 'legacy' => {
@@ -135,6 +189,7 @@ function ConeBucketMesh({
     outOfBoundsMaterial,
     instanceColor,
     isHidden,
+    grabRadiusAt,
     raycast,
     onConeClick,
     onConePointerDown,
@@ -155,6 +210,7 @@ function ConeBucketMesh({
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     instanceColor?: (cone: InstancedContactCone) => THREE.Color;
     isHidden?: (cone: InstancedContactCone) => boolean;
+    grabRadiusAt?: (distance: number) => number;
     raycast?: THREE.Object3D['raycast'];
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -180,6 +236,27 @@ function ConeBucketMesh({
             ?? getDiskThicknessForCone(cone);
     }, [diskThicknessByCone]);
 
+    const hoverRaycast = React.useMemo(() => {
+        if (!grabRadiusAt || bucket.cones.length === 0) return undefined;
+        const targets: ProxyHoverTarget[] = bucket.cones.map((cone, index) => {
+            const normal = cone.surfaceNormal ?? cone.normal;
+            const length = Math.max(0.5, cone.profile.lengthMm ?? 0);
+            return {
+                modelId: cone.modelId,
+                index,
+                start: cone.pos,
+                end: {
+                    x: cone.pos.x + normal.x * length,
+                    y: cone.pos.y + normal.y * length,
+                    z: cone.pos.z + normal.z * length,
+                },
+                radius: Math.max(0.2, (cone.profile.contactDiameterMm ?? 1) / 2),
+            };
+        });
+        const index = buildProxyHoverIndex(targets);
+        return index ? createProxyHoverRaycast(index, grabRadiusAt) : undefined;
+    }, [grabRadiusAt, bucket.cones]);
+
     const writeConeMatrices = React.useCallback((index: number, cone: InstancedContactCone, hidden: boolean) => {
         const meshes = [diskRef.current, bodyRef.current, tipSphereRef.current, overlayDiskRef.current, overlayBodyRef.current, overlayTipSphereRef.current];
         if (hidden) {
@@ -193,15 +270,18 @@ function ConeBucketMesh({
         const startY = cone.pos.y + effectiveSurfaceNormal.y * primitiveThickness;
         const startZ = cone.pos.z + effectiveSurfaceNormal.z * primitiveThickness;
 
+        const scales = conePrimitiveScales(cone, resolveDiskThickness(cone), Math.max(0, resolvePenetration(cone)));
+
         const write = (
             mesh: THREE.InstancedMesh | null,
             position: THREE.Vector3,
             quaternion: THREE.Quaternion,
+            scale: readonly [number, number, number],
         ) => {
             if (!mesh) return;
             scratchObject.position.copy(position);
             scratchObject.quaternion.copy(quaternion);
-            scratchObject.scale.set(1, 1, 1);
+            scratchObject.scale.set(scale[0], scale[1], scale[2]);
             scratchObject.updateMatrix();
             mesh.setMatrixAt(index, scratchObject.matrix);
         };
@@ -210,14 +290,14 @@ function ConeBucketMesh({
         const bodyCenter = getConeCenterPosition({ x: startX, y: startY, z: startZ }, cone.normal, cone.profile);
         conePosition.set(bodyCenter.x, bodyCenter.y, bodyCenter.z);
         getConeQuaternionInto(cone.normal, coneQuaternion);
-        write(bodyRef.current, conePosition, coneQuaternion);
-        write(overlayBodyRef.current, conePosition, coneQuaternion);
+        write(bodyRef.current, conePosition, coneQuaternion, scales.body);
+        write(overlayBodyRef.current, conePosition, coneQuaternion, scales.body);
 
         // Tip sphere: the contact point itself, unrotated.
         conePosition.set(startX, startY, startZ);
         coneQuaternion.identity();
-        write(tipSphereRef.current, conePosition, coneQuaternion);
-        write(overlayTipSphereRef.current, conePosition, coneQuaternion);
+        write(tipSphereRef.current, conePosition, coneQuaternion, scales.tip);
+        write(overlayTipSphereRef.current, conePosition, coneQuaternion, scales.tip);
 
         // Disk: its own centre, pulled back by half the penetration.
         const diskThickness = resolveDiskThickness(cone);
@@ -229,8 +309,8 @@ function ConeBucketMesh({
             diskCenter.z - effectiveSurfaceNormal.z * (penetration / 2),
         );
         getDiskRotationInto(effectiveSurfaceNormal, coneQuaternion);
-        write(diskRef.current, conePosition, coneQuaternion);
-        write(overlayDiskRef.current, conePosition, coneQuaternion);
+        write(diskRef.current, conePosition, coneQuaternion, scales.disk);
+        write(overlayDiskRef.current, conePosition, coneQuaternion, scales.disk);
     }, [bucket.profileType, resolveDiskThickness, resolvePenetration]);
 
     useLayoutEffect(() => {
@@ -339,7 +419,7 @@ function ConeBucketMesh({
                     {...sharedHandlers}
                     raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 >
-                    <cylinderGeometry args={[bucket.contactRadius, bucket.contactRadius, bucket.diskThickness + bucket.penetration, 10]} />
+                    <cylinderGeometry args={[1, 1, 1, 10]} />
                     <meshStandardMaterial
                         color={instanceColor ? '#ffffff' : (discColor ?? color)}
                         emissive={emissive}
@@ -370,7 +450,7 @@ function ConeBucketMesh({
                     {...sharedHandlers}
                     raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 >
-                    <cylinderGeometry args={[bucket.contactRadius, bucket.bodyRadius, bucket.length, 10]} />
+                    <cylinderGeometry args={[1, bucket.shapeRatio, 1, 10]} />
                     <meshStandardMaterial
                         color={instanceColor ? '#ffffff' : color}
                         emissive={emissive}
@@ -396,7 +476,7 @@ function ConeBucketMesh({
                     {...sharedHandlers}
                     raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 >
-                    <sphereGeometry args={[bucket.contactRadius, 10, 8]} />
+                    <sphereGeometry args={[1, 10, 8]} />
                     <meshStandardMaterial
                         color={instanceColor ? '#ffffff' : (discColor ?? color)}
                         emissive={emissive}
@@ -420,7 +500,7 @@ function ConeBucketMesh({
                             renderOrder={100000}
                             material={outOfBoundsMaterial}
                         >
-                            <cylinderGeometry args={[bucket.contactRadius, bucket.bodyRadius, bucket.length, 10]} />
+                            <cylinderGeometry args={[1, bucket.shapeRatio, 1, 10]} />
                         </instancedMesh>
                     )}
                     {(!discsOnly || bucket.profileType !== 'disk') && (
@@ -432,7 +512,7 @@ function ConeBucketMesh({
                             renderOrder={100000}
                             material={outOfBoundsMaterial}
                         >
-                            <sphereGeometry args={[bucket.contactRadius, 10, 8]} />
+                            <sphereGeometry args={[1, 10, 8]} />
                         </instancedMesh>
                     )}
                     {bucket.profileType === 'disk' && (
@@ -444,7 +524,7 @@ function ConeBucketMesh({
                             renderOrder={100000}
                             material={outOfBoundsMaterial}
                         >
-                            <cylinderGeometry args={[bucket.contactRadius, bucket.contactRadius, bucket.diskThickness + bucket.penetration, 10]} />
+                            <cylinderGeometry args={[1, 1, 1, 10]} />
                         </instancedMesh>
                     )}
                 </>
@@ -466,6 +546,7 @@ export function InstancedContactConeGroup({
     outOfBoundsMaterial = null,
     instanceColor,
     isHidden,
+    grabRadiusAt,
     raycast,
     onConeClick,
     onConePointerDown,
@@ -514,22 +595,7 @@ export function InstancedContactConeGroup({
 
         for (const cone of validCones) {
             const profileType = getProfileType(cone.profile);
-            const diskThickness = profileType === 'disk'
-                ? (diskThicknessByCone.get(cone) ?? getDiskThicknessForCone(cone))
-                : 0;
-            const contactRadius = Math.max(0.001, cone.profile.contactDiameterMm / 2);
-            const bodyRadius = Math.max(0.001, cone.profile.bodyDiameterMm / 2);
-            const length = Math.max(0.001, cone.profile.lengthMm);
-            const penetration = Math.max(0, resolvePenetration(cone));
-
-            const key = [
-                profileType,
-                quantizeToScale(contactRadius, 1000),
-                quantizeToScale(bodyRadius, 1000),
-                quantizeToScale(length, 1000),
-                quantizeToScale(diskThickness, 1000),
-                quantizeToScale(penetration, 1000),
-            ].join(':');
+            const key = coneBucketKey(cone);
 
             const existing = grouped.get(key);
             if (existing) {
@@ -541,16 +607,12 @@ export function InstancedContactConeGroup({
                 key,
                 cones: [cone],
                 profileType,
-                contactRadius,
-                bodyRadius,
-                length,
-                diskThickness,
-                penetration,
+                shapeRatio: coneShapeRatio(cone),
             });
         }
 
         return Array.from(grouped.values());
-    }, [validCones, diskThicknessByCone, resolvePenetration]);
+    }, [validCones]);
 
     if (validCones.length === 0) return null;
 
@@ -572,6 +634,7 @@ export function InstancedContactConeGroup({
                     outOfBoundsMaterial={outOfBoundsMaterial}
                     instanceColor={instanceColor}
                     isHidden={isHidden}
+                    grabRadiusAt={grabRadiusAt}
                     raycast={raycast}
                     onConeClick={onConeClick}
                     onConePointerDown={onConePointerDown}
