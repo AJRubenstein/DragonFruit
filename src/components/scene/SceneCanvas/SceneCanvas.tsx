@@ -44,6 +44,7 @@ import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { getModelIdForSupportEntityId } from '@/supports/state';
 import FootprintBorderRenderer from '@/supports/Rafts/Crenelated/rendering/FootprintBorderRenderer';
+import type { PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
 import SliceSatBoundingMeshRenderer from '@/supports/Rafts/Crenelated/rendering/SliceSatBoundingMeshRenderer';
 import { getRaftSettings, subscribeToRaftStore } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
@@ -3845,6 +3846,21 @@ export function SceneCanvas({
     transform,
   ]);
 
+  /**
+   * Models every raft has to clear: a model standing on the plate would
+   * otherwise have the raft's base run through it. Built here because the
+   * active model's live transform lives here (its entry in `models` is stale
+   * while a gizmo drag is in flight).
+   */
+  const plateClearanceTargets = React.useMemo<PlateFootprintSource[]>(() => (
+    models
+      .filter((model) => model.visible)
+      .map((model) => ({
+        geometry: model.geometry,
+        transform: (model.id === activeModelId && transform) ? transform : model.transform,
+      }))
+  ), [activeModelId, models, transform]);
+
   const crossSectionStencilSourceVersion = React.useMemo(() => ({
     supportRenderRefreshNonce,
     supportDragTransactionId,
@@ -6123,6 +6139,7 @@ export function SceneCanvas({
                           renderOrder={100000}
                         >
                           <ModelAttachedSupportLayer
+                            plateClearanceTargets={plateClearanceTargets}
                             mode={mode}
                             modelFilterId={model.id}
                             hideRaftPrimitives={hideRaftPrimitives}
@@ -6199,6 +6216,7 @@ export function SceneCanvas({
                       raycast={() => null}
                     >
                       <ModelAttachedSupportLayer
+                        plateClearanceTargets={plateClearanceTargets}
                         mode={mode}
                         navigationLodActive
                         hideRaftPrimitives={hideRaftPrimitives}
@@ -6282,6 +6300,7 @@ export function SceneCanvas({
                       raycast={() => null}
                     >
                       <ModelAttachedSupportLayer
+                        plateClearanceTargets={plateClearanceTargets}
                         mode={mode}
                         navigationLodActive
                         hideRaftPrimitives={hideRaftPrimitives}
@@ -6319,6 +6338,7 @@ export function SceneCanvas({
                       raycast={() => null}
                     >
                       <ModelAttachedSupportLayer
+                        plateClearanceTargets={plateClearanceTargets}
                         mode={mode}
                         navigationLodActive
                         hideRaftPrimitives={hideRaftPrimitives}
@@ -6434,6 +6454,7 @@ export function SceneCanvas({
               <group ref={supportDragGroupRef ?? undefined} renderOrder={100000}>
               {!useActiveModelAttachedSupportProxy && (
                 <ModelAttachedSupportLayer
+                  plateClearanceTargets={plateClearanceTargets}
                   mode={mode}
                   excludeModelId={duplicateSourceSupportPreviewModelId}
                   excludeModelIds={supportBaseExcludeModelIds}
@@ -6556,6 +6577,7 @@ export function SceneCanvas({
               {useActiveModelAttachedSupportProxy && activeModelId && (
                 <group renderOrder={100000}>
                 <ModelAttachedSupportLayer
+                  plateClearanceTargets={plateClearanceTargets}
                   mode={mode}
                   excludeModelId={activeModelId}
                   excludeModelIds={supportProxyExcludeModelIds}
@@ -6600,6 +6622,7 @@ export function SceneCanvas({
                       raycast={() => null}
                     >
                       <ModelAttachedSupportLayer
+                        plateClearanceTargets={plateClearanceTargets}
                         mode={mode}
                         navigationLodActive={navigationLodActive}
                         hideRaftPrimitives={hideRaftPrimitives}

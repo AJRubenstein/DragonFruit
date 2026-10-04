@@ -361,6 +361,10 @@ function applyJointSplitKnotRemaps(remaps: KnotSplitRemap[]) {
 }
 import { getRaftSettings, getRaftSettingsForModel, subscribeToRaftStore } from '@/supports/Rafts/Crenelated/RaftState';
 import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
+import { computeRaftFootprintPolygons, raftBandTopMm } from '@/supports/Rafts/Crenelated/geometry/computeRaftFootprint';
+import { collectModelPlateFootprint } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
+import { isUntrimmedFootprint } from '@/supports/Rafts/Crenelated/geometry/generateRaftFromFootprint';
+import { polygonSetAreaMm2 } from '@/supports/Rafts/Crenelated/geometry/polygonSet2d';
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone/contactConeUtils';
@@ -3096,30 +3100,42 @@ export default function Home() {
         });
       }
 
+      // The raft is trimmed where a model stands on the plate, so the estimate
+      // measures the same footprint the viewport and the slicer build.
+      const clearance = collectModelPlateFootprint(
+        scene.models.filter((model) => model.visible),
+        raftBandTopMm(raftSettingsSnapshot),
+      );
+
       for (const circles of rootsByModel.values()) {
         if (circles.length === 0) continue;
 
         const thickness = raftSettingsSnapshot.bottomMode === 'line' ? raftSettingsSnapshot.lineHeightMm : raftSettingsSnapshot.thickness;
-        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettingsSnapshot.chamferAngle))));
-        const wallInset = raftSettingsSnapshot.wallEnabled ? Math.max(0, raftSettingsSnapshot.wallThickness) : 0;
-        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
-        const baseProfile = computeFootprint(circles, {
-          marginMm: dynamicMargin,
-          samplesPerCircle: 24,
+        const footprint = computeRaftFootprintPolygons({
+          circles,
+          raft: raftSettingsSnapshot,
+          clearance,
         });
+        if (footprint.length === 0) continue;
 
-        if (!baseProfile || baseProfile.length < 3) continue;
+        const untrimmed = isUntrimmedFootprint(footprint);
+        const baseProfile = untrimmed ? footprint[0].outer : [];
+        const areaMm2 = untrimmed ? polygonAreaMm2(baseProfile) : polygonSetAreaMm2(footprint);
+        const perimeterMm = untrimmed
+          ? polygonPerimeterMm(baseProfile)
+          : footprint.reduce((total, poly) => total + polygonPerimeterMm(poly.outer), 0);
 
-        const areaMm2 = polygonAreaMm2(baseProfile);
         const baseMm3 = raftSettingsSnapshot.bottomMode === 'line'
-          ? (polygonPerimeterMm(baseProfile) * Math.max(0, raftSettingsSnapshot.lineWidthMm) * Math.max(0, raftSettingsSnapshot.lineHeightMm))
+          ? (perimeterMm * Math.max(0, raftSettingsSnapshot.lineWidthMm) * Math.max(0, raftSettingsSnapshot.lineHeightMm))
           : (areaMm2 * Math.max(0, raftSettingsSnapshot.thickness));
 
         let wallMm3 = 0;
         if (raftSettingsSnapshot.wallEnabled && raftSettingsSnapshot.wallHeight > 0 && raftSettingsSnapshot.wallThickness > 0) {
-          const outerProfile = computeRaftOuterBoundary(baseProfile, raftSettingsSnapshot);
-          const wallPerimeterMm = polygonPerimeterMm(outerProfile.length >= 3 ? outerProfile : baseProfile);
+          const outerProfile = untrimmed ? computeRaftOuterBoundary(baseProfile, raftSettingsSnapshot) : [];
+          const wallPerimeterMm = untrimmed && outerProfile.length >= 3
+            ? polygonPerimeterMm(outerProfile)
+            : perimeterMm;
           wallMm3 = wallPerimeterMm * Math.max(0, raftSettingsSnapshot.wallThickness) * Math.max(0, raftSettingsSnapshot.wallHeight);
         }
 
@@ -3131,8 +3147,9 @@ export default function Home() {
   }, [
     resinInBoundsModelIdSet,
     shouldCalculateSupportAndRaftVolumes,
-    computeFootprint,
+    computeRaftFootprintPolygons,
     computeRaftOuterBoundary,
+    isUntrimmedFootprint,
     raftSettingsSnapshot,
     scene.models,
     supportStateSnapshot,

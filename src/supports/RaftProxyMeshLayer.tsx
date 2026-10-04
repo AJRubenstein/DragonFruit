@@ -17,6 +17,9 @@ import {
   sameRaftFootprintSource,
   toRaftModelKey,
 } from './Rafts/Crenelated/raftFootprintCircles';
+import { collectModelPlateFootprint, type PlateFootprintSource } from './Rafts/Crenelated/geometry/modelPlateFootprint';
+import { raftBandTopMm } from './Rafts/Crenelated/geometry/computeRaftFootprint';
+import type { PolygonWithHoles } from './Rafts/Crenelated/geometry/polygonSet2d';
 
 interface RaftProxyMeshLayerProps {
   clipLower?: number | null;
@@ -40,7 +43,11 @@ interface RaftProxyMeshLayerProps {
   hoverized?: boolean;
   navigationLodActive?: boolean;
   passive?: boolean;
+  /** Models whose plate footprint the raft has to clear. */
+  plateClearanceTargets?: readonly PlateFootprintSource[];
 }
+
+const EMPTY_PLATE_CLEARANCE_TARGETS: readonly PlateFootprintSource[] = Object.freeze([]);
 
 type CachedRaftGeometry = {
   kind: 'solid' | 'line';
@@ -62,6 +69,8 @@ type RaftProxyCacheEntry = {
   /** The collections the footprint read, so the cache invalidates on exactly those. */
   footprintSourceRefs: readonly unknown[];
   raftSignature: string;
+  /** The model clearance the meshes were cut with, by identity. */
+  clearance: readonly PolygonWithHoles[];
   geometriesByModel: Map<string, CachedRaftGeometry>;
 };
 
@@ -195,6 +204,7 @@ export function RaftProxyMeshLayer({
   hoverized = false,
   navigationLodActive = false,
   passive = false,
+  plateClearanceTargets = EMPTY_PLATE_CLEARANCE_TARGETS,
 }: RaftProxyMeshLayerProps) {
   const { hit } = usePicking();
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -228,12 +238,19 @@ export function RaftProxyMeshLayer({
 
   const hasSelectedModels = selectedModelIdSet.size > 0;
   const raftSignature = React.useMemo(() => buildRaftSignature(raft), [raft]);
+  const clearance = React.useMemo(
+    () => (raft.bottomMode === 'off'
+      ? []
+      : collectModelPlateFootprint(plateClearanceTargets, raftBandTopMm(raft))),
+    [plateClearanceTargets, raft],
+  );
 
   const geometriesByModel = React.useMemo(() => {
     if (
       raftProxyCache
       && sameRaftFootprintSource(raftProxyCache.footprintSourceRefs, footprintSourceRefs)
       && raftProxyCache.raftSignature === raftSignature
+      && raftProxyCache.clearance === clearance
     ) {
       return raftProxyCache.geometriesByModel;
     }
@@ -250,6 +267,7 @@ export function RaftProxyMeshLayer({
           raftSettings: raft,
           baseColor: RAFT_BASE_COLOR,
           wallColor: RAFT_BASE_COLOR,
+          clearance,
         });
         if (!solid) continue;
 
@@ -271,6 +289,7 @@ export function RaftProxyMeshLayer({
           raftSettings: raft,
           beamColor: RAFT_BASE_COLOR,
           wallColor: RAFT_BASE_COLOR,
+          clearance,
         });
         if (!line) continue;
 
@@ -300,11 +319,12 @@ export function RaftProxyMeshLayer({
     raftProxyCache = {
       footprintSourceRefs,
       raftSignature,
+      clearance,
       geometriesByModel: next,
     };
 
     return next;
-  }, [raft, raftSignature, supportState, footprintSourceRefs]);
+  }, [clearance, raft, raftSignature, supportState, footprintSourceRefs]);
 
   const visibleEntries = React.useMemo<VisibleRaftEntry[]>(() => {
     const entries: VisibleRaftEntry[] = [];

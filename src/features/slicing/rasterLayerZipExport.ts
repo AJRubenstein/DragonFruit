@@ -10,11 +10,10 @@ import {
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import { getRaftSettings } from '@/supports/Rafts/Crenelated/RaftState';
-import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFootprint';
-import { generateChamferedBase } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBase';
-import { generatePerimeterWall } from '@/supports/Rafts/Crenelated/geometry/generatePerimeterWall';
-import { generateCrenelatedWallManual } from '@/supports/Rafts/Crenelated/geometry/generateCrenelatedWallManual';
-import { generateUnionedLineRaftMesh } from '@/supports/Rafts/Crenelated/geometry/generateUnionedLineRaftMesh';
+import { buildRaftFootprintMeshes } from '@/supports/Rafts/Crenelated/geometry/generateRaftFromFootprint';
+import { collectModelPlateFootprint, type PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
+import { inflateModelPlateClearance, raftBandTopMm } from '@/supports/Rafts/Crenelated/geometry/computeRaftFootprint';
+import { filterLineRaftEdges, generateUnionedLineRaftMesh } from '@/supports/Rafts/Crenelated/geometry/generateUnionedLineRaftMesh';
 import { generateChamferedBeam } from '@/supports/Rafts/Crenelated/geometry/generateChamferedBeam';
 import { buildLineRaftEdgePairs } from '@/supports/Rafts/Crenelated/geometry/buildLineRaftEdgePairs';
 import type { ContactDisk, Segment, SupportState, Vec3 } from '@/supports/types';
@@ -22,18 +21,17 @@ import { getFinalSocketPosition } from '@/supports/SupportPrimitives/ContactCone
 import { calculateDiskThickness, getDiskCenter, getDiskRotation } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { getBezierPointAtT } from '@/supports/Curves/BezierUtils';
 import { resolveSegmentEndpoints, type ShaftEntity } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
-import { resolveSlicingFormatDefinition } from '@/features/slicing/formats/registry';
+import {
+  buildSliceJobManifestNodes,
+  describeSliceJobModel,
+  resolveSliceLayerCount,
+  resolveSliceRasterSettings,
+  type SliceJobManifestModel,
+  type SliceRasterSettings,
+} from '@/features/slicing/sliceJobAssembly';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
 
-// The app, not the engine: format encoders stamp this as the slicer that made the
-// file. Left out when unknown (e.g. under tests) so no encoder writes a guess.
-const SLICER_IDENTITY = {
-  name: 'DragonFruit',
-  version: process.env.NEXT_PUBLIC_APP_VERSION || undefined,
-};
-
-const MAX_CANVAS_PIXELS = 24_000_000;
 const DEFAULT_MESH_CHUNK_TARGET_BYTES = 64 * 1024 * 1024;
 const MIN_MESH_CHUNK_TARGET_BYTES = 16 * 1024 * 1024;
 const MAX_MESH_CHUNK_TARGET_BYTES = 256 * 1024 * 1024;
@@ -108,7 +106,7 @@ type RasterizedLayerEntry = {
 };
 
 type RasterizationResult = {
-  settings: EffectiveSettings;
+  settings: SliceRasterSettings;
   totalLayers: number;
   tallestObjectHeightMm: number;
   visibleModels: LoadedModel[];
@@ -150,7 +148,8 @@ export type SolidSliceMeshForWasm = {
     maxY: number;
     maxZ: number;
   };
-  metadataJson: string;
+  /** The sliced models as the job metadata names them. */
+  models: SliceJobManifestModel[];
 };
 
 type RasterTriangle = {
@@ -197,95 +196,6 @@ type SliceSegment2D = {
   yMax: number;
   wind: number;
 };
-
-type EffectiveSettings = {
-  widthPx: number;
-  heightPx: number;
-  sourceResolutionX: number;
-  sourceResolutionY: number;
-  xPackingMode: 'none' | 'rgb8_div3' | 'gray3_div2';
-  mirrorX: boolean;
-  mirrorY: boolean;
-  layerHeightMm: number;
-  totalLayers: number;
-  tallestObjectHeightMm: number;
-};
-
-function resolvePluginPackedWidth(printerProfile: PrinterProfile): {
-  widthPx: number;
-  sourceResolutionX: number;
-  sourceResolutionY: number;
-  xPackingMode: 'none' | 'rgb8_div3' | 'gray3_div2';
-} {
-  const sourceResolutionX = Math.max(1, Math.round(printerProfile.display.resolutionX));
-  const sourceResolutionY = Math.max(1, Math.round(printerProfile.display.resolutionY));
-
-  const explicitBitDepth = Number(printerProfile.bitDepth?.bits);
-  let bitDepth = Number.isFinite(explicitBitDepth) && explicitBitDepth > 0
-    ? Math.round(explicitBitDepth)
-    : 0;
-
-  if (bitDepth <= 0) {
-    const fingerprint = [
-      printerProfile.name,
-      printerProfile.manufacturer,
-      printerProfile.officialPresetId,
-      printerProfile.id,
-    ]
-      .filter((value): value is string => typeof value === 'string' && value.length > 0)
-      .join(' ')
-      .toLowerCase();
-
-    if (/\b3\s*[-_ ]?bit\b|\b3b\b|16k3b|gray3/.test(fingerprint)) {
-      bitDepth = 3;
-    } else if (/\b8\s*[-_ ]?bit\b|\b8b\b|rgb8/.test(fingerprint)) {
-      bitDepth = 8;
-    } else {
-      const divisibleBy2 = sourceResolutionX % 2 === 0;
-      const divisibleBy3 = sourceResolutionX % 3 === 0;
-
-      if (divisibleBy2 && !divisibleBy3) {
-        bitDepth = 3;
-      } else if (divisibleBy3 && !divisibleBy2) {
-        bitDepth = 8;
-      } else if (divisibleBy2 && divisibleBy3) {
-        // Ambiguous resolution: prefer Mono/3-bit path for Athena-class NanoDLP printers.
-        bitDepth = /rgb|color/.test(fingerprint) ? 8 : 3;
-      } else {
-        // Failsafe: NanoDLP path should remain packed; default to 3-bit packing.
-        bitDepth = 3;
-      }
-    }
-  }
-
-  if (bitDepth === 8) {
-    // NanoDLP RGB 8-bit path packs 3 subpixels into 1 RGB output pixel on X.
-    return {
-      widthPx: Math.max(1, Math.floor(sourceResolutionX / 3)),
-      sourceResolutionX,
-      sourceResolutionY,
-      xPackingMode: 'rgb8_div3',
-    };
-  }
-
-  if (bitDepth === 3) {
-    // NanoDLP 3-bit path packs 2 source subpixels into 1 grayscale output pixel on X.
-    return {
-      widthPx: Math.max(1, Math.floor(sourceResolutionX / 2)),
-      sourceResolutionX,
-      sourceResolutionY,
-      xPackingMode: 'gray3_div2',
-    };
-  }
-
-  // Unknown/unsupported bit-depth values still default to 3-bit packed path for NanoDLP.
-  return {
-    widthPx: Math.max(1, Math.floor(sourceResolutionX / 2)),
-    sourceResolutionX,
-    sourceResolutionY,
-    xPackingMode: 'gray3_div2',
-  };
-}
 
 function clampLayerIndex(index: number, totalLayers: number): number {
   if (index < 0) return 0;
@@ -858,12 +768,13 @@ function appendContactDiskPrimitive(
   sphereGeom.dispose();
 }
 
-
 /** Exported for `local-only/slice-goldens/`; not part of the public surface. */
 export function buildSupportAndRaftWorldTriangles(
   visibleModelIds: Set<string>,
   collector?: TriangleFloatCollector,
   supportTipShrinkPercent = 0,
+  /** Visible models, whose plate footprint the raft has to clear. */
+  plateClearanceModels: readonly PlateFootprintSource[] = [],
 ): WorldTriangle[] {
   if (visibleModelIds.size === 0) return [];
 
@@ -1076,7 +987,6 @@ export function buildSupportAndRaftWorldTriangles(
     }
   }
 
-
   // raftSettings already resolved at top of function; reuse it.
   const raft = raftSettings;
   if (raft.bottomMode !== 'off') {
@@ -1092,48 +1002,25 @@ export function buildSupportAndRaftWorldTriangles(
       rootsByModel.set(modelKey, arr);
     }
 
+    // A model standing on the plate keeps the sliced raft out of itself, exactly
+    // as the viewport does — preview and print must not disagree.
+    const clearance = collectModelPlateFootprint(
+      plateClearanceModels,
+      raftBandTopMm(raft),
+    );
+    const clearanceCut = inflateModelPlateClearance(clearance);
+
     for (const circles of rootsByModel.values()) {
       if (circles.length === 0) continue;
-      const clampedChamfer = Math.min(90, Math.max(45, raft.chamferAngle));
-      const thickness = raft.bottomMode === 'line' ? raft.lineHeightMm : raft.thickness;
-      const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - clampedChamfer));
-      const wallInset = raft.wallEnabled ? Math.max(0, raft.wallThickness) : 0;
-      const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
 
-      const profile = computeFootprint(circles as any, {
-        marginMm: dynamicMargin,
-        samplesPerCircle: 24,
-      });
-      if (!profile || profile.length < 3) continue;
+      const parts = buildRaftFootprintMeshes({ circles, raft, clearance });
+      if (!parts.baseMesh && parts.footprint.length === 0) continue;
 
-      if (raft.bottomMode === 'solid') {
-        const baseMesh = generateChamferedBase(profile, {
-          thickness: raft.thickness,
-          chamferAngle: raft.chamferAngle,
-        });
-        appendGeometryTriangles(sink, baseMesh.geometry);
-
-        if (raft.wallEnabled) {
-          const useCrenels = raft.crenulationSpacing > 0 && raft.crenulationGapWidth > 0;
-          const wallMesh = useCrenels
-            ? generateCrenelatedWallManual(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              crenulationGapWidth: raft.crenulationGapWidth,
-              crenulationSpacing: raft.crenulationSpacing,
-              thickness: raft.thickness,
-              chamferAngle: raft.chamferAngle,
-            })
-            : generatePerimeterWall(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              thickness: raft.thickness,
-            });
-          appendGeometryTriangles(sink, wallMesh.geometry);
-        }
+      if (parts.baseMesh) {
+        appendGeometryTriangles(sink, parts.baseMesh.geometry);
       } else if (raft.bottomMode === 'line') {
         const nodes2d = circles.map((c) => new THREE.Vector2(c.x, c.y));
-        const hasBorderRing = !!profile && profile.length >= 3;
+        const hasBorderRing = parts.footprint.length > 0;
         const edgePairs = buildLineRaftEdgePairs(nodes2d, {
           hasBorderRing,
           keepFactor: 8,
@@ -1143,7 +1030,14 @@ export function buildSupportAndRaftWorldTriangles(
 
         const beamHeight = Math.max(0.01, raft.lineHeightMm);
 
-        const unionEdges: Array<[THREE.Vector2, THREE.Vector2]> = edgePairs.map(([a, b]) => [nodes2d[a], nodes2d[b]]);
+        // Beams a model on the plate is in the way of are never drawn: cutting them
+    // would leave severed ends to close up again, and two clusters either side of
+    // a model should stay two clusters.
+    const unionEdges: Array<[THREE.Vector2, THREE.Vector2]> = filterLineRaftEdges(
+      edgePairs.map(([a, b]) => [nodes2d[a], nodes2d[b]]),
+      clearanceCut,
+      raft.lineWidthMm,
+    );
         const unionMesh = generateUnionedLineRaftMesh(unionEdges, {
           widthMm: raft.lineWidthMm,
           heightMm: beamHeight,
@@ -1155,9 +1049,9 @@ export function buildSupportAndRaftWorldTriangles(
         if (unionHasGeometry) {
           appendGeometryTriangles(sink, unionMesh.geometry);
         } else {
-          for (const [a, b] of edgePairs) {
-            const start = new THREE.Vector3(nodes2d[a].x, nodes2d[a].y, 0);
-            const end = new THREE.Vector3(nodes2d[b].x, nodes2d[b].y, 0);
+          for (const [a, b] of unionEdges) {
+            const start = new THREE.Vector3(a.x, a.y, 0);
+            const end = new THREE.Vector3(b.x, b.y, 0);
             const beam = generateChamferedBeam(start, end, {
               widthMm: raft.lineWidthMm,
               heightMm: beamHeight,
@@ -1166,25 +1060,10 @@ export function buildSupportAndRaftWorldTriangles(
             appendGeometryTriangles(sink, beam.geometry);
           }
         }
+      }
 
-        if (raft.wallEnabled) {
-          const useCrenels = raft.crenulationSpacing > 0 && raft.crenulationGapWidth > 0;
-          const wallMesh = useCrenels
-            ? generateCrenelatedWallManual(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              crenulationGapWidth: raft.crenulationGapWidth,
-              crenulationSpacing: raft.crenulationSpacing,
-              thickness: raft.lineHeightMm,
-              chamferAngle: raft.chamferAngle,
-            })
-            : generatePerimeterWall(profile, {
-              wallHeight: raft.wallHeight,
-              wallThickness: raft.wallThickness,
-              thickness: raft.lineHeightMm,
-            });
-          appendGeometryTriangles(sink, wallMesh.geometry);
-        }
+      if (parts.wallMesh) {
+        appendGeometryTriangles(sink, parts.wallMesh.geometry);
       }
     }
   }
@@ -1231,7 +1110,7 @@ async function nanodlpPackRgbaToPngBlob(
   sourceWidthPx: number,
   sourceHeightPx: number,
   outputWidthPx: number,
-  packingMode: EffectiveSettings['xPackingMode'],
+  packingMode: SliceRasterSettings['xPackingMode'],
 ): Promise<Blob> {
   const outCanvas = getCanvas(outputWidthPx, sourceHeightPx);
   const outCtx = outCanvas.getContext('2d', { willReadFrequently: false }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
@@ -1321,7 +1200,7 @@ async function canvasToPngBlob(canvas: OffscreenCanvas | HTMLCanvasElement): Pro
 
 function buildTriangles(
   models: LoadedModel[],
-  settings: EffectiveSettings,
+  settings: SliceRasterSettings,
   printer: PrinterProfile,
 ): RasterTriangle[] {
   const widthMm = Math.max(1, printer.buildVolumeMm.width);
@@ -1510,7 +1389,7 @@ function buildWorldTriangles(models: LoadedModel[]): WorldTriangle[] {
   }
 
   const visibleModelIds = new Set(models.filter((model) => model.visible).map((model) => model.id));
-  const supportAndRaftTriangles = buildSupportAndRaftWorldTriangles(visibleModelIds);
+  const supportAndRaftTriangles = buildSupportAndRaftWorldTriangles(visibleModelIds, undefined, 0, models);
   // Avoid stack overflow from spreading huge arrays - push one by one instead
   for (let i = 0; i < supportAndRaftTriangles.length; i++) {
     triangles.push(supportAndRaftTriangles[i]);
@@ -1817,7 +1696,7 @@ function buildLayerSegmentsFromWorldTriangles(
   triangles: WorldTriangle[],
   triangleIndices: number[],
   zMm: number,
-  settings: EffectiveSettings,
+  settings: SliceRasterSettings,
   printer: PrinterProfile,
 ): SliceSegment2D[] {
   const widthMm = Math.max(1, printer.buildVolumeMm.width);
@@ -1975,59 +1854,6 @@ function rasterizeSolidSegmentsToImage(
   }
 }
 
-function resolveEffectiveSettings(options: RasterLayerZipExportOptions): EffectiveSettings {
-  const sourceResolutionX = Math.max(1, Math.round(options.printerProfile.display.resolutionX));
-  const sourceResolutionY = Math.max(1, Math.round(options.printerProfile.display.resolutionY));
-
-  const resolvedFormat = resolveSlicingFormatDefinition({
-    printerProfile: options.printerProfile,
-    materialProfile: options.materialProfile,
-  });
-  // Same rule as the orchestrator: an unresolved format is an error, never another
-  // format's settings. `resolveEffectiveSettings` is reached from the same export.
-  if (!resolvedFormat) {
-    throw new Error(
-      `No encoder is installed for "${options.printerProfile.display.outputFormat}".`,
-    );
-  }
-  const usesPluginOwnedEncoding = resolvedFormat.ownership === 'plugin';
-  const xPackingStrategy = resolvedFormat.xPackingStrategy ?? 'none';
-
-  const packed = xPackingStrategy === 'bitdepth-packed-x'
-    ? resolvePluginPackedWidth(options.printerProfile)
-    : {
-      widthPx: sourceResolutionX,
-      sourceResolutionX,
-      sourceResolutionY,
-      xPackingMode: 'none' as const,
-    };
-
-  let widthPx = packed.widthPx;
-  let heightPx = packed.sourceResolutionY;
-
-  const pixelCount = widthPx * heightPx;
-  if (pixelCount > MAX_CANVAS_PIXELS && !usesPluginOwnedEncoding) {
-    const scale = Math.sqrt(MAX_CANVAS_PIXELS / pixelCount);
-    widthPx = Math.max(1, Math.floor(widthPx * scale));
-    heightPx = Math.max(1, Math.floor(heightPx * scale));
-  }
-
-  const layerHeightMm = Math.max(0.001, Number(options.materialProfile.layerHeightMm) || 0.05);
-
-  return {
-    widthPx,
-    heightPx,
-    sourceResolutionX: packed.sourceResolutionX,
-    sourceResolutionY: packed.sourceResolutionY,
-    xPackingMode: packed.xPackingMode,
-    mirrorX: options.printerProfile.display.mirrorX === true,
-    mirrorY: options.printerProfile.display.mirrorY === true,
-    layerHeightMm,
-    totalLayers: 1,
-    tallestObjectHeightMm: layerHeightMm,
-  };
-}
-
 async function rasterizeLayerStack(options: RasterLayerZipExportOptions): Promise<RasterizationResult> {
   throwIfAborted(options.abortSignal);
   const visibleModels = options.models.filter((model) => model.visible);
@@ -2035,7 +1861,7 @@ async function rasterizeLayerStack(options: RasterLayerZipExportOptions): Promis
     throw new Error('No visible models available for slicing.');
   }
 
-  const settings = resolveEffectiveSettings(options);
+  const settings = resolveSliceRasterSettings(options);
   const triangles = buildWorldTriangles(visibleModels);
   if (triangles.length === 0) {
     throw new Error('Unable to prepare world-space triangles from visible models.');
@@ -2046,10 +1872,11 @@ async function rasterizeLayerStack(options: RasterLayerZipExportOptions): Promis
     maxZ = Math.max(maxZ, triangles[i].zMax);
   }
 
-  const buildHeight = Math.max(0, maxZ);
-  const maxBuildHeight = Math.max(0, Number(options.printerProfile.buildVolumeMm.height) || 0);
-  const tallestObjectHeightMm = Math.min(buildHeight, maxBuildHeight);
-  const totalLayers = Math.max(1, Math.ceil(tallestObjectHeightMm / settings.layerHeightMm));
+  const { totalLayers, tallestObjectHeightMm } = resolveSliceLayerCount({
+    maxZMm: maxZ,
+    printerProfile: options.printerProfile,
+    layerHeightMm: settings.layerHeightMm,
+  });
 
   const rasterWidthPx = settings.sourceResolutionX;
   const rasterHeightPx = settings.sourceResolutionY;
@@ -2178,52 +2005,12 @@ async function rasterizeLayerStack(options: RasterLayerZipExportOptions): Promis
       'JS fallback generates solid cross-sections via plane intersections and scanline fill.',
       'Used when plugin-owned WASM encoding path is unavailable or fails.',
     ],
-    slicer: SLICER_IDENTITY,
-    printer: {
-      id: options.printerProfile.id,
-      name: options.printerProfile.name,
-      resolutionX: options.printerProfile.display.resolutionX,
-      resolutionY: options.printerProfile.display.resolutionY,
-      buildVolumeMm: options.printerProfile.buildVolumeMm,
-      bitDepth: options.printerProfile.bitDepth,
-      outputFormat: options.printerProfile.display.outputFormat,
-      formatVersion: options.printerProfile.display.formatVersion,
-      mirrorX: options.printerProfile.display.mirrorX === true,
-      mirrorY: options.printerProfile.display.mirrorY === true,
-    },
-    material: {
-      id: options.materialProfile.id,
-      name: options.materialProfile.name,
-      layerHeightMm: options.materialProfile.layerHeightMm,
-      normalExposureSec: options.materialProfile.normalExposureSec,
-      bottomExposureSec: options.materialProfile.bottomExposureSec,
-      bottomLayerCount: options.materialProfile.bottomLayerCount,
-      liftDistanceMm: options.materialProfile.liftDistanceMm,
-      liftSpeedMmMin: options.materialProfile.liftSpeedMmMin,
-      retractSpeedMmMin: options.materialProfile.retractSpeedMmMin,
-    },
-    effective: {
-      widthPx: settings.widthPx,
-      heightPx: settings.heightPx,
-      sourceResolutionX: settings.sourceResolutionX,
-      sourceResolutionY: settings.sourceResolutionY,
-      xPackingMode: settings.xPackingMode,
-      mirrorX: settings.mirrorX,
-      mirrorY: settings.mirrorY,
-      layerHeightMm: settings.layerHeightMm,
-      totalLayers,
-      tallestObjectHeightMm,
-    },
-    models: visibleModels.map((model) => ({
-      id: model.id,
-      name: model.name,
-      polygonCount: model.polygonCount,
-      transform: {
-        position: { x: model.transform.position.x, y: model.transform.position.y, z: model.transform.position.z },
-        rotation: { x: model.transform.rotation.x, y: model.transform.rotation.y, z: model.transform.rotation.z },
-        scale: { x: model.transform.scale.x, y: model.transform.scale.y, z: model.transform.scale.z },
-      },
-    })),
+    ...buildSliceJobManifestNodes({
+      printerProfile: options.printerProfile,
+      materialProfile: options.materialProfile,
+      settings,
+      scene: { totalLayers, tallestObjectHeightMm, models: visibleModels.map(describeSliceJobModel) },
+    }),
   };
 
   emitMeshPrepDiagnostic('Mesh prep: complete', 4, 4, {
@@ -2271,7 +2058,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     visibleModelCount: visibleModels.length,
   });
 
-  const settings = resolveEffectiveSettings(options);
+  const settings = resolveSliceRasterSettings(options);
   const perfSettings = getSavedSlicingPerformanceSettings();
 
   const modelTriangleEstimate = countModelWorldTriangles(visibleModels);
@@ -2328,7 +2115,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
   });
 
   const visibleModelIds = new Set(visibleModels.map((model) => model.id));
-  buildSupportAndRaftWorldTriangles(visibleModelIds, collector, options.supportTipShrinkPercent ?? 0);
+  buildSupportAndRaftWorldTriangles(visibleModelIds, collector, options.supportTipShrinkPercent ?? 0, visibleModels);
   emitMeshPrepDiagnostic('Mesh prep: supports', 2, 4, {
     triangleCountAfterSupports: collector.triangleCount,
   });
@@ -2341,10 +2128,11 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     ? Math.max(0, collector.maxZ)
     : 0;
 
-  const buildHeight = maxZ;
-  const maxBuildHeight = Math.max(0, Number(options.printerProfile.buildVolumeMm.height) || 0);
-  const tallestObjectHeightMm = Math.min(buildHeight, maxBuildHeight);
-  const totalLayers = Math.max(1, Math.ceil(tallestObjectHeightMm / settings.layerHeightMm));
+  const { totalLayers, tallestObjectHeightMm } = resolveSliceLayerCount({
+    maxZMm: maxZ,
+    printerProfile: options.printerProfile,
+    layerHeightMm: settings.layerHeightMm,
+  });
 
   const trianglesXYZ = await collector.finalize();
   console.warn('[SupportAA] collector finalized', {
@@ -2383,62 +2171,6 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     totalCollectorTris: collector.triangleCount,
   });
 
-  const manifest = {
-    version: 2,
-    createdAt: new Date().toISOString(),
-    mode: 'wasm_solid_slice_v0',
-    notes: [
-      'Solid cross-sections are generated in Rust/WASM from transformed triangle meshes.',
-      'Container packaging is encoded by plugin-owned format encoders.',
-    ],
-    slicer: SLICER_IDENTITY,
-    printer: {
-      id: options.printerProfile.id,
-      name: options.printerProfile.name,
-      resolutionX: options.printerProfile.display.resolutionX,
-      resolutionY: options.printerProfile.display.resolutionY,
-      buildVolumeMm: options.printerProfile.buildVolumeMm,
-      bitDepth: options.printerProfile.bitDepth,
-      outputFormat: options.printerProfile.display.outputFormat,
-      formatVersion: options.printerProfile.display.formatVersion,
-      mirrorX: options.printerProfile.display.mirrorX === true,
-      mirrorY: options.printerProfile.display.mirrorY === true,
-    },
-    material: {
-      id: options.materialProfile.id,
-      name: options.materialProfile.name,
-      layerHeightMm: options.materialProfile.layerHeightMm,
-      normalExposureSec: options.materialProfile.normalExposureSec,
-      bottomExposureSec: options.materialProfile.bottomExposureSec,
-      bottomLayerCount: options.materialProfile.bottomLayerCount,
-      liftDistanceMm: options.materialProfile.liftDistanceMm,
-      liftSpeedMmMin: options.materialProfile.liftSpeedMmMin,
-      retractSpeedMmMin: options.materialProfile.retractSpeedMmMin,
-    },
-    effective: {
-      widthPx: settings.widthPx,
-      heightPx: settings.heightPx,
-      sourceResolutionX: settings.sourceResolutionX,
-      sourceResolutionY: settings.sourceResolutionY,
-      xPackingMode: settings.xPackingMode,
-      mirrorX: settings.mirrorX,
-      mirrorY: settings.mirrorY,
-      layerHeightMm: settings.layerHeightMm,
-      totalLayers,
-      tallestObjectHeightMm,
-    },
-    models: visibleModels.map((model) => ({
-      id: model.id,
-      name: model.name,
-      polygonCount: model.polygonCount,
-      transform: {
-        position: { x: model.transform.position.x, y: model.transform.position.y, z: model.transform.position.z },
-        rotation: { x: model.transform.rotation.x, y: model.transform.rotation.y, z: model.transform.rotation.z },
-        scale: { x: model.transform.scale.x, y: model.transform.scale.y, z: model.transform.scale.z },
-      },
-    })),
-  };
-
   return {
     sourceWidthPx: settings.sourceResolutionX,
     sourceHeightPx: settings.sourceResolutionY,
@@ -2456,7 +2188,7 @@ export async function buildSolidSliceMeshForWasm(options: RasterLayerZipExportOp
     tallestObjectHeightMm,
     trianglesXYZ,
     meshBounds: collector.meshBounds,
-    metadataJson: JSON.stringify(manifest),
+    models: visibleModels.map(describeSliceJobModel),
   };
 }
 
