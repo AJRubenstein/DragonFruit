@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { getSnapshot, resetStore } from '../state';
 import {
   captureModelSupportsToClipboard,
+  pasteModelSupports,
   pasteModelSupportsFromClipboard,
   type SupportClipboardPayload,
 } from '../PlacementLogic/supportClipboard';
@@ -50,6 +51,12 @@ interface PastedSegment {
   id: string;
   bottomJoint?: { id?: string };
   topJoint?: { id?: string };
+}
+
+/** A shaft as the geometry assertions read it: its joints' positions. */
+interface PositionedSegment {
+  bottomJoint?: { pos?: { x: number; y: number; z: number } };
+  topJoint?: { pos?: { x: number; y: number; z: number } };
 }
 
 /** The id a type's own entity carries in the payload. */
@@ -369,5 +376,113 @@ describe('support clipboard remap isolation', () => {
     }
     assert.ok((captured?.roots.length ?? 0) > 0);
     assert.ok((captured?.knots.length ?? 0) > 0);
+  });
+
+  it('lands a pasted copy at the target transform', () => {
+    const payload = makePayload();
+
+    const sourceTransform = {
+      position: new THREE.Vector3(0, 0, 0),
+      rotation: new THREE.Euler(0, 0, 0),
+      scale: new THREE.Vector3(1, 1, 1),
+    };
+    const targetTransform = {
+      position: new THREE.Vector3(10, 10, 0),
+      rotation: new THREE.Euler(0, 0, 0),
+      scale: new THREE.Vector3(1, 1, 1),
+    };
+
+    pasteModelSupportsFromClipboard(payload, TARGET_MODEL_ID, sourceTransform, targetTransform);
+
+    const state = getSnapshot();
+    const moved = (pos: { x: number; y: number; z: number }) => `${pos.x + 10}|${pos.y + 10}|${pos.z}`;
+    const at = (pos: { x: number; y: number; z: number }) => `${pos.x}|${pos.y}|${pos.z}`;
+    const sorted = (values: string[]) => [...values].sort();
+
+    // Every declared type, walked the way the payload was built: a move has to
+    // carry its shaft joints and its declared contacts, or a copy is detached
+    // geometry sitting at the source's transform.
+    for (const descriptor of SUPPORT_TYPES) {
+      const source = sourceEntityFor(descriptor);
+      const pasted = entitiesIn<Record<string, unknown>>(state, descriptor.location.key)
+        .filter((entity) => entity.modelId === TARGET_MODEL_ID);
+      assert.equal(pasted.length, 1, `${descriptor.id}: expected one pasted entity`);
+      const entity = pasted[0];
+
+      const sourceSegments = (source.segments ?? []) as PositionedSegment[];
+      const pastedSegments = (entity.segments ?? []) as PositionedSegment[];
+      assert.equal(pastedSegments.length, sourceSegments.length, `${descriptor.id}: shaft length`);
+
+      pastedSegments.forEach((segment, index) => {
+        const sourceSegment = sourceSegments[index];
+        for (const joint of ['bottomJoint', 'topJoint'] as const) {
+          const pastedJoint = segment[joint];
+          const sourceJoint = sourceSegment[joint];
+          assert.ok(pastedJoint?.pos && sourceJoint?.pos, `${descriptor.id}.${joint}: no position`);
+          assert.equal(at(pastedJoint.pos), moved(sourceJoint.pos), `${descriptor.id}.${joint} position`);
+        }
+      });
+
+      for (const { field } of contactEndpointsFor(descriptor.id)) {
+        const pastedContact = entity[field] as { pos?: { x: number; y: number; z: number } } | undefined;
+        const sourceContact = source[field] as { pos?: { x: number; y: number; z: number } } | undefined;
+        assert.ok(pastedContact?.pos && sourceContact?.pos, `${descriptor.id}.${field}: no position`);
+        assert.equal(at(pastedContact.pos), moved(sourceContact.pos), `${descriptor.id}.${field} position`);
+      }
+    }
+
+    // Roots and knots are compared as multisets: a payload carries the same
+    // root through both its own channel and its kickstand's.
+    assert.deepEqual(
+      sorted(Object.values(state.roots).map((root) => at(root.transform.pos))),
+      sorted([...payload.roots, ...payload.kickstandRoots].map((root) => moved(root.transform.pos))),
+      'root positions',
+    );
+    assert.deepEqual(
+      sorted(Object.values(state.knots).map((knot) => at(knot.pos))),
+      sorted([...payload.knots, ...payload.kickstandKnots].map((knot) => moved(knot.pos))),
+      'knot positions',
+    );
+  });
+
+  it('pastes every target of one call at its own transform', () => {
+    const payload = makePayload();
+    const sourceTransform = {
+      position: new THREE.Vector3(0, 0, 0),
+      rotation: new THREE.Euler(0, 0, 0),
+      scale: new THREE.Vector3(1, 1, 1),
+    };
+    const targetTransformAt = (x: number, y: number) => ({
+      position: new THREE.Vector3(x, y, 0),
+      rotation: new THREE.Euler(0, 0, 0),
+      scale: new THREE.Vector3(1, 1, 1),
+    });
+
+    const pastedCount = pasteModelSupports([
+      { payload, targetModelId: 'batch-x', sourceTransform, targetTransform: targetTransformAt(10, 0) },
+      { payload, targetModelId: 'batch-y', sourceTransform, targetTransform: targetTransformAt(0, 20) },
+    ]);
+    assert.ok(pastedCount > 0);
+
+    const state = getSnapshot();
+    const hostDescriptor = getSupportTypeDescriptor(defaultPlacementToolTypeId());
+    const sourceJointPos = ((sourceEntityFor(hostDescriptor).segments ?? []) as PositionedSegment[])[0].topJoint?.pos;
+    assert.ok(sourceJointPos, 'the payload has no host shaft to compare against');
+
+    for (const [modelId, dx, dy] of [['batch-x', 10, 0], ['batch-y', 0, 20]] as const) {
+      const pasted = entitiesIn<Record<string, unknown>>(state, hostDescriptor.location.key)
+        .filter((entity) => entity.modelId === modelId);
+      assert.ok(pasted.length > 0, `${modelId}: nothing pasted`);
+
+      for (const entity of pasted) {
+        for (const segment of (entity.segments ?? []) as PositionedSegment[]) {
+          assert.deepEqual(
+            segment.topJoint?.pos,
+            { x: sourceJointPos.x + dx, y: sourceJointPos.y + dy, z: sourceJointPos.z },
+            `${modelId}: shaft joint`,
+          );
+        }
+      }
+    }
   });
 });
