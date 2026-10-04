@@ -47,32 +47,29 @@ When `rtsp_url` is provided and valid:
 
 For each normalized RTSP URL, the crate stores a lease record that includes:
 
-- deterministic `base_port` (even RTP base)
-- optional `session_id`
-- last-known client/server RTP ports
-- last claim status/timestamps
+- optional `session_id`, recorded from ffmpeg's own output
+- last-known client/server RTP ports and the last claim status/timestamps
 
-Lease records are persisted to JSON and reused across process restarts.
-
-### Deterministic UDP port reuse
-
-On UDP attempts (when reclaim enabled), ffmpeg receives:
-
-- `-min_port <base_port>`
-- `-max_port <base_port + 1>`
-
-This stabilizes RTP/RTCP client ports per stream URL.
-
-### Session hint reuse
-
-If enabled and a session ID exists, ffmpeg is invoked with:
-
-- `-headers "Session: <id>\r\n"`
+Lease records are persisted to JSON and reused across process restarts. The record is the
+reclaim index: the reconnection audit in `docs/internal/rtsp-session-recovery.md` needs the
+last observed session id, and this is where it lives.
 
 stderr parsing updates lease status:
 
 - `session not found` / `454` => session cleared
 - `Session:` token observed => session recorded
+
+Deterministic UDP port pinning and `Session:` header reuse were removed in 0.1.1. The printer
+this relay serves (Chitu-based MSLA boards) exhausts TCP worker slots, not RTP client ports,
+so neither mechanism could influence whether a reconnect succeeded. See the audit for the
+measurements.
+
+### Retry backoff
+
+The relay pump retries with exponential backoff — 750 ms, doubling to a 30 s ceiling, reset as
+soon as media flows. It must not open a fresh RTSP connection on every retry: a printer that is
+refusing connections leaks one descriptor per rejected attempt, so a tight retry loop makes the
+printer's own exhaustion worse.
 
 ### Transport fallback
 
@@ -85,7 +82,6 @@ Default behavior (`auto`) tries UDP first, then TCP fallback when UDP produces n
 ## Environment variables
 
 - `DRAGONFRUIT_RTSP_RECLAIM` (default: `true`)
-- `DRAGONFRUIT_RTSP_SESSION_HEADER_REUSE` (default: `true`)
 - `DRAGONFRUIT_RTSP_LEASE_TTL_MS` (default: `60000`)
 - `DRAGONFRUIT_RTSP_LEASE_STORE_PATH` (optional path override)
 - `DRAGONFRUIT_RTSP_TRANSPORT` (`auto`, `udp`, `tcp`, `udp,tcp`, `tcp,udp`)

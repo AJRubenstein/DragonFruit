@@ -4,10 +4,10 @@
 //! transcodes to MPEG-TS/JSMpeg-compatible bytes, and fan-outs frames to subscribers.
 //!
 //! Key features:
-//! - Deterministic UDP port reclaim per RTSP URL
-//! - Persisted lease/session hints across app restarts
+//! - Persisted per-URL session hints across app restarts
 //! - UDP-first transport with fallback to TCP
-//! - Optional Session header reuse for reconnect attempts
+//! - Bounded exponential retry backoff, so a printer that is refusing connections is not
+//!   hit with a fresh RTSP connection every retry (see docs/internal/rtsp-session-recovery.md)
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -34,6 +34,11 @@ const DEFAULT_LEASE_TTL_MS: u64 = 60_000;
 const DEFAULT_PORT_BASE_MIN: u16 = 5000;
 const DEFAULT_PORT_BASE_MAX: u16 = 64998;
 const DEFAULT_LEASE_STORE_FILENAME: &str = "dragonfruit-rtsp-relay-leases.json";
+/// Retry delay range for the relay pump. A printer that is refusing connections must not be
+/// hit with a fresh RTSP connection every 750 ms: each rejected connection leaks a descriptor
+/// inside the printer's accept loop.
+const RETRY_BACKOFF_MIN_MS: u64 = 750;
+const RETRY_BACKOFF_MAX_MS: u64 = 30_000;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -271,24 +276,14 @@ impl StreamRelay {
     /// completed with no media output, and `Err(())` when ffmpeg could not be spawned.
     fn run_ffmpeg_transport(&self, transport: &str, ffmpeg_binary: &str) -> Result<bool, ()> {
         let reclaim_enabled = reclaim_is_enabled();
-        let lease = get_or_create_lease_record(&self.rtsp_url);
-        let session_reuse_enabled = reclaim_session_header_reuse_enabled();
-        let reclaim_session_id = normalize_session_id(lease.session_id.as_deref());
+        // Record the stream's lease entry (and its last observed session id) for the reclaim
+        // index. The deterministic RTP port pinning and the `Session:` header reuse that used
+        // to be injected here were removed: the printer's exhaustion is in TCP worker slots,
+        // not RTP client ports, so neither affects whether a reconnect can succeed.
+        get_or_create_lease_record(&self.rtsp_url);
 
         let mut command = Command::new(ffmpeg_binary);
         command.arg("-rtsp_transport").arg(transport);
-        if reclaim_enabled && transport == "udp" {
-            command
-                .arg("-min_port")
-                .arg(lease.base_port.to_string())
-                .arg("-max_port")
-                .arg((lease.base_port + 1).to_string());
-        }
-        if reclaim_enabled && session_reuse_enabled {
-            if let Some(session_id) = reclaim_session_id.as_deref() {
-                command.arg("-headers").arg(format!("Session: {session_id}\r\n"));
-            }
-        }
         command
             .arg("-i")
             .arg(&self.rtsp_url)
@@ -410,9 +405,14 @@ impl StreamRelay {
     }
 
     /// Main relay loop that repeatedly tries configured transports while subscribers exist.
+    ///
+    /// Retries back off exponentially up to `RETRY_BACKOFF_MAX_MS`, and a round that delivers
+    /// media resets the delay. An unresponsive printer must not see a new RTSP connection every
+    /// 750 ms: every connection it rejects leaks a descriptor inside it.
     fn pump_ffmpeg(self: Arc<Self>) {
         let ffmpeg_binary = resolve_ffmpeg_binary();
         let transports = Self::preferred_transports();
+        let mut backoff_ms = RETRY_BACKOFF_MIN_MS;
 
         'relay_loop: loop {
             if !self.has_subscribers() {
@@ -425,6 +425,7 @@ impl StreamRelay {
                 match self.run_ffmpeg_transport(transport, &ffmpeg_binary) {
                     Ok(has_output) => {
                         if has_output {
+                            backoff_ms = RETRY_BACKOFF_MIN_MS;
                             continue 'relay_loop;
                         }
                         if reclaim_is_enabled() && *transport == "udp" {
@@ -446,7 +447,8 @@ impl StreamRelay {
                 break;
             }
 
-            thread::sleep(Duration::from_millis(750));
+            thread::sleep(Duration::from_millis(backoff_ms));
+            backoff_ms = (backoff_ms * 2).min(RETRY_BACKOFF_MAX_MS);
         }
 
         self.running.store(false, Ordering::SeqCst);
@@ -456,11 +458,6 @@ impl StreamRelay {
 /// Whether reclaim behavior is enabled.
 fn reclaim_is_enabled() -> bool {
     parse_env_bool("DRAGONFRUIT_RTSP_RECLAIM", true)
-}
-
-/// Whether prior session IDs should be reused via `Session:` ffmpeg headers.
-fn reclaim_session_header_reuse_enabled() -> bool {
-    parse_env_bool("DRAGONFRUIT_RTSP_SESSION_HEADER_REUSE", true)
 }
 
 /// Lease TTL used to decide when a stored session hint should expire.
@@ -620,13 +617,6 @@ fn now_epoch_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
-}
-
-/// Normalizes optional session IDs by trimming and removing empties.
-fn normalize_session_id(session: Option<&str>) -> Option<String> {
-    session
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 /// Detects ffmpeg log lines indicating stale/missing RTSP session state.

@@ -108,11 +108,10 @@ Requirements, in full, because they are the whole argument:
 
 | Phase | Work | Verify |
 |---|---|---|
-| P0 | Relay hygiene: `TEARDOWN` + close on every path, bounded deadlines, no speculative retry while exhausted, `SO_LINGER` on abandon | Unit-test the relay state machine; manual repro against the printer: repeated open/close cycles must not degrade it, and the ten-connection reproduction must recover after the relay closes |
-| P1 | Exhaustion detection (transport + session oracles) and a distinct UI/diagnostic state | Reproduce exhaustion with the companion script, confirm the overlay reports "no free stream slot" and that the relay stops retrying |
-| P2 | Session-slot reclaim by stale-id `TEARDOWN`; persist the id per stream | With a stale media slot held, reclaim must drop the stream count without a reboot |
-| P3 | Record and persist `(local_port, send-sequence)`; reset our own abandoned flows | Kill the relay process mid-session (simulated hard loss) and confirm the slot is reclaimed without a printer reboot |
-| P4 | Capture + spoofed reset for foreign flows, behind an experiment flag and an explicit opt-in | Only after the sweep of the local subnet's flows is proven safe on a test printer |
+| **P0a — landed on this branch** | Removed the two wrong-layer mechanisms (deterministic `-min_port`/`-max_port` pinning, replayed `Session:` header) and gave the pump bounded exponential backoff (750 ms doubling to 30 s, reset when media flows) so a refusing printer is no longer hit with a fresh connection every 750 ms | `cargo check` clean (`dragonfruit-rtsp-relay` 0.1.1); behaviour change is the ffmpeg argument list, and the backoff is visible in `pump_ffmpeg` |
+| **P0b — remaining** | Bound the ffmpeg read: with a subscriber attached, `pump_ffmpeg` blocks in `stdout.read()` indefinitely, and the RTSP demuxer has no default socket timeout, so a printer that accepts and then goes silent can hang the pump forever. Needs an ffmpeg socket-timeout flag (`-rw_timeout` / `-timeout`, name varies by version) **verified against the shipped ffmpeg** before it is added — an unrecognised option makes ffmpeg exit immediately, which would be worse than the hang | Confirm the flag name against the ffmpeg build the sidecar resolves, then prove the pump recovers from a black-holed connection; unit-test the relay state machine while adding the terminal state |
+| **P1** | Exhaustion detection (transport oracle: connect succeeds, no RTSP reply; session oracle: SDCP live-stream request returns a bare acknowledgement) and a distinct diagnostic state, so the relay stops retrying and the overlay can say who holds the slots | Reproduce exhaustion with the companion script, confirm the overlay reports "no free stream slot" and that retries stop |
+| **P2** | Session-slot reclaim by stale-id `TEARDOWN`, using the session id the lease store already records | With a stale media slot held, reclaim must drop the stream count without a printer reboot |
 
 P0-P2 need no new dependencies, no elevated permissions and no driver: they should land first
 and probably remove most of the pain. **P3 and P4 both need the ability to transmit a spoofed
