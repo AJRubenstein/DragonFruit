@@ -9,6 +9,7 @@
   "scripts": {
     "bench:import-postprocess": "node --import tsx scripts/bench-import-postprocess.ts",
     "bench:auto-supports": "node --import tsx scripts/bench-auto-supports.ts",
+    "bench:duplicate-confirm": "node --import tsx scripts/bench-duplicate-confirm.ts",
     "bench:support-drag": "node --import tsx scripts/support-drag-perf.ts",
     "bench:voxl-tick": "node --max-old-space-size=8192 --import tsx scripts/bench-voxl-tick.ts",
     "build": "next build",
@@ -62,7 +63,8 @@
     "test:watch": "node --import tsx --test --watch 'src/**/*.test.{ts,tsx}' 'plugins/**/*.test.{ts,tsx}'",
     "generate:support-registrations": "node scripts/generate-support-registrations.mjs",
     "generate:support-renderers": "node scripts/generate-support-renderers.mjs",
-    "prebench:auto-supports": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins && npm run generate:support-registrations && npm run generate:support-renderers"
+    "prebench:auto-supports": "npm run generate:plugin-registry && npm run generate:builtin-simple-plugins && npm run generate:support-registrations && npm run generate:support-renderers",
+    "prebench:duplicate-confirm": "npm run generate:support-registrations"
   },
   "dependencies": {
     "@lingui/core": "^6.3.0",
