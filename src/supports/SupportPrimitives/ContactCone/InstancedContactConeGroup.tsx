@@ -57,6 +57,11 @@ interface InstancedContactConeGroupProps {
      * costs the changed instances rather than a full re-layout.
      */
     isHidden?: (cone: InstancedContactCone) => boolean;
+    /**
+     * Raycast override, for a caller whose batch is too large for three's
+     * per-instance walk. The hover grid answers it in O(cells crossed).
+     */
+    raycast?: THREE.Object3D['raycast'];
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -129,6 +134,7 @@ function ConeBucketMesh({
     outOfBoundsMaterial,
     instanceColor,
     isHidden,
+    raycast,
     onConeClick,
     onConePointerDown,
     onConePointerMove,
@@ -148,6 +154,7 @@ function ConeBucketMesh({
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     instanceColor?: (cone: InstancedContactCone) => THREE.Color;
     isHidden?: (cone: InstancedContactCone) => boolean;
+    raycast?: THREE.Object3D['raycast'];
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -332,6 +339,7 @@ function ConeBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     {...sharedHandlers}
+                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 >
                     <cylinderGeometry args={[bucket.contactRadius, bucket.contactRadius, bucket.diskThickness + bucket.penetration, 10]} />
                     <meshStandardMaterial
@@ -362,6 +370,7 @@ function ConeBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     {...sharedHandlers}
+                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 >
                     <cylinderGeometry args={[bucket.contactRadius, bucket.bodyRadius, bucket.length, 10]} />
                     <meshStandardMaterial
@@ -387,6 +396,7 @@ function ConeBucketMesh({
                     frustumCulled={false}
                     renderOrder={100000}
                     {...sharedHandlers}
+                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 >
                     <sphereGeometry args={[bucket.contactRadius, 10, 8]} />
                     <meshStandardMaterial
@@ -458,6 +468,7 @@ export function InstancedContactConeGroup({
     outOfBoundsMaterial = null,
     instanceColor,
     isHidden,
+    raycast,
     onConeClick,
     onConePointerDown,
     onConePointerMove,
@@ -563,6 +574,7 @@ export function InstancedContactConeGroup({
                     outOfBoundsMaterial={outOfBoundsMaterial}
                     instanceColor={instanceColor}
                     isHidden={isHidden}
+                    raycast={raycast}
                     onConeClick={onConeClick}
                     onConePointerDown={onConePointerDown}
                     onConePointerMove={onConePointerMove}

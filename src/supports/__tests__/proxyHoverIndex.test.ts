@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import * as THREE from 'three';
 import {
   buildProxyHoverIndex,
+  createProxyHoverRaycast,
   raycastProxyHoverIndex,
   type ProxyHoverTarget,
 } from '../proxyHoverIndex';
@@ -80,6 +81,37 @@ describe('proxy hover index', () => {
     // The same miss from 200 mm: the radius there is 2 mm, so it hits.
     const far = new THREE.Ray(new THREE.Vector3(1, 0, 200), new THREE.Vector3(0, 0, -1));
     assert.strictEqual(raycastProxyHoverIndex(index, far, toleranceFor).length, 1);
+  });
+
+  it('hits a target that is a point, as a joint is', () => {
+    const joint: ProxyHoverTarget = {
+      modelId: 'model-a',
+      index: 0,
+      start: { x: 0, y: 0, z: 10 },
+      end: { x: 0, y: 0, z: 10 },
+      radius: 0.5,
+    };
+    const index = buildProxyHoverIndex([joint])!;
+
+    const hits = raycastProxyHoverIndex(index, rayAt(0, 0), noTolerance);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].target.modelId, 'model-a');
+  });
+
+  it('names the object it was called on, so the event has somewhere to go', () => {
+    const index = buildProxyHoverIndex([shaft('0', 0, 0, 'model-a')])!;
+    const mesh = new THREE.Mesh();
+    const raycast = createProxyHoverRaycast(index, noTolerance);
+    const raycaster = new THREE.Raycaster(rayAt(0, 0).origin, rayAt(0, 0).direction);
+
+    const intersects: THREE.Intersection[] = [];
+    raycast.call(mesh, raycaster, intersects);
+
+    assert.strictEqual(intersects.length, 1);
+    // R3F walks `hit.object` up the parents to find the handlers. A hit that
+    // names no object is dispatched to nobody, and the whole batch goes inert.
+    assert.strictEqual(intersects[0].object, mesh);
+    assert.strictEqual(intersects[0].instanceId, 0);
   });
 
   it('finds a support whose shaft crosses several cells', () => {

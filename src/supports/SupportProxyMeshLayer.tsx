@@ -5,7 +5,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { useThree } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { isCurvedBatchedShaft } from './Curves/batchedBezierTubeGeometry';
-import { buildProxyHoverIndex, raycastProxyHoverIndex, type ProxyHoverIndex, type ProxyHoverTarget } from './proxyHoverIndex';
+import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverIndex, type ProxyHoverTarget } from './proxyHoverIndex';
 import { subscribe, getSnapshot } from './state';
 // Loading the generated barrel runs every type's proxy geometry registration.
 import './generatedSupportRegistrations';
@@ -979,10 +979,36 @@ export function SupportProxyMeshLayer({
       },
       radius: Math.max(0.2, root.bottomRadius),
     }));
+    // A joint is a point; the index takes it as a segment that never moves.
+    const jointTargets: ProxyHoverTarget[] = baseGeometry.joints.map((joint, index) => ({
+      modelId: joint.modelId,
+      index,
+      start: joint.pos,
+      end: joint.pos,
+      radius: Math.max(0.2, joint.diameter / 2),
+    }));
+    // A cone's body runs from its contact point along its normal.
+    const coneTargets: ProxyHoverTarget[] = baseGeometry.cones.map((cone, index) => {
+      const normal = cone.surfaceNormal ?? cone.normal;
+      const length = Math.max(0.5, cone.profile.lengthMm ?? 0);
+      return {
+        modelId: cone.modelId,
+        index,
+        start: cone.pos,
+        end: {
+          x: cone.pos.x + normal.x * length,
+          y: cone.pos.y + normal.y * length,
+          z: cone.pos.z + normal.z * length,
+        },
+        radius: Math.max(0.2, (cone.profile.bodyDiameterMm ?? 1) / 2),
+      };
+    });
 
     return {
       shafts: buildProxyHoverIndex(shaftTargets),
       roots: buildProxyHoverIndex(rootTargets),
+      joints: buildProxyHoverIndex(jointTargets),
+      cones: buildProxyHoverIndex(coneTargets),
     };
   }, [baseGeometry]);
 
@@ -1004,21 +1030,15 @@ export function SupportProxyMeshLayer({
       return (worldHeight / viewportHeight) * grabRadiusPx;
     };
 
-    const raycastFor = (index: ProxyHoverIndex | null) => {
-      if (!index) return undefined;
-      return (raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) => {
-        for (const hit of raycastProxyHoverIndex(index, raycaster.ray, worldPerPixelAt)) {
-          intersects.push({
-            distance: hit.distance,
-            point: raycaster.ray.at(hit.distance, new THREE.Vector3()),
-            instanceId: hit.target.index,
-            object: null as unknown as THREE.Object3D,
-          } as THREE.Intersection);
-        }
-      };
-    };
+    const raycastFor = (index: ProxyHoverIndex | null) =>
+      index ? createProxyHoverRaycast(index, worldPerPixelAt) : undefined;
 
-    return { shafts: raycastFor(hoverIndexes.shafts), roots: raycastFor(hoverIndexes.roots) };
+    return {
+      shafts: raycastFor(hoverIndexes.shafts),
+      roots: raycastFor(hoverIndexes.roots),
+      joints: raycastFor(hoverIndexes.joints),
+      cones: raycastFor(hoverIndexes.cones),
+    };
   }, [camera, hoverIndexes, size.height]);
 
   if (visibleModelEntries.length === 0) {
@@ -1094,6 +1114,11 @@ export function SupportProxyMeshLayer({
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
+              raycast={hoverRaycasts.joints}
+              onJointClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+              onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
+              onJointPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+              onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {includeDetailedPrimitives && baseGeometry.cones.length > 0 && (
@@ -1105,6 +1130,11 @@ export function SupportProxyMeshLayer({
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
+              raycast={hoverRaycasts.cones}
+              onConeClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+              onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
+              onConePointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+              onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
         </group>

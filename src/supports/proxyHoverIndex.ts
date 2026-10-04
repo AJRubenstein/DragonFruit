@@ -197,3 +197,32 @@ export function raycastProxyHoverIndex(
   hits.sort((a, b) => a.distance - b.distance);
   return hits;
 }
+
+/**
+ * A raycast for a batch mesh, answering from `index` rather than walking every
+ * instance the batch holds.
+ *
+ * It runs as `object.raycast(raycaster, intersects)`, and every intersection
+ * names that object: R3F walks `hit.object` up the parents to find the handlers,
+ * so a hit that names no object is dispatched to nobody and the batch goes
+ * inert. `toleranceAt` receives the depth of the closest approach.
+ */
+export function createProxyHoverRaycast(
+  index: ProxyHoverIndex,
+  toleranceAt: (distance: number) => number,
+): THREE.Object3D['raycast'] {
+  return function proxyHoverRaycast(
+    this: THREE.Object3D,
+    raycaster: THREE.Raycaster,
+    intersects: THREE.Intersection[],
+  ) {
+    for (const hit of raycastProxyHoverIndex(index, raycaster.ray, toleranceAt)) {
+      intersects.push({
+        distance: hit.distance,
+        point: raycaster.ray.at(hit.distance, new THREE.Vector3()),
+        object: this,
+        instanceId: hit.target.index,
+      } as THREE.Intersection);
+    }
+  };
+}

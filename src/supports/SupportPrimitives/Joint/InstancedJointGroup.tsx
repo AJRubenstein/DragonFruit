@@ -38,6 +38,11 @@ interface InstancedJointGroupProps {
      * costs the changed instances rather than a full re-layout.
      */
     isHidden?: (joint: InstancedJoint) => boolean;
+    /**
+     * Raycast override, for a caller whose batch is too large for three's
+     * per-instance walk. The hover grid answers it in O(cells crossed).
+     */
+    raycast?: THREE.Object3D['raycast'];
     onJointClick?: (joint: InstancedJoint, event: ThreeEvent<MouseEvent>) => void;
     onJointPointerDown?: (joint: InstancedJoint, event: ThreeEvent<PointerEvent>) => void;
     onJointPointerMove?: (joint: InstancedJoint, event: ThreeEvent<PointerEvent>) => void;
@@ -57,6 +62,7 @@ export function InstancedJointGroup({
     outOfBoundsMaterial = null,
     instanceColor,
     isHidden,
+    raycast,
     onJointClick,
     onJointPointerDown,
     onJointPointerMove,
@@ -196,6 +202,7 @@ export function InstancedJointGroup({
                 args={[undefined, undefined, validJoints.length]}
                 frustumCulled={false}
                 renderOrder={100000}
+                raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 onClick={onJointClick ? handleClick : undefined}
                 onPointerDown={onJointPointerDown ? handlePointerDown : undefined}
                 onPointerMove={onJointPointerMove ? handlePointerMove : undefined}
