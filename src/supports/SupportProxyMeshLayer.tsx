@@ -2,8 +2,10 @@ import React from 'react';
 import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
+import { useThree } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { isCurvedBatchedShaft } from './Curves/batchedBezierTubeGeometry';
+import { buildProxyHoverIndex, raycastProxyHoverIndex, type ProxyHoverIndex, type ProxyHoverTarget } from './proxyHoverIndex';
 import { subscribe, getSnapshot } from './state';
 // Loading the generated barrel runs every type's proxy geometry registration.
 import './generatedSupportRegistrations';
@@ -68,8 +70,6 @@ const DEFAULT_SUPPORT_COLOR = '#9a9a9a';
 const ACTIVE_SUPPORT_COLOR = '#c8752a';
 const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
-/** Grown by this much, so a box still catches a support a hair outside its bounds. */
-const PROXY_HOVER_BOX_MARGIN_MM = 0.5;
 /** The hover tint's glow. A selection has none: it is the active colour flat. */
 const HOVER_EMISSIVE_INTENSITY = 0.1;
 
@@ -165,90 +165,9 @@ export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverl
 }
 
 /**
- * One hover target per model, standing in for the model's proxy primitives.
- *
- * R3F raycasts every instance of every mesh carrying a pointer handler, so
- * hovering the instanced batches costs O(supports) per pointer move — 13 ms at
- * 20k supports. Hover only ever resolves a model id, so a box around that
- * model's support volume answers the same question at O(models). Clicks keep
- * their per-instance targets: R3F filters non-hover handlers out of the
- * pointer-move raycast, so they are only paid once per click.
+ * The one place the proxy primitives are built from the support state, shared by
+ * every mounted layer: one identity per input is enough to reuse the walk.
  */
-type ProxyHoverBox = {
-  modelKey: string;
-  modelId?: string;
-  position: [number, number, number];
-  size: [number, number, number];
-};
-
-/** The entries `computeProxyHoverBoxes` reads, so the walk can be tested alone. */
-export type ProxyHoverBoxEntry = {
-  modelKey: string;
-  modelId?: string;
-  zOffset: number;
-};
-
-/**
- * One box per model, holding every primitive that model draws.
- *
- * A box that misses a primitive is a support you cannot hover, so the walk
- * takes the shaft ends and bezier control points, the roots, the joints and the
- * cones. It runs once per support-state change, not once per selection: the
- * caller keeps the result and only re-derives the boxes around it.
- */
-export function computeProxyModelBounds(
-  geometryByModel: ReadonlyMap<string, ProxyModelGeometry>,
-): Map<string, THREE.Box3> {
-  const boundsByModelKey = new Map<string, THREE.Box3>();
-  const point = new THREE.Vector3();
-
-  for (const [modelKey, geometry] of geometryByModel) {
-    const bounds = new THREE.Box3();
-    const include = (value: Vec3) => bounds.expandByPoint(point.set(value.x, value.y, value.z));
-
-    for (const shaft of geometry.shafts) {
-      include(shaft.start);
-      include(shaft.end);
-      if (shaft.controlPoint1) include(shaft.controlPoint1);
-      if (shaft.controlPoint2) include(shaft.controlPoint2);
-    }
-    for (const root of geometry.roots) include(root.basePos);
-    for (const joint of geometry.joints) include(joint.pos);
-    for (const cone of geometry.cones) include(cone.pos);
-
-    if (bounds.isEmpty()) continue;
-    bounds.expandByScalar(PROXY_HOVER_BOX_MARGIN_MM);
-    boundsByModelKey.set(modelKey, bounds);
-  }
-
-  return boundsByModelKey;
-}
-
-/** The hover boxes of `entries`, from the bounds each model's primitives take. */
-export function computeProxyHoverBoxes(
-  entries: readonly ProxyHoverBoxEntry[],
-  boundsByModelKey: ReadonlyMap<string, THREE.Box3>,
-): ProxyHoverBox[] {
-  const boxes: ProxyHoverBox[] = [];
-
-  for (const entry of entries) {
-    const bounds = boundsByModelKey.get(entry.modelKey);
-    if (!bounds) continue;
-
-    const center = bounds.getCenter(new THREE.Vector3());
-    const size = bounds.getSize(new THREE.Vector3());
-    boxes.push({
-      modelKey: entry.modelKey,
-      modelId: entry.modelId,
-      position: [center.x, center.y, center.z + entry.zOffset],
-      // A flat model can give a zero extent on one axis; a box needs volume.
-      size: [Math.max(size.x, 0.2), Math.max(size.y, 0.2), Math.max(size.z, 0.2)],
-    });
-  }
-
-  return boxes;
-}
-
 type SharedProxyCacheEntry = {
   /** The one input the walk reads, so one identity covers every collection. */
   supportStateRef: SupportState;
@@ -486,6 +405,7 @@ export function SupportProxyMeshLayer({
   // subscribe when pointer interactions are enabled (prepare mode). In
   // other modes, the hit data is unused but still cost us re-renders.
   const { hit } = usePicking();
+  const { camera, size } = useThree();
   const hitCategoryRef = React.useRef(hit.category);
   hitCategoryRef.current = hit.category;
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -915,15 +835,18 @@ export function SupportProxyMeshLayer({
     }
   }, [pointerHoverEnabled]);
 
-  const handleProxyHoverBoxMove = React.useCallback((modelId: string | undefined) => {
-    setSupportHoverModel(modelId ?? null);
+  // Hover and clicks resolve a model, and the batch raycast answers which
+  // instance was hit: the handler only reads its modelId, exactly as it did when
+  // three walked the instances itself.
+  const handleProxyInstanceMove = React.useCallback((primitive: { modelId?: string }) => {
+    setSupportHoverModel(primitive.modelId ?? null);
   }, [setSupportHoverModel]);
 
-  const handleProxyBoxClick = React.useCallback((modelId: string | undefined) => {
+  const handleProxyInstanceClick = React.useCallback((primitive: { modelId?: string }) => {
     if (!pointerSelectionEnabled) return;
-    if (!modelId) return;
+    if (!primitive.modelId) return;
     if (hitCategoryRef.current === 'gizmo') return;
-    onModelPointerSelect?.(modelId);
+    onModelPointerSelect?.(primitive.modelId);
   }, [onModelPointerSelect, pointerSelectionEnabled]);
 
   const handleProxyPointerOut = React.useCallback(() => {
@@ -1050,22 +973,70 @@ export function SupportProxyMeshLayer({
     return base;
   }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives]);
 
-  const modelBounds = React.useMemo(
-    () => computeProxyModelBounds(baseProxyByModel),
-    [baseProxyByModel],
-  );
+  // One grid per batch kind, over the instances that batch draws. A batch's
+  // raycast asks its own grid, so a hover costs the cells the ray crosses rather
+  // than every instance in the batch. The instance index in a target is the
+  // index inside that batch, which is what the raycast reports back.
+  const hoverIndexes = React.useMemo(() => {
+    const shaftTargets: ProxyHoverTarget[] = baseGeometry.straightShafts.map((shaft, index) => ({
+      modelId: shaft.modelId,
+      index,
+      start: shaft.start,
+      end: shaft.end,
+      radius: Math.max(0.2, shaft.diameter / 2),
+    }));
+    const rootTargets: ProxyHoverTarget[] = baseGeometry.roots.map((root, index) => ({
+      modelId: root.modelId,
+      index,
+      start: root.basePos,
+      end: {
+        x: root.basePos.x,
+        y: root.basePos.y,
+        z: root.basePos.z + root.effectiveDiskHeight + root.coneHeight,
+      },
+      radius: Math.max(0.2, root.bottomRadius),
+    }));
 
-  const hoverBoxes = React.useMemo<ProxyHoverBox[]>(
-    () => computeProxyHoverBoxes(
-      visibleModelEntries.map((entry) => ({
-        modelKey: entry.modelKey,
-        modelId: entry.modelId,
-        zOffset: entry.zOffset,
-      })),
-      modelBounds,
-    ),
-    [visibleModelEntries, modelBounds],
-  );
+    return {
+      shafts: buildProxyHoverIndex(shaftTargets),
+      roots: buildProxyHoverIndex(rootTargets),
+    };
+  }, [baseGeometry]);
+
+  // A support a fraction of a pixel wide must still be grabbable, so the grab
+  // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.
+  const hoverRaycasts = React.useMemo(() => {
+    const grabRadiusPx = 7;
+    // `useThree().camera` is the R3F union; each member below is the concrete
+    // camera the matching check selects.
+    const perspectiveCamera = camera as THREE.PerspectiveCamera;
+    const orthographicCamera = camera as THREE.OrthographicCamera;
+    const viewportHeight = Math.max(1, size.height);
+    const worldPerPixelAt = (distance: number) => {
+      if (perspectiveCamera.isPerspectiveCamera) {
+        const worldHeight = 2 * Math.tan((perspectiveCamera.fov * Math.PI) / 360) * distance;
+        return (worldHeight / viewportHeight) * grabRadiusPx;
+      }
+      const worldHeight = (orthographicCamera.top - orthographicCamera.bottom) / Math.max(0.0001, orthographicCamera.zoom);
+      return (worldHeight / viewportHeight) * grabRadiusPx;
+    };
+
+    const raycastFor = (index: ProxyHoverIndex | null) => {
+      if (!index) return undefined;
+      return (raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) => {
+        for (const hit of raycastProxyHoverIndex(index, raycaster.ray, worldPerPixelAt)) {
+          intersects.push({
+            distance: hit.distance,
+            point: raycaster.ray.at(hit.distance, new THREE.Vector3()),
+            instanceId: hit.target.index,
+            object: null as unknown as THREE.Object3D,
+          } as THREE.Intersection);
+        }
+      };
+    };
+
+    return { shafts: raycastFor(hoverIndexes.shafts), roots: raycastFor(hoverIndexes.roots) };
+  }, [camera, hoverIndexes, size.height]);
 
   if (visibleModelEntries.length === 0) {
     return null;
@@ -1091,6 +1062,11 @@ export function SupportProxyMeshLayer({
               radialSegments={10}
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
+              raycast={hoverRaycasts.shafts}
+              onShaftClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
+              onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {baseGeometry.curvedShafts.length > 0 && (
@@ -1103,6 +1079,10 @@ export function SupportProxyMeshLayer({
               radialSegments={10}
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
+              onShaftClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
+              onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {baseGeometry.roots.length > 0 && (
@@ -1115,6 +1095,11 @@ export function SupportProxyMeshLayer({
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
+              raycast={hoverRaycasts.roots}
+              onRootClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+              onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
+              onRootPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+              onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {includeDetailedPrimitives && baseGeometry.joints.length > 0 && (
@@ -1199,23 +1184,6 @@ export function SupportProxyMeshLayer({
         </group>
       ))}
 
-      {pointerHoverEnabled && hoverBoxes.map((box) => (
-        <mesh
-          key={`proxy-hover-box:${box.modelKey}`}
-          position={box.position}
-          scale={box.size}
-          userData={{ modelId: box.modelId ?? null }}
-          onPointerMove={() => handleProxyHoverBoxMove(box.modelId)}
-          onPointerOut={handleProxyPointerOut}
-          onClick={pointerSelectionEnabled ? () => handleProxyBoxClick(box.modelId) : undefined}
-          onPointerDown={pointerDragStartEnabled ? (event) => reportModelDragStart(box.modelId, event) : undefined}
-        >
-          <boxGeometry args={[1, 1, 1]} />
-          {/* Object stays visible so R3F still dispatches to it; the material
-              paints nothing, so the box costs no draw call. */}
-          <meshBasicMaterial visible={false} />
-        </mesh>
-      ))}
     </group>
   );
 }

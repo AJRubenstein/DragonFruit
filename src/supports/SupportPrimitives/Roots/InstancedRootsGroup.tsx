@@ -44,6 +44,11 @@ interface InstancedRootsGroupProps {
      * costs the changed instances rather than a full re-layout.
      */
     isHidden?: (root: InstancedRoot) => boolean;
+    /**
+     * Raycast override, for a caller whose batch is too large for three's
+     * per-instance walk. The hover grid answers it in O(cells crossed).
+     */
+    raycast?: THREE.Object3D['raycast'];
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
     onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
@@ -89,6 +94,7 @@ function RootBucketMesh({
     outOfBoundsMaterial,
     instanceColor,
     isHidden,
+    raycast,
     onRootClick,
     onRootPointerDown,
     onRootPointerMove,
@@ -106,6 +112,7 @@ function RootBucketMesh({
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     instanceColor?: (root: InstancedRoot) => THREE.Color;
     isHidden?: (root: InstancedRoot) => boolean;
+    raycast?: THREE.Object3D['raycast'];
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
     onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
@@ -258,7 +265,9 @@ function RootBucketMesh({
                 args={[undefined, undefined, bucket.roots.length]}
                 frustumCulled={false}
                 renderOrder={100000}
+                raycast={raycast ?? THREE.Mesh.prototype.raycast}
                 onClick={onRootClick ? handleClick : undefined}
+                onPointerDown={onRootPointerDown ? handlePointerDown : undefined}
                 onPointerMove={onRootPointerMove ? handlePointerMove : undefined}
                 onPointerOut={onRootPointerOut ? handlePointerOut : undefined}
             >
@@ -281,10 +290,7 @@ function RootBucketMesh({
                     args={[undefined, undefined, bucket.roots.length]}
                     frustumCulled={false}
                     renderOrder={100000}
-                    onClick={onRootClick ? handleClick : undefined}
-                    onPointerDown={onRootPointerDown ? handlePointerDown : undefined}
-                    onPointerMove={onRootPointerMove ? handlePointerMove : undefined}
-                    onPointerOut={onRootPointerOut ? handlePointerOut : undefined}
+                    raycast={() => null}
                 >
                     <cylinderGeometry args={[bucket.coneTopRadius, bucket.coneBottomRadius, bucket.coneHeight, 10]} />
                     <meshStandardMaterial
@@ -306,10 +312,7 @@ function RootBucketMesh({
                     args={[undefined, undefined, bucket.roots.length]}
                     frustumCulled={false}
                     renderOrder={100000}
-                    onClick={onRootClick ? handleClick : undefined}
-                    onPointerDown={onRootPointerDown ? handlePointerDown : undefined}
-                    onPointerMove={onRootPointerMove ? handlePointerMove : undefined}
-                    onPointerOut={onRootPointerOut ? handlePointerOut : undefined}
+                    raycast={() => null}
                 >
                     <sphereGeometry args={[bucket.sphereRadius, 10, 8]} />
                     <meshStandardMaterial

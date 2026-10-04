@@ -49,6 +49,11 @@ interface InstancedShaftGroupProps {
      * are not hidden this way: they are merged into one tube mesh.
      */
     isHidden?: (shaft: InstancedShaft) => boolean;
+    /**
+     * Raycast override, for a caller whose batch is too large for three's
+     * per-instance walk. The hover grid answers it in O(cells crossed).
+     */
+    raycast?: THREE.Object3D['raycast'];
     onShaftClick?: (shaft: InstancedShaft, event: ThreeEvent<MouseEvent>) => void;
     onShaftPointerDown?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
     onShaftPointerMove?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
@@ -77,6 +82,7 @@ export function InstancedShaftGroup({
     outOfBoundsMaterial = null,
     instanceColor,
     isHidden,
+    raycast,
     onShaftClick,
     onShaftPointerDown,
     onShaftPointerMove,
@@ -289,6 +295,7 @@ export function InstancedShaftGroup({
                     args={[undefined, undefined, straightShafts.length]}
                     frustumCulled={false}
                     renderOrder={100000}
+                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
                     onClick={onShaftClick ? handleClick : undefined}
                     onPointerDown={onShaftPointerDown ? handlePointerDown : undefined}
                     onPointerMove={onShaftPointerMove ? handlePointerMove : undefined}
