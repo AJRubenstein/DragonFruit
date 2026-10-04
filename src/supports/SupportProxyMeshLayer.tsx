@@ -69,6 +69,8 @@ const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
 /** Grown by this much, so a box still catches a support a hair outside its bounds. */
 const PROXY_HOVER_BOX_MARGIN_MM = 0.5;
+/** The hover tint's glow. A selection has none: it is the active colour flat. */
+const HOVER_EMISSIVE_INTENSITY = 0.1;
 
 export type ProxyModelGeometry = {
   modelId?: string;
@@ -126,7 +128,7 @@ export type ProxyOverlayInput = {
 export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverlayEntry[] {
   const entries: ProxyOverlayEntry[] = [];
 
-  const entryFor = (modelId: string, key: string, opacity: number): ProxyOverlayEntry | null => {
+  const entryFor = (modelId: string, key: string, opacity: number, emissiveIntensity: number): ProxyOverlayEntry | null => {
     if (!input.isModelVisible(modelId)) return null;
     const modelKey = toModelKey(modelId);
     const geometry = input.geometryByModel.get(modelKey);
@@ -139,13 +141,14 @@ export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverl
       geometry,
       color: ACTIVE_SUPPORT_COLOR,
       emissive: ACTIVE_SUPPORT_COLOR,
-      emissiveIntensity: 0.1,
+      emissiveIntensity,
       opacity,
     };
   };
 
   for (const modelId of input.selectedModelIds) {
-    const entry = entryFor(modelId, `selection:${toModelKey(modelId)}`, input.selectionOpacity);
+    // No glow: a selected support has always been the active colour flat.
+    const entry = entryFor(modelId, `selection:${toModelKey(modelId)}`, input.selectionOpacity, 0);
     if (entry) entries.push(entry);
   }
 
@@ -160,7 +163,7 @@ export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverl
     const opacity = modelId === input.hoverModelId
       ? input.hoverOpacity
       : input.hoverOpacity * MARQUEE_CANDIDATE_TINT_FACTOR;
-    const entry = entryFor(modelId, `hover:${toModelKey(modelId)}`, opacity);
+    const entry = entryFor(modelId, `hover:${toModelKey(modelId)}`, opacity, HOVER_EMISSIVE_INTENSITY);
     if (entry) entries.push(entry);
   }
 

@@ -34,6 +34,8 @@ describe('proxy overlay entries', () => {
     assert.equal(entries[0].key, 'selection:model-a');
     assert.equal(entries[0].opacity, 1);
     assert.equal(entries[0].color, entries[0].emissive);
+    // A selected support is the active colour flat; only the hover tint glows.
+    assert.equal(entries[0].emissiveIntensity, 0);
   });
 
   it('tints a hovered model, and a marquee candidate lighter still', () => {
