@@ -394,6 +394,7 @@ import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/Isl
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
 import { uploadPrintJobWithProgress, type PluginUploadProgressEvent } from '@/features/plugins/pluginUploadBridge';
 import { pluginNetworkFetch } from '@/utils/pluginNetworkBridge';
+import { clonePlainData } from '@/utils/plainDataClone';
 import { fetchRtspRelayStatus } from '@/utils/rtspRelayBridge';
 import {
   hollowApplyFromCapturedSource,
@@ -5338,7 +5339,7 @@ export default function Home() {
   }, []);
 
   const captureTransformSupportSnapshot = React.useCallback(() => {
-    const supportSnapshot = structuredClone(getSupportSnapshot());
+    const supportSnapshot = clonePlainData(getSupportSnapshot());
     supportSnapshot.selectedId = null;
     supportSnapshot.selectedCategory = null;
     supportSnapshot.hoveredId = null;
