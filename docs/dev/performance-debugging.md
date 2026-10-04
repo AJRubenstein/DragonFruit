@@ -198,8 +198,11 @@ sphere is hit, and a support batch spans the plate, so any ray over the plate
 pays for all of it. three-mesh-bvh cannot accelerate it. A batch that must
 answer hover therefore needs a `raycast` of its own: the shaft batch indexes its
 instances into cells and tests only the cells the ray crosses
-(`src/supports/proxyHoverIndex.ts`). Give raycast-only merged geometries a bounds
-tree.
+(`src/supports/proxyHoverIndex.ts`), built inside `InstancedShaftGroup` from the
+list that mesh draws, since a target's `index` is the instance index the event
+reports and a batch that filters its input — zero-length shafts are not drawn —
+would otherwise shift every index against the drawn list. Give raycast-only
+merged geometries a bounds tree.
 
 **A grid belongs to a mesh, not to a kind of primitive.** The shafts, roots,
 joints and cones are drawn by four different components, and three of them split

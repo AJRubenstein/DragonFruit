@@ -67,6 +67,19 @@ await send('Runtime.enable');
 await send('Profiler.enable');
 await send('Page.enable');
 
+if (mode === 'reload') {
+  await send('Page.enable');
+  await send('Page.reload', { ignoreCache: true });
+  for (let i = 0; i < 60; i += 1) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const ready = await evaluate(`document.body.innerText.length > 200`).catch(() => false);
+    if (ready) break;
+  }
+  console.log('reloaded:', JSON.stringify(await evaluate("document.body.innerText.slice(0, 120)")).slice(0, 200));
+  ws.close();
+  process.exit(0);
+}
+
 if (mode === 'eval') {
   console.log(JSON.stringify(await evaluate(rest.join(' ')), null, 1));
   ws.close();

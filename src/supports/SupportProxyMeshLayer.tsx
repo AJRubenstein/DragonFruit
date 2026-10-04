@@ -5,7 +5,6 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { useThree } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
 import { isCurvedBatchedShaft } from './Curves/batchedBezierTubeGeometry';
-import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverIndex, type ProxyHoverTarget } from './proxyHoverIndex';
 import { subscribe, getSnapshot } from './state';
 // Loading the generated barrel runs every type's proxy geometry registration.
 import './generatedSupportRegistrations';
@@ -956,41 +955,19 @@ export function SupportProxyMeshLayer({
     return base;
   }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives]);
 
-  // A grid for the straight shafts, the one batch that draws every shaft of
-  // every model in a single mesh: it spans the plate, so three's own raycast
-  // would walk all of them (measured at ~0.11 us per instance, 13 ms at 100k)
-  // for every pointer move. The grid answers in the cells the ray crosses.
-  //
-  // It is deliberately not built for the other kinds. The joints, cones and
-  // roots are bucketed by their geometry parameters, so the group that draws
-  // them mounts hundreds of small meshes, and a grid handed to that group would
-  // be asked once per bucket - 448 full-plate queries per pointer move, measured
-  // at 157k segment tests and 35 ms, against 727 tests and 14 ms for the same
-  // move with three's own raycast. The index in a target is also the index
-  // inside the batch the grid was built from, which a bucket's `instanceId` is
-  // not. A small bucket needs no help; the shaft batch does.
-  const hoverIndexes = React.useMemo(() => {
-    const shaftTargets: ProxyHoverTarget[] = baseGeometry.straightShafts.map((shaft, index) => ({
-      modelId: shaft.modelId,
-      index,
-      start: shaft.start,
-      end: shaft.end,
-      radius: Math.max(0.2, shaft.diameter / 2),
-    }));
-
-    return { shafts: buildProxyHoverIndex(shaftTargets) };
-  }, [baseGeometry]);
-
   // A support a fraction of a pixel wide must still be grabbable, so the grab
   // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.
-  const hoverRaycasts = React.useMemo(() => {
+  // The shaft batch turns this into a hover index of its own, over the shafts it
+  // actually draws - the index and the drawn list must agree, or a hit resolves
+  // to a neighbouring support.
+  const grabRadiusAt = React.useMemo(() => {
     const grabRadiusPx = 7;
     // `useThree().camera` is the R3F union; each member below is the concrete
     // camera the matching check selects.
     const perspectiveCamera = camera as THREE.PerspectiveCamera;
     const orthographicCamera = camera as THREE.OrthographicCamera;
     const viewportHeight = Math.max(1, size.height);
-    const worldPerPixelAt = (distance: number) => {
+    return (distance: number) => {
       if (perspectiveCamera.isPerspectiveCamera) {
         const worldHeight = 2 * Math.tan((perspectiveCamera.fov * Math.PI) / 360) * distance;
         return (worldHeight / viewportHeight) * grabRadiusPx;
@@ -998,12 +975,7 @@ export function SupportProxyMeshLayer({
       const worldHeight = (orthographicCamera.top - orthographicCamera.bottom) / Math.max(0.0001, orthographicCamera.zoom);
       return (worldHeight / viewportHeight) * grabRadiusPx;
     };
-
-    const raycastFor = (index: ProxyHoverIndex | null) =>
-      index ? createProxyHoverRaycast(index, worldPerPixelAt) : undefined;
-
-    return { shafts: raycastFor(hoverIndexes.shafts) };
-  }, [camera, hoverIndexes, size.height]);
+  }, [camera, size.height]);
 
   if (visibleModelEntries.length === 0) {
     return null;
@@ -1029,7 +1001,7 @@ export function SupportProxyMeshLayer({
               radialSegments={10}
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
-              raycast={hoverRaycasts.shafts}
+              grabRadiusAt={grabRadiusAt}
               onShaftClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
               onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}

@@ -28,6 +28,44 @@ export function isCurvedBatchedShaft(shaft: InstancedShaft): boolean {
     return shaft.controlPoint1 != null && shaft.controlPoint2 != null;
 }
 
+/**
+ * Split a batch's shafts into the ones the merged tube mesh draws and the ones
+ * the instanced mesh draws.
+ *
+ * The instanced batch answers hover through an index of its own instances, so
+ * whatever this drops must be dropped by that index too: a shaft with no length
+ * is not drawn (it is an instanced mesh scaled to nothing) and must not be a
+ * hover target, or every later instance's index shifts and a hit resolves to a
+ * neighbouring support. A leaf has no shaft at all - its contact point is a
+ * zero-length segment - which is 67 of an 18-model plate's shafts per model.
+ */
+export function splitBatchedShafts(shafts: readonly InstancedShaft[]): {
+    straightShafts: InstancedShaft[];
+    curvedShafts: InstancedShaft[];
+} {
+    const straightShafts: InstancedShaft[] = [];
+    const curvedShafts: InstancedShaft[] = [];
+    for (const shaft of shafts) {
+        if (isCurvedBatchedShaft(shaft)) {
+            // Degenerate only when the whole control net collapses to a point.
+            const points = [shaft.controlPoint1!, shaft.controlPoint2!, shaft.end];
+            const collapsed = points.every((p) => {
+                const dx = p.x - shaft.start.x;
+                const dy = p.y - shaft.start.y;
+                const dz = p.z - shaft.start.z;
+                return dx * dx + dy * dy + dz * dz < 1e-6;
+            });
+            if (!collapsed) curvedShafts.push(shaft);
+            continue;
+        }
+        const dx = shaft.end.x - shaft.start.x;
+        const dy = shaft.end.y - shaft.start.y;
+        const dz = shaft.end.z - shaft.start.z;
+        if (dx * dx + dy * dy + dz * dz >= 1e-6) straightShafts.push(shaft);
+    }
+    return { straightShafts, curvedShafts };
+}
+
 /** Map a raycast faceIndex back to the owning curve's index; -1 if out of range. */
 export function resolveCurvedShaftIndexForFace(triangleRangeEnds: number[], faceIndex: number): number {
     let lo = 0;

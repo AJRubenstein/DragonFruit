@@ -4,9 +4,10 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import {
     buildBatchedBezierTubes,
-    isCurvedBatchedShaft,
     resolveCurvedShaftIndexForFace,
+    splitBatchedShafts,
 } from '../../Curves/batchedBezierTubeGeometry';
+import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { writeInstanceColors } from '../instanceColorWriter';
 
@@ -51,10 +52,17 @@ interface InstancedShaftGroupProps {
      */
     isHidden?: (shaft: InstancedShaft) => boolean;
     /**
-     * Raycast override, for a caller whose batch is too large for three's
-     * per-instance walk. The hover grid answers it in O(cells crossed).
+     * Grab radius in world units at a distance along the ray, for a caller whose
+     * straight batch is large enough that three's per-instance walk is the cost
+     * of a hover. Given one, the straight batch answers hover through an index of
+     * its own instances and never walks them; without one it uses three's raycast.
+     *
+     * The index is built here, from the same list the mesh draws, because a
+     * target's `index` is the instance index the event reports: built anywhere
+     * else it can be shifted against the drawn list - a zero-length shaft is not
+     * drawn - and every hit past it resolves to a neighbouring support.
      */
-    raycast?: THREE.Object3D['raycast'];
+    grabRadiusAt?: (distance: number) => number;
     onShaftClick?: (shaft: InstancedShaft, event: ThreeEvent<MouseEvent>) => void;
     onShaftPointerDown?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
     onShaftPointerMove?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
@@ -86,7 +94,7 @@ export function InstancedShaftGroup({
     outOfBoundsMaterial = null,
     instanceColor,
     isHidden,
-    raycast,
+    grabRadiusAt,
     onShaftClick,
     onShaftPointerDown,
     onShaftPointerMove,
@@ -96,29 +104,24 @@ export function InstancedShaftGroup({
     const overlayMeshRef = useRef<THREE.InstancedMesh>(null);
     const lastHoveredShaftRef = useRef<InstancedShaft | null>(null);
 
-    const { straightShafts, curvedShafts } = useMemo(() => {
-        const straight: InstancedShaft[] = [];
-        const curved: InstancedShaft[] = [];
-        for (const shaft of shafts) {
-            if (isCurvedBatchedShaft(shaft)) {
-                // Degenerate only when the whole control net collapses to a point.
-                const points = [shaft.controlPoint1!, shaft.controlPoint2!, shaft.end];
-                const collapsed = points.every((p) => {
-                    const dx = p.x - shaft.start.x;
-                    const dy = p.y - shaft.start.y;
-                    const dz = p.z - shaft.start.z;
-                    return dx * dx + dy * dy + dz * dz < 1e-6;
-                });
-                if (!collapsed) curved.push(shaft);
-                continue;
-            }
-            const dx = shaft.end.x - shaft.start.x;
-            const dy = shaft.end.y - shaft.start.y;
-            const dz = shaft.end.z - shaft.start.z;
-            if (dx * dx + dy * dy + dz * dz >= 1e-6) straight.push(shaft);
-        }
-        return { straightShafts: straight, curvedShafts: curved };
-    }, [shafts]);
+    const { straightShafts, curvedShafts } = useMemo(() => splitBatchedShafts(shafts), [shafts]);
+
+    // The straight batch draws every shaft of every model in one mesh, so three's
+    // own raycast would walk all of them (~0.11 us each, 13 ms at 100k) on every
+    // pointer move. Built from this batch's own list, so a target's index is the
+    // instance index the event reports.
+    const straightRaycast = useMemo(() => {
+        if (!grabRadiusAt || straightShafts.length === 0) return undefined;
+        const targets: ProxyHoverTarget[] = straightShafts.map((shaft, index) => ({
+            modelId: shaft.modelId,
+            index,
+            start: shaft.start,
+            end: shaft.end,
+            radius: Math.max(0.2, shaft.diameter / 2),
+        }));
+        const index = buildProxyHoverIndex(targets);
+        return index ? createProxyHoverRaycast(index, grabRadiusAt) : undefined;
+    }, [grabRadiusAt, straightShafts]);
 
     // A merged tube mesh has one material, so a caller that tints individual
     // shafts gets one merged mesh per colour rather than vertex colours: the
@@ -315,7 +318,7 @@ export function InstancedShaftGroup({
                     args={[undefined, undefined, straightShafts.length]}
                     frustumCulled={false}
                     renderOrder={100000}
-                    raycast={raycast ?? THREE.Mesh.prototype.raycast}
+                    raycast={straightRaycast ?? THREE.Mesh.prototype.raycast}
                     onClick={onShaftClick ? handleClick : undefined}
                     onPointerDown={onShaftPointerDown ? handlePointerDown : undefined}
                     onPointerMove={onShaftPointerMove ? handlePointerMove : undefined}
