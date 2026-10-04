@@ -195,9 +195,11 @@ cursor. Two shapes dominate, both measured with the app's own three.js:
 
 `InstancedMesh.raycast` loops every instance once the mesh's whole bounding
 sphere is hit, and a support batch spans the plate, so any ray over the plate
-pays for all of it. three-mesh-bvh cannot accelerate it; keep hover off the
-instanced batches (see `dev/support-system.md`) and give raycast-only merged
-geometries a bounds tree.
+pays for all of it. three-mesh-bvh cannot accelerate it. A batch that must
+answer hover therefore needs a `raycast` of its own: the support batches index
+their instances into cells and test only the cells the ray crosses
+(`src/supports/proxyHoverIndex.ts`). Give raycast-only merged geometries a bounds
+tree.
 
 **The observer is a suspect.** In one session the Web Inspector killed the
 process, editing the worktree restarted the app under a running test, the stall

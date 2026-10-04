@@ -688,14 +688,13 @@ batches then rewrote every instance matrix.
 
 Fixed so far:
 
-- hover on the proxy batches moved to one invisible box per model
-  (`computeProxyHoverBoxes`), O(models) per move, and the per-model bounds it
-  reads are cached against the support state rather than re-walked on every
-  selection;
-- clicks and drag starts moved to those boxes too, so the batches carry no
-  pointer handlers at all and are never raycast. A press or click in a model's
-  support volume now selects that model; the marquee is unaffected, because it
-  needs Shift and the model drag bails on Shift;
+- hover, clicks and drag starts on the proxy batches go through a grid-indexed
+  raycast (`src/supports/proxyHoverIndex.ts`): the supports are indexed into
+  cells and a ray only tests the cells it crosses, so a hover costs O(cells)
+  instead of the O(supports) three's per-instance walk paid. The hit stays per
+  support, within a grab radius that scales with distance, so a support a
+  fraction of a pixel wide is still grabbable. A box per model was tried first
+  and rejected: it covers the gaps between supports and the model itself;
 - a selection recolours the batch instances (`instanceColor`, and a colour
   attribute on the merged curved-shaft tubes) instead of drawing one overlay per
   selected model. Selecting all models costs one colour pass (~2 ms at 100k
