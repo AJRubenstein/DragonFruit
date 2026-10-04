@@ -49,6 +49,20 @@ interface RaftProxyMeshLayerProps {
 
 const EMPTY_PLATE_CLEARANCE_TARGETS: readonly PlateFootprintSource[] = Object.freeze([]);
 
+/**
+ * Give a raft proxy geometry a bounds tree.
+ *
+ * The accelerated raycast is installed globally (`src/utils/bvh.ts`), and a mesh
+ * whose geometry has no bounds tree falls back to the plain per-triangle test —
+ * which every pointer move pays once per visible raft: measured at ~7 ms per
+ * move for 20 raft meshes of 5k triangles, and ~50 ms at 20k triangles, against
+ * ~0.12 ms with a tree.
+ */
+function withBoundsTree<T extends THREE.BufferGeometry>(geometry: T): T {
+  if (typeof geometry.computeBoundsTree === 'function') geometry.computeBoundsTree();
+  return geometry;
+}
+
 type CachedRaftGeometry = {
   kind: 'solid' | 'line';
   bottomGeometry: THREE.BufferGeometry | null;
@@ -273,8 +287,10 @@ export function RaftProxyMeshLayer({
 
         next.set(modelKey, {
           kind: 'solid',
-          bottomGeometry: (solid.baseMesh.geometry as THREE.BufferGeometry).clone(),
-          wallGeometry: solid.wallMesh ? (solid.wallMesh.geometry as THREE.BufferGeometry).clone() : null,
+          bottomGeometry: withBoundsTree((solid.baseMesh.geometry as THREE.BufferGeometry).clone()),
+          wallGeometry: solid.wallMesh
+            ? withBoundsTree((solid.wallMesh.geometry as THREE.BufferGeometry).clone())
+            : null,
         });
 
         disposeGeneratedMeshes([
@@ -293,13 +309,14 @@ export function RaftProxyMeshLayer({
         });
         if (!line) continue;
 
-        const bottomGeometry = mergeGeometryParts([
+        const mergedBottomGeometry = mergeGeometryParts([
           ...line.beamMeshes.map((mesh) => mesh.geometry as THREE.BufferGeometry),
           line.borderMesh ? (line.borderMesh.geometry as THREE.BufferGeometry) : null,
         ]);
+        const bottomGeometry = mergedBottomGeometry ? withBoundsTree(mergedBottomGeometry) : null;
 
         const wallGeometry = line.wallMesh
-          ? (line.wallMesh.geometry as THREE.BufferGeometry).clone()
+          ? withBoundsTree((line.wallMesh.geometry as THREE.BufferGeometry).clone())
           : null;
 
         next.set(modelKey, {

@@ -67,8 +67,10 @@ const DEFAULT_SUPPORT_COLOR = '#9a9a9a';
 const ACTIVE_SUPPORT_COLOR = '#c8752a';
 const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
+/** Grown by this much, so a box still catches a support a hair outside its bounds. */
+const PROXY_HOVER_BOX_MARGIN_MM = 0.5;
 
-type ProxyModelGeometry = {
+export type ProxyModelGeometry = {
   modelId?: string;
   shafts: InstancedShaft[];
   roots: InstancedRoot[];
@@ -89,6 +91,75 @@ type FlatProxyGeometry = {
   joints: InstancedJoint[];
   cones: InstancedContactCone[];
 };
+
+/**
+ * One hover target per model, standing in for the model's proxy primitives.
+ *
+ * R3F raycasts every instance of every mesh carrying a pointer handler, so
+ * hovering the instanced batches costs O(supports) per pointer move — 13 ms at
+ * 20k supports. Hover only ever resolves a model id, so a box around that
+ * model's support volume answers the same question at O(models). Clicks keep
+ * their per-instance targets: R3F filters non-hover handlers out of the
+ * pointer-move raycast, so they are only paid once per click.
+ */
+type ProxyHoverBox = {
+  modelKey: string;
+  modelId?: string;
+  position: [number, number, number];
+  size: [number, number, number];
+};
+
+/** The entries `computeProxyHoverBoxes` reads, so the walk can be tested alone. */
+export type ProxyHoverBoxEntry = {
+  modelKey: string;
+  modelId?: string;
+  zOffset: number;
+  geometry: ProxyModelGeometry;
+};
+
+/**
+ * One hover box per entry, sized to hold every primitive that entry draws.
+ *
+ * A box that misses a primitive is a support you cannot hover, so the walk
+ * takes the shaft ends and bezier control points, the roots, the joints and the
+ * cones — everything the batches draw.
+ */
+export function computeProxyHoverBoxes(entries: readonly ProxyHoverBoxEntry[]): ProxyHoverBox[] {
+  const boxes: ProxyHoverBox[] = [];
+  const bounds = new THREE.Box3();
+  const point = new THREE.Vector3();
+
+  const include = (value: Vec3) => bounds.expandByPoint(point.set(value.x, value.y, value.z));
+
+  for (const entry of entries) {
+    bounds.makeEmpty();
+
+    for (const shaft of entry.geometry.shafts) {
+      include(shaft.start);
+      include(shaft.end);
+      if (shaft.controlPoint1) include(shaft.controlPoint1);
+      if (shaft.controlPoint2) include(shaft.controlPoint2);
+    }
+    for (const root of entry.geometry.roots) include(root.basePos);
+    for (const joint of entry.geometry.joints) include(joint.pos);
+    for (const cone of entry.geometry.cones) include(cone.pos);
+
+    if (bounds.isEmpty()) continue;
+    bounds.expandByScalar(PROXY_HOVER_BOX_MARGIN_MM);
+
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    boxes.push({
+      modelKey: entry.modelKey,
+      modelId: entry.modelId,
+      position: [center.x, center.y, center.z + entry.zOffset],
+      // A flat model can give a zero extent on one axis; a box needs volume.
+      size: [Math.max(size.x, 0.2), Math.max(size.y, 0.2), Math.max(size.z, 0.2)],
+    });
+  }
+
+  return boxes;
+}
 
 type SharedProxyCacheEntry = {
   /** The one input the walk reads, so one identity covers every collection. */
@@ -742,22 +813,12 @@ export function SupportProxyMeshLayer({
     onModelPointerSelect?.(shaft.modelId);
   }, [onModelPointerSelect, pointerSelectionEnabled]);
 
-  const handleProxyShaftPointerMove = React.useCallback((shaft: InstancedShaft) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(shaft.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
-
   const handleProxyRootClick = React.useCallback((root: InstancedRoot) => {
     if (!pointerSelectionEnabled) return;
     if (!root.modelId) return;
     if (hitCategoryRef.current === 'gizmo') return;
     onModelPointerSelect?.(root.modelId);
   }, [onModelPointerSelect, pointerSelectionEnabled]);
-
-  const handleProxyRootPointerMove = React.useCallback((root: InstancedRoot) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(root.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
 
   const handleProxyJointClick = React.useCallback((joint: InstancedJoint) => {
     if (!pointerSelectionEnabled) return;
@@ -766,11 +827,6 @@ export function SupportProxyMeshLayer({
     onModelPointerSelect?.(joint.modelId);
   }, [onModelPointerSelect, pointerSelectionEnabled]);
 
-  const handleProxyJointPointerMove = React.useCallback((joint: InstancedJoint) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(joint.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
-
   const handleProxyConeClick = React.useCallback((cone: InstancedContactCone) => {
     if (!pointerSelectionEnabled) return;
     if (!cone.modelId) return;
@@ -778,15 +834,13 @@ export function SupportProxyMeshLayer({
     onModelPointerSelect?.(cone.modelId);
   }, [onModelPointerSelect, pointerSelectionEnabled]);
 
-  const handleProxyConePointerMove = React.useCallback((cone: InstancedContactCone) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(cone.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
+  const handleProxyHoverBoxMove = React.useCallback((modelId: string | undefined) => {
+    setSupportHoverModel(modelId ?? null);
+  }, [setSupportHoverModel]);
 
   const handleProxyPointerOut = React.useCallback(() => {
-    if (!pointerHoverEnabled) return;
     scheduleSupportHoverClear();
-  }, [pointerHoverEnabled, scheduleSupportHoverClear]);
+  }, [scheduleSupportHoverClear]);
 
   // The hover tint also covers the models a marquee drag is about to take, so
   // their supports light up with the model instead of after the mouse is up.
@@ -907,6 +961,11 @@ export function SupportProxyMeshLayer({
     return { base, highlighted };
   }, [visibleModelEntries, highlightedModelIdSet, includeDetailedPrimitives]);
 
+  const hoverBoxes = React.useMemo<ProxyHoverBox[]>(
+    () => computeProxyHoverBoxes(visibleModelEntries),
+    [visibleModelEntries],
+  );
+
   if (visibleModelEntries.length === 0) {
     return null;
   }
@@ -934,8 +993,6 @@ export function SupportProxyMeshLayer({
               outOfBoundsMaterial={outOfBoundsMaterial}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
               onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
-              onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
-              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {flattenedGeometry.base.roots.length > 0 && (
@@ -948,8 +1005,6 @@ export function SupportProxyMeshLayer({
               outOfBoundsMaterial={outOfBoundsMaterial}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
               onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
-              onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
-              onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {includeDetailedPrimitives && flattenedGeometry.base.joints.length > 0 && (
@@ -961,8 +1016,6 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
-              onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
-              onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {includeDetailedPrimitives && flattenedGeometry.base.cones.length > 0 && (
@@ -974,8 +1027,6 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
               onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
-              onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
-              onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
         </group>
@@ -994,8 +1045,6 @@ export function SupportProxyMeshLayer({
               outOfBoundsMaterial={outOfBoundsMaterial}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
               onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
-              onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
-              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {flattenedGeometry.highlighted.roots.length > 0 && (
@@ -1008,8 +1057,6 @@ export function SupportProxyMeshLayer({
               outOfBoundsMaterial={outOfBoundsMaterial}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
               onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
-              onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
-              onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {includeDetailedPrimitives && flattenedGeometry.highlighted.joints.length > 0 && (
@@ -1021,8 +1068,6 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
-              onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
-              onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {includeDetailedPrimitives && flattenedGeometry.highlighted.cones.length > 0 && (
@@ -1034,8 +1079,6 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
               onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
-              onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
-              onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
         </group>
@@ -1059,8 +1102,6 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
               onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
-              onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
-              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
 
@@ -1075,8 +1116,6 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
               onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
-              onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
-              onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
 
@@ -1091,8 +1130,6 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
-              onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
-              onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
 
@@ -1107,11 +1144,25 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
               onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
-              onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
-              onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
         </group>
+      ))}
+
+      {pointerHoverEnabled && hoverBoxes.map((box) => (
+        <mesh
+          key={`proxy-hover-box:${box.modelKey}`}
+          position={box.position}
+          scale={box.size}
+          userData={{ modelId: box.modelId ?? null }}
+          onPointerMove={() => handleProxyHoverBoxMove(box.modelId)}
+          onPointerOut={handleProxyPointerOut}
+        >
+          <boxGeometry args={[1, 1, 1]} />
+          {/* Object stays visible so R3F still dispatches to it; the material
+              paints nothing, so the box costs no draw call. */}
+          <meshBasicMaterial visible={false} />
+        </mesh>
       ))}
     </group>
   );
