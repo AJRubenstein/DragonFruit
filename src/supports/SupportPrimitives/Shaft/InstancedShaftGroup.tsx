@@ -197,6 +197,11 @@ export function InstancedShaftGroup({
             overlayMesh.count = straightShafts.length;
             overlayMesh.instanceMatrix.needsUpdate = true;
         }
+        // The batch was just rewritten with every instance visible, so the hide
+        // pass's memo of what it has already applied is stale. Without this it
+        // skips the excluded instances and they render at their committed
+        // position, which is the ghost of a dragged model's supports.
+        hiddenStateRef.current.clear();
     }, [straightShafts, hasOverlay, writeInstanceMatrix]);
 
     // Hiding an instance writes one matrix, not the whole batch: this is what an

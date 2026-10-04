@@ -324,6 +324,11 @@ function ConeBucketMesh({
             mesh.count = bucket.cones.length;
             mesh.instanceMatrix.needsUpdate = true;
         }
+        // The batch was just rewritten with every instance visible, so the hide
+        // pass's memo of what it has already applied is stale. Without this it
+        // skips the excluded instances and they render at their committed
+        // position, which is the ghost of a dragged model's supports.
+        hiddenStateRef.current.clear();
     }, [bucket, hasOverlay, writeConeMatrices]);
 
     // Hiding an instance writes one matrix, not the whole bucket: this is what an
