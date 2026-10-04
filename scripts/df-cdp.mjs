@@ -11,6 +11,7 @@
 //   npm run profile:df -- drag <x1> <y1> <x2> <y2> [right|middle] [steps]
 //   npm run profile:df -- fps <seconds> [move] [moves]
 //   npm run profile:df -- clickdom <css selector> [index]
+//   npm run profile:df -- dragshot <x1> <y1> <x2> <y2> [file] [steps]   screenshot mid-drag
 //   npm run profile:df -- block <xPct> <yPct>     long tasks and frame gaps after a click
 //
 // Start the app with the port open first:
@@ -285,6 +286,41 @@ if (mode === 'block') {
   })()`);
   console.log(`${mode} ${rest[0]},${rest[1]}: dispatch wall ${Date.now() - t0} ms`);
   console.log(JSON.stringify(out, null, 1));
+  ws.close();
+  process.exit(0);
+}
+
+if (mode === 'dragshot') {
+  // Press, move in steps, screenshot *before* releasing: the state the user sees
+  // mid-drag is what is being reported, and a release commits it away.
+  const [x1, y1, x2, y2] = rest.slice(0, 4).map(Number);
+  const file = rest[4] ?? 'C:/tmp/dragshot.png';
+  const steps = Number(rest[5] ?? 12);
+  const px = (v) => rect.left + rect.width * v;
+  const py = (v) => rect.top + rect.height * v;
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: px(x1), y: py(y1), buttons: 0, pointerType: 'mouse' });
+  await frame();
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: px(x1), y: py(y1), button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+  await frame();
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: px(x1 + (x2 - x1) * t),
+      y: py(y1 + (y2 - y1) * t),
+      button: 'left',
+      buttons: 1,
+      pointerType: 'mouse',
+    });
+    await frame();
+  }
+  await frame();
+  const { data } = await send('Page.captureScreenshot', { format: 'png' });
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(file, Buffer.from(data, 'base64'));
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px(x2), y: py(y2), button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+  await frame();
+  console.log('dragged', x1, y1, '->', x2, y2, '; shot while held:', file);
   ws.close();
   process.exit(0);
 }
