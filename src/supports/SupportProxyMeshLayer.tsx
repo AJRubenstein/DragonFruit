@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
+import { isCurvedBatchedShaft } from './Curves/batchedBezierTubeGeometry';
 import { subscribe, getSnapshot } from './state';
 // Loading the generated barrel runs every type's proxy geometry registration.
 import './generatedSupportRegistrations';
@@ -88,7 +89,10 @@ type VisibleModelEntry = {
 };
 
 type FlatProxyGeometry = {
-  shafts: InstancedShaft[];
+  /** Straight shafts: one instanced cylinder each. */
+  straightShafts: InstancedShaft[];
+  /** Curved shafts: merged into one tube mesh, so they cannot hide per instance. */
+  curvedShafts: InstancedShaft[];
   roots: InstancedRoot[];
   joints: InstancedJoint[];
   cones: InstancedContactCone[];
@@ -792,21 +796,45 @@ export function SupportProxyMeshLayer({
     return Array.from(baseProxyByModel.entries());
   }, [baseProxyByModel, modelFilterId]);
 
-  const visibleModelEntries = React.useMemo<VisibleModelEntry[]>(() => {
-    const visible: VisibleModelEntry[] = [];
+  const allModelEntries = React.useMemo<VisibleModelEntry[]>(() => {
+    const entries: VisibleModelEntry[] = [];
     for (const [modelKey, geometry] of modelEntries) {
       const modelId = fromModelKey(modelKey);
-      if (!resolveModelVisible(modelId)) continue;
-
-      visible.push({
+      entries.push({
         modelKey,
         modelId,
         geometry,
         zOffset: modelId ? (modelDropOffsetsById?.[modelId] ?? 0) : 0,
       });
     }
-    return visible;
-  }, [modelEntries, resolveModelVisible, modelDropOffsetsById]);
+    return entries;
+  }, [modelEntries, modelDropOffsetsById]);
+
+  const visibleModelEntries = React.useMemo<VisibleModelEntry[]>(
+    () => allModelEntries.filter((entry) => resolveModelVisible(entry.modelId)),
+    [allModelEntries, resolveModelVisible],
+  );
+
+  // A filtered layer (the ghost and preview ones) draws one model and nothing
+  // else, so it keeps filtering its geometry. The world layer keeps every model
+  // in its batches and hides the excluded ones per instance instead: making a
+  // model active then costs the changed instances, not a full re-layout.
+  const hidesExcludedModels = !modelFilterId;
+  const hiddenModelIds = React.useMemo(() => {
+    if (!hidesExcludedModels) return null;
+    const hidden = new Set<string>();
+    for (const entry of allModelEntries) {
+      if (entry.modelId && !resolveModelVisible(entry.modelId)) hidden.add(entry.modelId);
+    }
+    return hidden;
+  }, [allModelEntries, hidesExcludedModels, resolveModelVisible]);
+
+  const isHiddenPrimitive = React.useMemo(() => {
+    if (!hiddenModelIds) return undefined;
+    return (primitive: { modelId?: string }) => (
+      primitive.modelId ? hiddenModelIds.has(primitive.modelId) : false
+    );
+  }, [hiddenModelIds]);
 
   const highlightedModelIdSet = React.useMemo(() => {
     const ids = new Set<string>();
@@ -944,13 +972,10 @@ export function SupportProxyMeshLayer({
   // restores the "singular mesh" performance characteristic that was lost when
   // per-model groups were introduced in the ZIP Import / Batch Export refactor.
   const baseGeometry = React.useMemo(() => {
-    const base: FlatProxyGeometry = { shafts: [], roots: [], joints: [], cones: [] };
+    const base: FlatProxyGeometry = { straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] };
 
-    const appendShaft = (shaft: InstancedShaft, zOffset: number) => {
-      if (Math.abs(zOffset) < 1e-6) {
-        base.shafts.push(shaft);
-        return;
-      }
+    const offsetShaft = (shaft: InstancedShaft, zOffset: number): InstancedShaft => {
+      if (Math.abs(zOffset) < 1e-6) return shaft;
       const pushed: InstancedShaft = {
         ...shaft,
         start: { x: shaft.start.x, y: shaft.start.y, z: shaft.start.z + zOffset },
@@ -958,7 +983,7 @@ export function SupportProxyMeshLayer({
       };
       if (shaft.controlPoint1) pushed.controlPoint1 = { x: shaft.controlPoint1.x, y: shaft.controlPoint1.y, z: shaft.controlPoint1.z + zOffset };
       if (shaft.controlPoint2) pushed.controlPoint2 = { x: shaft.controlPoint2.x, y: shaft.controlPoint2.y, z: shaft.controlPoint2.z + zOffset };
-      base.shafts.push(pushed);
+      return pushed;
     };
 
     const appendRoot = (root: InstancedRoot, zOffset: number) => {
@@ -994,10 +1019,19 @@ export function SupportProxyMeshLayer({
       });
     };
 
-    for (const entry of visibleModelEntries) {
+    // A layer that hides its excluded models keeps them in these arrays, so an
+    // activation change leaves them alone. Curved shafts are the exception: a
+    // merged tube cannot hide one shaft, so they come from the visible set, and
+    // merging them again is cheap because each shaft's sweep is cached.
+    const geometryEntries = hidesExcludedModels ? allModelEntries : visibleModelEntries;
+    for (const entry of geometryEntries) {
       const { zOffset } = entry;
 
-      for (const shaft of entry.geometry.shafts) appendShaft(shaft, zOffset);
+      for (const shaft of entry.geometry.shafts) {
+        const curved = isCurvedBatchedShaft(shaft);
+        if (hidesExcludedModels && curved) continue;
+        (curved ? base.curvedShafts : base.straightShafts).push(offsetShaft(shaft, zOffset));
+      }
       for (const root of entry.geometry.roots) appendRoot(root, zOffset);
       if (includeDetailedPrimitives) {
         for (const joint of entry.geometry.joints) appendJoint(joint, zOffset);
@@ -1005,8 +1039,16 @@ export function SupportProxyMeshLayer({
       }
     }
 
+    if (hidesExcludedModels) {
+      for (const entry of visibleModelEntries) {
+        for (const shaft of entry.geometry.shafts) {
+          if (isCurvedBatchedShaft(shaft)) base.curvedShafts.push(offsetShaft(shaft, entry.zOffset));
+        }
+      }
+    }
+
     return base;
-  }, [visibleModelEntries, includeDetailedPrimitives]);
+  }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives]);
 
   const modelBounds = React.useMemo(
     () => computeProxyModelBounds(baseProxyByModel),
@@ -1029,7 +1071,8 @@ export function SupportProxyMeshLayer({
     return null;
   }
 
-  const hasBase = baseGeometry.shafts.length > 0
+  const hasBase = baseGeometry.straightShafts.length > 0
+    || baseGeometry.curvedShafts.length > 0
     || baseGeometry.roots.length > 0
     || (includeDetailedPrimitives && (baseGeometry.joints.length > 0 || baseGeometry.cones.length > 0));
 
@@ -1037,9 +1080,22 @@ export function SupportProxyMeshLayer({
     <group>
       {hasBase && (
         <group key="proxy-base-batch">
-          {baseGeometry.shafts.length > 0 && (
+          {baseGeometry.straightShafts.length > 0 && (
             <InstancedShaftGroup
-              shafts={baseGeometry.shafts}
+              shafts={baseGeometry.straightShafts}
+              color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
+              transparent={proxyTransparent}
+              opacity={proxyOpacity}
+              radialSegments={10}
+              clippingPlanes={clippingPlanes}
+              outOfBoundsMaterial={outOfBoundsMaterial}
+            />
+          )}
+          {baseGeometry.curvedShafts.length > 0 && (
+            <InstancedShaftGroup
+              shafts={baseGeometry.curvedShafts}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               transparent={proxyTransparent}
@@ -1054,6 +1110,7 @@ export function SupportProxyMeshLayer({
               roots={baseGeometry.roots}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
@@ -1065,6 +1122,7 @@ export function SupportProxyMeshLayer({
               joints={baseGeometry.joints}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
@@ -1075,6 +1133,7 @@ export function SupportProxyMeshLayer({
               cones={baseGeometry.cones}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}

@@ -7,6 +7,7 @@ import {
     isCurvedBatchedShaft,
     resolveCurvedShaftIndexForFace,
 } from '../../Curves/batchedBezierTubeGeometry';
+import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 
 export interface InstancedShaft {
     id: string;
@@ -41,6 +42,13 @@ interface InstancedShaftGroupProps {
      * black, and the group's own `color` is not used once this is set.
      */
     instanceColor?: (shaft: InstancedShaft) => THREE.Color;
+    /**
+     * Instances to hide, by the primitive they draw. The world layer keeps an
+     * excluded model in its arrays and hides it here, so an activation change
+     * costs the changed instances rather than a full re-layout. Curved shafts
+     * are not hidden this way: they are merged into one tube mesh.
+     */
+    isHidden?: (shaft: InstancedShaft) => boolean;
     onShaftClick?: (shaft: InstancedShaft, event: ThreeEvent<MouseEvent>) => void;
     onShaftPointerDown?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
     onShaftPointerMove?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
@@ -49,6 +57,13 @@ interface InstancedShaftGroupProps {
 
 const UP = new THREE.Vector3(0, 1, 0);
 const NOOP_RAYCAST: THREE.Object3D['raycast'] = () => {};
+
+/** Layout scratch: layouts are synchronous, so the batch kinds can share it. */
+const scratchObject = new THREE.Object3D();
+const shaftStart = new THREE.Vector3();
+const shaftEnd = new THREE.Vector3();
+const shaftDirection = new THREE.Vector3();
+const shaftMidpoint = new THREE.Vector3();
 
 export function InstancedShaftGroup({
     shafts,
@@ -61,6 +76,7 @@ export function InstancedShaftGroup({
     radialSegments = 12,
     outOfBoundsMaterial = null,
     instanceColor,
+    isHidden,
     onShaftClick,
     onShaftPointerDown,
     onShaftPointerMove,
@@ -107,36 +123,44 @@ export function InstancedShaftGroup({
 
     const hasOverlay = !!outOfBoundsMaterial;
 
+    const hiddenStateRef = React.useRef<Map<InstancedShaft, boolean>>(new Map());
+
+    const writeInstanceMatrix = React.useCallback((
+        mesh: THREE.InstancedMesh,
+        index: number,
+        shaft: InstancedShaft,
+        hidden: boolean,
+    ) => {
+        if (hidden) {
+            mesh.setMatrixAt(index, HIDDEN_INSTANCE_MATRIX);
+            return;
+        }
+        shaftStart.set(shaft.start.x, shaft.start.y, shaft.start.z);
+        shaftEnd.set(shaft.end.x, shaft.end.y, shaft.end.z);
+        shaftDirection.subVectors(shaftEnd, shaftStart);
+        const length = shaftDirection.length();
+        if (length < 0.001) {
+            mesh.setMatrixAt(index, HIDDEN_INSTANCE_MATRIX);
+            return;
+        }
+        shaftDirection.divideScalar(length);
+        shaftMidpoint.addVectors(shaftStart, shaftEnd).multiplyScalar(0.5);
+        scratchObject.position.copy(shaftMidpoint);
+        scratchObject.quaternion.setFromUnitVectors(UP, shaftDirection);
+        scratchObject.scale.set(shaft.diameter, length, shaft.diameter);
+        scratchObject.updateMatrix();
+        mesh.setMatrixAt(index, scratchObject.matrix);
+    }, []);
+
     useLayoutEffect(() => {
         const mesh = meshRef.current;
         const overlayMesh = overlayMeshRef.current;
         if (!mesh) return;
 
-        const tempObject = new THREE.Object3D();
-        const start = new THREE.Vector3();
-        const end = new THREE.Vector3();
-        const direction = new THREE.Vector3();
-        const midpoint = new THREE.Vector3();
-
         for (let i = 0; i < straightShafts.length; i += 1) {
             const shaft = straightShafts[i];
-
-            start.set(shaft.start.x, shaft.start.y, shaft.start.z);
-            end.set(shaft.end.x, shaft.end.y, shaft.end.z);
-
-            direction.subVectors(end, start);
-            const length = direction.length();
-            if (length < 0.001) continue;
-
-            direction.divideScalar(length);
-            midpoint.addVectors(start, end).multiplyScalar(0.5);
-
-            tempObject.position.copy(midpoint);
-            tempObject.quaternion.setFromUnitVectors(UP, direction);
-            tempObject.scale.set(shaft.diameter, length, shaft.diameter);
-            tempObject.updateMatrix();
-            mesh.setMatrixAt(i, tempObject.matrix);
-            if (overlayMesh) overlayMesh.setMatrixAt(i, tempObject.matrix);
+            writeInstanceMatrix(mesh, i, shaft, false);
+            if (overlayMesh) writeInstanceMatrix(overlayMesh, i, shaft, false);
         }
 
         mesh.count = straightShafts.length;
@@ -145,7 +169,31 @@ export function InstancedShaftGroup({
             overlayMesh.count = straightShafts.length;
             overlayMesh.instanceMatrix.needsUpdate = true;
         }
-    }, [straightShafts, hasOverlay]);
+    }, [straightShafts, hasOverlay, writeInstanceMatrix]);
+
+    // Hiding an instance writes one matrix, not the whole batch: this is what an
+    // activation change pays, and it must not re-derive every other instance.
+    useLayoutEffect(() => {
+        const mesh = meshRef.current;
+        const overlayMesh = overlayMeshRef.current;
+        if (!mesh || !isHidden) return;
+
+        const hiddenState = hiddenStateRef.current;
+        let touched = false;
+        for (let i = 0; i < straightShafts.length; i += 1) {
+            const shaft = straightShafts[i];
+            const hidden = isHidden(shaft);
+            if ((hiddenState.get(shaft) ?? false) === hidden) continue;
+            hiddenState.set(shaft, hidden);
+            touched = true;
+            writeInstanceMatrix(mesh, i, shaft, hidden);
+            if (overlayMesh) writeInstanceMatrix(overlayMesh, i, shaft, hidden);
+        }
+
+        if (!touched) return;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (overlayMesh) overlayMesh.instanceMatrix.needsUpdate = true;
+    }, [straightShafts, isHidden, writeInstanceMatrix]);
 
     // Colours are a separate pass: a selection changes them and nothing else, and
     // it must not re-derive every instance matrix to do it.

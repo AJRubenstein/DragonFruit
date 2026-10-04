@@ -5,9 +5,15 @@ import type { Vec3 } from '../../types';
 import type { SupportTipProfile } from './types';
 import { getConeCenterPosition, getConeQuaternionInto } from './contactConeUtils';
 import { calculateDiskThickness, getDiskCenter, getDiskRotationInto } from '../ContactDisk/contactDiskUtils';
+import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 import { quantizeToScale } from '@/utils/math';
+
+/** Layout scratch: layouts are synchronous, so the batch kinds can share it. */
+const scratchObject = new THREE.Object3D();
+const conePosition = new THREE.Vector3();
+const coneQuaternion = new THREE.Quaternion();
 
 export interface InstancedContactCone {
     id: string;
@@ -45,6 +51,12 @@ interface InstancedContactConeGroupProps {
      * is set.
      */
     instanceColor?: (cone: InstancedContactCone) => THREE.Color;
+    /**
+     * Instances to hide, by the primitive they draw. The world layer keeps an
+     * excluded model in its arrays and hides it here, so an activation change
+     * costs the changed instances rather than a full re-layout.
+     */
+    isHidden?: (cone: InstancedContactCone) => boolean;
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -116,6 +128,7 @@ function ConeBucketMesh({
     clippingPlanes,
     outOfBoundsMaterial,
     instanceColor,
+    isHidden,
     onConeClick,
     onConePointerDown,
     onConePointerMove,
@@ -134,6 +147,7 @@ function ConeBucketMesh({
     clippingPlanes?: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     instanceColor?: (cone: InstancedContactCone) => THREE.Color;
+    isHidden?: (cone: InstancedContactCone) => boolean;
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -150,79 +164,101 @@ function ConeBucketMesh({
 
     const hasOverlay = !!outOfBoundsMaterial;
 
-    const resolveDiskThickness = (cone: InstancedContactCone) => {
+    const hiddenStateRef = React.useRef<Map<InstancedContactCone, boolean>>(new Map());
+
+    const resolveDiskThickness = React.useCallback((cone: InstancedContactCone) => {
         if (cone.profile.type !== 'disk') return 0;
         return diskThicknessByCone.get(cone)
             ?? getDiskThicknessForCone(cone);
-    };
+    }, [diskThicknessByCone]);
 
-    useLayoutEffect(() => {
-        const tempObject = new THREE.Object3D();
-        const position = new THREE.Vector3();
-        const quaternion = new THREE.Quaternion();
+    const writeConeMatrices = React.useCallback((index: number, cone: InstancedContactCone, hidden: boolean) => {
+        const meshes = [diskRef.current, bodyRef.current, tipSphereRef.current, overlayDiskRef.current, overlayBodyRef.current, overlayTipSphereRef.current];
+        if (hidden) {
+            for (const mesh of meshes) if (mesh) mesh.setMatrixAt(index, HIDDEN_INSTANCE_MATRIX);
+            return;
+        }
 
-        const setInstanceMatrices = (
+        const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
+        const primitiveThickness = bucket.profileType === 'disk' ? resolveDiskThickness(cone) : 0;
+        const startX = cone.pos.x + effectiveSurfaceNormal.x * primitiveThickness;
+        const startY = cone.pos.y + effectiveSurfaceNormal.y * primitiveThickness;
+        const startZ = cone.pos.z + effectiveSurfaceNormal.z * primitiveThickness;
+
+        const write = (
             mesh: THREE.InstancedMesh | null,
-            transformInto: (cone: InstancedContactCone, position: THREE.Vector3, quaternion: THREE.Quaternion) => void,
+            position: THREE.Vector3,
+            quaternion: THREE.Quaternion,
         ) => {
             if (!mesh) return;
-            for (let i = 0; i < bucket.cones.length; i += 1) {
-                const cone = bucket.cones[i];
-                transformInto(cone, position, quaternion);
-                tempObject.position.copy(position);
-                tempObject.quaternion.copy(quaternion);
-                tempObject.scale.set(1, 1, 1);
-                tempObject.updateMatrix();
-                mesh.setMatrixAt(i, tempObject.matrix);
-            }
+            scratchObject.position.copy(position);
+            scratchObject.quaternion.copy(quaternion);
+            scratchObject.scale.set(1, 1, 1);
+            scratchObject.updateMatrix();
+            mesh.setMatrixAt(index, scratchObject.matrix);
+        };
+
+        // Body: the cone's own centre along its normal.
+        const bodyCenter = getConeCenterPosition({ x: startX, y: startY, z: startZ }, cone.normal, cone.profile);
+        conePosition.set(bodyCenter.x, bodyCenter.y, bodyCenter.z);
+        getConeQuaternionInto(cone.normal, coneQuaternion);
+        write(bodyRef.current, conePosition, coneQuaternion);
+        write(overlayBodyRef.current, conePosition, coneQuaternion);
+
+        // Tip sphere: the contact point itself, unrotated.
+        conePosition.set(startX, startY, startZ);
+        coneQuaternion.identity();
+        write(tipSphereRef.current, conePosition, coneQuaternion);
+        write(overlayTipSphereRef.current, conePosition, coneQuaternion);
+
+        // Disk: its own centre, pulled back by half the penetration.
+        const diskThickness = resolveDiskThickness(cone);
+        const diskCenter = getDiskCenter(cone.pos, effectiveSurfaceNormal, diskThickness);
+        const penetration = Math.max(0, resolvePenetration(cone));
+        conePosition.set(
+            diskCenter.x - effectiveSurfaceNormal.x * (penetration / 2),
+            diskCenter.y - effectiveSurfaceNormal.y * (penetration / 2),
+            diskCenter.z - effectiveSurfaceNormal.z * (penetration / 2),
+        );
+        getDiskRotationInto(effectiveSurfaceNormal, coneQuaternion);
+        write(diskRef.current, conePosition, coneQuaternion);
+        write(overlayDiskRef.current, conePosition, coneQuaternion);
+    }, [bucket.profileType, resolveDiskThickness, resolvePenetration]);
+
+    useLayoutEffect(() => {
+        for (let i = 0; i < bucket.cones.length; i += 1) {
+            const cone = bucket.cones[i];
+            writeConeMatrices(i, cone, false);
+        }
+
+        for (const mesh of [diskRef.current, bodyRef.current, tipSphereRef.current, overlayDiskRef.current, overlayBodyRef.current, overlayTipSphereRef.current]) {
+            if (!mesh) continue;
             mesh.count = bucket.cones.length;
             mesh.instanceMatrix.needsUpdate = true;
-        };
+        }
+    }, [bucket, hasOverlay, writeConeMatrices]);
 
-        const coneStartInto = (cone: InstancedContactCone, target: THREE.Vector3) => {
-            const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
-            const primitiveThickness = bucket.profileType === 'disk' ? resolveDiskThickness(cone) : 0;
-            target.set(
-                cone.pos.x + effectiveSurfaceNormal.x * primitiveThickness,
-                cone.pos.y + effectiveSurfaceNormal.y * primitiveThickness,
-                cone.pos.z + effectiveSurfaceNormal.z * primitiveThickness,
-            );
-        };
+    // Hiding an instance writes one matrix, not the whole bucket: this is what an
+    // activation change pays, and it must not re-derive every other instance.
+    useLayoutEffect(() => {
+        if (!isHidden) return;
 
-        const bodyTransform = (cone: InstancedContactCone, targetPosition: THREE.Vector3, targetQuaternion: THREE.Quaternion) => {
-            coneStartInto(cone, targetPosition);
-            const center = getConeCenterPosition(targetPosition, cone.normal, cone.profile);
-            targetPosition.set(center.x, center.y, center.z);
-            getConeQuaternionInto(cone.normal, targetQuaternion);
-        };
+        const hiddenState = hiddenStateRef.current;
+        let touched = false;
+        for (let i = 0; i < bucket.cones.length; i += 1) {
+            const cone = bucket.cones[i];
+            const hidden = isHidden(cone);
+            if ((hiddenState.get(cone) ?? false) === hidden) continue;
+            hiddenState.set(cone, hidden);
+            touched = true;
+            writeConeMatrices(i, cone, hidden);
+        }
 
-        const tipTransform = (cone: InstancedContactCone, targetPosition: THREE.Vector3, targetQuaternion: THREE.Quaternion) => {
-            coneStartInto(cone, targetPosition);
-            targetQuaternion.identity();
-        };
-
-        const diskTransform = (cone: InstancedContactCone, targetPosition: THREE.Vector3, targetQuaternion: THREE.Quaternion) => {
-            const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
-            const thickness = resolveDiskThickness(cone);
-            const center = getDiskCenter(cone.pos, effectiveSurfaceNormal, thickness);
-            const penetration = Math.max(0, resolvePenetration(cone));
-            targetPosition.set(
-                center.x - effectiveSurfaceNormal.x * (penetration / 2),
-                center.y - effectiveSurfaceNormal.y * (penetration / 2),
-                center.z - effectiveSurfaceNormal.z * (penetration / 2),
-            );
-            getDiskRotationInto(effectiveSurfaceNormal, targetQuaternion);
-        };
-
-        setInstanceMatrices(bodyRef.current, bodyTransform);
-        setInstanceMatrices(tipSphereRef.current, tipTransform);
-        setInstanceMatrices(diskRef.current, diskTransform);
-
-        // Overlay meshes share the same transforms.
-        setInstanceMatrices(overlayBodyRef.current, bodyTransform);
-        setInstanceMatrices(overlayTipSphereRef.current, tipTransform);
-        setInstanceMatrices(overlayDiskRef.current, diskTransform);
-    }, [bucket, diskThicknessByCone, hasOverlay, resolvePenetration]);
+        if (!touched) return;
+        for (const mesh of [diskRef.current, bodyRef.current, tipSphereRef.current, overlayDiskRef.current, overlayBodyRef.current, overlayTipSphereRef.current]) {
+            if (mesh) mesh.instanceMatrix.needsUpdate = true;
+        }
+    }, [bucket, isHidden, writeConeMatrices]);
 
     // Colours are a separate pass: a selection changes them and nothing else, and
     // it must not re-derive every instance matrix to do it.
@@ -421,6 +457,7 @@ export function InstancedContactConeGroup({
     clippingPlanes = null,
     outOfBoundsMaterial = null,
     instanceColor,
+    isHidden,
     onConeClick,
     onConePointerDown,
     onConePointerMove,
@@ -525,6 +562,7 @@ export function InstancedContactConeGroup({
                     clippingPlanes={clippingPlanes}
                     outOfBoundsMaterial={outOfBoundsMaterial}
                     instanceColor={instanceColor}
+                    isHidden={isHidden}
                     onConeClick={onConeClick}
                     onConePointerDown={onConePointerDown}
                     onConePointerMove={onConePointerMove}

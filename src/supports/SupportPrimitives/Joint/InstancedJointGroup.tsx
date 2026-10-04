@@ -2,6 +2,10 @@ import React, { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
+import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
+
+/** One scratch object per batch kind: layouts are synchronous, so they share it. */
+const scratchObject = new THREE.Object3D();
 
 export interface InstancedJoint {
     id: string;
@@ -28,6 +32,12 @@ interface InstancedJointGroupProps {
      * black, and the group's own `color` is not used once this is set.
      */
     instanceColor?: (joint: InstancedJoint) => THREE.Color;
+    /**
+     * Instances to hide, by the primitive they draw. The world layer keeps an
+     * excluded model in its arrays and hides it here, so an activation change
+     * costs the changed instances rather than a full re-layout.
+     */
+    isHidden?: (joint: InstancedJoint) => boolean;
     onJointClick?: (joint: InstancedJoint, event: ThreeEvent<MouseEvent>) => void;
     onJointPointerDown?: (joint: InstancedJoint, event: ThreeEvent<PointerEvent>) => void;
     onJointPointerMove?: (joint: InstancedJoint, event: ThreeEvent<PointerEvent>) => void;
@@ -46,6 +56,7 @@ export function InstancedJointGroup({
     heightSegments = 10,
     outOfBoundsMaterial = null,
     instanceColor,
+    isHidden,
     onJointClick,
     onJointPointerDown,
     onJointPointerMove,
@@ -61,23 +72,35 @@ export function InstancedJointGroup({
 
     const hasOverlay = !!outOfBoundsMaterial;
 
+    const hiddenStateRef = React.useRef<Map<InstancedJoint, boolean>>(new Map());
+
+    const writeInstanceMatrix = React.useCallback((
+        mesh: THREE.InstancedMesh,
+        index: number,
+        joint: InstancedJoint,
+        hidden: boolean,
+    ) => {
+        if (hidden) {
+            mesh.setMatrixAt(index, HIDDEN_INSTANCE_MATRIX);
+            return;
+        }
+        const radius = Math.max(0.001, joint.diameter * 0.5);
+        scratchObject.position.set(joint.pos.x, joint.pos.y, joint.pos.z);
+        scratchObject.quaternion.identity();
+        scratchObject.scale.set(radius, radius, radius);
+        scratchObject.updateMatrix();
+        mesh.setMatrixAt(index, scratchObject.matrix);
+    }, []);
+
     useLayoutEffect(() => {
         const mesh = meshRef.current;
         const overlayMesh = overlayMeshRef.current;
         if (!mesh) return;
 
-        const tempObject = new THREE.Object3D();
-
         for (let i = 0; i < validJoints.length; i += 1) {
             const joint = validJoints[i];
-            const radius = Math.max(0.001, joint.diameter * 0.5);
-
-            tempObject.position.set(joint.pos.x, joint.pos.y, joint.pos.z);
-            tempObject.quaternion.identity();
-            tempObject.scale.set(radius, radius, radius);
-            tempObject.updateMatrix();
-            mesh.setMatrixAt(i, tempObject.matrix);
-            if (overlayMesh) overlayMesh.setMatrixAt(i, tempObject.matrix);
+            writeInstanceMatrix(mesh, i, joint, false);
+            if (overlayMesh) writeInstanceMatrix(overlayMesh, i, joint, false);
         }
 
         mesh.count = validJoints.length;
@@ -86,7 +109,31 @@ export function InstancedJointGroup({
             overlayMesh.count = validJoints.length;
             overlayMesh.instanceMatrix.needsUpdate = true;
         }
-    }, [validJoints, hasOverlay]);
+    }, [validJoints, hasOverlay, writeInstanceMatrix]);
+
+    // Hiding an instance writes one matrix, not the whole batch: this is what an
+    // activation change pays, and it must not re-derive every other instance.
+    useLayoutEffect(() => {
+        const mesh = meshRef.current;
+        const overlayMesh = overlayMeshRef.current;
+        if (!mesh || !isHidden) return;
+
+        const hiddenState = hiddenStateRef.current;
+        let touched = false;
+        for (let i = 0; i < validJoints.length; i += 1) {
+            const joint = validJoints[i];
+            const hidden = isHidden(joint);
+            if ((hiddenState.get(joint) ?? false) === hidden) continue;
+            hiddenState.set(joint, hidden);
+            touched = true;
+            writeInstanceMatrix(mesh, i, joint, hidden);
+            if (overlayMesh) writeInstanceMatrix(overlayMesh, i, joint, hidden);
+        }
+
+        if (!touched) return;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (overlayMesh) overlayMesh.instanceMatrix.needsUpdate = true;
+    }, [validJoints, isHidden, writeInstanceMatrix]);
 
     // Colours are a separate pass: a selection changes them and nothing else, and
     // it must not re-derive every instance matrix to do it.

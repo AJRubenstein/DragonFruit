@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import { quantizeToScale } from '@/utils/math';
+import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 
 export interface InstancedRoot {
     id: string;
@@ -37,6 +38,12 @@ interface InstancedRootsGroupProps {
      * is set.
      */
     instanceColor?: (root: InstancedRoot) => THREE.Color;
+    /**
+     * Instances to hide, by the primitive they draw. The world layer keeps an
+     * excluded model in its arrays and hides it here, so an activation change
+     * costs the changed instances rather than a full re-layout.
+     */
+    isHidden?: (root: InstancedRoot) => boolean;
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
     onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
@@ -56,6 +63,9 @@ interface RootBucket {
 
 const ROOT_ROTATION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
 const IDENTITY_ROTATION = new THREE.Quaternion();
+
+/** Layout scratch: layouts are synchronous, so the batch kinds can share it. */
+const scratchObject = new THREE.Object3D();
 
 const toBucketKey = (root: InstancedRoot) => {
     return [
@@ -78,6 +88,7 @@ function RootBucketMesh({
     clippingPlanes,
     outOfBoundsMaterial,
     instanceColor,
+    isHidden,
     onRootClick,
     onRootPointerDown,
     onRootPointerMove,
@@ -94,6 +105,7 @@ function RootBucketMesh({
     clippingPlanes: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
     instanceColor?: (root: InstancedRoot) => THREE.Color;
+    isHidden?: (root: InstancedRoot) => boolean;
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
     onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
@@ -109,46 +121,82 @@ function RootBucketMesh({
 
     const hasOverlay = !!outOfBoundsMaterial;
 
-    useLayoutEffect(() => {
-        const tempObject = new THREE.Object3D();
-        const center = new THREE.Vector3();
+    const hiddenStateRef = React.useRef<Map<InstancedRoot, boolean>>(new Map());
 
-        const updateMesh = (
-            mesh: THREE.InstancedMesh | null,
-            centerInto: (root: InstancedRoot, target: THREE.Vector3) => void,
-            quaternion: THREE.Quaternion,
-        ) => {
-            if (!mesh) return;
-            for (let i = 0; i < bucket.roots.length; i += 1) {
-                const root = bucket.roots[i];
-                centerInto(root, center);
-                tempObject.position.copy(center);
-                tempObject.quaternion.copy(quaternion);
-                tempObject.scale.set(1, 1, 1);
-                tempObject.updateMatrix();
-                mesh.setMatrixAt(i, tempObject.matrix);
+    const writeBucketMatrices = React.useCallback((
+        index: number,
+        root: InstancedRoot,
+        hidden: boolean,
+    ) => {
+        if (hidden) {
+            for (const mesh of [
+                diskRef.current, coneRef.current, sphereRef.current,
+                overlayDiskRef.current, overlayConeRef.current, overlaySphereRef.current,
+            ]) {
+                if (mesh) mesh.setMatrixAt(index, HIDDEN_INSTANCE_MATRIX);
             }
+            return;
+        }
+
+        const centers: Array<[THREE.InstancedMesh | null, THREE.Quaternion, number]> = [
+            [diskRef.current, ROOT_ROTATION, root.effectiveDiskHeight / 2],
+            [coneRef.current, ROOT_ROTATION, root.effectiveDiskHeight + (root.coneHeight / 2)],
+            [sphereRef.current, IDENTITY_ROTATION, root.effectiveDiskHeight + root.coneHeight],
+            [overlayDiskRef.current, ROOT_ROTATION, root.effectiveDiskHeight / 2],
+            [overlayConeRef.current, ROOT_ROTATION, root.effectiveDiskHeight + (root.coneHeight / 2)],
+            [overlaySphereRef.current, IDENTITY_ROTATION, root.effectiveDiskHeight + root.coneHeight],
+        ];
+
+        for (const [mesh, quaternion, zOffset] of centers) {
+            if (!mesh) continue;
+            scratchObject.position.set(root.basePos.x, root.basePos.y, root.basePos.z + zOffset);
+            scratchObject.quaternion.copy(quaternion);
+            scratchObject.scale.set(1, 1, 1);
+            scratchObject.updateMatrix();
+            mesh.setMatrixAt(index, scratchObject.matrix);
+        }
+    }, []);
+
+    useLayoutEffect(() => {
+        for (let i = 0; i < bucket.roots.length; i += 1) {
+            const root = bucket.roots[i];
+            writeBucketMatrices(i, root, false);
+        }
+
+        for (const mesh of [
+            diskRef.current, coneRef.current, sphereRef.current,
+            overlayDiskRef.current, overlayConeRef.current, overlaySphereRef.current,
+        ]) {
+            if (!mesh) continue;
             mesh.count = bucket.roots.length;
             mesh.instanceMatrix.needsUpdate = true;
-        };
+        }
+    }, [bucket, hasOverlay, writeBucketMatrices]);
 
-        const diskCenter = (root: InstancedRoot, target: THREE.Vector3) => {
-            target.set(root.basePos.x, root.basePos.y, root.basePos.z + (root.effectiveDiskHeight / 2));
-        };
-        const coneCenter = (root: InstancedRoot, target: THREE.Vector3) => {
-            target.set(root.basePos.x, root.basePos.y, root.basePos.z + root.effectiveDiskHeight + (root.coneHeight / 2));
-        };
-        const sphereCenter = (root: InstancedRoot, target: THREE.Vector3) => {
-            target.set(root.basePos.x, root.basePos.y, root.basePos.z + root.effectiveDiskHeight + root.coneHeight);
-        };
+    // Hiding an instance writes one matrix, not the whole bucket: this is what an
+    // activation change pays, and it must not re-derive every other instance.
+    useLayoutEffect(() => {
+        if (!isHidden) return;
 
-        updateMesh(diskRef.current, diskCenter, ROOT_ROTATION);
-        updateMesh(coneRef.current, coneCenter, ROOT_ROTATION);
-        updateMesh(sphereRef.current, sphereCenter, IDENTITY_ROTATION);
-        updateMesh(overlayDiskRef.current, diskCenter, ROOT_ROTATION);
-        updateMesh(overlayConeRef.current, coneCenter, ROOT_ROTATION);
-        updateMesh(overlaySphereRef.current, sphereCenter, IDENTITY_ROTATION);
-    }, [bucket, hasOverlay]);
+        const hiddenState = hiddenStateRef.current;
+        let touched = false;
+        for (let i = 0; i < bucket.roots.length; i += 1) {
+            const root = bucket.roots[i];
+            const hidden = isHidden(root);
+            if ((hiddenState.get(root) ?? false) === hidden) continue;
+            hiddenState.set(root, hidden);
+            touched = true;
+            writeBucketMatrices(i, root, hidden);
+        }
+
+        if (!touched) return;
+        for (const mesh of [
+            diskRef.current, coneRef.current, sphereRef.current,
+            overlayDiskRef.current, overlayConeRef.current, overlaySphereRef.current,
+        ]) {
+            if (mesh) mesh.instanceMatrix.needsUpdate = true;
+        }
+    }, [bucket, isHidden, writeBucketMatrices]);
 
     // Colours are a separate pass: a selection changes them and nothing else, and
     // it must not re-derive every instance matrix to do it.
@@ -330,6 +378,7 @@ export function InstancedRootsGroup({
     clippingPlanes = null,
     outOfBoundsMaterial = null,
     instanceColor,
+    isHidden,
     onRootClick,
     onRootPointerDown,
     onRootPointerMove,
@@ -383,6 +432,7 @@ export function InstancedRootsGroup({
                     clippingPlanes={clippingPlanes}
                     outOfBoundsMaterial={outOfBoundsMaterial}
                     instanceColor={instanceColor}
+                    isHidden={isHidden}
                     onRootClick={onRootClick}
                     onRootPointerDown={onRootPointerDown}
                     onRootPointerMove={onRootPointerMove}
