@@ -7,6 +7,7 @@ import { LineMaterial, LineSegments2, LineSegmentsGeometry } from 'three-stdlib'
 import { removeRootById, subscribe, getSnapshot,
   getKickstandKnots,
   getKickstandRoots,
+  type SupportState,
 } from './state';
 import {
     buildSupportPlacementPreviewBatch,
@@ -537,6 +538,21 @@ export function SupportPlacementPreviewLayer({
     );
 }
 
+/**
+ * The dependency list a support derivation carries: the entity collections it
+ * reads, in a fixed order, by identity, then anything else it depends on.
+ *
+ * The snapshot object is rebuilt on every store write - a hover included, since
+ * `setHoveredState` writes the same store - so depending on it re-runs the
+ * derivation for a write that changed nothing it reads. Hovering across the
+ * supports re-partitioned every batch and rebuilt every merged tube for it. These
+ * are the collections themselves, which is what the derivation actually reads;
+ * every collection a lookup can be asked for is in `SUPPORT_COLLECTION_KEYS`.
+ */
+function supportCollectionRefs(state: SupportState, ...extra: unknown[]): readonly unknown[] {
+    return [...SUPPORT_COLLECTION_KEYS.map((key) => state[key]), ...extra];
+}
+
 export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
     const resolvedSelection = useResolvedSelectionState();
@@ -646,7 +662,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             // structured-clone payload churn during joint dragging.
             activePreviewSupport: null,
         };
-    }, [state, kickstandKnotsById]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections it copies, not the snapshot: keying on `state` rebuilt this input - and with it the worker request - on every hover, for collections that had not moved.
+    }, supportCollectionRefs(state, kickstandKnotsById));
     const supportRenderLookup = useSupportRenderLookup(supportRenderLookupInput);
 
     const trunkList = useMemo(() => Object.values(state.trunks), [state.trunks]);
@@ -1201,7 +1218,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (ownedRootIds.has(rootId)) continue;
             removeRootById(rootId);
         }
-    }, [state, interactionHooksEnabled]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections it walks, not the snapshot: a hover ran this walk over every root for nothing.
+    }, supportCollectionRefs(state, interactionHooksEnabled));
 
     // Enable joint dragging
     useJointInteraction(isInteractable);
@@ -1389,7 +1407,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         key === 'kickstands'
             ? (state.kickstands as unknown as Record<string, unknown>)
             : ((state as unknown as Record<string, Record<string, unknown>>)[key])
-    ), [state, state.kickstands]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections it reads, not the snapshot: keying on `state` rebuilt the knot index, the per-type selection sets and every batch partition on every hover.
+    ), supportCollectionRefs(state));
 
     const selectionKnotIndex = useMemo(
         () => buildKnotIndex(selectionCollections),

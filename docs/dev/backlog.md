@@ -120,6 +120,49 @@ translating a box is exact. The cache now survives the whole gesture. It is the
 raft lesson again: the key covered the transform, but only part of the transform
 was the *input* to the work.
 
+## Known cost: a support hover re-derived the scene, and a selection remounted it
+
+Selecting a support felt like it could take up to a second, and sometimes did.
+Three things run off a single write to the support store, and two of them did not
+depend on what changed.
+
+**A hover writes the same store a selection does.** `setHoveredState` calls
+`setState({ ...state, hoveredCategory, hoveredId })`, so the snapshot object is
+new on every hover. Anything keyed on that *object* rather than on the
+collections it reads re-ran for each one:
+
+- The app root held `useSyncExternalStore(subscribeSupportState,
+  getSupportSnapshot)`, so the whole page - and the scene canvas, which is a plain
+  function component it renders as an element - re-rendered for a hover that
+  changed neither the selection nor the braces that subscription was there for.
+- `SupportRenderer`'s `selectionCollections` was keyed on the snapshot, so a hover
+  rebuilt the knot index, the per-type selection sets and every batch partition,
+  and with them every merged curved-tube geometry.
+
+Measured: one `buildBatchedBezierTubes` merge over 2000 curved shafts (144k
+vertices) is **36 ms** with the per-shaft sweep cache warm, and a hover paid it.
+
+**A selection changes the colour partition, and the partition is the React key.**
+`dimNonSelected` flips false to true on the first selection, and
+`resolveSceneSupportColor` then returns a flat `#666666` for every support, so the
+partition collapses from one bucket per model to one bucket. The group keys are
+`scene-${typeId}-batch:${color}` and its three siblings, so every instanced group
+unmounts and remounts, reallocating its instance buffers. That is the part that is
+*sometimes*: it happens on the null-to-selected transition, not on every click.
+
+**Fixed**: the app root subscribes to the selection and the braces collection
+separately (`getSelectedId`, `getSelectedCategory` and the identity-cached
+`getHomeSupportCollectionsSnapshot`), and `SupportRenderer`'s derivations carry
+`supportCollectionRefs(state)` - the collections themselves - so a hover that
+moves nothing they read no longer re-runs them.
+
+**Still open**: `supportStateForBounds` in `SceneCanvas` reads the snapshot whole
+and legitimately needs the hovered category and id, so it re-renders per hover by
+design; narrowing that subscription to those two fields is the next step. The
+colour-in-key remount is inherent to partitioning the batches into one mesh per
+colour - the per-instance colour path the proxy groups already expose is what
+removes it.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the
