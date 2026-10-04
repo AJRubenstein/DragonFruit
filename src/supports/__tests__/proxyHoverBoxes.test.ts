@@ -4,6 +4,7 @@ import { getSnapshot, resetStore, setSnapshot } from '../state';
 import {
   collectProxyPrimitives,
   computeProxyHoverBoxes,
+  computeProxyModelBounds,
   type ProxyModelGeometry,
 } from '../SupportProxyMeshLayer';
 import type { Knot, Roots, SupportState, Trunk } from '../types';
@@ -98,12 +99,12 @@ describe('proxy hover boxes', () => {
       includeDetailedPrimitives: true,
       interiorSupportIdSet: null,
     });
+    const bounds = computeProxyModelBounds(byModel);
     const boxes = computeProxyHoverBoxes([...byModel.entries()].map(([modelKey, geometry]) => ({
       modelKey,
       modelId: geometry.modelId,
       zOffset: 0,
-      geometry,
-    })));
+    })), bounds);
 
     assert.equal(boxes.length, MODEL_IDS.length, 'one box per model with supports');
 
@@ -124,14 +125,14 @@ describe('proxy hover boxes', () => {
       includeDetailedPrimitives: true,
       interiorSupportIdSet: null,
     });
+    const bounds = computeProxyModelBounds(byModel);
     const [entry] = [...byModel.entries()].map(([modelKey, geometry]) => ({
       modelKey,
       modelId: geometry.modelId,
       zOffset: 0,
-      geometry,
     }));
-    const dropped = computeProxyHoverBoxes([{ ...entry, zOffset: 7 }])[0];
-    const flat = computeProxyHoverBoxes([entry])[0];
+    const dropped = computeProxyHoverBoxes([{ ...entry, zOffset: 7 }], bounds)[0];
+    const flat = computeProxyHoverBoxes([entry], bounds)[0];
 
     assert.equal(dropped.position[2] - flat.position[2], 7);
     assert.deepEqual(dropped.size, flat.size);
