@@ -59,6 +59,29 @@ describe('proxy hover index', () => {
     assert.ok(hits[0].distance <= hits[1].distance);
   });
 
+  it('reports how far along the ray the hit is, not how far it missed by', () => {
+    const index = buildProxyHoverIndex([shaft('0', 0, 0, 'model-a')])!;
+    // From 80 mm above, aimed 1 mm beside a 0.5 mm shaft: the miss is 1 mm, and
+    // the hit sits 80 mm down the ray.
+    const hits = raycastProxyHoverIndex(index, rayAt(1, 0), tolerant);
+
+    assert.strictEqual(hits.length, 1);
+    assert.ok(hits[0].distance > 70, `distance ${hits[0].distance} should be the depth`);
+  });
+
+  it('sizes the grab radius by the depth of the hit', () => {
+    const index = buildProxyHoverIndex([shaft('0', 0, 0, 'model-a', 0.5)])!;
+    const toleranceFor = (depth: number) => depth / 100;
+
+    // 1 mm off, seen from 40 mm away: the radius there is 0.4 mm, so it misses.
+    const close = new THREE.Ray(new THREE.Vector3(1, 0, 40), new THREE.Vector3(0, 0, -1));
+    assert.strictEqual(raycastProxyHoverIndex(index, close, toleranceFor).length, 0);
+
+    // The same miss from 200 mm: the radius there is 2 mm, so it hits.
+    const far = new THREE.Ray(new THREE.Vector3(1, 0, 200), new THREE.Vector3(0, 0, -1));
+    assert.strictEqual(raycastProxyHoverIndex(index, far, toleranceFor).length, 1);
+  });
+
   it('finds a support whose shaft crosses several cells', () => {
     const slanted: ProxyHoverTarget = {
       modelId: 'model-a',

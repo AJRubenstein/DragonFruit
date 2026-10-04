@@ -96,9 +96,11 @@ export function buildProxyHoverIndex(
 /**
  * The targets a ray reaches, nearest first.
  *
- * `toleranceAt` is the grab radius the caller allows at a hit distance, so a
- * support stays clickable when it is a fraction of a pixel wide but the pointer
- * has to be near it, not merely inside a box around the model.
+ * A hit means the ray passes within the target's radius plus `toleranceAt`, and
+ * the reported `distance` is how far along the ray that closest approach is, so
+ * callers can sort by depth. `toleranceAt` takes that distance, not the miss: a
+ * miss is near zero whenever the pointer is anywhere near a support, so sizing a
+ * grab radius by it leaves a hit only when the pointer is exactly on one.
  */
 export function raycastProxyHoverIndex(
   index: ProxyHoverIndex,
@@ -156,6 +158,7 @@ export function raycastProxyHoverIndex(
 
   const start = new THREE.Vector3();
   const end = new THREE.Vector3();
+  const closestOnRay = new THREE.Vector3();
 
   for (let guard = 0; guard < 4096; guard += 1) {
     const bucket = index.cells.get(cellY * index.cellCountX + cellX);
@@ -165,10 +168,16 @@ export function raycastProxyHoverIndex(
         seen.add(target);
         start.set(target.start.x, target.start.y, target.start.z);
         end.set(target.end.x, target.end.y, target.end.z);
-        const distanceSq = ray.distanceSqToSegment(start, end);
-        if (!Number.isFinite(distanceSq)) continue;
-        const distance = Math.sqrt(distanceSq);
-        if (distance > target.radius + toleranceAt(distance)) continue;
+        // `distanceSqToSegment` reports how far the ray *misses* the segment, and
+        // hands back where on the ray the two come closest. The grab radius
+        // belongs to that point's depth, not to the miss: a miss is near zero
+        // whenever the pointer is anywhere close to a support, so sizing the
+        // tolerance by it left a hit only when the pointer was exactly on one.
+        const missDistanceSq = ray.distanceSqToSegment(start, end, closestOnRay);
+        if (!Number.isFinite(missDistanceSq)) continue;
+        const missDistance = Math.sqrt(missDistanceSq);
+        const distance = closestOnRay.distanceTo(ray.origin);
+        if (missDistance > target.radius + toleranceAt(distance)) continue;
         hits.push({ target, distance });
       }
     }
