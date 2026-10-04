@@ -97,6 +97,29 @@ steady 165 fps with a 6.2 ms worst frame. Two lessons that generalise: an identi
 key on a *container* is not the same as a key on its *contents*, and a dev-server
 profile cannot tell you what a production build will do.
 
+## Known cost: the out-of-bounds test walked every vertex, every drag frame
+
+A model's world bounds come from its transform, and the precise path -
+`computePreciseModelWorldBounds` in `src/utils/modelBounds.ts`, taken whenever a
+model sits off the axes - walks every vertex to find the box. Its cache was keyed
+on the *whole* transform, position included, so a drag produced a fresh key on
+every frame and paid the walk again with it. Small models hid it; a complex one
+paid it as a per-frame stall. The out-of-bounds indication reads those bounds
+every frame of a gesture, which is how it surfaced.
+
+Measured on a 750k-vertex mesh: **one walk 5.3 ms, so 5.8 ms per drag frame** -
+over a third of a 16.7 ms budget, which is what "dragging a complex model is
+sluggish" turned out to be. The same measurement after the fix is 0.004 ms per
+frame.
+
+**Fixed** by keying the walk on the orientation alone (`makeOrientationKey`:
+rotation and scale) and adding the position to the box afterwards. A translation
+moves every vertex by the same vector, so it moves the box by that vector and
+changes nothing else - the walk is over the same points either way, and
+translating a box is exact. The cache now survives the whole gesture. It is the
+raft lesson again: the key covered the transform, but only part of the transform
+was the *input* to the work.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the
