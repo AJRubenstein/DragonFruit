@@ -1,83 +1,67 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import {
-  computeProxyOverlayEntries,
-  type ProxyModelGeometry,
-} from '../SupportProxyMeshLayer';
+import * as THREE from 'three';
+import { createProxySupportTint } from '../SupportProxyMeshLayer';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 
-const EMPTY_GEOMETRY: ProxyModelGeometry = { shafts: [], roots: [], joints: [], cones: [] };
+const BASE = new THREE.Color('#9a9a9a');
+const ACTIVE = new THREE.Color('#c8752a');
 
-function geometryByModel(...modelIds: string[]) {
-  return new Map(modelIds.map((modelId) => [modelId, EMPTY_GEOMETRY]));
-}
-
-function input(overrides: Partial<Parameters<typeof computeProxyOverlayEntries>[0]> = {}) {
-  return {
+function tint(overrides: Partial<Parameters<typeof createProxySupportTint>[0]> = {}) {
+  return createProxySupportTint({
     selectedModelIds: new Set<string>(),
     hoverModelId: null,
     marqueeCandidateModelIds: [],
-    geometryByModel: geometryByModel('model-a', 'model-b'),
-    isModelVisible: () => true,
-    hoverOpacity: 0.35,
+    baseColor: BASE,
+    activeColor: ACTIVE,
+    hoverStrength: 0.35,
     ...overrides,
-  };
+  });
 }
 
-describe('proxy overlay entries', () => {
-  it('tints a hovered model, and a marquee candidate lighter still', () => {
-    const entries = computeProxyOverlayEntries(input({
-      hoverModelId: 'model-a',
-      marqueeCandidateModelIds: ['model-b'],
-    }));
+describe('proxy support tint', () => {
+  it('gives an untouched model the base colour', () => {
+    const color = tint()('model-a');
 
-    assert.equal(entries.length, 2);
-    const hovered = entries.find((entry) => entry.modelId === 'model-a');
-    const candidate = entries.find((entry) => entry.modelId === 'model-b');
-    assert.equal(hovered?.key, 'hover:model-a');
-    assert.equal(hovered?.opacity, 0.35);
-    assert.equal(hovered?.color, hovered?.emissive);
-    assert.ok((hovered?.emissiveIntensity ?? 0) > 0, 'the hover tint glows');
-    assert.equal(candidate?.opacity, 0.35 * MARQUEE_CANDIDATE_TINT_FACTOR);
+    assert.ok(color.equals(BASE));
   });
 
-  it('draws a model once when it is hovered and taken by the marquee', () => {
-    const entries = computeProxyOverlayEntries(input({
-      hoverModelId: 'model-a',
-      marqueeCandidateModelIds: ['model-a'],
-    }));
+  it('gives a selected model the active colour', () => {
+    const color = tint({ selectedModelIds: new Set(['model-a']) })('model-a');
 
-    assert.equal(entries.length, 1);
-    assert.equal(entries[0].key, 'hover:model-a');
-    assert.equal(entries[0].opacity, 0.35, 'the hover wins over the lighter candidate tint');
+    assert.ok(color.equals(ACTIVE));
   });
 
-  it('does not tint a selected model, which already carries the active colour', () => {
-    const entries = computeProxyOverlayEntries(input({
+  it('moves a hovered model part way from the base to the active colour', () => {
+    const color = tint({ hoverModelId: 'model-a' })('model-a');
+    const expected = BASE.clone().lerp(ACTIVE, 0.35);
+
+    assert.ok(color.equals(expected), `${color.getHexString()} should be ${expected.getHexString()}`);
+    assert.ok(!color.equals(BASE) && !color.equals(ACTIVE));
+  });
+
+  it('tints a marquee candidate less far than the hovered model', () => {
+    const hovered = tint({ hoverModelId: 'model-a' })('model-a');
+    const candidate = tint({ marqueeCandidateModelIds: ['model-a'] })('model-a');
+    const expected = BASE.clone().lerp(ACTIVE, 0.35 * MARQUEE_CANDIDATE_TINT_FACTOR);
+
+    assert.ok(candidate.equals(expected));
+    assert.ok(!candidate.equals(hovered));
+  });
+
+  it('leaves a selected model the active colour while it is hovered', () => {
+    // A tint over an already-active support was the thing that made a hovered
+    // support look different from its neighbours.
+    const color = tint({
       selectedModelIds: new Set(['model-a']),
       hoverModelId: 'model-a',
       marqueeCandidateModelIds: ['model-a'],
-    }));
+    })('model-a');
 
-    assert.equal(entries.length, 0, 'a selected model is not lightened by its own hover');
+    assert.ok(color.equals(ACTIVE));
   });
 
-  it('skips a model with no proxy geometry, and one that is not visible', () => {
-    const entries = computeProxyOverlayEntries(input({
-      hoverModelId: 'model-b',
-      marqueeCandidateModelIds: ['model-c'],
-      isModelVisible: (modelId) => modelId !== 'model-b',
-    }));
-
-    assert.equal(entries.length, 0, 'model-b is hidden and model-c has no geometry');
-  });
-
-  it('carries the drop offset of the model it draws', () => {
-    const entries = computeProxyOverlayEntries(input({
-      hoverModelId: 'model-a',
-      zOffsetByModelId: { 'model-a': 4 },
-    }));
-
-    assert.equal(entries[0].zOffset, 4);
+  it('gives a primitive with no model the base colour', () => {
+    assert.ok(tint({ hoverModelId: 'model-a' })(undefined).equals(BASE));
   });
 });

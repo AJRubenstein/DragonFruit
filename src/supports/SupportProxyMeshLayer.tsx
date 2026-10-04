@@ -70,8 +70,6 @@ const DEFAULT_SUPPORT_COLOR = '#9a9a9a';
 const ACTIVE_SUPPORT_COLOR = '#c8752a';
 const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
-/** The hover tint's glow. A selection has none: it is the active colour flat. */
-const HOVER_EMISSIVE_INTENSITY = 0.1;
 
 export type ProxyModelGeometry = {
   modelId?: string;
@@ -98,74 +96,61 @@ type FlatProxyGeometry = {
   cones: InstancedContactCone[];
 };
 
-/** One model drawn again over the base batch: a selection, or a hover tint. */
-export type ProxyOverlayEntry = {
-  key: string;
-  modelId?: string;
-  modelKey: string;
-  zOffset: number;
-  geometry: ProxyModelGeometry;
-  color: string;
-  emissive: string;
-  emissiveIntensity: number;
-  opacity: number;
-};
-
-export type ProxyOverlayInput = {
+export type ProxySupportTintInput = {
   selectedModelIds: ReadonlySet<string>;
   hoverModelId: string | null;
   marqueeCandidateModelIds: readonly string[];
-  geometryByModel: ReadonlyMap<string, ProxyModelGeometry>;
-  isModelVisible: (modelId?: string) => boolean;
-  zOffsetByModelId?: Record<string, number>;
-  hoverOpacity: number;
+  /** The colour an untouched support takes. */
+  baseColor: THREE.Color;
+  /** The colour a selected support takes. */
+  activeColor: THREE.Color;
+  /** How far a hovered support moves from the base towards the active colour. */
+  hoverStrength: number;
 };
 
 /**
- * The models drawn again on top of the base batch, as a tint: the hovered one,
- * then the marquee candidates, which tint lighter so a marquee lighting up
- * model, supports and raft at once still reads apart from a hover.
+ * The colour one support's instances take, given the selection and the hover.
  *
- * A selection is not in here: it rides on the base batch's per-instance colours,
- * so selecting all models does not mount one overlay per model. A selected model
- * is not tinted for hover either, because its instances already carry the active
- * colour and an overlay would lighten them.
+ * The tint is a *colour*, not a translucent pass over the batch: blending it on
+ * top meant a hovered support's orange depended on what was underneath it, so a
+ * support that was also selected came out a different orange than its
+ * neighbours. A tint computed here replaces the base colour instead, so every
+ * support of a hovered model reads the same, whatever its own state.
+ *
+ * A selected model keeps the active colour: the tint has nothing to add to a
+ * support that already carries it.
  */
-export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverlayEntry[] {
-  const entries: ProxyOverlayEntry[] = [];
+export function createProxySupportTint(input: ProxySupportTintInput): (modelId?: string) => THREE.Color {
+  const hovered = new Set<string>();
+  if (input.hoverModelId) hovered.add(input.hoverModelId);
+  for (const modelId of input.marqueeCandidateModelIds) hovered.add(modelId);
 
-  const entryFor = (modelId: string, key: string, opacity: number): ProxyOverlayEntry | null => {
-    if (!input.isModelVisible(modelId)) return null;
-    const modelKey = toModelKey(modelId);
-    const geometry = input.geometryByModel.get(modelKey);
-    if (!geometry) return null;
-    return {
-      key,
+  const strengthByModelId = new Map<string, number>();
+  for (const modelId of hovered) {
+    strengthByModelId.set(
       modelId,
-      modelKey,
-      zOffset: input.zOffsetByModelId?.[modelId] ?? 0,
-      geometry,
-      color: ACTIVE_SUPPORT_COLOR,
-      emissive: ACTIVE_SUPPORT_COLOR,
-      emissiveIntensity: HOVER_EMISSIVE_INTENSITY,
-      opacity,
-    };
-  };
-
-  const hoveredModelIds = new Set<string>();
-  if (input.hoverModelId) hoveredModelIds.add(input.hoverModelId);
-  for (const modelId of input.marqueeCandidateModelIds) hoveredModelIds.add(modelId);
-
-  for (const modelId of hoveredModelIds) {
-    if (input.selectedModelIds.has(modelId)) continue;
-    const opacity = modelId === input.hoverModelId
-      ? input.hoverOpacity
-      : input.hoverOpacity * MARQUEE_CANDIDATE_TINT_FACTOR;
-    const entry = entryFor(modelId, `hover:${toModelKey(modelId)}`, opacity);
-    if (entry) entries.push(entry);
+      modelId === input.hoverModelId
+        ? input.hoverStrength
+        : input.hoverStrength * MARQUEE_CANDIDATE_TINT_FACTOR,
+    );
   }
 
-  return entries;
+  const tintedByStrength = new Map<number, THREE.Color>();
+  const tintAt = (strength: number) => {
+    let tinted = tintedByStrength.get(strength);
+    if (!tinted) {
+      tinted = input.baseColor.clone().lerp(input.activeColor, strength);
+      tintedByStrength.set(strength, tinted);
+    }
+    return tinted;
+  };
+
+  return (modelId?: string) => {
+    if (!modelId) return input.baseColor;
+    if (input.selectedModelIds.has(modelId)) return input.activeColor;
+    const strength = strengthByModelId.get(modelId);
+    return strength === undefined ? input.baseColor : tintAt(strength);
+  };
 }
 
 /**
@@ -770,10 +755,9 @@ export function SupportProxyMeshLayer({
 
   const proxyOpacity = Math.max(0.05, Math.min(1, ghostOpacity));
   const proxyTransparent = proxyOpacity < 0.999;
-  const hoverOverlayOpacity = React.useMemo(() => {
-    const hoverAlpha = Math.max(0.05, Math.min(1, hoverTintStrength));
-    return Math.max(0.05, Math.min(1, proxyOpacity * hoverAlpha));
-  }, [hoverTintStrength, proxyOpacity]);
+  // How far a hovered support moves from its base colour towards the active one.
+  // The ghost opacity is not part of it: the material carries that.
+  const hoverOverlayStrength = Math.max(0.05, Math.min(1, hoverTintStrength));
 
   const pointerHoverEnabled = enablePointerSelection && mode === 'prepare';
   const pointerSelectionEnabled = enablePointerSelection && mode === 'prepare' && !!onModelPointerSelect;
@@ -857,43 +841,36 @@ export function SupportProxyMeshLayer({
     scheduleSupportHoverClear();
   }, [scheduleSupportHoverClear]);
 
-  // The selection tint rides on per-instance colours rather than a second batch
-  // per selected model: one batch per primitive kind keeps drawing once, and a
-  // selection only rewrites colours. The hovered and marquee-candidate models
-  // are still drawn again on top, because their tint glows.
-  const selectionColors = React.useMemo(() => ({
+  // The selection and the hover tint both ride on per-instance colours: one batch
+  // per primitive kind keeps drawing once, and a tint only rewrites colours. A
+  // tint computed as a colour replaces the base, so a support's orange cannot
+  // depend on what is underneath it.
+  const supportColors = React.useMemo(() => ({
     base: new THREE.Color(DEFAULT_SUPPORT_COLOR),
-    selected: new THREE.Color(ACTIVE_SUPPORT_COLOR),
+    active: new THREE.Color(ACTIVE_SUPPORT_COLOR),
   }), []);
 
-  const selectionColorFor = React.useCallback(
-    (primitive: { modelId?: string }) => (
-      primitive.modelId && highlightedModelIdSet.has(primitive.modelId)
-        ? selectionColors.selected
-        : selectionColors.base
-    ),
-    [highlightedModelIdSet, selectionColors],
-  );
-
-  const overlayEntries = React.useMemo<ProxyOverlayEntry[]>(
-    () => computeProxyOverlayEntries({
+  const supportColorFor = React.useMemo(
+    () => createProxySupportTint({
       selectedModelIds: highlightedModelIdSet,
       hoverModelId: effectiveHoverModelId,
       marqueeCandidateModelIds,
-      geometryByModel: baseProxyByModel,
-      isModelVisible: resolveModelVisible,
-      zOffsetByModelId: modelDropOffsetsById,
-      hoverOpacity: hoverOverlayOpacity,
+      baseColor: supportColors.base,
+      activeColor: supportColors.active,
+      hoverStrength: hoverOverlayStrength,
     }),
     [
       effectiveHoverModelId,
       marqueeCandidateModelIds,
       highlightedModelIdSet,
-      resolveModelVisible,
-      baseProxyByModel,
-      modelDropOffsetsById,
-      hoverOverlayOpacity,
+      supportColors,
+      hoverOverlayStrength,
     ],
+  );
+
+  const selectionColorFor = React.useCallback(
+    (primitive: { modelId?: string }) => supportColorFor(primitive.modelId),
+    [supportColorFor],
   );
 
   // Every visible model's primitives in one set of batches, so the whole scene
@@ -1132,63 +1109,6 @@ export function SupportProxyMeshLayer({
           )}
         </group>
       )}
-
-      {overlayEntries.map((overlay) => (
-        <group
-          key={`proxy-overlay:${overlay.key}`}
-          userData={{ modelId: overlay.modelId ?? null }}
-          position={overlay.zOffset !== 0 ? [0, 0, overlay.zOffset] as [number, number, number] : undefined}
-        >
-          {overlay.geometry.shafts.length > 0 && (
-            <InstancedShaftGroup
-              shafts={overlay.geometry.shafts}
-              color={overlay.color}
-              emissive={overlay.emissive}
-              emissiveIntensity={overlay.emissiveIntensity}
-              transparent
-              opacity={overlay.opacity}
-              radialSegments={10}
-              clippingPlanes={clippingPlanes}
-            />
-          )}
-
-          {overlay.geometry.roots.length > 0 && (
-            <InstancedRootsGroup
-              roots={overlay.geometry.roots}
-              color={overlay.color}
-              emissive={overlay.emissive}
-              emissiveIntensity={overlay.emissiveIntensity}
-              transparent
-              opacity={overlay.opacity}
-              clippingPlanes={clippingPlanes}
-            />
-          )}
-
-          {includeDetailedPrimitives && overlay.geometry.joints.length > 0 && (
-            <InstancedJointGroup
-              joints={overlay.geometry.joints}
-              color={overlay.color}
-              emissive={overlay.emissive}
-              emissiveIntensity={overlay.emissiveIntensity}
-              transparent
-              opacity={overlay.opacity}
-              clippingPlanes={clippingPlanes}
-            />
-          )}
-
-          {includeDetailedPrimitives && overlay.geometry.cones.length > 0 && (
-            <InstancedContactConeGroup
-              cones={overlay.geometry.cones}
-              color={overlay.color}
-              emissive={overlay.emissive}
-              emissiveIntensity={overlay.emissiveIntensity}
-              transparent
-              opacity={overlay.opacity}
-              clippingPlanes={clippingPlanes}
-            />
-          )}
-        </group>
-      ))}
 
     </group>
   );

@@ -695,9 +695,12 @@ Fixed so far:
   support, within a grab radius that scales with distance, so a support a
   fraction of a pixel wide is still grabbable. A box per model was tried first
   and rejected: it covers the gaps between supports and the model itself;
-- a selection recolours the batch instances (`instanceColor`) instead of drawing
-  one overlay per selected model. Curved shafts are merged one mesh per colour,
-  so their colour takes the material route rather than a vertex attribute. Selecting all models costs one colour pass (~2 ms at 100k
+- a selection, and the hover tint with it, recolours the batch instances
+  (`instanceColor`) instead of drawing one overlay per model. The tint is a
+  computed colour that replaces the base, so a hovered support reads the same
+  whether or not it is also selected. Curved shafts are merged one mesh per
+  colour, so their colour takes the material route rather than a vertex
+  attribute. Selecting all models costs one colour pass (~2 ms at 100k
   instances) with no extra meshes and no second draw of the same geometry. The
   colour pass is a separate layout effect from the matrices;
 - the layouts stopped minting a `Vector3`/`Quaternion` per instance per pass
