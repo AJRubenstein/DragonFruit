@@ -639,3 +639,68 @@ At the X borders this removes an entry or exit crossing: an isolated object can
 disappear, and several objects can produce an inverted band through their gaps.
 Zero XY projected area is not a valid reason to drop a 3D triangle: vertical walls
 can have zero XY area while supplying essential winding crossings.
+
+## Known: a scene history push snapshots the whole support state, twice
+
+Every scene-level edit pushes a `{ before, after }` pair into
+`sceneSnapshotRegistry` (`useSceneCollectionManager.ts`), and each half carries a
+full deep copy of the support store — thousands of entities once a plate has been
+auto-supported. `Confirm Duplicate` measured ~340 ms on a synthetic 20-model ×
+150-support scene (9,000 entities) with 8 copies: ~130 ms for the two support
+snapshots and ~195 ms for the per-copy support paste.
+
+Fixed so far, measured with `npm run bench:duplicate-confirm` (same scene, best
+of five runs):
+
+- the snapshot copy walks plain data (`clonePlainData` in
+  `src/utils/plainDataClone.ts`) instead of `structuredClone`, whose ~10 µs fixed
+  cost per call dominates thousands of small records — ~2.8× faster on the same
+  state;
+- `cloneSupportState` installs the collection views over the copy instead of
+  re-deriving them through `normaliseSupportState`, which walked the whole state
+  twice more per snapshot;
+- `pasteModelSupports` merges every target of one gesture into a single store
+  write; the per-copy call rebuilt the store's whole index once per copy.
+
+That scene and copy count now measures ~146 ms. Still open:
+
+1. Both halves are full copies, so a duplicate adding N entities still pays
+   2 × O(total support entities). A patch-shaped entry — the ids added, and the
+   ids removed with their entities — would make it O(N) and delete the copies
+   from the confirm path entirely.
+2. `estimateSceneSnapshotRegistryBytes` counts geometry only, so support copies
+   sit outside the ~300 MB eviction budget: 200 entries of a 9,000-entity state
+   are retained with nothing accounting for them.
+3. Undo copies the stored snapshot again (`applySceneSnapshot`), so a restore
+   pays a third full copy.
+
+## Known: Select-mode hover and selection pay per support
+
+Outside support mode the supports draw through `SupportProxyMeshLayer`'s four
+instanced batches, and R3F raycasts every instance of every mesh carrying a
+hover handler on each pointer move. Measured with the app's three.js: ~0.11 µs
+per instance, so ~3 ms per move at 5k supports, ~13 ms at 20k — a hover that
+stutters and drags the frame rate down as a plate fills up. A selection click
+adds its own O(total supports) pass: the base/highlighted split is rebuilt and
+both `InstancedMesh`es are remounted (new geometry, new material, full matrix
+upload) because each batch is keyed by its instance count.
+
+Fixed so far:
+
+- hover on the proxy batches moved to one invisible box per model
+  (`computeProxyHoverBoxes`), O(models) per move; clicks keep their per-instance
+  targets, which R3F's pointer-move filter does not visit;
+- the raft proxy geometries got a bounds tree: without one their raycast is a
+  per-triangle walk paid per visible raft on every pointer move (measured ~7 ms
+  for 20×5k triangles, ~50 ms for 20×20k, against ~0.12 ms with a tree).
+
+Still open:
+
+1. The count-keyed `InstancedMesh` remount. Allocating capacity once and
+   updating `mesh.count` (the three.js pattern) would turn a selection into a
+   matrix upload instead of a geometry/material/GPU-buffer rebuild.
+2. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
+   module cache keyed on the whole support-store snapshot, so any store write
+   (including hover and selection writes) rebuilds every proxy primitive.
+3. `sharedProxyCache`'s geometries are never disposed when the cache is
+   replaced; the raft cache leaks its per-model geometries the same way.

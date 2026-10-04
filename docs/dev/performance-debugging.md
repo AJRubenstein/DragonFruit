@@ -166,6 +166,39 @@ report at a human rate.
 feeds it every Rust log record. Anything logged from a hot path arrives there
 too. Check what already exists before adding an instrument.
 
+**`structuredClone` costs ~10 µs per call whatever the size.** A support snapshot
+is thousands of small records, so a whole-state `structuredClone` pays that fixed
+cost per entity: ~57 ms for a 9,000-entity scene against ~20 ms for
+`clonePlainData` (`src/utils/plainDataClone.ts`), which walks plain records and
+keeps object identity. Use it for state snapshots and payload copies. Keep
+`structuredClone` where a payload may hold typed arrays or other non-plain values
+and is small enough that the fixed cost does not matter — the history store's own
+payload clone, for instance.
+
+**One store write per copy is not free either.** Every `setSnapshot` rebuilds the
+support store's whole index, so cloning N models one paste call at a time costs N
+rebuilds. `pasteModelSupports` takes every target of one gesture and merges them
+into a single write. `npm run bench:duplicate-confirm` measures the duplicate
+confirm end to end; `MODELS`, `SUPPORTS`, `DUPS` and `RUNS` override its scenario.
+
+**One pointer move raycasts every object with a hover handler.** R3F calls
+`raycaster.intersectObject` for each object that registers a pointer-move
+handler — its event system filters the scene's interaction list down to those —
+so the cost of a hover is the sum over those objects, not the one under the
+cursor. Two shapes dominate, both measured with the app's own three.js:
+
+| object | cost per pointer move |
+| --- | --- |
+| `InstancedMesh` with N instances (proxy supports) | ~0.11 µs × N — 3 ms at 25k, 13 ms at 100k |
+| merged `Mesh` of T triangles with no `boundsTree` (raft proxy) | ~0.35 µs × T — 7 ms for 20×5k, 50 ms for 20×20k |
+| the same mesh with a `boundsTree` | ~0.12 ms, flat |
+
+`InstancedMesh.raycast` loops every instance once the mesh's whole bounding
+sphere is hit, and a support batch spans the plate, so any ray over the plate
+pays for all of it. three-mesh-bvh cannot accelerate it; keep hover off the
+instanced batches (see `dev/support-system.md`) and give raycast-only merged
+geometries a bounds tree.
+
 **The observer is a suspect.** In one session the Web Inspector killed the
 process, editing the worktree restarted the app under a running test, the stall
 detector invented hundreds of freezes, and the progress reporting doubled the
