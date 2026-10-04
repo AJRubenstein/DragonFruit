@@ -71,6 +71,39 @@ soon as media flows. It must not open a fresh RTSP connection on every retry: a 
 refusing connections leaks one descriptor per rejected attempt, so a tight retry loop makes the
 printer's own exhaustion worse.
 
+### Stream-slot exhaustion
+
+A printer that has run out of free video-stream slots accepts an RTSP connection and then sends
+nothing. Retrying cannot help, and each attempt is not free — a Chitu-based printer leaks a
+descriptor per rejected connection — so the relay asks before it retries:
+
+- **Oracle.** Those boards report `NumberOfVideoStreamConnected` and `MaximumVideoStreamAllowed` in
+  the attribute reply to SDCP command `0x01` on port 3030, and the relay compares the two. Command
+  `0x182` looks like the natural oracle but is gated on more than those counters: measured against
+  a printer with zero of two slots connected, it still refuses a stream, so it cannot distinguish
+  exhaustion from whatever else makes a printer decline. Anything the probe cannot read, another
+  vendor's printer, a host that is down, a protocol surprise, is treated as *unknown*, and the
+  relay behaves exactly as it did before this probe existed. Best effort by design: the crate stays
+  printer-agnostic.
+- **Reclaim.** The lease record's `session_id` names a media slot the printer still believes is in
+  use. The printer matches the named session against a global table rather than against the
+  connection the request arrived on, so the relay can send a `TEARDOWN` naming it from its own
+  connection and free that slot immediately, recovering the stream limit without a printer
+  restart. It cannot free a *worker* slot: a printer whose ten connections are all pinned still
+  needs a restart.
+- **Status.** Both outcomes are written to the lease record's `last_claim_status`
+  (`printer-stream-slots-exhausted`, `reclaimed-stale-session`, `reclaim-stale-session-failed`,
+  `no-media-first-output-timeout`), which the monitor's RTSP debug overlay already renders.
+
+Retries drop straight to the maximum interval once exhaustion is detected, and return to the short
+interval as soon as media flows again.
+
+### First-output deadline
+
+An ffmpeg attempt that has produced no media at all is killed after 12 seconds. The RTSP demuxer
+has no default socket timeout, so without this a printer that accepts a connection and then stays
+silent leaves the pump blocked in its stdout read forever.
+
 ### Transport fallback
 
 Transport order comes from `DRAGONFRUIT_RTSP_TRANSPORT`.

@@ -30,6 +30,39 @@ read-only probing; the full write-up, the probe tools and the reproduction scrip
 outside this repo in the S4U reverse-engineering workspace (`docs/chitu-hardware-RE.md`
 section 17 there, with a `rtsp_leak_test.py` companion).
 
+### Update: the media-slot counter is the one that sticks (measured later the same day)
+
+While validating the P1 oracle, the printer was found reporting `NumberOfVideoStreamConnected: 2`
+against `MaximumVideoStreamAllowed: 2` with **no client connected at all**.
+
+| Observation | Measurement |
+|---|---|
+| Counter read 0 of 2 before any RTSP testing | SDCP attribute reply on the first probe |
+| Now 2 of 2, stable | three separate reads, about an hour apart |
+| `DESCRIBE` does not move it | read, `DESCRIBE`, read gives 2, 2, 2 |
+| It does not decay | unchanged after 2 s idle |
+| RTSP itself stays healthy at 2 of 2 | `OPTIONS` returns `200 OK` in 0.03 s |
+| The app refuses to hand out a stream URL at 2 of 2 | SDCP command 0x182 returns a bare acknowledgement, and it does not do that at 0 of 2 |
+| `DESCRIBE` carries no `Session:` header | the id only appears after `SETUP`, which is why the lease record learns it from ffmpeg's stderr |
+
+So the binding constraint in normal use is **not** the ten-worker table. It is a two-slot media
+counter which, once stuck, refuses live view while RTSP still answers perfectly. I could not
+isolate what moves it from 0 to 2: `OPTIONS` and `DESCRIBE` do not, and isolating it needs
+`SETUP`/`PLAY` followed by an abrupt close, which is deliberately **not** run against a printer
+somebody is using, because it would deepen the leak rather than measure it. That experiment belongs
+on a throwaway unit.
+
+Consequences:
+
+- P1's oracle is validated, and now reads these two counters. Command 0x182 turned out to be gated
+  on more than the counters, so it is not usable as an exhaustion signal.
+- P2's reclaim is the right shape for this leak, but it can only reclaim a session whose id we
+  recorded while it was alive. The two slots stuck at the time of writing were not ours, so they
+  cannot be reclaimed from here and a reboot is the only cure.
+- A new question now outranks P3 and P4: **what increments that counter without decrementing it?**
+  Until it is answered, "the printer refuses after a few connects" is a two-slot leak, not a
+  ten-worker wall, and no relay-side change can rescue a client that never comes back to clean up.
+
 ## Why the current reclaim model cannot recover
 
 1. **Deterministic RTP port pinning is aimed at the wrong layer.** The exhaustion is in TCP
@@ -109,9 +142,10 @@ Requirements, in full, because they are the whole argument:
 | Phase | Work | Verify |
 |---|---|---|
 | **P0a — landed on this branch** | Removed the two wrong-layer mechanisms (deterministic `-min_port`/`-max_port` pinning, replayed `Session:` header) and gave the pump bounded exponential backoff (750 ms doubling to 30 s, reset when media flows) so a refusing printer is no longer hit with a fresh connection every 750 ms | `cargo check` clean (`dragonfruit-rtsp-relay` 0.1.1); behaviour change is the ffmpeg argument list, and the backoff is visible in `pump_ffmpeg` |
-| **P0b — remaining** | Bound the ffmpeg read: with a subscriber attached, `pump_ffmpeg` blocks in `stdout.read()` indefinitely, and the RTSP demuxer has no default socket timeout, so a printer that accepts and then goes silent can hang the pump forever. Needs an ffmpeg socket-timeout flag (`-rw_timeout` / `-timeout`, name varies by version) **verified against the shipped ffmpeg** before it is added — an unrecognised option makes ffmpeg exit immediately, which would be worse than the hang | Confirm the flag name against the ffmpeg build the sidecar resolves, then prove the pump recovers from a black-holed connection; unit-test the relay state machine while adding the terminal state |
-| **P1** | Exhaustion detection (transport oracle: connect succeeds, no RTSP reply; session oracle: SDCP live-stream request returns a bare acknowledgement) and a distinct diagnostic state, so the relay stops retrying and the overlay can say who holds the slots | Reproduce exhaustion with the companion script, confirm the overlay reports "no free stream slot" and that retries stop |
-| **P2** | Session-slot reclaim by stale-id `TEARDOWN`, using the session id the lease store already records | With a stale media slot held, reclaim must drop the stream count without a printer reboot |
+| **P0b — landed** | An ffmpeg attempt that produces no media at all is killed after 12 s, so a printer that accepts a connection and then stays silent cannot leave the pump blocked in its stdout read. Rust-side only: the RTSP demuxer's socket-timeout option name varies by build, and an unrecognised option makes ffmpeg exit instantly, which would be worse than the hang | `cargo check` clean. The deadline path itself is not exercised live |
+| **P1 — landed** | Exhaustion oracle: read `NumberOfVideoStreamConnected` and `MaximumVideoStreamAllowed` from the SDCP attribute reply, treat any unreadable answer as unknown, write the outcome to `last_claim_status`, and drop retries straight to the maximum interval | **Verified live** against 192.168.2.101: the opt-in test reports the printer's real state, and an independent probe agrees with it |
+| **P2 — landed** | Stale-session reclaim: `TEARDOWN` naming a session id recorded in the lease store, which the printer matches globally rather than against the arriving connection | **Not verified live.** No stale session id was available to reclaim, and manufacturing one on a printer in use would deepen the leak. The logic follows the printer's global session-id match, which is read from its code |
+| ~~P3 / P4~~ | Deferred, see below | A packet driver on Windows buys these two phases and nothing in P0-P2 |
 
 P0-P2 need no new dependencies, no elevated permissions and no driver: they should land first
 and probably remove most of the pain. **P3 and P4 both need the ability to transmit a spoofed
