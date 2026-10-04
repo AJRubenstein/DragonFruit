@@ -7,6 +7,8 @@
 //   npm run profile:df -- key <key> <ctrl|shift|alt|none> <times> [label]
 //   npm run profile:df -- scan <cols> <rows> [js probe]
 //   npm run profile:df -- shot <file.png> [xPct] [yPct]
+//   npm run profile:df -- zoom <xPct> <yPct> <steps> [deltaY]
+//   npm run profile:df -- drag <x1> <y1> <x2> <y2> [right|middle] [steps]
 //
 // Start the app with the port open first:
 //
@@ -124,6 +126,56 @@ if (mode === 'shot') {
   const { writeFileSync } = await import('node:fs');
   writeFileSync(file, Buffer.from(data, 'base64'));
   console.log('wrote', file);
+  ws.close();
+  process.exit(0);
+}
+
+if (mode === 'zoom') {
+  // Wheel at a point: negative steps zoom in, positive out.
+  const steps = Number(rest[2] ?? 3);
+  const delta = Number(rest[3] ?? -120);
+  for (let i = 0; i < steps; i += 1) {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: rect.left + rect.width * Number(rest[0]),
+      y: rect.top + rect.height * Number(rest[1]),
+      deltaX: 0,
+      deltaY: delta,
+      pointerType: 'mouse',
+    });
+    await frame();
+    await frame();
+  }
+  console.log('zoomed', steps, 'x', delta);
+  ws.close();
+  process.exit(0);
+}
+
+if (mode === 'drag') {
+  // Right-drag orbits (mouseButtons: RIGHT: ROTATE), middle-drag pans.
+  const [x1, y1, x2, y2] = rest.slice(0, 4).map(Number);
+  const button = rest[4] ?? 'right';
+  const steps = Number(rest[5] ?? 12);
+  const buttons = button === 'right' ? 2 : button === 'middle' ? 4 : 1;
+  const px = (v) => rect.left + rect.width * v;
+  const py = (v) => rect.top + rect.height * v;
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: px(x1), y: py(y1), buttons: 0, pointerType: 'mouse' });
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: px(x1), y: py(y1), button, buttons, clickCount: 1, pointerType: 'mouse' });
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: px(x1 + (x2 - x1) * t),
+      y: py(y1 + (y2 - y1) * t),
+      button,
+      buttons,
+      pointerType: 'mouse',
+    });
+    await frame();
+  }
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px(x2), y: py(y2), button, buttons: 0, clickCount: 1, pointerType: 'mouse' });
+  await frame();
+  console.log('dragged', button, x1, y1, '->', x2, y2);
   ws.close();
   process.exit(0);
 }

@@ -54,6 +54,15 @@ See [Adding a New Support Type](support-type-extension.md) for which steps are r
 
 **A batch layout is ~0.1 us per instance, and it is paid per re-layout.** The four groups derive a matrix per instance whenever their arrays change (a support edit, or the active model moving between the world layer and its own attached layer). Keep the arrays stable when only a colour or a visibility changes, and hoist scratch objects in any helper the layout calls: minting a `Vector3` per instance per pass cost more than the maths in the cone batch.
 
+**A rendered root sits 0.01 mm above the plate.** `InstancedRootsGroup` lifts its
+whole stack by `ROOT_RENDER_LIFT_MM`. A root's disk bottom lands exactly on the
+plate, which puts the plate top, the raft's bottom and every root disk on the same
+plane: three coplanar surfaces fight for depth, and a raft of roots shows it as a
+mottled patch through the raft. A hundredth of a millimetre is invisible at any
+zoom the app offers. It is a rendering offset only — the sliced and exported
+geometry comes from the support state, not from this batch — so it must not be
+"corrected" back into the geometry builders.
+
 **A proxy geometry that will be raycast needs a bounds tree.** `src/utils/bvh.ts` installs three-mesh-bvh's accelerated raycast globally, and a mesh whose geometry has no `boundsTree` falls back to the plain per-triangle test — paid once per visible mesh on every pointer move. The raft proxy geometries build one (`withBoundsTree`). three-mesh-bvh does not accelerate `InstancedMesh.raycast`, so the support batches carry the grid raycast described above instead.
 
 **Knots must survive topology edits.** A knot persists its host shaft id, its normalized position along that shaft (`t`), and a world position derived from the host. Any change to shaft topology has to route through the paths that recompute knot placement — otherwise attachments silently drift or detach.

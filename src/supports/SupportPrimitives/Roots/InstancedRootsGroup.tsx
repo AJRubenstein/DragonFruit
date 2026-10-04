@@ -6,6 +6,18 @@ import { quantizeToScale } from '@/utils/math';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { writeInstanceColors } from '../instanceColorWriter';
 
+/**
+ * How far the rendered root sits above the plate, in millimetres.
+ *
+ * A root's disk bottom lands exactly on the plate, and the plate top, the raft's
+ * bottom and every root disk are then coplanar: three surfaces at the same depth
+ * fight, and a raft of roots shows it as a mottled patch through the raft. A
+ * hundredth of a millimetre is invisible at any zoom the app offers and takes the
+ * disk off the plane. It is a rendering offset only - the sliced and exported
+ * geometry is generated from the support state, not from this batch.
+ */
+const ROOT_RENDER_LIFT_MM = 0.01;
+
 export interface InstancedRoot {
     id: string;
     supportId?: string;
@@ -146,13 +158,16 @@ function RootBucketMesh({
             return;
         }
 
+        // The whole stack rides the lift together, so its own faces keep their
+        // spacing; only the disk's bottom leaves the plate.
+        const lift = ROOT_RENDER_LIFT_MM;
         const centers: Array<[THREE.InstancedMesh | null, THREE.Quaternion, number]> = [
-            [diskRef.current, ROOT_ROTATION, root.effectiveDiskHeight / 2],
-            [coneRef.current, ROOT_ROTATION, root.effectiveDiskHeight + (root.coneHeight / 2)],
-            [sphereRef.current, IDENTITY_ROTATION, root.effectiveDiskHeight + root.coneHeight],
-            [overlayDiskRef.current, ROOT_ROTATION, root.effectiveDiskHeight / 2],
-            [overlayConeRef.current, ROOT_ROTATION, root.effectiveDiskHeight + (root.coneHeight / 2)],
-            [overlaySphereRef.current, IDENTITY_ROTATION, root.effectiveDiskHeight + root.coneHeight],
+            [diskRef.current, ROOT_ROTATION, lift + root.effectiveDiskHeight / 2],
+            [coneRef.current, ROOT_ROTATION, lift + root.effectiveDiskHeight + (root.coneHeight / 2)],
+            [sphereRef.current, IDENTITY_ROTATION, lift + root.effectiveDiskHeight + root.coneHeight],
+            [overlayDiskRef.current, ROOT_ROTATION, lift + root.effectiveDiskHeight / 2],
+            [overlayConeRef.current, ROOT_ROTATION, lift + root.effectiveDiskHeight + (root.coneHeight / 2)],
+            [overlaySphereRef.current, IDENTITY_ROTATION, lift + root.effectiveDiskHeight + root.coneHeight],
         ];
 
         for (const [mesh, quaternion, zOffset] of centers) {
