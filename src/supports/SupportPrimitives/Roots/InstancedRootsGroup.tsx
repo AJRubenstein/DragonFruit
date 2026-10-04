@@ -224,7 +224,7 @@ function RootBucketMesh({
         ]) {
             if (mesh) mesh.instanceMatrix.needsUpdate = true;
         }
-    }, [bucket, isHidden, writeBucketMatrices]);
+    }, [bucket, hasOverlay, isHidden, writeBucketMatrices]);
 
     // Colours are a separate pass: a selection changes them and nothing else, and
     // it must not re-derive every instance matrix to do it.

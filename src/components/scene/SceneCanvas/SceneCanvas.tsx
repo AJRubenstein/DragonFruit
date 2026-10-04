@@ -5509,10 +5509,24 @@ export function SceneCanvas({
     };
   }, [handleOrbitEnd]);
 
+  /**
+   * Take the corner cage away now, rather than waiting for the state to paint.
+   *
+   * A release handler clears the state that gates the cage and then runs the
+   * commit, so React paints the hide only once all of that finishes, which is the
+   * few hundred milliseconds the box used to linger after the pointer let go.
+   */
+  const hideDragCornerCagesNow = React.useCallback(() => {
+    for (const line of Object.values(dragCornerCageRefs.current)) {
+      if (line) line.visible = false;
+    }
+  }, []);
+
   const markGizmoDragEnded = React.useCallback((expectParentTransaction = true) => {
     window.__gizmoDragEndedThisFrame = true;
     suppressNextCanvasClickRef.current = true;
     setIsPostGizmoInteractionGuardActive(true);
+    hideDragCornerCagesNow();
     armSupportDragDeltaBridge({ expectParentTransaction });
 
     if (postGizmoInteractionTimeoutRef.current !== null) {
@@ -5525,7 +5539,7 @@ export function SceneCanvas({
       setIsPostGizmoInteractionGuardActive(false);
       postGizmoInteractionTimeoutRef.current = null;
     }, 160);
-  }, [armSupportDragDeltaBridge]);
+  }, [armSupportDragDeltaBridge, hideDragCornerCagesNow]);
 
   React.useEffect(() => {
     return () => {
@@ -5638,14 +5652,8 @@ export function SceneCanvas({
     selectDragStartSnapshotRef.current = null;
     setSelectDragPressed(false);
 
-    // Hide the cage here rather than waiting for the state to paint. The release
-    // handler clears this and then runs the commit, so React paints the hide only
-    // once the commit finishes, which is the few hundred milliseconds the box
-    // used to linger after the pointer let go.
-    for (const line of Object.values(dragCornerCageRefs.current)) {
-      if (line) line.visible = false;
-    }
-  }, []);
+    hideDragCornerCagesNow();
+  }, [hideDragCornerCagesNow]);
 
   const getSelectDragWorldPoint = React.useCallback((clientX: number, clientY: number): THREE.Vector3 | null => {
     const plane = selectDragPlaneRef.current;
@@ -6778,7 +6786,10 @@ export function SceneCanvas({
                           rotation: correctedLive.rotation.clone(),
                           scale: correctedLive.scale.clone(),
                         });
-                        requestDragCornerCageUpdate();
+                        // Same frame as the imperative move above, as the select
+                        // drag does: a deferred update lands a frame later and the
+                        // corners trail behind a fast drag.
+                        updateDragCornerCagesNow();
                       }
                     }
                   }}
@@ -7114,7 +7125,10 @@ export function SceneCanvas({
                           rotation: correctedLive.rotation.clone(),
                           scale: correctedLive.scale.clone(),
                         });
-                        requestDragCornerCageUpdate();
+                        // Same frame as the imperative move above, as the select
+                        // drag does: a deferred update lands a frame later and the
+                        // corners trail behind a fast drag.
+                        updateDragCornerCagesNow();
                       }
                     }
                   }}

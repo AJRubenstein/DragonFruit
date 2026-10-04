@@ -226,7 +226,7 @@ export function InstancedShaftGroup({
         if (!touched) return;
         mesh.instanceMatrix.needsUpdate = true;
         if (overlayMesh) overlayMesh.instanceMatrix.needsUpdate = true;
-    }, [straightShafts, isHidden, writeInstanceMatrix]);
+    }, [straightShafts, hasOverlay, isHidden, writeInstanceMatrix]);
 
     // Colours are a separate pass: a selection changes them and nothing else, and
     // it must not re-derive every instance matrix to do it.

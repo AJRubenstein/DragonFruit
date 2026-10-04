@@ -351,7 +351,7 @@ function ConeBucketMesh({
         for (const mesh of [diskRef.current, bodyRef.current, tipSphereRef.current, overlayDiskRef.current, overlayBodyRef.current, overlayTipSphereRef.current]) {
             if (mesh) mesh.instanceMatrix.needsUpdate = true;
         }
-    }, [bucket, isHidden, writeConeMatrices]);
+    }, [bucket, hasOverlay, isHidden, writeConeMatrices]);
 
     // Colours are a separate pass: a selection changes them and nothing else, and
     // it must not re-derive every instance matrix to do it.
