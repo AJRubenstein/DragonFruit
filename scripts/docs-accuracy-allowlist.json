@@ -64,7 +64,10 @@
         "z_anti_aliasing",
         "format_info",
         "projectObject",
-        "setProgram"
+        "setProgram",
+        "renderBufferDirect",
+        "drawElements",
+        "drawElementsInstanced"
     ],
     "paths": [
         "src/supports/generatedSupportRegistrations.ts",
@@ -90,7 +93,10 @@
         "unpublished plans against older code": "docs/internal/cli/gaps-plan.md and wont-do.md, and docs/internal/slicing-engine-v3.2-roadmap.md, are working plans written against the code of their day, kept as the record of what was planned and why. updateBranch, loadFromLychee, updateKickstand, setHoveredId, setHoveredCategory, transformAllKickstands and the rle_*_labels pair were removed or renamed since (kickstands joined the shared support state; islands::rle kept four operations), and z_aa_steps / z_anti_aliasing became the zaa_* fields. Rewriting the plans to today's names would misstate what they said. docs/reference/cli.md, which describes the current code, was corrected instead, so these entries must not be used to excuse a stale name there.",
         "upstream windowing APIs": "PlatformWebview and cef_window_handle_t are tauri and CEF APIs; wl_surface and wl_subsurface are Wayland protocol objects; windowless_rendering_enabled and set_as_windowless belong to the cef crate. ADR-0005 and ADR-0040 cite them to explain why the Linux CEF build embeds through an X11 window id, so they name code we depend on but do not own.",
         "projectObject": "three.js WebGLRenderer internals, cited as the per-object frame cost in docs/dev/backlog.md; external API, not ours",
-        "setProgram": "three.js WebGLRenderer internals, cited as the per-object frame cost in docs/dev/backlog.md; external API, not ours"
+        "setProgram": "three.js WebGLRenderer internals, cited as the per-object frame cost in docs/dev/backlog.md; external API, not ours",
+        "renderBufferDirect": "three.js WebGLRenderer internal, cited as the per-object frame cost in docs/dev/backlog.md; external API, not ours",
+        "drawElements": "WebGL context method, cited as how draw calls were counted in docs/dev/performance-debugging.md; external API, not ours",
+        "drawElementsInstanced": "WebGL context method, cited as how draw calls were counted in docs/dev/performance-debugging.md; external API, not ours"
     },
     "_comment_webkit_symbols": "The eight WebKit/JavaScriptCore internals above (javascript_gc_object_count through operationMapHash) are cited by docs/dev/performance-debugging.md as they appear in `sample` output and WebKit's own logs. They belong to the platform, not to this codebase, and will never be found here.",
     "_comment_anchor_constants": "ANCHOR_MIN_* / ANCHOR_SHAFT_MULTIPLIER: removed constants, cited by name in support-registry-findings.md because the finding IS their removal. The values live on the anchor descriptor's autoPlacement and are pinned by __tests__/autoPlacementPolicy.test.ts.",
