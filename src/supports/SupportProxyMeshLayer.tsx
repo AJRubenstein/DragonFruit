@@ -108,27 +108,26 @@ export type ProxyOverlayEntry = {
 };
 
 export type ProxyOverlayInput = {
-  selectedModelIds: ReadonlySet<string>;
   hoverModelId: string | null;
   marqueeCandidateModelIds: readonly string[];
   geometryByModel: ReadonlyMap<string, ProxyModelGeometry>;
   isModelVisible: (modelId?: string) => boolean;
   zOffsetByModelId?: Record<string, number>;
-  selectionOpacity: number;
   hoverOpacity: number;
 };
 
 /**
- * The models drawn again on top of the base batch: the selected ones in the
- * active colour, then the hovered and marquee-candidate ones as a tint.
+ * The models drawn again on top of the base batch, as a tint: the hovered one,
+ * then the marquee candidates, which tint lighter so a marquee lighting up
+ * model, supports and raft at once still reads apart from a hover.
  *
- * A selected model is not also tinted for hover: it already reads as the
- * active one, and a marquee that takes it does not need to say so twice.
+ * A selection is not in here: it rides on the base batch's per-instance colours,
+ * so selecting all models does not mount one overlay per model.
  */
 export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverlayEntry[] {
   const entries: ProxyOverlayEntry[] = [];
 
-  const entryFor = (modelId: string, key: string, opacity: number, emissiveIntensity: number): ProxyOverlayEntry | null => {
+  const entryFor = (modelId: string, key: string, opacity: number): ProxyOverlayEntry | null => {
     if (!input.isModelVisible(modelId)) return null;
     const modelKey = toModelKey(modelId);
     const geometry = input.geometryByModel.get(modelKey);
@@ -141,29 +140,20 @@ export function computeProxyOverlayEntries(input: ProxyOverlayInput): ProxyOverl
       geometry,
       color: ACTIVE_SUPPORT_COLOR,
       emissive: ACTIVE_SUPPORT_COLOR,
-      emissiveIntensity,
+      emissiveIntensity: HOVER_EMISSIVE_INTENSITY,
       opacity,
     };
   };
-
-  for (const modelId of input.selectedModelIds) {
-    // No glow: a selected support has always been the active colour flat.
-    const entry = entryFor(modelId, `selection:${toModelKey(modelId)}`, input.selectionOpacity, 0);
-    if (entry) entries.push(entry);
-  }
 
   const hoveredModelIds = new Set<string>();
   if (input.hoverModelId) hoveredModelIds.add(input.hoverModelId);
   for (const modelId of input.marqueeCandidateModelIds) hoveredModelIds.add(modelId);
 
   for (const modelId of hoveredModelIds) {
-    if (input.selectedModelIds.has(modelId)) continue;
-    // A candidate tints lighter than a hover, so a marquee lighting up model,
-    // supports and raft at once still reads apart from a selection.
     const opacity = modelId === input.hoverModelId
       ? input.hoverOpacity
       : input.hoverOpacity * MARQUEE_CANDIDATE_TINT_FACTOR;
-    const entry = entryFor(modelId, `hover:${toModelKey(modelId)}`, opacity, HOVER_EMISSIVE_INTENSITY);
+    const entry = entryFor(modelId, `hover:${toModelKey(modelId)}`, opacity);
     if (entry) entries.push(entry);
   }
 
@@ -192,38 +182,54 @@ export type ProxyHoverBoxEntry = {
   modelKey: string;
   modelId?: string;
   zOffset: number;
-  geometry: ProxyModelGeometry;
 };
 
 /**
- * One hover box per entry, sized to hold every primitive that entry draws.
+ * One box per model, holding every primitive that model draws.
  *
  * A box that misses a primitive is a support you cannot hover, so the walk
  * takes the shaft ends and bezier control points, the roots, the joints and the
- * cones — everything the batches draw.
+ * cones. It runs once per support-state change, not once per selection: the
+ * caller keeps the result and only re-derives the boxes around it.
  */
-export function computeProxyHoverBoxes(entries: readonly ProxyHoverBoxEntry[]): ProxyHoverBox[] {
-  const boxes: ProxyHoverBox[] = [];
-  const bounds = new THREE.Box3();
+export function computeProxyModelBounds(
+  geometryByModel: ReadonlyMap<string, ProxyModelGeometry>,
+): Map<string, THREE.Box3> {
+  const boundsByModelKey = new Map<string, THREE.Box3>();
   const point = new THREE.Vector3();
 
-  const include = (value: Vec3) => bounds.expandByPoint(point.set(value.x, value.y, value.z));
+  for (const [modelKey, geometry] of geometryByModel) {
+    const bounds = new THREE.Box3();
+    const include = (value: Vec3) => bounds.expandByPoint(point.set(value.x, value.y, value.z));
 
-  for (const entry of entries) {
-    bounds.makeEmpty();
-
-    for (const shaft of entry.geometry.shafts) {
+    for (const shaft of geometry.shafts) {
       include(shaft.start);
       include(shaft.end);
       if (shaft.controlPoint1) include(shaft.controlPoint1);
       if (shaft.controlPoint2) include(shaft.controlPoint2);
     }
-    for (const root of entry.geometry.roots) include(root.basePos);
-    for (const joint of entry.geometry.joints) include(joint.pos);
-    for (const cone of entry.geometry.cones) include(cone.pos);
+    for (const root of geometry.roots) include(root.basePos);
+    for (const joint of geometry.joints) include(joint.pos);
+    for (const cone of geometry.cones) include(cone.pos);
 
     if (bounds.isEmpty()) continue;
     bounds.expandByScalar(PROXY_HOVER_BOX_MARGIN_MM);
+    boundsByModelKey.set(modelKey, bounds);
+  }
+
+  return boundsByModelKey;
+}
+
+/** The hover boxes of `entries`, from the bounds each model's primitives take. */
+export function computeProxyHoverBoxes(
+  entries: readonly ProxyHoverBoxEntry[],
+  boundsByModelKey: ReadonlyMap<string, THREE.Box3>,
+): ProxyHoverBox[] {
+  const boxes: ProxyHoverBox[] = [];
+
+  for (const entry of entries) {
+    const bounds = boundsByModelKey.get(entry.modelKey);
+    if (!bounds) continue;
 
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());
@@ -896,30 +902,40 @@ export function SupportProxyMeshLayer({
     scheduleSupportHoverClear();
   }, [scheduleSupportHoverClear]);
 
-  // The models drawn again on top of the base batch: the selected ones (their
-  // own colour) and the hovered/marquee ones (a tint). A selection therefore
-  // only mounts or drops one model's overlay instead of re-partitioning every
-  // primitive in the scene, which is what a selection used to cost.
+  // The selection tint rides on per-instance colours rather than a second batch
+  // per selected model: one batch per primitive kind keeps drawing once, and a
+  // selection only rewrites colours. The hovered and marquee-candidate models
+  // are still drawn again on top, because their tint glows.
+  const selectionColors = React.useMemo(() => ({
+    base: new THREE.Color(DEFAULT_SUPPORT_COLOR),
+    selected: new THREE.Color(ACTIVE_SUPPORT_COLOR),
+  }), []);
+
+  const selectionColorFor = React.useCallback(
+    (primitive: { modelId?: string }) => (
+      primitive.modelId && highlightedModelIdSet.has(primitive.modelId)
+        ? selectionColors.selected
+        : selectionColors.base
+    ),
+    [highlightedModelIdSet, selectionColors],
+  );
+
   const overlayEntries = React.useMemo<ProxyOverlayEntry[]>(
     () => computeProxyOverlayEntries({
-      selectedModelIds: highlightedModelIdSet,
       hoverModelId: effectiveHoverModelId,
       marqueeCandidateModelIds,
       geometryByModel: baseProxyByModel,
       isModelVisible: resolveModelVisible,
       zOffsetByModelId: modelDropOffsetsById,
-      selectionOpacity: proxyOpacity,
       hoverOpacity: hoverOverlayOpacity,
     }),
     [
       effectiveHoverModelId,
       marqueeCandidateModelIds,
-      highlightedModelIdSet,
       resolveModelVisible,
       baseProxyByModel,
       modelDropOffsetsById,
       hoverOverlayOpacity,
-      proxyOpacity,
     ],
   );
 
@@ -992,9 +1008,21 @@ export function SupportProxyMeshLayer({
     return base;
   }, [visibleModelEntries, includeDetailedPrimitives]);
 
+  const modelBounds = React.useMemo(
+    () => computeProxyModelBounds(baseProxyByModel),
+    [baseProxyByModel],
+  );
+
   const hoverBoxes = React.useMemo<ProxyHoverBox[]>(
-    () => computeProxyHoverBoxes(visibleModelEntries),
-    [visibleModelEntries],
+    () => computeProxyHoverBoxes(
+      visibleModelEntries.map((entry) => ({
+        modelKey: entry.modelKey,
+        modelId: entry.modelId,
+        zOffset: entry.zOffset,
+      })),
+      modelBounds,
+    ),
+    [visibleModelEntries, modelBounds],
   );
 
   if (visibleModelEntries.length === 0) {
@@ -1013,6 +1041,7 @@ export function SupportProxyMeshLayer({
             <InstancedShaftGroup
               shafts={baseGeometry.shafts}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               radialSegments={10}
@@ -1024,6 +1053,7 @@ export function SupportProxyMeshLayer({
             <InstancedRootsGroup
               roots={baseGeometry.roots}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
@@ -1034,6 +1064,7 @@ export function SupportProxyMeshLayer({
             <InstancedJointGroup
               joints={baseGeometry.joints}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
@@ -1043,6 +1074,7 @@ export function SupportProxyMeshLayer({
             <InstancedContactConeGroup
               cones={baseGeometry.cones}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}

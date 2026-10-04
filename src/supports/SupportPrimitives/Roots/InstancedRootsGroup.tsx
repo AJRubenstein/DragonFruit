@@ -30,6 +30,13 @@ interface InstancedRootsGroupProps {
     opacity?: number;
     clippingPlanes?: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
+    /**
+     * Per-instance colour, for a caller that tints a subset of the batch (the
+     * selection). Every instance must be given one: the colour buffer starts
+     * black, and the group's own `color` and `discColor` are not used once this
+     * is set.
+     */
+    instanceColor?: (root: InstancedRoot) => THREE.Color;
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
     onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
@@ -48,6 +55,7 @@ interface RootBucket {
 }
 
 const ROOT_ROTATION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+const IDENTITY_ROTATION = new THREE.Quaternion();
 
 const toBucketKey = (root: InstancedRoot) => {
     return [
@@ -69,6 +77,7 @@ function RootBucketMesh({
     opacity,
     clippingPlanes,
     outOfBoundsMaterial,
+    instanceColor,
     onRootClick,
     onRootPointerDown,
     onRootPointerMove,
@@ -84,6 +93,7 @@ function RootBucketMesh({
     opacity: number;
     clippingPlanes: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
+    instanceColor?: (root: InstancedRoot) => THREE.Color;
     onRootClick?: (root: InstancedRoot, event: ThreeEvent<MouseEvent>) => void;
     onRootPointerDown?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
     onRootPointerMove?: (root: InstancedRoot, event: ThreeEvent<PointerEvent>) => void;
@@ -101,17 +111,18 @@ function RootBucketMesh({
 
     useLayoutEffect(() => {
         const tempObject = new THREE.Object3D();
+        const center = new THREE.Vector3();
 
         const updateMesh = (
             mesh: THREE.InstancedMesh | null,
-            centerCalculator: (root: InstancedRoot) => Vec3,
+            centerInto: (root: InstancedRoot, target: THREE.Vector3) => void,
             quaternion: THREE.Quaternion,
         ) => {
             if (!mesh) return;
             for (let i = 0; i < bucket.roots.length; i += 1) {
                 const root = bucket.roots[i];
-                const center = centerCalculator(root);
-                tempObject.position.set(center.x, center.y, center.z);
+                centerInto(root, center);
+                tempObject.position.copy(center);
                 tempObject.quaternion.copy(quaternion);
                 tempObject.scale.set(1, 1, 1);
                 tempObject.updateMatrix();
@@ -121,29 +132,36 @@ function RootBucketMesh({
             mesh.instanceMatrix.needsUpdate = true;
         };
 
-        const diskCenter = (root: InstancedRoot) => ({
-            x: root.basePos.x,
-            y: root.basePos.y,
-            z: root.basePos.z + (root.effectiveDiskHeight / 2),
-        });
-        const coneCenter = (root: InstancedRoot) => ({
-            x: root.basePos.x,
-            y: root.basePos.y,
-            z: root.basePos.z + root.effectiveDiskHeight + (root.coneHeight / 2),
-        });
-        const sphereCenter = (root: InstancedRoot) => ({
-            x: root.basePos.x,
-            y: root.basePos.y,
-            z: root.basePos.z + root.effectiveDiskHeight + root.coneHeight,
-        });
+        const diskCenter = (root: InstancedRoot, target: THREE.Vector3) => {
+            target.set(root.basePos.x, root.basePos.y, root.basePos.z + (root.effectiveDiskHeight / 2));
+        };
+        const coneCenter = (root: InstancedRoot, target: THREE.Vector3) => {
+            target.set(root.basePos.x, root.basePos.y, root.basePos.z + root.effectiveDiskHeight + (root.coneHeight / 2));
+        };
+        const sphereCenter = (root: InstancedRoot, target: THREE.Vector3) => {
+            target.set(root.basePos.x, root.basePos.y, root.basePos.z + root.effectiveDiskHeight + root.coneHeight);
+        };
 
         updateMesh(diskRef.current, diskCenter, ROOT_ROTATION);
         updateMesh(coneRef.current, coneCenter, ROOT_ROTATION);
-        updateMesh(sphereRef.current, sphereCenter, new THREE.Quaternion());
+        updateMesh(sphereRef.current, sphereCenter, IDENTITY_ROTATION);
         updateMesh(overlayDiskRef.current, diskCenter, ROOT_ROTATION);
         updateMesh(overlayConeRef.current, coneCenter, ROOT_ROTATION);
-        updateMesh(overlaySphereRef.current, sphereCenter, new THREE.Quaternion());
+        updateMesh(overlaySphereRef.current, sphereCenter, IDENTITY_ROTATION);
     }, [bucket, hasOverlay]);
+
+    // Colours are a separate pass: a selection changes them and nothing else, and
+    // it must not re-derive every instance matrix to do it.
+    useLayoutEffect(() => {
+        if (!instanceColor) return;
+        for (const mesh of [diskRef.current, coneRef.current, sphereRef.current]) {
+            if (!mesh) continue;
+            for (let i = 0; i < bucket.roots.length; i += 1) {
+                mesh.setColorAt(i, instanceColor(bucket.roots[i]));
+            }
+            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        }
+    }, [bucket, instanceColor]);
 
     const resolveRootFromEvent = (instanceId: number | undefined | null) => {
         if (instanceId == null) return null;
@@ -198,7 +216,7 @@ function RootBucketMesh({
             >
                 <cylinderGeometry args={[bucket.diskRadius, bucket.diskRadius, bucket.diskHeight, 10]} />
                 <meshStandardMaterial
-                    color={discColor ?? color}
+                    color={instanceColor ? '#ffffff' : (discColor ?? color)}
                     emissive={emissive}
                     emissiveIntensity={emissiveIntensity}
                     transparent={transparent}
@@ -222,7 +240,7 @@ function RootBucketMesh({
                 >
                     <cylinderGeometry args={[bucket.coneTopRadius, bucket.coneBottomRadius, bucket.coneHeight, 10]} />
                     <meshStandardMaterial
-                        color={color}
+                        color={instanceColor ? '#ffffff' : color}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}
@@ -247,7 +265,7 @@ function RootBucketMesh({
                 >
                     <sphereGeometry args={[bucket.sphereRadius, 10, 8]} />
                     <meshStandardMaterial
-                        color={color}
+                        color={instanceColor ? '#ffffff' : color}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}
@@ -311,6 +329,7 @@ export function InstancedRootsGroup({
     opacity = 1,
     clippingPlanes = null,
     outOfBoundsMaterial = null,
+    instanceColor,
     onRootClick,
     onRootPointerDown,
     onRootPointerMove,
@@ -363,6 +382,7 @@ export function InstancedRootsGroup({
                     opacity={opacity}
                     clippingPlanes={clippingPlanes}
                     outOfBoundsMaterial={outOfBoundsMaterial}
+                    instanceColor={instanceColor}
                     onRootClick={onRootClick}
                     onRootPointerDown={onRootPointerDown}
                     onRootPointerMove={onRootPointerMove}

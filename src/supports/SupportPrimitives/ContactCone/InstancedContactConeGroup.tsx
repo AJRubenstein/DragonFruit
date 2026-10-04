@@ -3,8 +3,8 @@ import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import type { SupportTipProfile } from './types';
-import { getConeCenterPosition, getConeQuaternion } from './contactConeUtils';
-import { calculateDiskThickness, getDiskCenter, getDiskRotation } from '../ContactDisk/contactDiskUtils';
+import { getConeCenterPosition, getConeQuaternionInto } from './contactConeUtils';
+import { calculateDiskThickness, getDiskCenter, getDiskRotationInto } from '../ContactDisk/contactDiskUtils';
 import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 import { quantizeToScale } from '@/utils/math';
@@ -38,6 +38,13 @@ interface InstancedContactConeGroupProps {
     opacity?: number;
     clippingPlanes?: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
+    /**
+     * Per-instance colour, for a caller that tints a subset of the batch (the
+     * selection). Every instance must be given one: the colour buffer starts
+     * black, and the group's own `color` and `discColor` are not used once this
+     * is set.
+     */
+    instanceColor?: (cone: InstancedContactCone) => THREE.Color;
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -108,6 +115,7 @@ function ConeBucketMesh({
     opacity,
     clippingPlanes,
     outOfBoundsMaterial,
+    instanceColor,
     onConeClick,
     onConePointerDown,
     onConePointerMove,
@@ -125,6 +133,7 @@ function ConeBucketMesh({
     opacity: number;
     clippingPlanes?: THREE.Plane[] | null;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
+    instanceColor?: (cone: InstancedContactCone) => THREE.Color;
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
     onConePointerMove?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -149,15 +158,17 @@ function ConeBucketMesh({
 
     useLayoutEffect(() => {
         const tempObject = new THREE.Object3D();
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
 
         const setInstanceMatrices = (
             mesh: THREE.InstancedMesh | null,
-            transform: (cone: InstancedContactCone) => { position: THREE.Vector3; quaternion: THREE.Quaternion },
+            transformInto: (cone: InstancedContactCone, position: THREE.Vector3, quaternion: THREE.Quaternion) => void,
         ) => {
             if (!mesh) return;
             for (let i = 0; i < bucket.cones.length; i += 1) {
                 const cone = bucket.cones[i];
-                const { position, quaternion } = transform(cone);
+                transformInto(cone, position, quaternion);
                 tempObject.position.copy(position);
                 tempObject.quaternion.copy(quaternion);
                 tempObject.scale.set(1, 1, 1);
@@ -168,89 +179,63 @@ function ConeBucketMesh({
             mesh.instanceMatrix.needsUpdate = true;
         };
 
-        setInstanceMatrices(bodyRef.current, (cone) => {
+        const coneStartInto = (cone: InstancedContactCone, target: THREE.Vector3) => {
             const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
             const primitiveThickness = bucket.profileType === 'disk' ? resolveDiskThickness(cone) : 0;
-            const coneStart = {
-                x: cone.pos.x + effectiveSurfaceNormal.x * primitiveThickness,
-                y: cone.pos.y + effectiveSurfaceNormal.y * primitiveThickness,
-                z: cone.pos.z + effectiveSurfaceNormal.z * primitiveThickness,
-            };
-            const center = getConeCenterPosition(coneStart, cone.normal, cone.profile);
-            return {
-                position: new THREE.Vector3(center.x, center.y, center.z),
-                quaternion: getConeQuaternion(cone.normal),
-            };
-        });
-
-        setInstanceMatrices(tipSphereRef.current, (cone) => {
-            const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
-            const primitiveThickness = bucket.profileType === 'disk' ? resolveDiskThickness(cone) : 0;
-            const coneStart = new THREE.Vector3(
+            target.set(
                 cone.pos.x + effectiveSurfaceNormal.x * primitiveThickness,
                 cone.pos.y + effectiveSurfaceNormal.y * primitiveThickness,
                 cone.pos.z + effectiveSurfaceNormal.z * primitiveThickness,
             );
-            return { position: coneStart, quaternion: new THREE.Quaternion() };
-        });
+        };
 
-        setInstanceMatrices(diskRef.current, (cone) => {
+        const bodyTransform = (cone: InstancedContactCone, targetPosition: THREE.Vector3, targetQuaternion: THREE.Quaternion) => {
+            coneStartInto(cone, targetPosition);
+            const center = getConeCenterPosition(targetPosition, cone.normal, cone.profile);
+            targetPosition.set(center.x, center.y, center.z);
+            getConeQuaternionInto(cone.normal, targetQuaternion);
+        };
+
+        const tipTransform = (cone: InstancedContactCone, targetPosition: THREE.Vector3, targetQuaternion: THREE.Quaternion) => {
+            coneStartInto(cone, targetPosition);
+            targetQuaternion.identity();
+        };
+
+        const diskTransform = (cone: InstancedContactCone, targetPosition: THREE.Vector3, targetQuaternion: THREE.Quaternion) => {
             const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
             const thickness = resolveDiskThickness(cone);
             const center = getDiskCenter(cone.pos, effectiveSurfaceNormal, thickness);
             const penetration = Math.max(0, resolvePenetration(cone));
-            return {
-                position: new THREE.Vector3(
-                    center.x - effectiveSurfaceNormal.x * (penetration / 2),
-                    center.y - effectiveSurfaceNormal.y * (penetration / 2),
-                    center.z - effectiveSurfaceNormal.z * (penetration / 2),
-                ),
-                quaternion: getDiskRotation(effectiveSurfaceNormal),
-            };
-        });
-
-        // Overlay meshes share the same transforms
-        setInstanceMatrices(overlayBodyRef.current, (cone) => {
-            const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
-            const primitiveThickness = bucket.profileType === 'disk' ? resolveDiskThickness(cone) : 0;
-            const coneStart = {
-                x: cone.pos.x + effectiveSurfaceNormal.x * primitiveThickness,
-                y: cone.pos.y + effectiveSurfaceNormal.y * primitiveThickness,
-                z: cone.pos.z + effectiveSurfaceNormal.z * primitiveThickness,
-            };
-            const center = getConeCenterPosition(coneStart, cone.normal, cone.profile);
-            return {
-                position: new THREE.Vector3(center.x, center.y, center.z),
-                quaternion: getConeQuaternion(cone.normal),
-            };
-        });
-
-        setInstanceMatrices(overlayTipSphereRef.current, (cone) => {
-            const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
-            const primitiveThickness = bucket.profileType === 'disk' ? resolveDiskThickness(cone) : 0;
-            const coneStart = new THREE.Vector3(
-                cone.pos.x + effectiveSurfaceNormal.x * primitiveThickness,
-                cone.pos.y + effectiveSurfaceNormal.y * primitiveThickness,
-                cone.pos.z + effectiveSurfaceNormal.z * primitiveThickness,
+            targetPosition.set(
+                center.x - effectiveSurfaceNormal.x * (penetration / 2),
+                center.y - effectiveSurfaceNormal.y * (penetration / 2),
+                center.z - effectiveSurfaceNormal.z * (penetration / 2),
             );
-            return { position: coneStart, quaternion: new THREE.Quaternion() };
-        });
+            getDiskRotationInto(effectiveSurfaceNormal, targetQuaternion);
+        };
 
-        setInstanceMatrices(overlayDiskRef.current, (cone) => {
-            const effectiveSurfaceNormal = cone.surfaceNormal ?? cone.normal;
-            const thickness = resolveDiskThickness(cone);
-            const center = getDiskCenter(cone.pos, effectiveSurfaceNormal, thickness);
-            const penetration = Math.max(0, resolvePenetration(cone));
-            return {
-                position: new THREE.Vector3(
-                    center.x - effectiveSurfaceNormal.x * (penetration / 2),
-                    center.y - effectiveSurfaceNormal.y * (penetration / 2),
-                    center.z - effectiveSurfaceNormal.z * (penetration / 2),
-                ),
-                quaternion: getDiskRotation(effectiveSurfaceNormal),
-            };
-        });
+        setInstanceMatrices(bodyRef.current, bodyTransform);
+        setInstanceMatrices(tipSphereRef.current, tipTransform);
+        setInstanceMatrices(diskRef.current, diskTransform);
+
+        // Overlay meshes share the same transforms.
+        setInstanceMatrices(overlayBodyRef.current, bodyTransform);
+        setInstanceMatrices(overlayTipSphereRef.current, tipTransform);
+        setInstanceMatrices(overlayDiskRef.current, diskTransform);
     }, [bucket, diskThicknessByCone, hasOverlay, resolvePenetration]);
+
+    // Colours are a separate pass: a selection changes them and nothing else, and
+    // it must not re-derive every instance matrix to do it.
+    useLayoutEffect(() => {
+        if (!instanceColor) return;
+        for (const mesh of [diskRef.current, bodyRef.current, tipSphereRef.current]) {
+            if (!mesh) continue;
+            for (let i = 0; i < bucket.cones.length; i += 1) {
+                mesh.setColorAt(i, instanceColor(bucket.cones[i]));
+            }
+            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        }
+    }, [bucket, instanceColor]);
 
     const resolveCone = (instanceId: number | undefined | null) => {
         if (instanceId == null) return null;
@@ -314,7 +299,7 @@ function ConeBucketMesh({
                 >
                     <cylinderGeometry args={[bucket.contactRadius, bucket.contactRadius, bucket.diskThickness + bucket.penetration, 10]} />
                     <meshStandardMaterial
-                        color={discColor ?? color}
+                        color={instanceColor ? '#ffffff' : (discColor ?? color)}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}
@@ -344,7 +329,7 @@ function ConeBucketMesh({
                 >
                     <cylinderGeometry args={[bucket.contactRadius, bucket.bodyRadius, bucket.length, 10]} />
                     <meshStandardMaterial
-                        color={color}
+                        color={instanceColor ? '#ffffff' : color}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}
@@ -369,7 +354,7 @@ function ConeBucketMesh({
                 >
                     <sphereGeometry args={[bucket.contactRadius, 10, 8]} />
                     <meshStandardMaterial
-                        color={discColor ?? color}
+                        color={instanceColor ? '#ffffff' : (discColor ?? color)}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}
@@ -435,6 +420,7 @@ export function InstancedContactConeGroup({
     opacity = 1,
     clippingPlanes = null,
     outOfBoundsMaterial = null,
+    instanceColor,
     onConeClick,
     onConePointerDown,
     onConePointerMove,
@@ -538,6 +524,7 @@ export function InstancedContactConeGroup({
                     opacity={opacity}
                     clippingPlanes={clippingPlanes}
                     outOfBoundsMaterial={outOfBoundsMaterial}
+                    instanceColor={instanceColor}
                     onConeClick={onConeClick}
                     onConePointerDown={onConePointerDown}
                     onConePointerMove={onConePointerMove}

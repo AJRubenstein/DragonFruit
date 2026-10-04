@@ -22,6 +22,12 @@ interface InstancedJointGroupProps {
     widthSegments?: number;
     heightSegments?: number;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
+    /**
+     * Per-instance colour, for a caller that tints a subset of the batch (the
+     * selection). Every instance must be given one: the colour buffer starts
+     * black, and the group's own `color` is not used once this is set.
+     */
+    instanceColor?: (joint: InstancedJoint) => THREE.Color;
     onJointClick?: (joint: InstancedJoint, event: ThreeEvent<MouseEvent>) => void;
     onJointPointerDown?: (joint: InstancedJoint, event: ThreeEvent<PointerEvent>) => void;
     onJointPointerMove?: (joint: InstancedJoint, event: ThreeEvent<PointerEvent>) => void;
@@ -39,6 +45,7 @@ export function InstancedJointGroup({
     widthSegments = 12,
     heightSegments = 10,
     outOfBoundsMaterial = null,
+    instanceColor,
     onJointClick,
     onJointPointerDown,
     onJointPointerMove,
@@ -80,6 +87,17 @@ export function InstancedJointGroup({
             overlayMesh.instanceMatrix.needsUpdate = true;
         }
     }, [validJoints, hasOverlay]);
+
+    // Colours are a separate pass: a selection changes them and nothing else, and
+    // it must not re-derive every instance matrix to do it.
+    useLayoutEffect(() => {
+        const mesh = meshRef.current;
+        if (!mesh || !instanceColor) return;
+        for (let i = 0; i < validJoints.length; i += 1) {
+            mesh.setColorAt(i, instanceColor(validJoints[i]));
+        }
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }, [validJoints, instanceColor]);
 
     if (validJoints.length === 0) return null;
 
@@ -138,7 +156,7 @@ export function InstancedJointGroup({
             >
                 <sphereGeometry args={[1, widthSegments, heightSegments]} />
                 <meshStandardMaterial
-                    color={color}
+                    color={instanceColor ? '#ffffff' : color}
                     emissive={emissive}
                     emissiveIntensity={emissiveIntensity}
                     transparent={transparent}

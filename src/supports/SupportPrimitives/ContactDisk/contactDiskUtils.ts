@@ -121,3 +121,15 @@ export function getDiskRotation(normal: Vec3): THREE.Quaternion {
     const defaultUp = new THREE.Vector3(0, 1, 0); // Cylinder default axis
     return new THREE.Quaternion().setFromUnitVectors(defaultUp, alignVector);
 }
+
+/**
+ * The disk's rotation, written into `target`. See `getConeQuaternionInto`: the
+ * batches call this once per instance per pass.
+ */
+export function getDiskRotationInto(normal: Vec3, target: THREE.Quaternion): THREE.Quaternion {
+    _diskAxis.set(normal.x, normal.y, normal.z).normalize();
+    return target.setFromUnitVectors(UP, _diskAxis);
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+const _diskAxis = new THREE.Vector3();

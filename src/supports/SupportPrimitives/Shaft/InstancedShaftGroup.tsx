@@ -35,6 +35,12 @@ interface InstancedShaftGroupProps {
     clippingPlanes?: THREE.Plane[] | null;
     radialSegments?: number;
     outOfBoundsMaterial?: THREE.ShaderMaterial | null;
+    /**
+     * Per-instance colour, for a caller that tints a subset of the batch (the
+     * selection). Every instance must be given one: the colour buffer starts
+     * black, and the group's own `color` is not used once this is set.
+     */
+    instanceColor?: (shaft: InstancedShaft) => THREE.Color;
     onShaftClick?: (shaft: InstancedShaft, event: ThreeEvent<MouseEvent>) => void;
     onShaftPointerDown?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
     onShaftPointerMove?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
@@ -54,6 +60,7 @@ export function InstancedShaftGroup({
     clippingPlanes = null,
     radialSegments = 12,
     outOfBoundsMaterial = null,
+    instanceColor,
     onShaftClick,
     onShaftPointerDown,
     onShaftPointerMove,
@@ -88,8 +95,8 @@ export function InstancedShaftGroup({
     }, [shafts]);
 
     const curvedTubes = useMemo(
-        () => buildBatchedBezierTubes(curvedShafts, radialSegments),
-        [curvedShafts, radialSegments],
+        () => buildBatchedBezierTubes(curvedShafts, radialSegments, instanceColor),
+        [curvedShafts, radialSegments, instanceColor],
     );
 
     useEffect(() => {
@@ -139,6 +146,17 @@ export function InstancedShaftGroup({
             overlayMesh.instanceMatrix.needsUpdate = true;
         }
     }, [straightShafts, hasOverlay]);
+
+    // Colours are a separate pass: a selection changes them and nothing else, and
+    // it must not re-derive every instance matrix to do it.
+    useLayoutEffect(() => {
+        const mesh = meshRef.current;
+        if (!mesh || !instanceColor) return;
+        for (let i = 0; i < straightShafts.length; i += 1) {
+            mesh.setColorAt(i, instanceColor(straightShafts[i]));
+        }
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }, [straightShafts, instanceColor]);
 
     if (straightShafts.length === 0 && !curvedTubes) return null;
 
@@ -230,7 +248,7 @@ export function InstancedShaftGroup({
                 >
                     <cylinderGeometry args={[0.5, 0.5, 1, radialSegments, 1, false]} />
                     <meshStandardMaterial
-                        color={color}
+                        color={instanceColor ? '#ffffff' : color}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}
@@ -264,7 +282,8 @@ export function InstancedShaftGroup({
                     onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
                 >
                     <meshStandardMaterial
-                        color={color}
+                        color={instanceColor ? '#ffffff' : color}
+                        vertexColors={Boolean(instanceColor)}
                         emissive={emissive}
                         emissiveIntensity={emissiveIntensity}
                         transparent={transparent}

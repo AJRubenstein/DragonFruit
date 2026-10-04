@@ -11,6 +11,19 @@ export interface BatchedBezierTubes {
     triangleRangeEnds: number[];
 }
 
+/**
+ * One swept tube per curved shaft, kept by the shaft object it came from.
+ *
+ * The batches are re-laid-out whenever the visible set changes, and building a
+ * `TubeGeometry` per shaft again is most of that cost. The shafts themselves are
+ * rebuilt only when the support state changes, so the cache follows them.
+ */
+const tubeGeometryCache = new WeakMap<InstancedShaft, {
+    curve: THREE.CubicBezierCurve3;
+    tubularSegments: number;
+    tube: THREE.TubeGeometry;
+}>();
+
 export function isCurvedBatchedShaft(shaft: InstancedShaft): boolean {
     return shaft.controlPoint1 != null && shaft.controlPoint2 != null;
 }
@@ -36,16 +49,22 @@ export function resolveCurvedShaftIndexForFace(triangleRangeEnds: number[], face
  * batch group). Each curve is swept with the same resolution rules as the
  * detailed BezierRenderer and closed with flat end caps so the proxy-layer
  * scene graph stays serializable as a closed mesh by the STL/3MF export path.
+ *
+ * `colorOf` writes a colour per vertex, which is how a caller tints a subset of
+ * the batch: a merged mesh has one material, so the selection cannot ride on the
+ * material colour.
  */
 export function buildBatchedBezierTubes(
     curvedShafts: InstancedShaft[],
     radialSegments: number,
+    colorOf?: (shaft: InstancedShaft) => THREE.Color | null,
 ): BatchedBezierTubes | null {
     if (curvedShafts.length === 0) return null;
 
     const positions: number[] = [];
     const normals: number[] = [];
     const indices: number[] = [];
+    const colors: number[] = [];
     const triangleRangeEnds: number[] = [];
 
     const addCap = (ringStartVertex: number, center: THREE.Vector3, outward: THREE.Vector3) => {
@@ -87,19 +106,30 @@ export function buildBatchedBezierTubes(
     };
 
     for (const shaft of curvedShafts) {
-        const curve = new THREE.CubicBezierCurve3(
-            new THREE.Vector3(shaft.start.x, shaft.start.y, shaft.start.z),
-            new THREE.Vector3(shaft.controlPoint1!.x, shaft.controlPoint1!.y, shaft.controlPoint1!.z),
-            new THREE.Vector3(shaft.controlPoint2!.x, shaft.controlPoint2!.y, shaft.controlPoint2!.z),
-            new THREE.Vector3(shaft.end.x, shaft.end.y, shaft.end.z),
-        );
-        const tubularSegments = Math.max(2, Math.floor(
-            shaft.resolution
-            ?? calculateAdaptiveBezierResolution(shaft.start, shaft.controlPoint1!, shaft.controlPoint2!, shaft.end),
-        ));
-        const radius = Math.max(0.0005, shaft.diameter / 2);
+        const colorVertexStart = positions.length / 3;
 
-        const tube = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
+        let swept = tubeGeometryCache.get(shaft);
+        if (!swept) {
+            const curve = new THREE.CubicBezierCurve3(
+                new THREE.Vector3(shaft.start.x, shaft.start.y, shaft.start.z),
+                new THREE.Vector3(shaft.controlPoint1!.x, shaft.controlPoint1!.y, shaft.controlPoint1!.z),
+                new THREE.Vector3(shaft.controlPoint2!.x, shaft.controlPoint2!.y, shaft.controlPoint2!.z),
+                new THREE.Vector3(shaft.end.x, shaft.end.y, shaft.end.z),
+            );
+            const tubularSegments = Math.max(2, Math.floor(
+                shaft.resolution
+                ?? calculateAdaptiveBezierResolution(shaft.start, shaft.controlPoint1!, shaft.controlPoint2!, shaft.end),
+            ));
+            const radius = Math.max(0.0005, shaft.diameter / 2);
+            swept = {
+                curve,
+                tubularSegments,
+                tube: new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false),
+            };
+            tubeGeometryCache.set(shaft, swept);
+        }
+        const { curve, tubularSegments, tube } = swept;
+
         const vertexBase = positions.length / 3;
         const pos = tube.getAttribute('position') as THREE.BufferAttribute;
         const nor = tube.getAttribute('normal') as THREE.BufferAttribute;
@@ -111,7 +141,6 @@ export function buildBatchedBezierTubes(
         for (let i = 0; i < idx.count; i += 1) {
             indices.push(vertexBase + idx.getX(i));
         }
-        tube.dispose();
 
         const startOutward = curve.getTangent(0).normalize().negate();
         const endOutward = curve.getTangent(1).normalize();
@@ -127,12 +156,22 @@ export function buildBatchedBezierTubes(
         addCap(vertexBase, curve.getPoint(0), startOutward);
         addCap(vertexBase + tubularSegments * (radialSegments + 1), curve.getPoint(1), endOutward);
 
+        if (colorOf) {
+            const color = colorOf(shaft);
+            if (color) {
+                for (let i = colorVertexStart; i < positions.length / 3; i += 1) {
+                    colors.push(color.r, color.g, color.b);
+                }
+            }
+        }
+
         triangleRangeEnds.push(indices.length / 3);
     }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    if (colorOf) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.setIndex(indices);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
