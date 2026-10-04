@@ -5637,6 +5637,14 @@ export function SceneCanvas({
     selectDragLastPointRef.current = null;
     selectDragStartSnapshotRef.current = null;
     setSelectDragPressed(false);
+
+    // Hide the cage here rather than waiting for the state to paint. The release
+    // handler clears this and then runs the commit, so React paints the hide only
+    // once the commit finishes, which is the few hundred milliseconds the box
+    // used to linger after the pointer let go.
+    for (const line of Object.values(dragCornerCageRefs.current)) {
+      if (line) line.visible = false;
+    }
   }, []);
 
   const getSelectDragWorldPoint = React.useCallback((clientX: number, clientY: number): THREE.Vector3 | null => {
@@ -5752,9 +5760,12 @@ export function SceneCanvas({
       rotation: live.rotation.clone(),
       scale: live.scale.clone(),
     });
-    requestDragCornerCageUpdate();
+    // Same frame, not the next one. The model moved imperatively just above, and
+    // the deferred update lands a frame later, which reads as the cage's corners
+    // trailing behind a fast drag.
+    updateDragCornerCagesNow();
     last.copy(worldPoint);
-  }, [getSelectDragWorldPoint, queueLiveDragTransform, requestDragCornerCageUpdate]);
+  }, [getSelectDragWorldPoint, queueLiveDragTransform, updateDragCornerCagesNow]);
 
   const finishSelectDrag = React.useCallback(() => {
     const candidate = selectDragCandidateRef.current;
