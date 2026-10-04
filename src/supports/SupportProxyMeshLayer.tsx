@@ -95,6 +95,17 @@ type FlatProxyGeometry = {
   cones: InstancedContactCone[];
 };
 
+/**
+ * A dedicated stencil bit for the out-of-bounds stripe pass.
+ *
+ * Every kind draws its own stripe overlay, so wherever two of them overlap the
+ * translucent stripe blended twice and read brighter than the rest. The first
+ * overlay fragment to reach a pixel marks it and the rest are rejected, so each
+ * pixel is blended once. `0x80` belongs to the mesh smoothing brush cursor, which
+ * solves the same problem the same way (see `MeshSmoothingBrushCursor`).
+ */
+const OUT_OF_BOUNDS_STENCIL_BIT = 0x40;
+
 export type ProxySupportTintInput = {
   selectedModelIds: ReadonlySet<string>;
   hoverModelId: string | null;
@@ -436,6 +447,17 @@ export function SupportProxyMeshLayer({
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
+      // Blend each pixel once, however many kinds' overlays land on it. The
+      // fragment shader discards inside the bounds, and a discarded fragment
+      // performs no stencil op, so only the striped pixels are marked.
+      stencilWrite: true,
+      stencilRef: OUT_OF_BOUNDS_STENCIL_BIT,
+      stencilFunc: THREE.NotEqualStencilFunc,
+      stencilFail: THREE.KeepStencilOp,
+      stencilZFail: THREE.KeepStencilOp,
+      stencilZPass: THREE.ReplaceStencilOp,
+      stencilFuncMask: OUT_OF_BOUNDS_STENCIL_BIT,
+      stencilWriteMask: OUT_OF_BOUNDS_STENCIL_BIT,
       uniforms: {
         boundsMin: { value: outOfBoundsMin.clone() },
         boundsMax: { value: outOfBoundsMax.clone() },
