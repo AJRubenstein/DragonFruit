@@ -428,6 +428,8 @@ export function SupportProxyMeshLayer({
     if (!showOutOfBoundsOverlay || !outOfBoundsMin || !outOfBoundsMax) return null;
 
     return new THREE.ShaderMaterial({
+      // Translucent on purpose: the stripe is a warning wash over the support, and
+      // stripeAlpha is what makes it readable on top of it.
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -441,10 +443,18 @@ export function SupportProxyMeshLayer({
         stripeAlpha: { value: 0.42 },
         stripeColor: { value: new THREE.Color(outOfBoundsStripeColor ?? '#b6ff2e') },
       },
+      // The batch kinds draw as instanced meshes, but the curved (branch) shafts
+      // draw as merged meshes, and `instanceMatrix` only exists under
+      // USE_INSTANCING. Without the guard the branch overlay's shader does not
+      // compile, which is why branch shafts read differently from the rest.
       vertexShader: `
         varying vec3 vWorldPos;
         void main() {
-          vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          #ifdef USE_INSTANCING
+            vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          #else
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          #endif
           vWorldPos = worldPos.xyz;
           gl_Position = projectionMatrix * viewMatrix * worldPos;
         }
@@ -1043,6 +1053,7 @@ export function SupportProxyMeshLayer({
           {includeDetailedPrimitives && baseGeometry.joints.length > 0 && (
             <InstancedJointGroup
               joints={baseGeometry.joints}
+              outOfBoundsMaterial={outOfBoundsMaterial}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               isHidden={isHiddenPrimitive}
@@ -1058,6 +1069,7 @@ export function SupportProxyMeshLayer({
           {includeDetailedPrimitives && baseGeometry.cones.length > 0 && (
             <InstancedContactConeGroup
               cones={baseGeometry.cones}
+              outOfBoundsMaterial={outOfBoundsMaterial}
               grabRadiusAt={grabRadiusAt}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
