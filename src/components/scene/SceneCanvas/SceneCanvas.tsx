@@ -1143,11 +1143,14 @@ export function SceneCanvas({
     } else if (!next) {
       crossSectionLiveTransformsRef.current.clear();
     }
-    // During active drag, avoid per-frame React rerenders; scene objects are
-    // moved imperatively and this ref remains the source of truth.
-    if (isGizmoDragging) return;
+    // Scene objects are moved imperatively and this ref remains the source of
+    // truth, so a drag does not need a rerender to draw. The out-of-bounds test
+    // does: it compares a box against the build volume, and without this it only
+    // sees where the model was when the gesture started, so the red volume and the
+    // stripe appeared on release. Pointer moves are frame-throttled by the browser,
+    // which keeps this to about one bump per frame.
     setLiveDragTransformVersion((value) => value + 1);
-  }, [activeModelId, isGizmoDragging]);
+  }, [activeModelId]);
 
   const {
     effectiveHoldSupportDragDelta,
@@ -1833,22 +1836,32 @@ export function SceneCanvas({
   );
 
   const modelWorldBounds = React.useMemo(() => {
-    if (isGizmoDragging || isGizmoRetargeting) {
-      return cachedModelWorldBoundsRef.current;
-    }
+    const liveGroupFor = (modelId: string) => (
+      (isGizmoDragging || isGizmoRetargeting) ? meshRefs.current[modelId] ?? null : null
+    );
 
     const map = new Map<string, THREE.Box3>();
     for (const model of models) {
       if (!model.visible) continue;
+      // During a drag the model group carries the live transform and the props do
+      // not, so the out-of-bounds test has to read the group or it only sees where
+      // the model was when the gesture started.
+      const liveGroup = liveGroupFor(model.id);
+      const liveTransform: ModelTransform | null = liveGroup
+        ? {
+            position: liveGroup.position,
+            rotation: new THREE.Euler().setFromQuaternion(liveGroup.quaternion, 'ZYX'),
+            scale: liveGroup.scale,
+          }
+        : null;
       const effectiveTransform =
-        (model.id === activeTransformOverrideModelId && transform)
-          ? transform
-          : model.transform;
+        liveTransform
+        ?? ((model.id === activeTransformOverrideModelId && transform) ? transform : model.transform);
       map.set(model.id, computeModelWorldBounds(model, effectiveTransform, buildVolumeBounds));
     }
     cachedModelWorldBoundsRef.current = map;
     return map;
-  }, [activeTransformOverrideModelId, buildVolumeBounds, computeModelWorldBounds, isGizmoDragging, isGizmoRetargeting, models, transform]);
+  }, [activeTransformOverrideModelId, buildVolumeBounds, computeModelWorldBounds, isGizmoDragging, isGizmoRetargeting, liveDragTransformVersion, models, transform]);
 
   const crossSectionCapEntries = React.useMemo<CrossSectionStencilCapEntry[]>(() => {
     return models
@@ -1872,7 +1885,10 @@ export function SceneCanvas({
 
   const outOfBoundsModels = React.useMemo(() => {
     if (!buildVolumeBounds) return [] as Array<{ id: string; name: string; bounds: THREE.Box3 }>;
-    if (isGizmoDragging || isGizmoRetargeting || outOfBoundsRotateGraceActive) return [] as Array<{ id: string; name: string; bounds: THREE.Box3 }>;
+    // The rotate grace only: a rotate sweep clips a corner for a frame, and that
+    // is flicker. A drag is included now, so the indication follows the model out
+    // of the volume instead of appearing when it is released.
+    if (outOfBoundsRotateGraceActive) return [] as Array<{ id: string; name: string; bounds: THREE.Box3 }>;
 
     return models
       .filter((model) => model.visible)
@@ -1887,6 +1903,7 @@ export function SceneCanvas({
       .filter(({ bounds }) => isBoundsOutsideVolume(bounds, buildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM));
   }, [
     BUILD_VOLUME_BOUNDS_EPS_MM,
+    liveDragTransformVersion,
     buildVolumeBounds,
     computeModelWorldBounds,
     isGizmoDragging,
