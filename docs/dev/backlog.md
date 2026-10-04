@@ -679,28 +679,40 @@ That scene and copy count now measures ~146 ms. Still open:
 Outside support mode the supports draw through `SupportProxyMeshLayer`'s four
 instanced batches, and R3F raycasts every instance of every mesh carrying a
 hover handler on each pointer move. Measured with the app's three.js: ~0.11 µs
-per instance, so ~3 ms per move at 5k supports, ~13 ms at 20k — a hover that
-stutters and drags the frame rate down as a plate fills up. A selection click
-adds its own O(total supports) pass: the base/highlighted split is rebuilt and
-both `InstancedMesh`es are remounted (new geometry, new material, full matrix
-upload) because each batch is keyed by its instance count.
+per instance, so ~3 ms per move at 5k supports, ~13 ms at 20k, which is a hover
+that stutters and drags the frame rate down as a plate fills up. A selection
+click paid its own O(total supports) pass: the base/highlighted split was
+rebuilt, both `InstancedMesh`es were remounted (new geometry, new material, full
+matrix upload) because each batch is keyed by its instance count, and both
+batches then rewrote every instance matrix.
 
 Fixed so far:
 
 - hover on the proxy batches moved to one invisible box per model
-  (`computeProxyHoverBoxes`), O(models) per move; clicks keep their per-instance
-  targets, which R3F's pointer-move filter does not visit;
+  (`computeProxyHoverBoxes`), O(models) per move;
+- clicks and drag starts moved to those boxes too, so the batches carry no
+  pointer handlers at all and are never raycast. A press or click in a model's
+  support volume now selects that model; the marquee is unaffected, because it
+  needs Shift and the model drag bails on Shift;
+- selection draws as an overlay per selected model (`computeProxyOverlayEntries`)
+  instead of re-partitioning the scene, so the base batch never changes on a
+  selection. Measured per selection: 23.6 ms to 2.1 ms at 25k primitives, 62.2 ms
+  to 1.3 ms at 100k;
 - the raft proxy geometries got a bounds tree: without one their raycast is a
   per-triangle walk paid per visible raft on every pointer move (measured ~7 ms
   for 20×5k triangles, ~50 ms for 20×20k, against ~0.12 ms with a tree).
 
 Still open:
 
-1. The count-keyed `InstancedMesh` remount. Allocating capacity once and
-   updating `mesh.count` (the three.js pattern) would turn a selection into a
-   matrix upload instead of a geometry/material/GPU-buffer rebuild.
-2. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
+1. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
    module cache keyed on the whole support-store snapshot, so any store write
    (including hover and selection writes) rebuilds every proxy primitive.
-3. `sharedProxyCache`'s geometries are never disposed when the cache is
+2. `sharedProxyCache`'s geometries are never disposed when the cache is
    replaced; the raft cache leaks its per-model geometries the same way.
+3. Every overlay mount re-derives its instance matrices from the primitive
+   positions (~1 µs each). Caching the matrix per primitive object would make
+   a hover or a selection a typed-array copy instead.
+4. A model drop offset (`modelDropOffsetsById`, live during a drag or a drop
+   animation) re-appends every primitive in the scene with the offset, so the
+   base batch rebuilds and re-uploads all of its matrices per frame. The offset
+   belongs on the group transform, as the overlays already do it.
