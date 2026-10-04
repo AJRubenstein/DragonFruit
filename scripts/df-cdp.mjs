@@ -9,6 +9,8 @@
 //   npm run profile:df -- shot <file.png> [xPct] [yPct]
 //   npm run profile:df -- zoom <xPct> <yPct> <steps> [deltaY]
 //   npm run profile:df -- drag <x1> <y1> <x2> <y2> [right|middle] [steps]
+//   npm run profile:df -- fps <seconds> [move] [moves]
+//   npm run profile:df -- clickdom <css selector> [index]
 //
 // Start the app with the port open first:
 //
@@ -176,6 +178,77 @@ if (mode === 'drag') {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px(x2), y: py(y2), button, buttons: 0, clickCount: 1, pointerType: 'mouse' });
   await frame();
   console.log('dragged', button, x1, y1, '->', x2, y2);
+  ws.close();
+  process.exit(0);
+}
+
+if (mode === 'fps') {
+  // Frames per second over a window. With `move`, trusted pointer moves are
+  // dispatched through CDP between samples: in-page synthetic events carry
+  // offsetX 0, so R3F reads them as a pointer at the canvas origin and the hover
+  // path never runs.
+  const seconds = Number(rest[0] ?? 3);
+  const move = rest[1] === 'move';
+  const moves = Number(rest[2] ?? 60);
+  const script = `(async () => {
+    const times = [];
+    let raf = 0;
+    const tick = (t) => { times.push(t); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    await new Promise((r) => setTimeout(r, ${seconds} * 1000));
+    cancelAnimationFrame(raf);
+    const span = (times[times.length - 1] - times[0]) / 1000;
+    const gaps = times.slice(1).map((t, k) => t - times[k]).sort((a, b) => a - b);
+    return {
+      frames: times.length,
+      seconds: +span.toFixed(2),
+      fps: +(times.length / span).toFixed(1),
+      medianFrameMs: +gaps[Math.floor(gaps.length / 2)].toFixed(1),
+      p95FrameMs: +gaps[Math.floor(gaps.length * 0.95)].toFixed(1),
+      worstFrameMs: +gaps[gaps.length - 1].toFixed(1),
+    };
+  })()`;
+  const sampler = evaluate(script);
+  if (move) {
+    for (let i = 0; i < moves; i += 1) {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: rect.left + rect.width * (0.2 + (i % 20) / 40),
+        y: rect.top + rect.height * 0.5,
+        buttons: 0,
+        pointerType: 'mouse',
+      });
+      await new Promise((r) => setTimeout(r, Math.max(8, (seconds * 1000) / moves)));
+    }
+  }
+  console.log(JSON.stringify(await sampler, null, 1));
+  ws.close();
+  process.exit(0);
+}
+
+if (mode === 'clickdom') {
+  // Click an element found by selector, through trusted CDP input: R3F and the
+  // app both read real event geometry, which synthetic in-page events lack.
+  const selector = rest[0];
+  const index = Number(rest[1] ?? 0);
+  const box = await evaluate(`(() => {
+    const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, label: (el.getAttribute('aria-label') || el.title || el.className || '').slice(0, 60) };
+  })()`);
+  if (!box) {
+    console.log('no element for', selector, index);
+    ws.close();
+    process.exit(1);
+  }
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y, buttons: 0, pointerType: 'mouse' });
+  await frame();
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+  await frame();
+  await frame();
+  console.log('clicked', JSON.stringify(box));
   ws.close();
   process.exit(0);
 }

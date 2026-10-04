@@ -6,6 +6,46 @@ this page is the fleshed-out explanation. Add entries here when a rule is too
 long for `AGENTS.md`, is expected to be lifted once an upstream change lands,
 or is a known refactor we intend to do.
 
+## Known cost: support batches are one mesh per geometry-parameter set
+
+The support proxy batches group their instances into a mesh per **distinct
+geometry parameter set**, quantized to 0.001 mm. For a scene whose support
+dimensions vary continuously that degenerates into roughly one mesh per support,
+and the frame pays for it in `projectObject` / `setProgram` /
+`renderBufferDirect`, not in triangles.
+
+Measured on `randombits-skeletuns (1)_DF_Scene.voxl` (17 models, 6.0M
+triangles, 6482 shafts, 3260 joints, 1885 contact cones, 1109 roots), with the
+app instrumented at the WebGL level:
+
+| | value |
+| --- | --- |
+| draw calls per frame | **3282**, of which 3214 instanced |
+| instanced meshes from the buckets | ~2600 |
+| contact cones | 1885 instances -> **842 buckets** |
+| roots / joints / shafts | 10 / 30 buckets / one mesh |
+| frame rate | 53 fps, median frame 18.2 ms |
+
+The cone key is
+`profileType : contactRadius : bodyRadius : length : diskThickness : penetration`,
+each at 0.001 mm — and **`penetration` varies continuously with the model
+surface**, so almost every cone is its own bucket. Each bucket renders up to
+three meshes (disk, body, tip) plus an overlay.
+
+Coarsening the quantization is not enough: 0.05 mm still leaves 1035 meshes and
+0.1 mm leaves 791, because the parameters genuinely differ. The direction is to
+put the varying dimensions in the **instance matrix** (a unit cone scaled per
+instance) so the cone batch is one mesh again. The caveat to solve with it is
+the cone profile's slanted side normals: a non-uniform instance scale skews
+them, since three has no per-instance normal matrix. A disk profile is a flat
+disc whose normals are axial and unaffected; a cone profile is a 1-3 mm tip, so
+the error may be acceptable, or the batch needs an inverse-scale normal in a
+custom attribute.
+
+For contrast, the same measurement on a plate of 18 poussin models (3.1M
+triangles, one support profile each) is a handful of buckets and holds 165 fps —
+which is what the scene above should reach.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the

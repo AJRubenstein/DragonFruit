@@ -251,10 +251,20 @@ npm run profile:df -- eval "document.title"
 npm run profile:df -- hover 0.58 0.5 40          # 40 trusted moves, profiled
 npm run profile:df -- sweep 0 0 60 '[[0.25,0.5],[0.583,0.5]]'   # between two models
 npm run profile:df -- click 0.35 0.6
+npm run profile:df -- clickdom 'button[aria-label="Hide"]' 0    # click UI by selector
 npm run profile:df -- scan 6 5                   # which screen cells hit a model
 npm run profile:df -- shot out.png 0.35 0.6      # screenshot, pointer parked there
+npm run profile:df -- fps 4 [move]               # frames per second, pointer still or moving
+npm run profile:df -- drag 0.5 0.6 0.5 0.4 right # right-drag orbits, middle pans
+npm run profile:df -- zoom 0.4 0.6 8 -120        # wheel at a point
 CDP_FILTER=raycast npm run profile:df -- hover 0.58 0.5 60
 ```
+
+Draw calls and triangles per frame are not reachable through the app's own
+objects, but they are through the context: patch
+`drawElements` / `drawElementsInstanced` on the canvas's WebGL prototype from
+`eval` and sample for a second. That is how the 3282 draw calls behind a 53 fps
+frame were found (see `docs/dev/backlog.md`).
 
 Input goes through CDP, so it is trusted and the app's handlers run; the profile
 covers the React commits and R3F renders that follow the gesture, not just the
@@ -268,6 +278,26 @@ same build rather than reading absolute milliseconds.
 `scan` prints what a cell resolves to, which is how you find a point over a model
 without guessing the camera: hover a grid and read back
 `window.__dragonfruitLastImmediateModelHoverId`.
+
+**Sandbox the instance. Do not drive the user's window.** The app takes a scene
+path as an argument and hands it to an already-running instance through
+`tauri-plugin-single-instance`, so launching a second copy while the user has one
+open loads the file *into their window* — and, without an isolated profile, the
+scene they already had stays loaded, so the two accumulate. Every launch must:
+
+```bash
+mkdir -p "$TMP/df-sandbox/webview"
+cp scene.voxl "$TMP/df-sandbox/scene.voxl"     # sidecar autosaves stay out of the way
+WEBVIEW2_USER_DATA_FOLDER="$TMP\df-sandbox\webview" \
+WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222" \
+  src-tauri/target/debug/dragonfruit-desktop.exe "$TMP/df-sandbox/scene.voxl"
+```
+
+The separate user-data folder isolates localStorage, so nothing of theirs is
+restored into the sandbox. Check that no instance is running before launching,
+and when shutting down kill only the PID you started — never every
+`dragonfruit-desktop.exe` on the machine. The log file is shared and cannot be
+redirected, so the sandbox's lines land in the user's log.
 
 ### macOS: `sample` and flame graphs
 
