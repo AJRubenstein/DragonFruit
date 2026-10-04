@@ -2321,6 +2321,19 @@ export function SceneCanvas({
     if (!activeModelId) return null;
     if (duplicateActivePreviewTransform) return duplicateActivePreviewTransform;
 
+    // A drag moves the model through `liveDragTransformRef` imperatively - the
+    // gizmo manager's `transform` prop is not updated per frame ("scene objects
+    // are moved imperatively and this ref remains the source of truth", see
+    // `queueLiveDragTransform`). A select-mode drag is exactly that, so reading
+    // the prop here left this null, the attached-support flag false, and the
+    // active model's supports in the static world layer at the committed
+    // position: the model slid out of its supports until the release committed
+    // and rebuilt them. Read the same ref the model does.
+    const liveDragTransform = liveDragTransformRef.current;
+    if (liveDragTransform && transformMode === 'select') {
+      return liveDragTransform;
+    }
+
     if (transformMode === 'transform' && (isGizmoDragging || effectiveHoldSupportDragDelta) && transform) {
       return transform;
     }
