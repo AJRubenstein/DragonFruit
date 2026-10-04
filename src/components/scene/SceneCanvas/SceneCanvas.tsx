@@ -3852,14 +3852,27 @@ export function SceneCanvas({
    * active model's live transform lives here (its entry in `models` is stale
    * while a gizmo drag is in flight).
    */
-  const plateClearanceTargets = React.useMemo<PlateFootprintSource[]>(() => (
-    models
+  /**
+   * The visible models' plate footprints, which the raft is trimmed by.
+   *
+   * Deliberately *not* the active model's live transform. The clearance is where
+   * the models stand, not where a gizmo is dragging them, and the live transform
+   * is a frame behind a selection: taking it made this list depend on
+   * `activeModelId`, so choosing a model rebuilt it twice - once with the previous
+   * model's transform - and with it the raft clearance, every raft mesh and the
+   * footprint clustering behind them, ~700 ms on a scene with 1109 roots. The
+   * outline display keeps its own live-transform targets (see
+   * `footprintOutlineTargets`).
+   */
+  const plateClearanceTargets = React.useMemo<PlateFootprintSource[]>(
+    () => models
       .filter((model) => model.visible)
       .map((model) => ({
         geometry: model.geometry,
-        transform: (model.id === activeModelId && transform) ? transform : model.transform,
-      }))
-  ), [activeModelId, models, transform]);
+        transform: model.transform,
+      })),
+    [models],
+  );
 
   const crossSectionStencilSourceVersion = React.useMemo(() => ({
     supportRenderRefreshNonce,
