@@ -707,24 +707,21 @@ Fixed so far:
   them again;
 - the raft proxy geometries got a bounds tree: without one their raycast is a
   per-triangle walk paid per visible raft on every pointer move (measured ~7 ms
-  for 20×5k triangles, ~50 ms for 20×20k, against ~0.12 ms with a tree).
+  for 20×5k triangles, ~50 ms for 20×20k, against ~0.12 ms with a tree);
+- the world layer no longer drops the active model from its batches. It keeps it
+  and zero-scales its instances (`isHidden`), so making a model active costs the
+  instances whose state changed instead of a full re-layout of the plate. Curved
+  shafts come from the visible set and are merged again, which is cheap now that
+  each shaft's sweep is cached.
 
 Still open:
 
-1. **A selection still re-lays-out the batches.** The active model is excluded
-   from the world layer and drawn by its own attached layer (so it can follow a
-   live transform), so making a model active rebuilds the world layer's arrays
-   and re-derives every instance matrix (~10 ms at 25k instances, ~40 ms at
-   100k). Keeping the excluded model's primitives in the arrays and hiding them
-   per instance (a zero-scale matrix written by a targeted pass, and a draw range
-   on the merged curved tubes) would make an activation change O(changed) and
-   remove the last per-selection cost.
-2. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
+1. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
    module cache keyed on the whole support-store snapshot, so any store write
    (including hover and selection writes) rebuilds every proxy primitive.
-3. `sharedProxyCache`'s geometries are never disposed when the cache is
+2. `sharedProxyCache`'s geometries are never disposed when the cache is
    replaced; the raft cache leaks its per-model geometries the same way.
-4. A model drop offset (`modelDropOffsetsById`, live during a drag or a drop
+3. A model drop offset (`modelDropOffsetsById`, live during a drag or a drop
    animation) re-appends every primitive in the scene with the offset, so the
    base batch rebuilds and re-uploads all of its matrices per frame. The offset
    belongs on the group transform, as the overlays already do it.
