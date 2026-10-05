@@ -195,6 +195,37 @@ so it rebuilds twice (once from the settings render, once from the `liveConfig`
 effect that follows it). Persistence is the one to treat carefully - it is
 synchronous on purpose, and a deferred write trades durability for the frame.
 
+## Known cost: a preset switch rebuilt the router's column map
+
+Pressing a preset key while a placement preview was being hovered hitched. The
+hover builds a candidate support per pointer move, and that runs the V3 router,
+which asks `SDFCache.enableColumnMap` for a column clearance map. The map is
+clearance-specific - built for one clearance and meaningless for any other - and
+its build walks every vertex of the mesh: **tens of milliseconds**. The clearance
+is `shaft.diameterMm / 2 + COLLISION_AVOIDANCE_MM`, which is exactly what a
+preset changes, so the hover after each press rebuilt the whole map.
+
+Measured with the app's own instrumentation (`__dfPerf.summary(20)`) while
+cycling three presets: `trunk:build` at **avg 104.6 ms / max 541.2 ms** per hover
+frame, with every instrumented sub-phase inside it (`router:cone-gate`,
+`router:roots`, `router:standard`, `router:base`) at ~0.1 ms. The time was in the
+map build, which nothing measured.
+
+**Fixed** two ways, because the first alone still pays once per clearance:
+
+- `SDFCache` keeps the maps it has built, most recently used first and bounded by
+  the bytes they hold (`COLUMN_MAP_CACHE_BYTES`), so switching back to a preset
+  reuses its map rather than rebuilding it.
+- `prewarmPinnedPresetColumnMaps` builds the maps for the six pinned preset slots
+  while the thread is idle, one per idle callback, so a switch finds its map
+  already there. Its idle probe is guarded: a worker realm can expose a `window`
+  that traps every property read - the auto-support worker's test builds one -
+  and the run must not throw over an opportunistic prewarm.
+
+The clearance and the cell size are each one function shared by the ask and the
+prewarm, so a prewarmed map cannot miss the clearance the hover then asks for and
+rebuild anyway.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the
