@@ -93,6 +93,7 @@ reword an area. The patterns met so far, and what fixed them:
 | Pattern | Example | Fix |
 | ------- | ------- | --- |
 | An area that only names a concept misses its concrete forms | Multi-selection transforms missed `ui` | List the forms in the description: move, rotate, scale, mirror, copy… |
+| A cluster keeps landing just under the threshold in a catch-all area | Transform and selection reports at 0.56–0.69 on `ui` | It is an area of its own: add it (here, `scene tools`) and take its wording out of the catch-all |
 | Jev does not know a term belongs to an area | "cone angle" not seen as Support Studio | Name the term in the description |
 | Two areas overlap and Jev picks the wrong one | `.chitubox` scenes read as `ctb` | Say in the description which area owns the overlap |
 | A catch-all area grabs everything | Any crash went to `platform` | Narrow the wording to what really belongs there |

@@ -13,15 +13,19 @@
     "title": "Dragging on the value in the \"Arrange Distance\" box",
     "split": "train",
     "areas": [
-      "ui"
-    ]
+      "ui",
+      "scene tools"
+    ],
+    "note": "A drag-and-drop glitch (ui) in the arrange panel (scene tools)."
   },
   "686": {
     "title": "Delete key doesn't remove selected models (0.1.15)",
     "split": "train",
     "areas": [
+      "scene tools",
       "ui"
-    ]
+    ],
+    "note": "Deleting models is scene tools; the shortcut not firing is ui."
   },
   "685": {
     "title": "\"Open scene\" adds to the current scene instead of replacing it (0.1.15)",
@@ -296,63 +300,63 @@
     "title": "[BUG] Context-menu copy only applies to the last selected object",
     "split": "train",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "577": {
     "title": "[BUG] Context-menu cut only applies to the last selected object",
     "split": "train",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "576": {
     "title": "[BUG] Context-menu delete only applies to the last selected object",
     "split": "holdout",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "575": {
     "title": "[BUG] Mirror/flip only applies to the last selected object",
     "split": "train",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "574": {
     "title": "[BUG] Panel move to position/center only applies to the last selected object",
     "split": "train",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "573": {
     "title": "[BUG] Panel reset rotation/scale only applies to the last selected object",
     "split": "holdout",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "572": {
     "title": "[BUG] Panel scale only applies to the last selected object",
     "split": "train",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "571": {
     "title": "[BUG] Panel rotate only applies to the last selected object",
     "split": "train",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "569": {
     "title": "[BUG] Actions on a multi-object selection only apply to a single object",
     "split": "train",
     "areas": [
-      "ui"
+      "scene tools"
     ]
   },
   "554": {
@@ -360,7 +364,8 @@
     "split": "train",
     "areas": [
       "ui"
-    ]
+    ],
+    "note": "A context-menu glitch, not an action on models: ui only."
   },
   "553": {
     "title": "[BUG] When inputting resin information data input cell jumps unexpectedly",

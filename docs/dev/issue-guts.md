@@ -127,21 +127,29 @@ On 2026-10-05, with `jev-1.13.0`, against the 50 most recent bugs at the time:
 the share of labels Jev gave that were right; recall, the share of right labels
 it found.
 
-| Set | Descriptions | Threshold | Exact | Precision | Recall | F1 |
+| Set | Round | Threshold | Exact | Precision | Recall | F1 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Tuning (34) | before | 0.7 | 19/34 | 0.73 | 0.77 | 0.75 |
-| Tuning (34) | after | 0.7 | 23/34 | 0.83 | 0.81 | 0.82 |
-| Tuning (34) | after | 0.6 | 25/34 | 0.83 | 0.94 | 0.88 |
-| Held out (16) | before | 0.7 | 11/16 | 0.89 | 0.80 | 0.84 |
-| Held out (16) | after | 0.7 | 11/16 | 0.89 | 0.81 | 0.85 |
-| Held out (16) | after | 0.6 | 10/16 | 0.86 | 0.86 | 0.86 |
+| Tuning (34) | first descriptions | 0.7 | 19/34 | 0.73 | 0.77 | 0.75 |
+| Tuning (34) | tuned, with families | 0.7 | 23/34 | 0.83 | 0.81 | 0.82 |
+| Tuning (34) | with `scene tools` | 0.7 | 27/34 | 0.94 | 0.92 | 0.93 |
+| Tuning (34) | with `scene tools` | 0.6 | 21/34 | 0.80 | 0.96 | 0.87 |
+| Held out (16) | first descriptions | 0.7 | 11/16 | 0.89 | 0.80 | 0.84 |
+| Held out (16) | tuned, with families | 0.7 | 11/16 | 0.89 | 0.81 | 0.85 |
+| Held out (16) | with `scene tools` | 0.7 | 11/16 | 0.90 | 0.86 | 0.88 |
+| Held out (16) | with `scene tools` | 0.6 | 10/16 | 0.82 | 0.86 | 0.84 |
 
 With 16 issues one wrong label moves precision or recall by about five points,
 so the held-out rows say "no worse", not "better". Most of the misses on the
 held-out set are second labels a person would argue about too (`platform` on a
 SpaceMouse bug that only happens on macOS); the first area was right in every
-case. The tuning set includes nine near-identical multi-selection bugs, which
-weigh more than they should on `ui`.
+case.
+
+`scene tools` came from a dry run over all 226 open issues, which put a quarter
+of the feature requests in `other`: half of those asked for things like scaling
+to fit the plate or a ruler, which `ui` only half claimed (0.56–0.69). The nine
+multi-selection bugs in the tuning set had the same problem. With the new area,
+9 of those 20 feature requests found it, and the rest are mostly real `other`
+(sign-in, an Android port, a URL handler).
 
 The "after" rows include the printer families. The 50 issues held five family
 labels (four `anycubic`, one `athena`), all found with probabilities from 0.85
