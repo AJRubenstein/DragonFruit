@@ -9,6 +9,7 @@ import LineRaftRenderer from '@/supports/Rafts/Crenelated/rendering/LineRaftRend
 import { getSettings, subscribeToSettings } from '@/supports/Settings/state';
 import type { SupportPlacementPreviews } from '@/supports/rendering';
 import type { PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
+import { noteActivity } from '@/utils/debug/heartbeatContext';
 export type ModelAttachedSupportLayerProps = {
   mode?: SupportMode;
   modelFilterId?: string | null;
@@ -103,6 +104,7 @@ export function ModelAttachedSupportLayer({
   modelWorldInverseById,
   plateClearanceTargets,
 }: ModelAttachedSupportLayerProps) {
+  noteActivity(mode === 'support' ? 'support-mode:layer' : 'prepare-mode:layer');
   // Performance policy: use proxy support/raft rendering everywhere except
   // support workspace, where full editable primitives are required.
   const useUltraLazySupports = mode !== 'support';

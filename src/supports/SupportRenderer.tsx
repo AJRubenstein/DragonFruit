@@ -9,6 +9,7 @@ import { removeRootById, subscribe, getSnapshot,
   getKickstandRoots,
   type SupportState,
 } from './state';
+import { noteActivity } from '@/utils/debug/heartbeatContext';
 import {
     buildSupportPlacementPreviewBatch,
     resolvePlacementPreviewMaterial,
@@ -555,6 +556,7 @@ function supportCollectionRefs(state: SupportState, ...extra: unknown[]): readon
 
 export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
+    noteActivity('support-mode:renderer');
     const resolvedSelection = useResolvedSelectionState();
     // These debug flags are all this renderer reads from the support settings, and
     // a preset switch rewrites the whole settings object. Each snapshot is the flag
@@ -2220,6 +2222,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const EMPTY_SHAFT_GROUPS = useMemo<ReturnType<typeof groupShaftsForSceneBatch>>(() => [], []);
 
     const sceneBatchedShaftGroupsByType = useMemo(() => {
+        noteActivity('support-mode:shaft-batches');
         const byType = {} as Record<SupportTypeId, ReturnType<typeof groupShaftsForSceneBatch>>;
         for (const descriptor of SUPPORT_TYPES) {
             const shaftSet = plainShaftsByType[descriptor.id];

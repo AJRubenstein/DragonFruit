@@ -5,6 +5,7 @@ import { computeSupportRenderLookup, type SupportRenderLookupInput, type Support
 import { isSupportEditInteractionActive } from './gizmoInteractionLock';
 import { getSupportWorkerRuntimeCapabilities } from './supportWorkerCapabilities';
 import { isSupportWorkerSafetyModeEnabled } from './supportWorkerSafetyMode';
+import { noteActivity } from '@/utils/debug/heartbeatContext';
 import type {
   RecordDelta,
   SupportLookupCollections,
@@ -278,6 +279,7 @@ export function useSupportRenderLookup(options: UseSupportRenderLookupOptions): 
 
     if (supportsWorkerSafeMode || !workerCapabilities.hasWorker || typeof Worker === 'undefined') {
       terminateWorker();
+      noteActivity('support-mode:render-lookup-main-thread');
       setLookup(computeSupportRenderLookup(latestOptionsRef.current));
       return;
     }

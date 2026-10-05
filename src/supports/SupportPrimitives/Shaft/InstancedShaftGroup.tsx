@@ -10,6 +10,7 @@ import {
 import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
+import { noteActivity } from '@/utils/debug/heartbeatContext';
 import { writeInstanceColors } from '../instanceColorWriter';
 
 export interface InstancedShaft {
@@ -130,6 +131,7 @@ export function InstancedShaftGroup({
     // and two shafts that should look alike cannot diverge by which path drew
     // them. The selection tints at most two colours.
     const curvedTubeGroups = useMemo(() => {
+        noteActivity('support-mode:curved-shaft-tubes');
         const byColor = new Map<string, InstancedShaft[]>();
         for (const shaft of curvedShafts) {
             const color = instanceColor ? instanceColor(shaft).getHexString() : NO_TINT_KEY;

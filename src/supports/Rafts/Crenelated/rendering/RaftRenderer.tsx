@@ -9,6 +9,7 @@ import { buildRaftFootprintMeshes } from '../geometry/generateRaftFromFootprint'
 import { collectModelPlateFootprint, type PlateFootprintSource } from '../geometry/modelPlateFootprint';
 import { raftBandTopMm } from '../geometry/computeRaftFootprint';
 import { collectRaftBaseCirclesByModel, fromRaftModelKey } from '../raftFootprintCircles';
+import { noteActivity } from '@/utils/debug/heartbeatContext';
 
 /**
  * RaftRenderer
@@ -159,6 +160,7 @@ export default function RaftRenderer({
   const raftMeshes = React.useMemo(() => {
     if (raft.bottomMode !== 'solid') return null;
 
+    noteActivity('support-mode:raft-meshes');
     const rootsByModel = collectRaftBaseCirclesByModel(supportState, {
       modelFilterId,
       excludeModelId,
