@@ -7,7 +7,9 @@ import { LineMaterial, LineSegments2, LineSegmentsGeometry } from 'three-stdlib'
 import { removeRootById, subscribe, getSnapshot,
   getKickstandKnots,
   getKickstandRoots,
+  type SupportState,
 } from './state';
+import { noteActivity } from '@/utils/debug/heartbeatContext';
 import {
     buildSupportPlacementPreviewBatch,
     resolvePlacementPreviewMaterial,
@@ -537,22 +539,41 @@ export function SupportPlacementPreviewLayer({
     );
 }
 
+/**
+ * The dependency list a support derivation carries: the entity collections it
+ * reads, in a fixed order, by identity, then anything else it depends on.
+ *
+ * The snapshot object is rebuilt on every store write - a hover included, since
+ * `setHoveredState` writes the same store - so depending on it re-runs the
+ * derivation for a write that changed nothing it reads. Hovering across the
+ * supports re-partitioned every batch and rebuilt every merged tube for it. These
+ * are the collections themselves, which is what the derivation actually reads;
+ * every collection a lookup can be asked for is in `SUPPORT_COLLECTION_KEYS`.
+ */
+function supportCollectionRefs(state: SupportState, ...extra: unknown[]): readonly unknown[] {
+    return [...SUPPORT_COLLECTION_KEYS.map((key) => state[key]), ...extra];
+}
+
 export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
+    noteActivity('support-mode:renderer');
     const resolvedSelection = useResolvedSelectionState();
-    const settings = useSyncExternalStore(subscribeToSettings, getSettingsSnapshot, getSettingsSnapshot);
+    // These debug flags are all this renderer reads from the support settings, and
+    // a preset switch rewrites the whole settings object. Each snapshot is the flag
+    // itself, so a preset that leaves them alone no longer re-renders the renderer
+    // and every batch group under it.
+    const discsOnly = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().navigationDiscsOnly, () => getSettingsSnapshot().navigationDiscsOnly);
+    const debugSimple = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().debugSimpleSupportRender, () => getSettingsSnapshot().debugSimpleSupportRender);
+    const debugOriginColors = useSyncExternalStore(subscribeToSettings, () => !!getSettingsSnapshot().autoSupport?.debugSupportOriginColors, () => !!getSettingsSnapshot().autoSupport?.debugSupportOriginColors);
+    const debugSectionColors = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().autoBracing.debugSectionColorsEnabled, () => getSettingsSnapshot().autoBracing.debugSectionColorsEnabled);
+    const debugVoronoiSeeds = useSyncExternalStore(subscribeToSettings, () => getSettingsSnapshot().autoBracing.debugVoronoiSeedsEnabled, () => getSettingsSnapshot().autoBracing.debugVoronoiSeedsEnabled);
     // The simple views size their pick tubes in screen pixels, so they need the
     // projection and the viewport the lines are drawn into.
     const camera = useThree((three) => three.camera);
     const viewport = useThree((three) => three.size);
     // The eye button's navigation view is the simple render plus cones reduced
     // to lines, so it takes every gate below and adds the cone handling.
-    const discsOnly = settings.navigationDiscsOnly;
-    const simpleRender = settings.debugSimpleSupportRender || discsOnly;
-    // Hover and marquee highlights still reveal joints and roots in the
-    // navigation view, whose static batches strip them; only the debug simple
-    // render suppresses those overlays.
-    const debugSimple = settings.debugSimpleSupportRender;
+    const simpleRender = debugSimple || discsOnly;
     const raftSettings = useSyncExternalStore(subscribeToRaftStore, getRaftSettings, getRaftSettings);
     // The knots kickstands host and the roots they own, derived from the
     // registry's edges rather than a kickstand-specific store.
@@ -646,7 +667,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             // structured-clone payload churn during joint dragging.
             activePreviewSupport: null,
         };
-    }, [state, kickstandKnotsById]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections it copies, not the snapshot: keying on `state` rebuilt this input - and with it the worker request - on every hover, for collections that had not moved.
+    }, supportCollectionRefs(state, kickstandKnotsById));
     const supportRenderLookup = useSupportRenderLookup(supportRenderLookupInput);
 
     const trunkList = useMemo(() => Object.values(state.trunks), [state.trunks]);
@@ -1201,7 +1223,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (ownedRootIds.has(rootId)) continue;
             removeRootById(rootId);
         }
-    }, [state, interactionHooksEnabled]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections it walks, not the snapshot: a hover ran this walk over every root for nothing.
+    }, supportCollectionRefs(state, interactionHooksEnabled));
 
     // Enable joint dragging
     useJointInteraction(isInteractable);
@@ -1253,8 +1276,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             return baseHex;
         };
     }, [effectiveHoverModelId, marqueeCandidateModelIdSet, selectedModelIdSet]);
-
-    const debugOriginColors = !!settings.autoSupport?.debugSupportOriginColors;
 
     // Support id → origin lookup for the debug origin coloring.
     const originById = useMemo(() => {
@@ -1389,7 +1410,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         key === 'kickstands'
             ? (state.kickstands as unknown as Record<string, unknown>)
             : ((state as unknown as Record<string, Record<string, unknown>>)[key])
-    ), [state, state.kickstands]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections it reads, not the snapshot: keying on `state` rebuilt the knot index, the per-type selection sets and every batch partition on every hover.
+    ), supportCollectionRefs(state));
 
     const selectionKnotIndex = useMemo(
         () => buildKnotIndex(selectionCollections),
@@ -2161,7 +2183,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const sceneBatchedBraceShaftGroups = useMemo(() => {
         const grouped = new Map<string, { color: string; shafts: InstancedShaft[] }>();
 
-        const sectionColorsEnabled = !!settings.autoBracing.debugSectionColorsEnabled;
+        const sectionColorsEnabled = !!debugSectionColors;
         const splitByDebugSection = sectionColorsEnabled && !dimNonSelected;
 
         for (const brace of renderBraceList) {
@@ -2190,7 +2212,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return Array.from(grouped.values());
-    }, [renderBraceList, braceShaftsBySupport, selectedBraceIds, ghostedBraceIdSet, isModelVisible, applyDropToInstancedShaft, settings.autoBracing.debugSectionColorsEnabled, dimNonSelected, resolveSceneSupportColor]);
+    }, [renderBraceList, braceShaftsBySupport, selectedBraceIds, ghostedBraceIdSet, isModelVisible, applyDropToInstancedShaft, debugSectionColors, dimNonSelected, resolveSceneSupportColor]);
 
     /** Scene-batched shaft groups per type, from that type's shaft set. */
     /** Stable empty set, so a non-batching type does not remount readers. */
@@ -2200,6 +2222,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const EMPTY_SHAFT_GROUPS = useMemo<ReturnType<typeof groupShaftsForSceneBatch>>(() => [], []);
 
     const sceneBatchedShaftGroupsByType = useMemo(() => {
+        noteActivity('support-mode:shaft-batches');
         const byType = {} as Record<SupportTypeId, ReturnType<typeof groupShaftsForSceneBatch>>;
         for (const descriptor of SUPPORT_TYPES) {
             const shaftSet = plainShaftsByType[descriptor.id];
@@ -3226,7 +3249,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         ghostOpacityClamped,
         suppressHover,
         isInteractable,
-        debugSectionColorsEnabled: settings.autoBracing.debugSectionColorsEnabled,
+        debugSectionColorsEnabled: debugSectionColors,
         braceShaftsBySupport,
     }), [
         state.roots,
@@ -3240,7 +3263,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         ghostOpacityClamped,
         suppressHover,
         isInteractable,
-        settings.autoBracing.debugSectionColorsEnabled,
+        debugSectionColors,
         braceShaftsBySupport,
     ]);
 
@@ -3642,7 +3665,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
               - If needed later, this block can be safely commented out or removed.
             */}
             <VoronoiSeedDebugMarkers
-                enabled={!!settings.autoBracing.debugVoronoiSeedsEnabled}
+                enabled={debugVoronoiSeeds}
                 ghostRenderOrder={ghostRenderOrder}
                 isModelVisible={isModelVisible}
                 applyDropToVec3Like={applyDropToVec3Like}

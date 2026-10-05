@@ -31,6 +31,7 @@ import { createDefaultSettings } from './Settings/types';
 import { decodeSupportSettingsHex, encodeSupportSettingsHex } from './Settings/supportSettingsCodec';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from './SupportTypes/Twig/twigTaper';
 import { hasWindow } from '@/utils/dom';
+import { clonePlainData } from '@/utils/plainDataClone';
 
 export type { SupportState } from './types';
 
@@ -1227,14 +1228,19 @@ export function getSnapshot() {
 }
 
 /**
- * Deep-copy a whole support state. Use this rather than `structuredClone`,
- * which drops the collection views because they are getters, not data.
+ * Deep-copy a whole support state.
+ *
+ * The copy reads the collection views into data properties, and the `supports`
+ * map it also copies already holds every entity those views hold, so the views
+ * only have to be reinstalled over it. Re-deriving them through
+ * `normaliseSupportState` walked the whole state twice more per snapshot, which
+ * was most of the cost of a history push.
  */
 export function cloneSupportState(source: SupportState): SupportState {
-    return normaliseSupportState(structuredClone({
+    return installCollectionViews(clonePlainData({
         ...source,
         supports: source.supports ?? {},
-    }) as SupportState);
+    } as SupportState));
 }
 
 /** Every support entity by id, whatever its type. */
@@ -1428,6 +1434,125 @@ function transformContactDisk(
     };
 }
 
+/**
+ * A rigid delta between two model transforms, with the rule that rides on it:
+ * under a pure translation a plate root keeps its Z, so a raft does not climb
+ * with a model lifted off the plate.
+ */
+export type SupportDeltaTransform = {
+    matrix: THREE.Matrix4;
+    normalMatrix: THREE.Matrix3;
+    preserveRootZ: boolean;
+};
+
+/**
+ * The delta carrying support geometry from `beforeTransform` to
+ * `afterTransform`, or null when the two are the same transform.
+ */
+export function buildSupportDeltaTransform(
+    beforeTransform: { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 },
+    afterTransform: { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 },
+): SupportDeltaTransform | null {
+    const beforeMatrix = new THREE.Matrix4().compose(
+        beforeTransform.position.clone(),
+        quaternionFromGlobalEuler(beforeTransform.rotation),
+        beforeTransform.scale.clone(),
+    );
+    const afterMatrix = new THREE.Matrix4().compose(
+        afterTransform.position.clone(),
+        quaternionFromGlobalEuler(afterTransform.rotation),
+        afterTransform.scale.clone(),
+    );
+
+    if (transformsRoughlyEqual(beforeMatrix, afterMatrix)) return null;
+
+    const matrix = afterMatrix.clone().multiply(beforeMatrix.clone().invert());
+    const isPureTranslation = eulersRoughlyEqual(beforeTransform.rotation, afterTransform.rotation)
+        && vectorsRoughlyEqual(beforeTransform.scale, afterTransform.scale);
+    const deltaTranslation = afterTransform.position.clone().sub(beforeTransform.position);
+
+    return {
+        matrix,
+        normalMatrix: new THREE.Matrix3().getNormalMatrix(matrix),
+        preserveRootZ: isPureTranslation && Math.abs(deltaTranslation.z) > 1e-8,
+    };
+}
+
+/**
+ * One support record moved by `delta`, whatever collection it lives in: a
+ * declared shaft, its declared contacts, and whatever `transformExtrasFor`
+ * names. A root keeps its Z under a pure translation, a knot is a point, and a
+ * kickstand's own root and host knot move with the shared collections they
+ * live in.
+ *
+ * Shared by the store's own transform and the paste path, so a pasted copy
+ * lands exactly where a move would have put it.
+ */
+export function transformSupportRecord(
+    target: SupportTypeId | 'roots' | 'knots',
+    record: Record<string, unknown>,
+    delta: SupportDeltaTransform,
+): Record<string, unknown> {
+    const { matrix, normalMatrix, preserveRootZ } = delta;
+
+    if (target === 'roots') {
+        const root = record as unknown as Roots;
+        return {
+            ...root,
+            transform: {
+                ...root.transform,
+                pos: preserveRootZ
+                    ? transformVec3PreserveZ(root.transform.pos, matrix)
+                    : transformVec3(root.transform.pos, matrix),
+            },
+        } as unknown as Record<string, unknown>;
+    }
+
+    if (target === 'knots') {
+        const knot = record as unknown as Knot;
+        return { ...knot, pos: transformVec3(knot.pos, matrix) } as unknown as Record<string, unknown>;
+    }
+
+    const descriptor = getSupportTypeDescriptor(target);
+    let next: Record<string, unknown> | null = null;
+
+    if (descriptor.hasSegments) {
+        next = { ...record };
+        next.segments = ((record.segments ?? []) as Segment[])
+            .map((segment) => transformSegment(segment, matrix, normalMatrix));
+    }
+
+    for (const { kind, field } of contactEndpointsFor(descriptor.id)) {
+        const contact = record[field];
+        if (!contact) continue;
+        if (!next) next = { ...record };
+        next[field] = kind === 'disk'
+            ? transformContactDisk(contact as never, matrix, normalMatrix)
+            : transformContactCone(contact as never, matrix, normalMatrix);
+    }
+
+    for (const field of transformExtrasFor(descriptor.id)) {
+        const value = record[field];
+        if (!value) continue;
+        if (!next) next = { ...record };
+        next[field] = field === 'curve'
+            ? {
+                ...(value as BraceCurve),
+                controlPoint1: transformVec3((value as BraceCurve).controlPoint1, matrix),
+                controlPoint2: transformVec3((value as BraceCurve).controlPoint2, matrix),
+                startTangent: transformDirection((value as BraceCurve).startTangent, normalMatrix),
+                endTangent: transformDirection((value as BraceCurve).endTangent, normalMatrix),
+            }
+            : field === 'joint'
+                ? { ...(value as Joint), pos: transformVec3((value as Joint).pos, matrix) }
+                : transformVec3(value as Vec3, matrix);
+    }
+
+    // Nothing declared reaches this record: return it by reference, so a caller
+    // that signals "unchanged" by identity still sees the original.
+    return next ?? record;
+}
+
 function transformsRoughlyEqual(a: THREE.Matrix4, b: THREE.Matrix4, epsilon = 1e-8) {
     const ae = a.elements;
     const be = b.elements;
@@ -1505,13 +1630,11 @@ export function resetKickstandsInState() {
  */
 function transformKickstandsForModelInState(
     modelId: string,
-    deltaMatrix: THREE.Matrix4,
+    delta: SupportDeltaTransform,
     touchedRootIds?: Set<string>,
     touchedKnotIds?: Set<string>,
     touchedSegmentIds?: Set<string>,
 ): boolean {
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
-
     let changed = false;
     let nextKickstands = state.kickstands;
 
@@ -1529,10 +1652,11 @@ function transformKickstandsForModelInState(
             changed = true;
         }
 
-        nextKickstands[kickstand.id] = {
-            ...kickstand,
-            segments: kickstand.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-        };
+        nextKickstands[kickstand.id] = transformSupportRecord(
+            'kickstand',
+            kickstand as unknown as Record<string, unknown>,
+            delta,
+        ) as unknown as Kickstand;
     }
 
     if (!changed) return false;
@@ -1590,31 +1714,13 @@ export function transformSupportsForModel(
         };
     }
 
-    const beforeMatrix = new THREE.Matrix4().compose(
-        beforeTransform.position.clone(),
-        quaternionFromGlobalEuler(beforeTransform.rotation),
-        beforeTransform.scale.clone(),
-    );
-    const afterMatrix = new THREE.Matrix4().compose(
-        afterTransform.position.clone(),
-        quaternionFromGlobalEuler(afterTransform.rotation),
-        afterTransform.scale.clone(),
-    );
-
-    if (transformsRoughlyEqual(beforeMatrix, afterMatrix)) {
+    const delta = buildSupportDeltaTransform(beforeTransform, afterTransform);
+    if (!delta) {
         return {
             supportsChanged: false,
             kickstandsChanged: false,
         };
     }
-
-    const isPureTranslation = eulersRoughlyEqual(beforeTransform.rotation, afterTransform.rotation)
-        && vectorsRoughlyEqual(beforeTransform.scale, afterTransform.scale);
-    const deltaTranslation = afterTransform.position.clone().sub(beforeTransform.position);
-    const preserveRootZ = isPureTranslation && Math.abs(deltaTranslation.z) > 1e-8;
-
-    const deltaMatrix = afterMatrix.clone().multiply(beforeMatrix.clone().invert());
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
 
     let changed = false;
     // Only the three collections computed here; the rest come from `nextByCollection`.
@@ -1684,15 +1790,11 @@ export function transformSupportsForModel(
             changed = true;
         }
         touchedRootIds.add(root.id);
-        nextRoots[root.id] = {
-            ...root,
-            transform: {
-                ...root.transform,
-                pos: preserveRootZ
-                    ? transformVec3PreserveZ(root.transform.pos, deltaMatrix)
-                    : transformVec3(root.transform.pos, deltaMatrix),
-            },
-        };
+        nextRoots[root.id] = transformSupportRecord(
+            'roots',
+            root as unknown as Record<string, unknown>,
+            delta,
+        ) as unknown as Roots;
     }
 
     for (const trunk of Object.values(state.trunks)) {
@@ -1710,11 +1812,11 @@ export function transformSupportsForModel(
         if (trunk.contactCone?.socketJointId) {
             touchedJointIds.add(trunk.contactCone.socketJointId);
         }
-        const nextTrunk: Trunk = {
-            ...trunk,
-            segments: trunk.segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix)),
-            contactCone: trunk.contactCone ? transformContactCone(trunk.contactCone, deltaMatrix, normalMatrix) : trunk.contactCone,
-        };
+        const nextTrunk = transformSupportRecord(
+            'trunk',
+            trunk as unknown as Record<string, unknown>,
+            delta,
+        ) as unknown as Trunk;
 
         nextTrunks[trunk.id] = nextTrunk;
     }
@@ -1827,47 +1929,20 @@ export function transformSupportsForModel(
             const target = nextByCollection[collection] ?? { ...source };
             nextByCollection[collection] = target;
 
-            const next: Record<string, unknown> = { ...entity };
-
-
-            if (descriptor.hasSegments) {
-                const segments = (entity.segments ?? []) as Segment[];
-                if (descriptor.transformPropagatesToShaft) {
-                    for (const segment of segments) {
-                        touchedSegmentIds.add(segment.id);
-                        if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
-                        if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
-                    }
+            if (descriptor.hasSegments && descriptor.transformPropagatesToShaft) {
+                for (const segment of (entity.segments ?? []) as Segment[]) {
+                    touchedSegmentIds.add(segment.id);
+                    if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
+                    if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
                 }
-                next.segments = segments.map((segment) => transformSegment(segment, deltaMatrix, normalMatrix));
             }
 
-            for (const { kind, field } of contactEndpointsFor(descriptor.id)) {
+            for (const { field } of contactEndpointsFor(descriptor.id)) {
                 const contact = entity[field] as { socketJointId?: string } | undefined;
-                if (!contact) continue;
-                if (contact.socketJointId) touchedJointIds.add(contact.socketJointId);
-                next[field] = kind === 'disk'
-                    ? transformContactDisk(contact as never, deltaMatrix, normalMatrix)
-                    : transformContactCone(contact as never, deltaMatrix, normalMatrix);
+                if (contact?.socketJointId) touchedJointIds.add(contact.socketJointId);
             }
 
-            for (const field of transformExtrasFor(descriptor.id)) {
-                const value = entity[field];
-                if (!value) continue;
-                next[field] = field === 'curve'
-                    ? {
-                        ...(value as BraceCurve),
-                        controlPoint1: transformVec3((value as BraceCurve).controlPoint1, deltaMatrix),
-                        controlPoint2: transformVec3((value as BraceCurve).controlPoint2, deltaMatrix),
-                        startTangent: transformDirection((value as BraceCurve).startTangent, normalMatrix),
-                        endTangent: transformDirection((value as BraceCurve).endTangent, normalMatrix),
-                    }
-                    : field === 'joint'
-                        ? { ...(value as Joint), pos: transformVec3((value as Joint).pos, deltaMatrix) }
-                        : transformVec3(value as Vec3, deltaMatrix);
-            }
-
-            target[id] = next;
+            target[id] = transformSupportRecord(descriptor.id, entity, delta);
         }
     }
 
@@ -1891,10 +1966,11 @@ export function transformSupportsForModel(
             changed = true;
         }
 
-        nextKnots[knot.id] = {
-            ...knot,
-            pos: transformVec3(knot.pos, deltaMatrix),
-        };
+        nextKnots[knot.id] = transformSupportRecord(
+            'knots',
+            knot as unknown as Record<string, unknown>,
+            delta,
+        ) as unknown as Knot;
     }
 
     if (changed) {
@@ -1915,7 +1991,7 @@ export function transformSupportsForModel(
 
     const kickstandsChanged = transformKickstandsForModelInState(
         modelId,
-        deltaMatrix,
+        delta,
         touchedRootIds,
         touchedKnotIds,
         touchedSegmentIds,
@@ -1931,96 +2007,31 @@ export function transformAllSupportsForSingleModel(
     beforeTransform: { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 },
     afterTransform: { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 },
 ): SupportTransformCommitResult {
-    const beforeMatrix = new THREE.Matrix4().compose(
-        beforeTransform.position.clone(),
-        quaternionFromGlobalEuler(beforeTransform.rotation),
-        beforeTransform.scale.clone(),
-    );
-    const afterMatrix = new THREE.Matrix4().compose(
-        afterTransform.position.clone(),
-        quaternionFromGlobalEuler(afterTransform.rotation),
-        afterTransform.scale.clone(),
-    );
-
-    if (transformsRoughlyEqual(beforeMatrix, afterMatrix)) {
+    const delta = buildSupportDeltaTransform(beforeTransform, afterTransform);
+    if (!delta) {
         return {
             supportsChanged: false,
             kickstandsChanged: false,
         };
     }
 
-    const isPureTranslation = eulersRoughlyEqual(beforeTransform.rotation, afterTransform.rotation)
-        && vectorsRoughlyEqual(beforeTransform.scale, afterTransform.scale);
-    const deltaTranslation = afterTransform.position.clone().sub(beforeTransform.position);
-    const preserveRootZ = isPureTranslation && Math.abs(deltaTranslation.z) > 1e-8;
-
-    const deltaMatrix = afterMatrix.clone().multiply(beforeMatrix.clone().invert());
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(deltaMatrix);
-
     // One walk over SUPPORT_ENTITY_COLLECTIONS: a shaft if the type has one,
     // each declared contact, plus whatever `transformExtrasFor` names. `roots`
     // stays its own arm, being no support type, and keeps its Z on a translation.
     const { collections: transformed } = mapSupportEntities(state, (entity, collection) => {
-        if (collection === 'roots') {
-            const root = entity as unknown as Roots;
-            return {
-                ...root,
-                transform: {
-                    ...root.transform,
-                    pos: preserveRootZ
-                        ? transformVec3PreserveZ(root.transform.pos, deltaMatrix)
-                        : transformVec3(root.transform.pos, deltaMatrix),
-                },
-            } as unknown as typeof entity;
-        }
-
-        const typeId = typeIdForCollection(collection);
-        const descriptor = getSupportTypeDescriptor(typeId);
         const record = entity as unknown as Record<string, unknown>;
-        let next: Record<string, unknown> | null = null;
-
-        if (descriptor.hasSegments) {
-            next = { ...record };
-            next.segments = ((record.segments ?? []) as Segment[])
-                .map((segment) => transformSegment(segment, deltaMatrix, normalMatrix));
-        }
-
-        for (const { kind, field } of contactEndpointsFor(typeId)) {
-            const contact = record[field];
-            if (!contact) continue;
-            if (!next) next = { ...record };
-            next[field] = kind === 'disk'
-                ? transformContactDisk(contact as never, deltaMatrix, normalMatrix)
-                : transformContactCone(contact as never, deltaMatrix, normalMatrix);
-        }
-
-        for (const field of transformExtrasFor(typeId)) {
-            const value = record[field];
-            if (!value) continue;
-            if (!next) next = { ...record };
-            next[field] = field === 'curve'
-                ? {
-                    ...(value as BraceCurve),
-                    controlPoint1: transformVec3((value as BraceCurve).controlPoint1, deltaMatrix),
-                    controlPoint2: transformVec3((value as BraceCurve).controlPoint2, deltaMatrix),
-                    startTangent: transformDirection((value as BraceCurve).startTangent, normalMatrix),
-                    endTangent: transformDirection((value as BraceCurve).endTangent, normalMatrix),
-                }
-                : field === 'joint'
-                    ? { ...(value as Joint), pos: transformVec3((value as Joint).pos, deltaMatrix) }
-                    : transformVec3(value as Vec3, deltaMatrix);
-        }
-
-        // An entity no declared field reaches is returned as-is, minting no copy.
-        return (next ?? record) as unknown as typeof entity;
+        return (collection === 'roots'
+            ? transformSupportRecord('roots', record, delta)
+            : transformSupportRecord(typeIdForCollection(collection), record, delta)) as unknown as typeof entity;
     });
 
     const nextKnots: Record<string, Knot> = {};
     for (const knot of Object.values(state.knots)) {
-        nextKnots[knot.id] = {
-            ...knot,
-            pos: transformVec3(knot.pos, deltaMatrix),
-        };
+        nextKnots[knot.id] = transformSupportRecord(
+            'knots',
+            knot as unknown as Record<string, unknown>,
+            delta,
+        ) as unknown as Knot;
     }
 
     // Read before `setState` replaces `state`.

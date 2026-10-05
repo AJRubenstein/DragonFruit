@@ -34,6 +34,7 @@ import {
     type TrunkPlacementResult,
 } from '../PlacementLogic/StandardPlacement';
 import { getSettings } from '../Settings/state';
+import { getPresetForPinnedSlot } from '../Settings/presets';
 import { perfMark, perfMeasure } from '../PlacementLogic/Pathfinding/pathfindingPerf';
 import { gridNodeKeyFromXY, gridSnappedXYFromKey } from '../PlacementLogic/Grid/gridMath';
 import { buildNearestCandidateNodeKeys } from '../PlacementLogic/Grid/nearestCandidateNodeKeys';
@@ -156,6 +157,81 @@ export interface SmartPlacementV3Context {
 // Standoff from model geometry, matching the shaft collision gate used
 // everywhere else in the support system.
 const COLLISION_AVOIDANCE_MM = 0.48;
+/**
+ * The clearance the router asks the column map for, from the shaft it clears.
+ *
+ * One function for both the ask and the prewarm below, so a prewarmed map cannot
+ * miss the clearance the hover then asks for and rebuild anyway.
+ */
+function columnClearanceMm(shaftDiameterMm: number): number {
+    return shaftDiameterMm / 2 + COLLISION_AVOIDANCE_MM;
+}
+
+/** The column map's cell size, shared with the prewarm for the same reason. */
+const COLUMN_MAP_CELL_MM = 0.2;
+
+/** How many preset slots the hotkeys can switch between. */
+const PINNED_PRESET_SLOT_COUNT = 6;
+
+/**
+ * Column maps already built per cache, by the clearances they cover.
+ *
+ * The build walks every vertex of the mesh and takes tens of milliseconds, and
+ * the clearance it is built for comes from the shaft diameter - so the hover
+ * after a preset switch paid that for a map the switch had already decided on.
+ * The pinned slots are known before the key is pressed, so their maps are built
+ * while the thread is idle instead, one per idle callback.
+ *
+ * A no-op off the main thread: there is no idle there to use, and a worker's
+ * caches belong to a single run.
+ */
+const prewarmedColumnMaps = new WeakMap<SDFCache, string>();
+
+/**
+ * `window.requestIdleCallback`, or null where there is no window to ask.
+ *
+ * Guarded, because a worker realm can expose a `window` that traps every
+ * property read - the auto-support worker's own test builds one - and nothing
+ * about an opportunistic prewarm is worth throwing over.
+ */
+function idleCallbackForPrewarm(): ((callback: () => void) => void) | null {
+    try {
+        if (typeof window === 'undefined') return null;
+        const requestIdleCallback = window.requestIdleCallback;
+        return typeof requestIdleCallback === 'function' ? requestIdleCallback.bind(window) : null;
+    } catch {
+        return null;
+    }
+}
+
+function prewarmPinnedPresetColumnMaps(sdf: SDFCache): void {
+    const requestIdle = idleCallbackForPrewarm();
+    if (!requestIdle) return;
+
+    const clearances: number[] = [];
+    for (let slot = 1; slot <= PINNED_PRESET_SLOT_COUNT; slot += 1) {
+        const preset = getPresetForPinnedSlot(slot);
+        const diameterMm = preset?.settings?.shaft?.diameterMm;
+        if (typeof diameterMm !== 'number' || !Number.isFinite(diameterMm)) continue;
+        clearances.push(columnClearanceMm(diameterMm));
+    }
+    if (clearances.length === 0) return;
+
+    const signature = clearances.join('|');
+    if (prewarmedColumnMaps.get(sdf) === signature) return;
+    prewarmedColumnMaps.set(sdf, signature);
+
+    const queue = clearances.slice();
+    const buildNext = () => {
+        const next = queue.shift();
+        if (next === undefined) return;
+        sdf.prewarmColumnMap(next, COLUMN_MAP_CELL_MM);
+        // Deliberately no timeout: this is opportunistic, and a build forced
+        // onto a busy thread is the hitch it exists to remove.
+        if (queue.length > 0) requestIdle(buildNext);
+    };
+    requestIdle(buildNext);
+}
 /** Safety margin applied to the roots volume, as the rest of the system does. */
 const ROOTS_DISK_SAFETY_MM = COLLISION_AVOIDANCE_MM;
 /** Perimeter samples around the roots cross-section at each height slice. */
@@ -473,7 +549,7 @@ export function calculateSmartPlacementV3(
 
     const rootTopZ = input.rootsTopZ;
     const shaftRadius = settings.shaft.diameterMm / 2;
-    const clearanceMm = shaftRadius + COLLISION_AVOIDANCE_MM;
+    const clearanceMm = columnClearanceMm(settings.shaft.diameterMm);
     const rootsRadius = settings.roots.diameterMm / 2;
     const diskHeight = settings.roots.diskHeightMm;
     const coneHeight = settings.roots.coneHeightMm;
@@ -506,10 +582,12 @@ export function calculateSmartPlacementV3(
      * it was pure overhead on the run's hot path.
      */
     // The router's columns are the bulk of this run's distance-field reads, and
-    // the exact column map answers them from one scalar per XY cell. Idempotent
-    // and clearance-specific, so calling it here (on a per-placement path) only
-    // builds once; see `SDFCache.enableColumnMap`.
-    sdf.enableColumnMap(clearanceMm, 0.2);
+    // the exact column map answers them from one scalar per XY cell. It is
+    // clearance-specific, so calling it here builds one map per clearance and
+    // reuses it after that; the pinned presets' maps are built ahead of the key
+    // press by `prewarmPinnedPresetColumnMaps` above.
+    sdf.enableColumnMap(clearanceMm, COLUMN_MAP_CELL_MM);
+    prewarmPinnedPresetColumnMaps(sdf);
 
     const segmentBlockedBetween = (from: Vec3, to: Vec3): boolean => (
         sdf.segmentBlocked(from.x, from.y, from.z, to.x, to.y, to.z, clearanceMm)

@@ -38,7 +38,7 @@ import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types';
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
-import { collectRaftBaseCirclesByModel, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
+import { collectRaftBaseCirclesByModel, raftFootprintSourceRefs, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
 import { collectSupportMarqueeShapes } from './supportMarqueeShapes';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -670,6 +670,8 @@ export function SceneCanvas({
   supportDragTransactionId?: number;
   renderSceneOverlays?: (context: {
     raycastActiveModelFromRay: (ray: THREE.Ray) => THREE.Intersection | null;
+    /** Whether a model is being dragged, so overlays anchored to it can stand down. */
+    isDragging: boolean;
   }) => React.ReactNode;
   customPrepareMarqueeSelection?: {
     enabled: boolean;
@@ -880,10 +882,14 @@ export function SceneCanvas({
     getSupportSnapshot,
     getSupportSnapshot,
   );
-  const supportSettings = React.useSyncExternalStore(
+  // The only support setting this canvas reads is the tip's contact diameter, and
+  // a preset switch rewrites the whole settings object. Subscribing to the object
+  // re-rendered this canvas - and the scene tree under it - for a field that may
+  // not have moved; the snapshot is the number, so only a change to it does.
+  const tipContactDiameterMm = React.useSyncExternalStore(
     subscribeToSettings,
-    getSettings,
-    getSettings,
+    () => getSettings().tip.contactDiameterMm,
+    () => getSettings().tip.contactDiameterMm,
   );
   const isLinux = useIsLinux();
   const sceneHoveredSupportId = useSceneHoveredSupportId();
@@ -1141,11 +1147,14 @@ export function SceneCanvas({
     } else if (!next) {
       crossSectionLiveTransformsRef.current.clear();
     }
-    // During active drag, avoid per-frame React rerenders; scene objects are
-    // moved imperatively and this ref remains the source of truth.
-    if (isGizmoDragging) return;
+    // Scene objects are moved imperatively and this ref remains the source of
+    // truth, so a drag does not need a rerender to draw. The out-of-bounds test
+    // does: it compares a box against the build volume, and without this it only
+    // sees where the model was when the gesture started, so the red volume and the
+    // stripe appeared on release. Pointer moves are frame-throttled by the browser,
+    // which keeps this to about one bump per frame.
     setLiveDragTransformVersion((value) => value + 1);
-  }, [activeModelId, isGizmoDragging]);
+  }, [activeModelId]);
 
   const {
     effectiveHoldSupportDragDelta,
@@ -1560,16 +1569,60 @@ export function SceneCanvas({
 
   // One walk per state change, keyed by model, so the per-model bounds callback
   // below does not re-walk every collection for every model.
+  //
+  // Keyed on the collections the walk reads, not on the snapshot: the snapshot's
+  // identity changes on any store write, including the ones a model selection
+  // makes, and a new identity here poisoned the per-model bounds cache below -
+  // which re-ran the raft's polygon booleans for every model, ~120 ms of blocking
+  // work on a click in a production build.
   const raftBaseCirclesByModelKey = React.useMemo(
     () => collectRaftBaseCirclesByModel(supportStateForBounds, {
       fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
     }),
-    [supportStateForBounds],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections the walk reads; the helper returns exactly those, in a fixed order.
+    raftFootprintSourceRefs(supportStateForBounds),
   );
+
+  /**
+   * A model's support-and-raft extent, kept per model until the supports or the
+   * raft settings change.
+   *
+   * Nothing in it depends on a model's transform, but its callers do: the scene's
+   * per-model bounds are rebuilt whenever the active transform moves, which a
+   * selection does. Recomputing the extent then re-ran the raft's polygon
+   * booleans (Clipper) for all 17 models, measured at 215 ms of blocking long
+   * tasks on a click in a production build. Keyed on the collections, a selection
+   * finds every entry already there.
+   */
+  const supportRaftBoundsCacheRef = React.useRef<{
+    key: readonly unknown[];
+    byModel: Map<string, THREE.Box3 | null>;
+  } | null>(null);
 
   const computeSupportAndRaftWorldBounds = React.useCallback((modelId: string): THREE.Box3 | null => {
     // During active gizmo drags, keep bounds work minimal to preserve interaction FPS.
     if (isGizmoDragging || isGizmoRetargeting) return null;
+
+    const key = [
+      raftSettingsForBounds,
+      raftBaseCirclesByModelKey,
+      supportStateForBounds.knots,
+      ...SUPPORT_COLLECTION_KEYS.map((collectionKey) => supportStateForBounds[collectionKey]),
+    ];
+    let cache = supportRaftBoundsCacheRef.current;
+    if (!cache || cache.key.length !== key.length || !cache.key.every((ref, i) => ref === key[i])) {
+      cache = { key, byModel: new Map() };
+      supportRaftBoundsCacheRef.current = cache;
+    } else if (cache.byModel.has(modelId)) {
+      return cache.byModel.get(modelId) ?? null;
+    }
+
+    const computed = computeSupportAndRaftWorldBoundsUncached(modelId);
+    cache.byModel.set(modelId, computed);
+    return computed;
+  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
+
+  const computeSupportAndRaftWorldBoundsUncached = React.useCallback((modelId: string): THREE.Box3 | null => {
 
     const bounds = new THREE.Box3();
     let hasAny = false;
@@ -1728,7 +1781,7 @@ export function SceneCanvas({
     }
 
     return hasAny ? bounds : null;
-  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
+  }, [raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
 
   const computeModelWorldBounds = React.useCallback((
     model: LoadedModel,
@@ -1787,22 +1840,32 @@ export function SceneCanvas({
   );
 
   const modelWorldBounds = React.useMemo(() => {
-    if (isGizmoDragging || isGizmoRetargeting) {
-      return cachedModelWorldBoundsRef.current;
-    }
+    const liveGroupFor = (modelId: string) => (
+      (isGizmoDragging || isGizmoRetargeting) ? meshRefs.current[modelId] ?? null : null
+    );
 
     const map = new Map<string, THREE.Box3>();
     for (const model of models) {
       if (!model.visible) continue;
+      // During a drag the model group carries the live transform and the props do
+      // not, so the out-of-bounds test has to read the group or it only sees where
+      // the model was when the gesture started.
+      const liveGroup = liveGroupFor(model.id);
+      const liveTransform: ModelTransform | null = liveGroup
+        ? {
+            position: liveGroup.position,
+            rotation: new THREE.Euler().setFromQuaternion(liveGroup.quaternion, 'ZYX'),
+            scale: liveGroup.scale,
+          }
+        : null;
       const effectiveTransform =
-        (model.id === activeTransformOverrideModelId && transform)
-          ? transform
-          : model.transform;
+        liveTransform
+        ?? ((model.id === activeTransformOverrideModelId && transform) ? transform : model.transform);
       map.set(model.id, computeModelWorldBounds(model, effectiveTransform, buildVolumeBounds));
     }
     cachedModelWorldBoundsRef.current = map;
     return map;
-  }, [activeTransformOverrideModelId, buildVolumeBounds, computeModelWorldBounds, isGizmoDragging, isGizmoRetargeting, models, transform]);
+  }, [activeTransformOverrideModelId, buildVolumeBounds, computeModelWorldBounds, isGizmoDragging, isGizmoRetargeting, liveDragTransformVersion, models, transform]);
 
   const crossSectionCapEntries = React.useMemo<CrossSectionStencilCapEntry[]>(() => {
     return models
@@ -1826,7 +1889,10 @@ export function SceneCanvas({
 
   const outOfBoundsModels = React.useMemo(() => {
     if (!buildVolumeBounds) return [] as Array<{ id: string; name: string; bounds: THREE.Box3 }>;
-    if (isGizmoDragging || isGizmoRetargeting || outOfBoundsRotateGraceActive) return [] as Array<{ id: string; name: string; bounds: THREE.Box3 }>;
+    // The rotate grace only: a rotate sweep clips a corner for a frame, and that
+    // is flicker. A drag is included now, so the indication follows the model out
+    // of the volume instead of appearing when it is released.
+    if (outOfBoundsRotateGraceActive) return [] as Array<{ id: string; name: string; bounds: THREE.Box3 }>;
 
     return models
       .filter((model) => model.visible)
@@ -1841,6 +1907,7 @@ export function SceneCanvas({
       .filter(({ bounds }) => isBoundsOutsideVolume(bounds, buildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM));
   }, [
     BUILD_VOLUME_BOUNDS_EPS_MM,
+    liveDragTransformVersion,
     buildVolumeBounds,
     computeModelWorldBounds,
     isGizmoDragging,
@@ -1977,11 +2044,11 @@ export function SceneCanvas({
       if (diameter != null) return toGuideWidthMm(diameter);
     }
 
-    return toGuideWidthMm(supportSettings.tip.contactDiameterMm || DEFAULT_TIP_CONTACT_DIAMETER_MM);
+    return toGuideWidthMm(tipContactDiameterMm || DEFAULT_TIP_CONTACT_DIAMETER_MM);
   }, [
     activePlacementModes,
     placementPreviews,
-    supportSettings.tip.contactDiameterMm,
+    tipContactDiameterMm,
   ]);
 
   const branchHoverDotVisible = Boolean(
@@ -3852,14 +3919,27 @@ export function SceneCanvas({
    * active model's live transform lives here (its entry in `models` is stale
    * while a gizmo drag is in flight).
    */
-  const plateClearanceTargets = React.useMemo<PlateFootprintSource[]>(() => (
-    models
+  /**
+   * The visible models' plate footprints, which the raft is trimmed by.
+   *
+   * Deliberately *not* the active model's live transform. The clearance is where
+   * the models stand, not where a gizmo is dragging them, and the live transform
+   * is a frame behind a selection: taking it made this list depend on
+   * `activeModelId`, so choosing a model rebuilt it twice - once with the previous
+   * model's transform - and with it the raft clearance, every raft mesh and the
+   * footprint clustering behind them, ~700 ms on a scene with 1109 roots. The
+   * outline display keeps its own live-transform targets (see
+   * `footprintOutlineTargets`).
+   */
+  const plateClearanceTargets = React.useMemo<PlateFootprintSource[]>(
+    () => models
       .filter((model) => model.visible)
       .map((model) => ({
         geometry: model.geometry,
-        transform: (model.id === activeModelId && transform) ? transform : model.transform,
-      }))
-  ), [activeModelId, models, transform]);
+        transform: model.transform,
+      })),
+    [models],
+  );
 
   const crossSectionStencilSourceVersion = React.useMemo(() => ({
     supportRenderRefreshNonce,
@@ -5452,10 +5532,24 @@ export function SceneCanvas({
     };
   }, [handleOrbitEnd]);
 
+  /**
+   * Take the corner cage away now, rather than waiting for the state to paint.
+   *
+   * A release handler clears the state that gates the cage and then runs the
+   * commit, so React paints the hide only once all of that finishes, which is the
+   * few hundred milliseconds the box used to linger after the pointer let go.
+   */
+  const hideDragCornerCagesNow = React.useCallback(() => {
+    for (const line of Object.values(dragCornerCageRefs.current)) {
+      if (line) line.visible = false;
+    }
+  }, []);
+
   const markGizmoDragEnded = React.useCallback((expectParentTransaction = true) => {
     window.__gizmoDragEndedThisFrame = true;
     suppressNextCanvasClickRef.current = true;
     setIsPostGizmoInteractionGuardActive(true);
+    hideDragCornerCagesNow();
     armSupportDragDeltaBridge({ expectParentTransaction });
 
     if (postGizmoInteractionTimeoutRef.current !== null) {
@@ -5468,7 +5562,7 @@ export function SceneCanvas({
       setIsPostGizmoInteractionGuardActive(false);
       postGizmoInteractionTimeoutRef.current = null;
     }, 160);
-  }, [armSupportDragDeltaBridge]);
+  }, [armSupportDragDeltaBridge, hideDragCornerCagesNow]);
 
   React.useEffect(() => {
     return () => {
@@ -5580,7 +5674,9 @@ export function SceneCanvas({
     selectDragLastPointRef.current = null;
     selectDragStartSnapshotRef.current = null;
     setSelectDragPressed(false);
-  }, []);
+
+    hideDragCornerCagesNow();
+  }, [hideDragCornerCagesNow]);
 
   const getSelectDragWorldPoint = React.useCallback((clientX: number, clientY: number): THREE.Vector3 | null => {
     const plane = selectDragPlaneRef.current;
@@ -5695,9 +5791,12 @@ export function SceneCanvas({
       rotation: live.rotation.clone(),
       scale: live.scale.clone(),
     });
-    requestDragCornerCageUpdate();
+    // Same frame, not the next one. The model moved imperatively just above, and
+    // the deferred update lands a frame later, which reads as the cage's corners
+    // trailing behind a fast drag.
+    updateDragCornerCagesNow();
     last.copy(worldPoint);
-  }, [getSelectDragWorldPoint, queueLiveDragTransform, requestDragCornerCageUpdate]);
+  }, [getSelectDragWorldPoint, queueLiveDragTransform, updateDragCornerCagesNow]);
 
   const finishSelectDrag = React.useCallback(() => {
     const candidate = selectDragCandidateRef.current;
@@ -5953,6 +6052,7 @@ export function SceneCanvas({
         <OrthoPickRayAlignment />
         {/* GPU Picking Provider - wraps all pickable content when enabled */}
         <PickingProviderWrapper
+          dragActive={isGizmoDragging || isGizmoRetargeting}
           enabled={gpuPickingTest}
           mode={mode}
           transformMode={transformMode}
@@ -6499,6 +6599,8 @@ export function SceneCanvas({
                   liveTransformsRef={crossSectionLiveTransformsRef}
                   sourceObject={supportDragGroupRef?.current ?? null}
                   sourceObjectVersion={clipUpper != null ? crossSectionStencilSourceVersion : undefined}
+                  extraSources={[activeGroupRef.current]}
+                  extraSourcesKey={activeModelId}
                   // During slider scrubbing, avoid expensive source z-bound
                   // traversal/bucketing work. Stencil clipping still constrains
                   // fragments correctly, so this is a safe CPU optimization.
@@ -6525,6 +6627,8 @@ export function SceneCanvas({
                   liveTransformsRef={crossSectionLiveTransformsRef}
                   sourceObject={supportDragGroupRef?.current ?? null}
                   sourceObjectVersion={crossSectionStencilSourceVersion}
+                  extraSources={[activeGroupRef.current]}
+                  extraSourcesKey={activeModelId}
                   skipSourceZBounds={isLayerScrubbing}
                   y={clipLower}
                   otherClipY={clipUpper}
@@ -6709,7 +6813,10 @@ export function SceneCanvas({
                           rotation: correctedLive.rotation.clone(),
                           scale: correctedLive.scale.clone(),
                         });
-                        requestDragCornerCageUpdate();
+                        // Same frame as the imperative move above, as the select
+                        // drag does: a deferred update lands a frame later and the
+                        // corners trail behind a fast drag.
+                        updateDragCornerCagesNow();
                       }
                     }
                   }}
@@ -7045,7 +7152,10 @@ export function SceneCanvas({
                           rotation: correctedLive.rotation.clone(),
                           scale: correctedLive.scale.clone(),
                         });
-                        requestDragCornerCageUpdate();
+                        // Same frame as the imperative move above, as the select
+                        // drag does: a deferred update lands a frame later and the
+                        // corners trail behind a fast drag.
+                        updateDragCornerCagesNow();
                       }
                     }
                   }}
@@ -7243,7 +7353,14 @@ export function SceneCanvas({
                 return <Controller key={typeId} activeModelId={activeModelId} />;
               })}
 
-              {renderSceneOverlays?.({ raycastActiveModelFromRay })}
+              {renderSceneOverlays?.({
+                raycastActiveModelFromRay,
+                // The post-gesture guard is part of the gesture for this purpose:
+                // the commit that recomputes the overlays runs inside it, so
+                // standing down only while the pointer is down would flash them
+                // back at their pre-commit positions.
+                isDragging: isGizmoDragging || isPostGizmoInteractionGuardActive,
+              })}
 
             </React.Suspense>
           </SelectionProvider>

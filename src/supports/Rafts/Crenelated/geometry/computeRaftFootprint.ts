@@ -2,11 +2,12 @@ import type { RaftSettings, SupportBaseCircle } from '../RaftTypes';
 import { computeFootprint } from './computeFootprint';
 import { MODEL_PLATE_CLEARANCE_MM } from './modelPlateFootprint';
 import {
+  buildClearanceEdgeGrid,
   differencePolygonSets,
+  gridSegmentBlocked,
   offsetPolygonSet,
   polygonSetContains,
   ringToPolygon,
-  segmentDistanceMm,
   type PolygonWithHoles,
 } from './polygonSet2d';
 
@@ -84,6 +85,20 @@ function clusterCirclesAroundClearance(
 ): SupportBaseCircle[][] {
   if (circles.length <= 1) return [circles.slice()];
 
+  // Every pair asks whether the segment between it clears the model. Answered
+  // against the whole clearance set that is O(circles^2 x edges) - measured at
+  // 19 seconds for one selection on a scene with 1109 roots - so the edges go
+  // into a grid and a pair tests only the cells its own short segment crosses.
+  const grid = buildClearanceEdgeGrid(clearance);
+  if (!grid) return [circles.slice()];
+
+  // A circle inside the clearance is never unioned with anything, and that
+  // answer is the same for every pair it appears in. Asked per pair it is
+  // O(circles^2 x polygons), and measured 41% of the ~1 s a model selection
+  // still cost on a scene with 1109 roots; asked once per circle it is
+  // O(circles x polygons).
+  const insideClearance = circles.map((circle) => polygonSetContains(clearance, circle.x, circle.y));
+
   const parent = circles.map((_, index) => index);
   const find = (index: number): number => {
     let root = index;
@@ -98,27 +113,11 @@ function clusterCirclesAroundClearance(
 
   for (let i = 0; i < circles.length; i += 1) {
     for (let j = i + 1; j < circles.length; j += 1) {
+      if (insideClearance[i] || insideClearance[j]) continue;
       const a = circles[i];
       const b = circles[j];
-      if (polygonSetContains(clearance, a.x, a.y)) continue;
-      if (polygonSetContains(clearance, b.x, b.y)) continue;
 
-      let blocked = false;
-      for (const poly of clearance) {
-        for (const ring of [poly.outer, ...poly.holes]) {
-          for (let k = 0; k < ring.length; k += 1) {
-            const c = ring[k];
-            const d = ring[(k + 1) % ring.length];
-            if (segmentDistanceMm(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y) <= 0.001) {
-              blocked = true;
-              break;
-            }
-          }
-          if (blocked) break;
-        }
-        if (blocked) break;
-      }
-      if (!blocked) union(i, j);
+      if (!gridSegmentBlocked(grid, a.x, a.y, b.x, b.y)) union(i, j);
     }
   }
 

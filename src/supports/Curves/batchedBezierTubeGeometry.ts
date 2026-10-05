@@ -11,8 +11,59 @@ export interface BatchedBezierTubes {
     triangleRangeEnds: number[];
 }
 
+/**
+ * One swept tube per curved shaft, kept by the shaft object it came from.
+ *
+ * The batches are re-laid-out whenever the visible set changes, and building a
+ * `TubeGeometry` per shaft again is most of that cost. The shafts themselves are
+ * rebuilt only when the support state changes, so the cache follows them.
+ */
+const tubeGeometryCache = new WeakMap<InstancedShaft, {
+    curve: THREE.CubicBezierCurve3;
+    tubularSegments: number;
+    tube: THREE.TubeGeometry;
+}>();
+
 export function isCurvedBatchedShaft(shaft: InstancedShaft): boolean {
     return shaft.controlPoint1 != null && shaft.controlPoint2 != null;
+}
+
+/**
+ * Split a batch's shafts into the ones the merged tube mesh draws and the ones
+ * the instanced mesh draws.
+ *
+ * The instanced batch answers hover through an index of its own instances, so
+ * whatever this drops must be dropped by that index too: a shaft with no length
+ * is not drawn (it is an instanced mesh scaled to nothing) and must not be a
+ * hover target, or every later instance's index shifts and a hit resolves to a
+ * neighbouring support. A leaf has no shaft at all - its contact point is a
+ * zero-length segment - which is 67 of an 18-model plate's shafts per model.
+ */
+export function splitBatchedShafts(shafts: readonly InstancedShaft[]): {
+    straightShafts: InstancedShaft[];
+    curvedShafts: InstancedShaft[];
+} {
+    const straightShafts: InstancedShaft[] = [];
+    const curvedShafts: InstancedShaft[] = [];
+    for (const shaft of shafts) {
+        if (isCurvedBatchedShaft(shaft)) {
+            // Degenerate only when the whole control net collapses to a point.
+            const points = [shaft.controlPoint1!, shaft.controlPoint2!, shaft.end];
+            const collapsed = points.every((p) => {
+                const dx = p.x - shaft.start.x;
+                const dy = p.y - shaft.start.y;
+                const dz = p.z - shaft.start.z;
+                return dx * dx + dy * dy + dz * dz < 1e-6;
+            });
+            if (!collapsed) curvedShafts.push(shaft);
+            continue;
+        }
+        const dx = shaft.end.x - shaft.start.x;
+        const dy = shaft.end.y - shaft.start.y;
+        const dz = shaft.end.z - shaft.start.z;
+        if (dx * dx + dy * dy + dz * dz >= 1e-6) straightShafts.push(shaft);
+    }
+    return { straightShafts, curvedShafts };
 }
 
 /** Map a raycast faceIndex back to the owning curve's index; -1 if out of range. */
@@ -36,6 +87,12 @@ export function resolveCurvedShaftIndexForFace(triangleRangeEnds: number[], face
  * batch group). Each curve is swept with the same resolution rules as the
  * detailed BezierRenderer and closed with flat end caps so the proxy-layer
  * scene graph stays serializable as a closed mesh by the STL/3MF export path.
+ *
+ *
+ * A caller that tints some of its shafts builds one of these per colour and gives
+ * each its own material, rather than writing a colour attribute here: a merged
+ * mesh has one material, and the colour then takes the same route as an
+ * instanced shaft's.
  */
 export function buildBatchedBezierTubes(
     curvedShafts: InstancedShaft[],
@@ -87,19 +144,28 @@ export function buildBatchedBezierTubes(
     };
 
     for (const shaft of curvedShafts) {
-        const curve = new THREE.CubicBezierCurve3(
-            new THREE.Vector3(shaft.start.x, shaft.start.y, shaft.start.z),
-            new THREE.Vector3(shaft.controlPoint1!.x, shaft.controlPoint1!.y, shaft.controlPoint1!.z),
-            new THREE.Vector3(shaft.controlPoint2!.x, shaft.controlPoint2!.y, shaft.controlPoint2!.z),
-            new THREE.Vector3(shaft.end.x, shaft.end.y, shaft.end.z),
-        );
-        const tubularSegments = Math.max(2, Math.floor(
-            shaft.resolution
-            ?? calculateAdaptiveBezierResolution(shaft.start, shaft.controlPoint1!, shaft.controlPoint2!, shaft.end),
-        ));
-        const radius = Math.max(0.0005, shaft.diameter / 2);
+        let swept = tubeGeometryCache.get(shaft);
+        if (!swept) {
+            const curve = new THREE.CubicBezierCurve3(
+                new THREE.Vector3(shaft.start.x, shaft.start.y, shaft.start.z),
+                new THREE.Vector3(shaft.controlPoint1!.x, shaft.controlPoint1!.y, shaft.controlPoint1!.z),
+                new THREE.Vector3(shaft.controlPoint2!.x, shaft.controlPoint2!.y, shaft.controlPoint2!.z),
+                new THREE.Vector3(shaft.end.x, shaft.end.y, shaft.end.z),
+            );
+            const tubularSegments = Math.max(2, Math.floor(
+                shaft.resolution
+                ?? calculateAdaptiveBezierResolution(shaft.start, shaft.controlPoint1!, shaft.controlPoint2!, shaft.end),
+            ));
+            const radius = Math.max(0.0005, shaft.diameter / 2);
+            swept = {
+                curve,
+                tubularSegments,
+                tube: new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false),
+            };
+            tubeGeometryCache.set(shaft, swept);
+        }
+        const { curve, tubularSegments, tube } = swept;
 
-        const tube = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
         const vertexBase = positions.length / 3;
         const pos = tube.getAttribute('position') as THREE.BufferAttribute;
         const nor = tube.getAttribute('normal') as THREE.BufferAttribute;
@@ -111,7 +177,6 @@ export function buildBatchedBezierTubes(
         for (let i = 0; i < idx.count; i += 1) {
             indices.push(vertexBase + idx.getX(i));
         }
-        tube.dispose();
 
         const startOutward = curve.getTangent(0).normalize().negate();
         const endOutward = curve.getTangent(1).normalize();
