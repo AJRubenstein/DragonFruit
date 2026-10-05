@@ -26,6 +26,7 @@ Internals of DragonFruit, for people changing them. Start with [Architecture Ove
 | Add a config file | [Config Schemas](config-schemas.md) |
 | Persist something | [Data Storage](data-storage.md), [VOXL Format Spec](voxl-format-spec.md) |
 | Cut a release | [Release Process](releases.md), [Flatpak Packaging](flatpak.md) |
+| Change how new issues get their area labels | [Issue Guts Labels](issue-guts.md), [Retuning Issue Guts](issue-guts-tuning.md) |
 | Change OS file thumbnails | [OS Thumbnails](voxl-thumbnail/index.md) |
 | Add or translate a string | [Localization](localization.md) |
 | Write or change docs | [Contributing](contributing.md) |
