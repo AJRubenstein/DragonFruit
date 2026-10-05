@@ -110,9 +110,10 @@ test('streamed slice input excludes raw hollowing output and preserves the model
       materialProfile: { id: 'staging-material', name: 'Staging material', layerHeightMm: 0.05 } as MaterialProfile,
       filenameBase: 'staging-regression',
       outputMode: 'return',
-      antiAliasingMode: 'Vertical2',
-      antiAliasingLevel: '8x',
-      aaOnSupports: false,
+      antiAliasing: {
+        preset: 'balanced',
+        override: { antiAliasingSettings: { enableOverride: true, mode: '3DAA', level: '8x', aaOnSupports: false } },
+      },
     }), reachedSlicer);
     assert.ok(captured);
     return captured;
@@ -309,14 +310,14 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
     // The staged transport is raw f32 now, so this is only a tolerance: it bounds
     // float32 rounding in the generated support geometry.
     const step = printerProfile.buildVolumeMm.width / 65535;
+    // Only 3DAA shrinks the tips; the material's 10 % applies when the override
+    // does not set its own.
     const cases = [
-      { mode: 'Vertical2', level: '8x', percent: undefined, diameter: 0.36 },
-      { mode: 'Vertical2', level: '8x', percent: 25, diameter: 0.3 },
+      { mode: '3DAA', level: '8x', percent: undefined, diameter: 0.36 },
       { mode: '3DAA', level: '8x', percent: 25, diameter: 0.3 },
-      { mode: 'Vertical2', level: '8x', percent: 0, diameter: 0.4 },
+      { mode: '3DAA', level: '8x', percent: 0, diameter: 0.4 },
       { mode: 'Blur', level: '8x', percent: 25, diameter: 0.4 },
-      { mode: 'Coverage', level: 'Off', percent: 25, diameter: 0.4 },
-      { mode: 'Vertical2', level: 'Off', percent: 25, diameter: 0.4 },
+      { mode: 'Off', level: '8x', percent: 25, diameter: 0.4 },
     ] as const;
     let baselineModel: number[] | undefined;
     let baselineOtherSupport: number[] | undefined;
@@ -327,8 +328,15 @@ test('native staged 3DAA contact geometry shrinks only generated contact faces',
       await assert.rejects(runSliceExportOrchestrator({
         models: [model], printerProfile, materialProfile,
         filenameBase: 'staged-tip-regression', outputMode: 'return',
-        antiAliasingMode: mode, antiAliasingLevel: level,
-        supportTipShrinkPercent: percent, aaOnSupports: false,
+        antiAliasing: {
+          preset: 'balanced',
+          override: {
+            antiAliasingSettings: {
+              enableOverride: true, mode, level, aaOnSupports: false,
+              ...(percent === undefined ? {} : { supportTipShrinkPercent: percent }),
+            },
+          },
+        },
       }), reachedSlicer);
       const received = getCaptured();
       assert.ok(received, `${mode}/${level}/${percent} reached the native slice boundary`);

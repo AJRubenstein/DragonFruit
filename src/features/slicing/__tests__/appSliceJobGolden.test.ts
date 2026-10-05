@@ -44,15 +44,13 @@ const CASES: GoldenCase[] = [
     printer: printerByLabel('Saturn 4 Ultra 16K (.ctb'),
     materialIndex: 0,
     extraOptions: {
-      antiAliasingMode: 'Vertical2',
-      antiAliasingLevel: '8x',
-      zaaKernel: 'perturb',
-      zaaPattern: 'halton',
-      zBlendLookBack: 3,
-      zBlendMinimumAlphaPercent: 10,
-      zBlendMaxAlphaPercent: 80,
-      supportTipShrinkPercent: 20,
-      minimumAaAlphaPercentOverride: 0,
+      antiAliasing: {
+        preset: 'balanced',
+        override: {
+          antiAliasingSettings: { enableOverride: true, mode: '3DAA', level: '8x', zaaPattern: 'halton', supportTipShrinkPercent: 20 },
+          minimumAaAlphaPercent: 10,
+        },
+      },
     },
   },
   {
@@ -60,10 +58,14 @@ const CASES: GoldenCase[] = [
     printer: printerByLabel('Athena II 16K 8-bit'),
     materialIndex: 1,
     extraOptions: {
-      antiAliasingMode: 'Blur',
-      antiAliasingLevel: '4x',
-      blurBrushRadiusPx: 2,
-      blurBrushKernel: 'box',
+      antiAliasing: {
+        preset: 'balanced',
+        override: {
+          antiAliasingSettings: {
+            enableOverride: true, mode: 'Blur', level: '4x', blurBrushRadiusPx: 2, useCustomBlurBrushRadius: true, blurBrushKernel: 'box',
+          },
+        },
+      },
       exportThumbnailPng: new Uint8Array([137, 80, 78, 71]),
     },
   },

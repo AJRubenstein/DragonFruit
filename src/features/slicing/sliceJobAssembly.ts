@@ -6,6 +6,11 @@ import {
   resolveSlicingFormatDefinition,
 } from '@/features/slicing/formats/registry';
 import { resolveEffectiveDitherPolicy, type DitherPolicyInput } from '@/features/slicing/resolveEffectiveDitherPolicy';
+import {
+  resolveSliceJobAntiAliasing,
+  type SliceJobAntiAliasing,
+  type SliceJobAntiAliasingRequest,
+} from '@/features/slicing/sliceAntiAliasing';
 
 /**
  * Slice-job assembly: printer profile, material profile and scene facts in, the
@@ -391,15 +396,17 @@ export type AssembledSliceJob = {
   ditherEnabled: boolean;
   ditherBitDepth: number;
   ditherDeviceGamma: number;
+  /** The anti-aliasing fields; see `resolveSliceJobAntiAliasing`. */
+  antiAliasing: SliceJobAntiAliasing;
   metadataJson: string;
 };
 
 /**
- * Builds the profile-driven half of a native slice job.
+ * Builds the profile-driven part of a native slice job.
  *
  * `printerProfile` must be resolved the way the profile store holds it (build
- * volume filled in, for instance), not a raw preset. Anti-aliasing, mesh
- * transport and plugin metadata payloads stay with the caller.
+ * volume filled in, for instance), not a raw preset. Mesh transport and plugin
+ * metadata payloads stay with the caller.
  */
 export function assembleSliceJob(options: {
   printerProfile: PrinterProfile;
@@ -407,6 +414,8 @@ export function assembleSliceJob(options: {
   scene: SliceJobScene;
   /** The user's dithering choice, when the caller has one; see `resolveEffectiveDitherPolicy`. */
   dither?: Pick<DitherPolicyInput, 'ditherEnabled' | 'ditherBitDepth' | 'ditherDeviceGamma'>;
+  /** The user's anti-aliasing choice, when the caller has one; see `resolveSliceJobAntiAliasing`. */
+  antiAliasing?: SliceJobAntiAliasingRequest;
   createdAt?: Date;
 }): AssembledSliceJob {
   const { printerProfile, materialProfile, scene } = options;
@@ -447,6 +456,12 @@ export function assembleSliceJob(options: {
     ditherEnabled: dither.ditherEnabled,
     ditherBitDepth: dither.ditherBitDepth,
     ditherDeviceGamma: dither.ditherDeviceGamma,
+    antiAliasing: resolveSliceJobAntiAliasing({
+      printerProfile,
+      materialProfile,
+      layerHeightMm: settings.layerHeightMm,
+      request: options.antiAliasing,
+    }),
     metadataJson: mergeMetadataOverridesIntoMetadata(
       JSON.stringify(manifest),
       format.outputFormat,
