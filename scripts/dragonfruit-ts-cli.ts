@@ -1493,7 +1493,8 @@ function sceneSlice(args: ReturnType<typeof parseArgs>): void {
       polygonCount: model.polygonCount,
       transform: model.transform,
     })),
-  }, mergedPath, resolve(output));
+  }, mergedPath, resolve(output), resolve(tmpDir, 'job.json'));
+  if (run.jobJson) writeFileSync(resolve(tmpDir, 'job.json'), run.jobJson);
   const { assembled } = run;
   if (assembled && job.printer) {
     console.error(

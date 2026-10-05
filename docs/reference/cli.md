@@ -118,13 +118,19 @@ dragonfruit-cli island full model.stl -o /tmp/islands --json
 
 | Command | Description | Wraps |
 |---------|-------------|-------|
-| `slice run <input> -o <out.nanodlp> [--json]` | Full slice → archive | `engine::slice_with_progress_v3_to_path` |
+| `slice run <input> -o <out.nanodlp> [--job <job.json>] [--json]` | Full slice → archive | `engine::slice_with_progress_v3_to_path` |
 | `slice preview-layer <archive> --layer N -o <out.png>` | Extract layer PNG | Same as Tauri `read_print_layer_png` |
 | `slice info` | List formats + defaults | `encoders::registry::supported_output_formats` |
 
 **Input:** STL file or `positions.bin` (from `mesh read-stl` or `scene slice` merge).
 
-**Key flags for `slice run`:**
+**`--job <job.json>`** takes the whole job instead of the flags below: the
+payload the app hands the native slicer (`toNativeMetadataPayload`), without the
+mesh, which still comes from the input file. Every field comes from the file,
+the layer count included; a zero `model_triangle_count` means the input's
+count. It cannot be combined with the job flags. `scene slice` uses it.
+
+**Key flags for `slice run`** (without `--job`):
 - `--layer-height 0.05` — layer step (mm)
 - `--build-width-mm 218.0` — build plate width
 - `--build-depth-mm 122.0` — build plate depth
@@ -222,9 +228,13 @@ whatever the material's own anti-aliasing settings say.
   keeps them.
 
 Where the app would fall back silently (a custom curve that is not in the
-library), `scene slice` stops with an error instead. `slice run` has no flags
-yet for the Z-blend alphas, the LUT or the 3DAA sampling pattern, so those still
-take the engine's defaults.
+library), `scene slice` stops with an error instead.
+
+`scene slice` hands `slice run` the whole job with `--job`, built by the same
+`buildNativeSliceJob` the app's export uses, so every field matches the app's,
+anti-aliasing and compression included. What the app takes from its
+performance settings gets the defaults: `auto` PNG compression and no AA on
+supports.
 
 It needs the generated plugin registry (`npm run generate:plugin-registry` and
 `npm run generate:builtin-simple-plugins`); the other commands do not.

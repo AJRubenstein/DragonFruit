@@ -50,9 +50,8 @@ app's.
 The named AA presets (`sharp`/`balanced`/`smooth`/`raw`) are resolved the way
 the slicing panel resolves them, through `resolveSliceJobAntiAliasing`
 (`src/features/slicing/sliceAntiAliasing.ts`), with the material's own
-anti-aliasing settings on top. `raw` disables AA. Every AA field `slice run` has
-a flag for is passed; the Z-blend alphas, the LUT and the 3DAA sampling pattern
-have none yet. Each result row records the **preset name** (`aa_preset`, and `anti_aliasing.preset`)
+anti-aliasing settings on top. `raw` disables AA. The CLI hands `slice run` the
+whole job (`--job`), so every AA field reaches the engine. Each result row records the **preset name** (`aa_preset`, and `anti_aliasing.preset`)
 so cases are identified by the preset a user would pick, not the resolved
 engine mode.
 
@@ -71,6 +70,12 @@ Athena II 16K 8-bit, 0.1 mm). The app's `raw` is `Coverage` with no blur:
 binary edges. `raw` goldens made with an older CLI no longer match and must be
 regenerated. On the same scene, `balanced` and `smooth` were identical layer
 by layer before and after.
+
+Handing over the whole job then changed `balanced` and `smooth`: the LUT, the
+Z-blend alphas and the 3DAA sampling pattern now reach the engine. On that
+scene's layer 40 the gray edge pixels went from a linear 1–254 to 120–230, the
+window of the opaque LUT the app uses. AA goldens made before `--job` must be
+regenerated; `raw` was unchanged.
 
 ## Layout
 

@@ -6,7 +6,7 @@ import { buildSolidSliceMeshForWasm } from './rasterLayerZipExport';
 import { attachJobMetadataPayloads, getJobMetadataPayloadDeclarations } from './jobMetadataPayloads';
 import { prepareLoadedModelsForOutput } from '@/features/mesh-modifiers/prepareModelGeometry';
 import { resolveOutputFileExtension, resolveSlicingFormatDefinition } from './formats/registry';
-import { getSavedSlicingPerformanceSettings, type PngCompressionStrategy } from '@/components/settings/performancePreferences';
+import { getSavedSlicingPerformanceSettings } from '@/components/settings/performancePreferences';
 import {
     isNativeSlicerAvailable,
     sliceSolidAndEncodeWithNativeSlicerToTempPath,
@@ -15,40 +15,8 @@ import {
     type NativeSlicerRuntimeMetrics,
 } from './tauri/nativeSlicerBridge';
 import { invoke } from '@tauri-apps/api/core';
-import { assembleSliceJob, resolveSliceRasterSettings } from './sliceJobAssembly';
+import { assembleSliceJob, buildNativeSliceJob, resolveSliceRasterSettings } from './sliceJobAssembly';
 import { resolveSliceJobAntiAliasing, type SliceJobAntiAliasingRequest } from './sliceAntiAliasing';
-
-function resolvePngCompressionStrategy(
-    mode: PngCompressionStrategy,
-    antiAliasingLevel: AntiAliasingLevel,
-    outputUsesPngLayers: boolean,
-): 'fastest' | 'balanced' | 'smallest' | 'optimal' {
-    if (!outputUsesPngLayers) {
-        return 'fastest';
-    }
-
-    if (mode !== 'auto') {
-        return mode;
-    }
-
-    if (antiAliasingLevel === 'Off') {
-        return 'fastest';
-    }
-
-    // Any level of AA (2x, 4x, 8x, 16x) benefits from balanced compression 
-    // to avoid ballooning file sizes from the gray anti-aliased pixels.
-    return 'balanced';
-}
-
-function resolveContainerCompressionLevel(strategy: 'fastest' | 'balanced' | 'smallest' | 'optimal'): number {
-    switch (strategy) {
-        case 'fastest': return 1;
-        case 'balanced': return 3;
-        case 'smallest': return 6;
-        case 'optimal': return 9;
-        default: return 2;
-    }
-}
 
 const DEBUG_PREFIX = '[SlicingDebug]';
 const BYTES_PER_TRIANGLE_XYZ = Float32Array.BYTES_PER_ELEMENT * 9;
@@ -585,53 +553,13 @@ export async function runSliceExportOrchestrator(options: SliceExportOrchestrato
         dither: options,
         antiAliasing: options.antiAliasing,
     });
-    const antiAliasing = assembled.antiAliasing;
-
-    const resolvedPngStrategy = resolvePngCompressionStrategy(
-        solidMesh.pngCompressionStrategy,
-        antiAliasing.antiAliasingLevel,
-        format.layerDataKind === 'png',
-    );
 
     const nativeJob = {
-        outputFormat: assembled.outputFormat,
-        formatVersion: assembled.formatVersion,
-        settingsMode: assembled.settingsMode,
-        sourceWidthPx: assembled.sourceWidthPx,
-        sourceHeightPx: assembled.sourceHeightPx,
-        widthPx: assembled.widthPx,
-        heightPx: assembled.heightPx,
-        xPackingMode: assembled.xPackingMode,
-        pngCompressionStrategy: resolvedPngStrategy,
-        antiAliasingLevel: antiAliasing.antiAliasingLevel,
-        antiAliasingMode: antiAliasing.antiAliasingMode,
-        blurBrushRadiusPx: antiAliasing.blurBrushRadiusPx,
-        blurBrushKernel: antiAliasing.blurBrushKernel,
-        blurBrushSigmaX: antiAliasing.blurBrushSigmaX,
-        blurBrushSigmaY: antiAliasing.blurBrushSigmaY,
-        zBlurRadiusLayers: antiAliasing.zBlurRadiusLayers,
-        zBlurKernel: antiAliasing.zBlurKernel,
-        zBlurSigma: antiAliasing.zBlurSigma,
-        zBlendLookBack: antiAliasing.zBlendLookBack,
-        zBlendMinimumAlphaPercent: antiAliasing.zBlendMinimumAlphaPercent,
-        zBlendMaxAlphaPercent: antiAliasing.zBlendMaxAlphaPercent,
-        zBlendCustomLut: antiAliasing.zBlendCustomLut,
-        zaaKernel: antiAliasing.zaaKernel,
-        zaaPattern: antiAliasing.zaaPattern,
-        zaaDuplicateZ: antiAliasing.zaaDuplicateZ,
-        aaOnSupports: antiAliasing.aaOnSupports ?? (perfSettings.aaOnSupportsExperimental === true),
-        minimumAaAlphaPercent: antiAliasing.minimumAaAlphaPercent,
-        mirrorX: assembled.mirrorX,
-        mirrorY: assembled.mirrorY,
-        ditherEnabled: assembled.ditherEnabled,
-        ditherBitDepth: assembled.ditherBitDepth,
-        ditherDeviceGamma: assembled.ditherDeviceGamma,
-        modelTriangleCount: solidMesh.modelTriangleCount,
-        containerCompressionLevel: resolveContainerCompressionLevel(resolvedPngStrategy),
-        buildWidthMm: assembled.buildWidthMm,
-        buildDepthMm: assembled.buildDepthMm,
-        layerHeightMm: assembled.layerHeightMm,
-        totalLayers: assembled.totalLayers,
+        ...buildNativeSliceJob(assembled, {
+            pngCompressionMode: solidMesh.pngCompressionStrategy,
+            aaOnSupportsFallback: perfSettings.aaOnSupportsExperimental === true,
+            modelTriangleCount: solidMesh.modelTriangleCount,
+        }),
         exportThumbnailPngBase64: options.exportThumbnailPng && options.exportThumbnailPng.length > 0
             ? encodeBytesToBase64(options.exportThumbnailPng)
             : null,
