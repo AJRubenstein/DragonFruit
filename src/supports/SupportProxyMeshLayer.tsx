@@ -2,7 +2,9 @@ import React from 'react';
 import * as THREE from 'three';
 import { useSyncExternalStore } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
+import { useThree } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
+import { isCurvedBatchedShaft } from './Curves/batchedBezierTubeGeometry';
 import { subscribe, getSnapshot } from './state';
 // Loading the generated barrel runs every type's proxy geometry registration.
 import './generatedSupportRegistrations';
@@ -68,7 +70,7 @@ const ACTIVE_SUPPORT_COLOR = '#c8752a';
 const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
 
-type ProxyModelGeometry = {
+export type ProxyModelGeometry = {
   modelId?: string;
   shafts: InstancedShaft[];
   roots: InstancedRoot[];
@@ -84,12 +86,87 @@ type VisibleModelEntry = {
 };
 
 type FlatProxyGeometry = {
-  shafts: InstancedShaft[];
+  /** Straight shafts: one instanced cylinder each. */
+  straightShafts: InstancedShaft[];
+  /** Curved shafts: merged into one tube mesh, so they cannot hide per instance. */
+  curvedShafts: InstancedShaft[];
   roots: InstancedRoot[];
   joints: InstancedJoint[];
   cones: InstancedContactCone[];
 };
 
+/**
+ * A dedicated stencil bit for the out-of-bounds stripe pass.
+ *
+ * Every kind draws its own stripe overlay, so wherever two of them overlap the
+ * translucent stripe blended twice and read brighter than the rest. The first
+ * overlay fragment to reach a pixel marks it and the rest are rejected, so each
+ * pixel is blended once. `0x80` belongs to the mesh smoothing brush cursor, which
+ * solves the same problem the same way (see `MeshSmoothingBrushCursor`).
+ */
+const OUT_OF_BOUNDS_STENCIL_BIT = 0x40;
+
+export type ProxySupportTintInput = {
+  selectedModelIds: ReadonlySet<string>;
+  hoverModelId: string | null;
+  marqueeCandidateModelIds: readonly string[];
+  /** The colour an untouched support takes. */
+  baseColor: THREE.Color;
+  /** The colour a selected support takes. */
+  activeColor: THREE.Color;
+  /** How far a hovered support moves from the base towards the active colour. */
+  hoverStrength: number;
+};
+
+/**
+ * The colour one support's instances take, given the selection and the hover.
+ *
+ * The tint is a *colour*, not a translucent pass over the batch: blending it on
+ * top meant a hovered support's orange depended on what was underneath it, so a
+ * support that was also selected came out a different orange than its
+ * neighbours. A tint computed here replaces the base colour instead, so every
+ * support of a hovered model reads the same, whatever its own state.
+ *
+ * A selected model keeps the active colour: the tint has nothing to add to a
+ * support that already carries it.
+ */
+export function createProxySupportTint(input: ProxySupportTintInput): (modelId?: string) => THREE.Color {
+  const hovered = new Set<string>();
+  if (input.hoverModelId) hovered.add(input.hoverModelId);
+  for (const modelId of input.marqueeCandidateModelIds) hovered.add(modelId);
+
+  const strengthByModelId = new Map<string, number>();
+  for (const modelId of hovered) {
+    strengthByModelId.set(
+      modelId,
+      modelId === input.hoverModelId
+        ? input.hoverStrength
+        : input.hoverStrength * MARQUEE_CANDIDATE_TINT_FACTOR,
+    );
+  }
+
+  const tintedByStrength = new Map<number, THREE.Color>();
+  const tintAt = (strength: number) => {
+    let tinted = tintedByStrength.get(strength);
+    if (!tinted) {
+      tinted = input.baseColor.clone().lerp(input.activeColor, strength);
+      tintedByStrength.set(strength, tinted);
+    }
+    return tinted;
+  };
+
+  return (modelId?: string) => {
+    if (!modelId) return input.baseColor;
+    if (input.selectedModelIds.has(modelId)) return input.activeColor;
+    const strength = strengthByModelId.get(modelId);
+    return strength === undefined ? input.baseColor : tintAt(strength);
+  };
+}
+
+/**
+ * The one place the proxy primitives are built from the support state, shared by
+ * every mounted layer: one identity per input is enough to reuse the walk.
+ */
 type SharedProxyCacheEntry = {
   /** The one input the walk reads, so one identity covers every collection. */
   supportStateRef: SupportState;
@@ -327,6 +404,7 @@ export function SupportProxyMeshLayer({
   // subscribe when pointer interactions are enabled (prepare mode). In
   // other modes, the hit data is unused but still cost us re-renders.
   const { hit } = usePicking();
+  const { camera, size } = useThree();
   const hitCategoryRef = React.useRef(hit.category);
   hitCategoryRef.current = hit.category;
   const supportState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -361,12 +439,25 @@ export function SupportProxyMeshLayer({
     if (!showOutOfBoundsOverlay || !outOfBoundsMin || !outOfBoundsMax) return null;
 
     return new THREE.ShaderMaterial({
+      // Translucent on purpose: the stripe is a warning wash over the support, and
+      // stripeAlpha is what makes it readable on top of it.
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
+      // Blend each pixel once, however many kinds' overlays land on it. The
+      // fragment shader discards inside the bounds, and a discarded fragment
+      // performs no stencil op, so only the striped pixels are marked.
+      stencilWrite: true,
+      stencilRef: OUT_OF_BOUNDS_STENCIL_BIT,
+      stencilFunc: THREE.NotEqualStencilFunc,
+      stencilFail: THREE.KeepStencilOp,
+      stencilZFail: THREE.KeepStencilOp,
+      stencilZPass: THREE.ReplaceStencilOp,
+      stencilFuncMask: OUT_OF_BOUNDS_STENCIL_BIT,
+      stencilWriteMask: OUT_OF_BOUNDS_STENCIL_BIT,
       uniforms: {
         boundsMin: { value: outOfBoundsMin.clone() },
         boundsMax: { value: outOfBoundsMax.clone() },
@@ -374,10 +465,18 @@ export function SupportProxyMeshLayer({
         stripeAlpha: { value: 0.42 },
         stripeColor: { value: new THREE.Color(outOfBoundsStripeColor ?? '#b6ff2e') },
       },
+      // The batch kinds draw as instanced meshes, but the curved (branch) shafts
+      // draw as merged meshes, and `instanceMatrix` only exists under
+      // USE_INSTANCING. Without the guard the branch overlay's shader does not
+      // compile, which is why branch shafts read differently from the rest.
       vertexShader: `
         varying vec3 vWorldPos;
         void main() {
-          vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          #ifdef USE_INSTANCING
+            vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          #else
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          #endif
           vWorldPos = worldPos.xyz;
           gl_Position = projectionMatrix * viewMatrix * worldPos;
         }
@@ -637,21 +736,45 @@ export function SupportProxyMeshLayer({
     return Array.from(baseProxyByModel.entries());
   }, [baseProxyByModel, modelFilterId]);
 
-  const visibleModelEntries = React.useMemo<VisibleModelEntry[]>(() => {
-    const visible: VisibleModelEntry[] = [];
+  const allModelEntries = React.useMemo<VisibleModelEntry[]>(() => {
+    const entries: VisibleModelEntry[] = [];
     for (const [modelKey, geometry] of modelEntries) {
       const modelId = fromModelKey(modelKey);
-      if (!resolveModelVisible(modelId)) continue;
-
-      visible.push({
+      entries.push({
         modelKey,
         modelId,
         geometry,
         zOffset: modelId ? (modelDropOffsetsById?.[modelId] ?? 0) : 0,
       });
     }
-    return visible;
-  }, [modelEntries, resolveModelVisible, modelDropOffsetsById]);
+    return entries;
+  }, [modelEntries, modelDropOffsetsById]);
+
+  const visibleModelEntries = React.useMemo<VisibleModelEntry[]>(
+    () => allModelEntries.filter((entry) => resolveModelVisible(entry.modelId)),
+    [allModelEntries, resolveModelVisible],
+  );
+
+  // A filtered layer (the ghost and preview ones) draws one model and nothing
+  // else, so it keeps filtering its geometry. The world layer keeps every model
+  // in its batches and hides the excluded ones per instance instead: making a
+  // model active then costs the changed instances, not a full re-layout.
+  const hidesExcludedModels = !modelFilterId;
+  const hiddenModelIds = React.useMemo(() => {
+    if (!hidesExcludedModels) return null;
+    const hidden = new Set<string>();
+    for (const entry of allModelEntries) {
+      if (entry.modelId && !resolveModelVisible(entry.modelId)) hidden.add(entry.modelId);
+    }
+    return hidden;
+  }, [allModelEntries, hidesExcludedModels, resolveModelVisible]);
+
+  const isHiddenPrimitive = React.useMemo(() => {
+    if (!hiddenModelIds) return undefined;
+    return (primitive: { modelId?: string }) => (
+      primitive.modelId ? hiddenModelIds.has(primitive.modelId) : false
+    );
+  }, [hiddenModelIds]);
 
   const highlightedModelIdSet = React.useMemo(() => {
     const ids = new Set<string>();
@@ -661,15 +784,11 @@ export function SupportProxyMeshLayer({
 
   const effectiveHoverModelId = hoverModelId;
 
-  const hoveredOverlayColor = ACTIVE_SUPPORT_COLOR;
-
   const proxyOpacity = Math.max(0.05, Math.min(1, ghostOpacity));
   const proxyTransparent = proxyOpacity < 0.999;
-  const hoverOverlayOpacity = React.useMemo(() => {
-    const hoverAlpha = Math.max(0.05, Math.min(1, hoverTintStrength));
-    return Math.max(0.05, Math.min(1, proxyOpacity * hoverAlpha));
-  }, [hoverTintStrength, proxyOpacity]);
-  const hoverOverlayTransparent = hoverOverlayOpacity < 0.999;
+  // How far a hovered support moves from its base colour towards the active one.
+  // The ghost opacity is not part of it: the material carries that.
+  const hoverOverlayStrength = Math.max(0.05, Math.min(1, hoverTintStrength));
 
   const pointerHoverEnabled = enablePointerSelection && mode === 'prepare';
   const pointerSelectionEnabled = enablePointerSelection && mode === 'prepare' && !!onModelPointerSelect;
@@ -735,120 +854,65 @@ export function SupportProxyMeshLayer({
     }
   }, [pointerHoverEnabled]);
 
-  const handleProxyShaftClick = React.useCallback((shaft: InstancedShaft) => {
+  // Hover and clicks resolve a model, and the batch raycast answers which
+  // instance was hit: the handler only reads its modelId, exactly as it did when
+  // three walked the instances itself.
+  const handleProxyInstanceMove = React.useCallback((primitive: { modelId?: string }) => {
+    setSupportHoverModel(primitive.modelId ?? null);
+  }, [setSupportHoverModel]);
+
+  const handleProxyInstanceClick = React.useCallback((primitive: { modelId?: string }) => {
     if (!pointerSelectionEnabled) return;
-    if (!shaft.modelId) return;
+    if (!primitive.modelId) return;
     if (hitCategoryRef.current === 'gizmo') return;
-    onModelPointerSelect?.(shaft.modelId);
+    onModelPointerSelect?.(primitive.modelId);
   }, [onModelPointerSelect, pointerSelectionEnabled]);
-
-  const handleProxyShaftPointerMove = React.useCallback((shaft: InstancedShaft) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(shaft.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
-
-  const handleProxyRootClick = React.useCallback((root: InstancedRoot) => {
-    if (!pointerSelectionEnabled) return;
-    if (!root.modelId) return;
-    if (hitCategoryRef.current === 'gizmo') return;
-    onModelPointerSelect?.(root.modelId);
-  }, [onModelPointerSelect, pointerSelectionEnabled]);
-
-  const handleProxyRootPointerMove = React.useCallback((root: InstancedRoot) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(root.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
-
-  const handleProxyJointClick = React.useCallback((joint: InstancedJoint) => {
-    if (!pointerSelectionEnabled) return;
-    if (!joint.modelId) return;
-    if (hitCategoryRef.current === 'gizmo') return;
-    onModelPointerSelect?.(joint.modelId);
-  }, [onModelPointerSelect, pointerSelectionEnabled]);
-
-  const handleProxyJointPointerMove = React.useCallback((joint: InstancedJoint) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(joint.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
-
-  const handleProxyConeClick = React.useCallback((cone: InstancedContactCone) => {
-    if (!pointerSelectionEnabled) return;
-    if (!cone.modelId) return;
-    if (hitCategoryRef.current === 'gizmo') return;
-    onModelPointerSelect?.(cone.modelId);
-  }, [onModelPointerSelect, pointerSelectionEnabled]);
-
-  const handleProxyConePointerMove = React.useCallback((cone: InstancedContactCone) => {
-    if (!pointerHoverEnabled) return;
-    setSupportHoverModel(cone.modelId ?? null);
-  }, [pointerHoverEnabled, setSupportHoverModel]);
 
   const handleProxyPointerOut = React.useCallback(() => {
-    if (!pointerHoverEnabled) return;
     scheduleSupportHoverClear();
-  }, [pointerHoverEnabled, scheduleSupportHoverClear]);
+  }, [scheduleSupportHoverClear]);
 
-  // The hover tint also covers the models a marquee drag is about to take, so
-  // their supports light up with the model instead of after the mouse is up.
-  const hoveredOverlayEntries = React.useMemo(() => {
-    const modelIds = new Set<string>();
-    if (effectiveHoverModelId) modelIds.add(effectiveHoverModelId);
-    for (const modelId of marqueeCandidateModelIds) modelIds.add(modelId);
+  // The selection and the hover tint both ride on per-instance colours: one batch
+  // per primitive kind keeps drawing once, and a tint only rewrites colours. A
+  // tint computed as a colour replaces the base, so a support's orange cannot
+  // depend on what is underneath it.
+  const supportColors = React.useMemo(() => ({
+    base: new THREE.Color(DEFAULT_SUPPORT_COLOR),
+    active: new THREE.Color(ACTIVE_SUPPORT_COLOR),
+  }), []);
 
-    const entries: Array<{
-      modelId: string;
-      modelKey: string;
-      zOffset: number;
-      geometry: NonNullable<ReturnType<typeof baseProxyByModel.get>>;
-      opacity: number;
-    }> = [];
+  const supportColorFor = React.useMemo(
+    () => createProxySupportTint({
+      selectedModelIds: highlightedModelIdSet,
+      hoverModelId: effectiveHoverModelId,
+      marqueeCandidateModelIds,
+      baseColor: supportColors.base,
+      activeColor: supportColors.active,
+      hoverStrength: hoverOverlayStrength,
+    }),
+    [
+      effectiveHoverModelId,
+      marqueeCandidateModelIds,
+      highlightedModelIdSet,
+      supportColors,
+      hoverOverlayStrength,
+    ],
+  );
 
-    for (const modelId of modelIds) {
-      if (highlightedModelIdSet.has(modelId)) continue;
-      if (!resolveModelVisible(modelId)) continue;
+  const selectionColorFor = React.useCallback(
+    (primitive: { modelId?: string }) => supportColorFor(primitive.modelId),
+    [supportColorFor],
+  );
 
-      const modelKey = toModelKey(modelId);
-      const geometry = baseProxyByModel.get(modelKey);
-      if (!geometry) continue;
+  // Every visible model's primitives in one set of batches, so the whole scene
+  // draws with a constant number of draw calls regardless of model count. This
+  // restores the "singular mesh" performance characteristic that was lost when
+  // per-model groups were introduced in the ZIP Import / Batch Export refactor.
+  const baseGeometry = React.useMemo(() => {
+    const base: FlatProxyGeometry = { straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] };
 
-      entries.push({
-        modelId,
-        modelKey,
-        zOffset: modelDropOffsetsById?.[modelId] ?? 0,
-        geometry,
-        // A candidate tints lighter than a hover, so a marquee lighting up
-        // model, supports and raft at once still reads apart from a selection.
-        opacity: modelId === effectiveHoverModelId
-          ? hoverOverlayOpacity
-          : hoverOverlayOpacity * MARQUEE_CANDIDATE_TINT_FACTOR,
-      });
-    }
-
-    return entries;
-  }, [
-    effectiveHoverModelId,
-    marqueeCandidateModelIds,
-    highlightedModelIdSet,
-    resolveModelVisible,
-    baseProxyByModel,
-    modelDropOffsetsById,
-    hoverOverlayOpacity,
-  ]);
-
-  // Flatten all visible model geometries into two batched groups (base + highlighted) so the
-  // entire scene is rendered with a constant number of draw calls regardless of model count.
-  // This restores the "singular mesh" performance characteristic that was lost when per-model
-  // groups were introduced in the ZIP Import / Batch Export refactor.
-  const flattenedGeometry = React.useMemo(() => {
-    const createEmpty = (): FlatProxyGeometry => ({ shafts: [], roots: [], joints: [], cones: [] });
-    const base = createEmpty();
-    const highlighted = createEmpty();
-
-    const appendShaft = (target: FlatProxyGeometry, shaft: InstancedShaft, zOffset: number) => {
-      if (Math.abs(zOffset) < 1e-6) {
-        target.shafts.push(shaft);
-        return;
-      }
+    const offsetShaft = (shaft: InstancedShaft, zOffset: number): InstancedShaft => {
+      if (Math.abs(zOffset) < 1e-6) return shaft;
       const pushed: InstancedShaft = {
         ...shaft,
         start: { x: shaft.start.x, y: shaft.start.y, z: shaft.start.z + zOffset },
@@ -856,263 +920,194 @@ export function SupportProxyMeshLayer({
       };
       if (shaft.controlPoint1) pushed.controlPoint1 = { x: shaft.controlPoint1.x, y: shaft.controlPoint1.y, z: shaft.controlPoint1.z + zOffset };
       if (shaft.controlPoint2) pushed.controlPoint2 = { x: shaft.controlPoint2.x, y: shaft.controlPoint2.y, z: shaft.controlPoint2.z + zOffset };
-      target.shafts.push(pushed);
+      return pushed;
     };
 
-    const appendRoot = (target: FlatProxyGeometry, root: InstancedRoot, zOffset: number) => {
+    const appendRoot = (root: InstancedRoot, zOffset: number) => {
       if (Math.abs(zOffset) < 1e-6) {
-        target.roots.push(root);
+        base.roots.push(root);
         return;
       }
-      target.roots.push({
+      base.roots.push({
         ...root,
         basePos: { x: root.basePos.x, y: root.basePos.y, z: root.basePos.z + zOffset },
       });
     };
 
-    const appendJoint = (target: FlatProxyGeometry, joint: InstancedJoint, zOffset: number) => {
+    const appendJoint = (joint: InstancedJoint, zOffset: number) => {
       if (Math.abs(zOffset) < 1e-6) {
-        target.joints.push(joint);
+        base.joints.push(joint);
         return;
       }
-      target.joints.push({
+      base.joints.push({
         ...joint,
         pos: { x: joint.pos.x, y: joint.pos.y, z: joint.pos.z + zOffset },
       });
     };
 
-    const appendCone = (target: FlatProxyGeometry, cone: InstancedContactCone, zOffset: number) => {
+    const appendCone = (cone: InstancedContactCone, zOffset: number) => {
       if (Math.abs(zOffset) < 1e-6) {
-        target.cones.push(cone);
+        base.cones.push(cone);
         return;
       }
-      target.cones.push({
+      base.cones.push({
         ...cone,
         pos: { x: cone.pos.x, y: cone.pos.y, z: cone.pos.z + zOffset },
       });
     };
 
-    for (const entry of visibleModelEntries) {
-      const target = entry.modelId && highlightedModelIdSet.has(entry.modelId) ? highlighted : base;
-      const zOffset = entry.zOffset;
+    // A layer that hides its excluded models keeps them in these arrays, so an
+    // activation change leaves them alone. Curved shafts are the exception: a
+    // merged tube cannot hide one shaft, so they come from the visible set, and
+    // merging them again is cheap because each shaft's sweep is cached.
+    const geometryEntries = hidesExcludedModels ? allModelEntries : visibleModelEntries;
+    for (const entry of geometryEntries) {
+      const { zOffset } = entry;
 
-      for (const shaft of entry.geometry.shafts) appendShaft(target, shaft, zOffset);
-      for (const root of entry.geometry.roots) appendRoot(target, root, zOffset);
+      for (const shaft of entry.geometry.shafts) {
+        const curved = isCurvedBatchedShaft(shaft);
+        if (hidesExcludedModels && curved) continue;
+        (curved ? base.curvedShafts : base.straightShafts).push(offsetShaft(shaft, zOffset));
+      }
+      for (const root of entry.geometry.roots) appendRoot(root, zOffset);
       if (includeDetailedPrimitives) {
-        for (const joint of entry.geometry.joints) appendJoint(target, joint, zOffset);
-        for (const cone of entry.geometry.cones) appendCone(target, cone, zOffset);
+        for (const joint of entry.geometry.joints) appendJoint(joint, zOffset);
+        for (const cone of entry.geometry.cones) appendCone(cone, zOffset);
       }
     }
 
-    return { base, highlighted };
-  }, [visibleModelEntries, highlightedModelIdSet, includeDetailedPrimitives]);
+    if (hidesExcludedModels) {
+      for (const entry of visibleModelEntries) {
+        for (const shaft of entry.geometry.shafts) {
+          if (isCurvedBatchedShaft(shaft)) base.curvedShafts.push(offsetShaft(shaft, entry.zOffset));
+        }
+      }
+    }
+
+    return base;
+  }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives]);
+
+  // A support a fraction of a pixel wide must still be grabbable, so the grab
+  // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.
+  // The shaft batch turns this into a hover index of its own, over the shafts it
+  // actually draws - the index and the drawn list must agree, or a hit resolves
+  // to a neighbouring support.
+  const grabRadiusAt = React.useMemo(() => {
+    const grabRadiusPx = 7;
+    // `useThree().camera` is the R3F union; each member below is the concrete
+    // camera the matching check selects.
+    const perspectiveCamera = camera as THREE.PerspectiveCamera;
+    const orthographicCamera = camera as THREE.OrthographicCamera;
+    const viewportHeight = Math.max(1, size.height);
+    return (distance: number) => {
+      if (perspectiveCamera.isPerspectiveCamera) {
+        const worldHeight = 2 * Math.tan((perspectiveCamera.fov * Math.PI) / 360) * distance;
+        return (worldHeight / viewportHeight) * grabRadiusPx;
+      }
+      const worldHeight = (orthographicCamera.top - orthographicCamera.bottom) / Math.max(0.0001, orthographicCamera.zoom);
+      return (worldHeight / viewportHeight) * grabRadiusPx;
+    };
+  }, [camera, size.height]);
 
   if (visibleModelEntries.length === 0) {
     return null;
   }
 
-  const hasBase = flattenedGeometry.base.shafts.length > 0
-    || flattenedGeometry.base.roots.length > 0
-    || (includeDetailedPrimitives && (flattenedGeometry.base.joints.length > 0 || flattenedGeometry.base.cones.length > 0));
-
-  const hasHighlighted = flattenedGeometry.highlighted.shafts.length > 0
-    || flattenedGeometry.highlighted.roots.length > 0
-    || (includeDetailedPrimitives && (flattenedGeometry.highlighted.joints.length > 0 || flattenedGeometry.highlighted.cones.length > 0));
+  const hasBase = baseGeometry.straightShafts.length > 0
+    || baseGeometry.curvedShafts.length > 0
+    || baseGeometry.roots.length > 0
+    || (includeDetailedPrimitives && (baseGeometry.joints.length > 0 || baseGeometry.cones.length > 0));
 
   return (
     <group>
       {hasBase && (
         <group key="proxy-base-batch">
-          {flattenedGeometry.base.shafts.length > 0 && (
+          {baseGeometry.straightShafts.length > 0 && (
             <InstancedShaftGroup
-              shafts={flattenedGeometry.base.shafts}
+              shafts={baseGeometry.straightShafts}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               radialSegments={10}
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
-              onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
+              grabRadiusAt={grabRadiusAt}
+              onShaftClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
-              onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
+              onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {flattenedGeometry.base.roots.length > 0 && (
-            <InstancedRootsGroup
-              roots={flattenedGeometry.base.roots}
+          {baseGeometry.curvedShafts.length > 0 && (
+            <InstancedShaftGroup
+              shafts={baseGeometry.curvedShafts}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
+              transparent={proxyTransparent}
+              opacity={proxyOpacity}
+              radialSegments={10}
+              clippingPlanes={clippingPlanes}
+              outOfBoundsMaterial={outOfBoundsMaterial}
+              onShaftClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
+              onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
+            />
+          )}
+          {baseGeometry.roots.length > 0 && (
+            <InstancedRootsGroup
+              roots={baseGeometry.roots}
+              color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
               outOfBoundsMaterial={outOfBoundsMaterial}
-              onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
+              onRootClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
-              onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
+              onRootPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
               onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {includeDetailedPrimitives && flattenedGeometry.base.joints.length > 0 && (
+          {includeDetailedPrimitives && baseGeometry.joints.length > 0 && (
             <InstancedJointGroup
-              joints={flattenedGeometry.base.joints}
+              joints={baseGeometry.joints}
+              outOfBoundsMaterial={outOfBoundsMaterial}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
-              onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
+              onJointClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
-              onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
+              onJointPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
               onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {includeDetailedPrimitives && flattenedGeometry.base.cones.length > 0 && (
+          {includeDetailedPrimitives && baseGeometry.cones.length > 0 && (
             <InstancedContactConeGroup
-              cones={flattenedGeometry.base.cones}
+              cones={baseGeometry.cones}
+              outOfBoundsMaterial={outOfBoundsMaterial}
+              grabRadiusAt={grabRadiusAt}
               color={DEFAULT_SUPPORT_COLOR}
+              instanceColor={selectionColorFor}
+              isHidden={isHiddenPrimitive}
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
-              onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
+              onConeClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
-              onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
+              onConePointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
               onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
         </group>
       )}
 
-      {hasHighlighted && (
-        <group key="proxy-highlight-batch">
-          {flattenedGeometry.highlighted.shafts.length > 0 && (
-            <InstancedShaftGroup
-              shafts={flattenedGeometry.highlighted.shafts}
-              color={ACTIVE_SUPPORT_COLOR}
-              transparent={proxyTransparent}
-              opacity={proxyOpacity}
-              radialSegments={10}
-              clippingPlanes={clippingPlanes}
-              outOfBoundsMaterial={outOfBoundsMaterial}
-              onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
-              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
-              onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
-              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-          {flattenedGeometry.highlighted.roots.length > 0 && (
-            <InstancedRootsGroup
-              roots={flattenedGeometry.highlighted.roots}
-              color={ACTIVE_SUPPORT_COLOR}
-              transparent={proxyTransparent}
-              opacity={proxyOpacity}
-              clippingPlanes={clippingPlanes}
-              outOfBoundsMaterial={outOfBoundsMaterial}
-              onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
-              onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
-              onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
-              onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-          {includeDetailedPrimitives && flattenedGeometry.highlighted.joints.length > 0 && (
-            <InstancedJointGroup
-              joints={flattenedGeometry.highlighted.joints}
-              color={ACTIVE_SUPPORT_COLOR}
-              transparent={proxyTransparent}
-              opacity={proxyOpacity}
-              clippingPlanes={clippingPlanes}
-              onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
-              onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
-              onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
-              onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-          {includeDetailedPrimitives && flattenedGeometry.highlighted.cones.length > 0 && (
-            <InstancedContactConeGroup
-              cones={flattenedGeometry.highlighted.cones}
-              color={ACTIVE_SUPPORT_COLOR}
-              transparent={proxyTransparent}
-              opacity={proxyOpacity}
-              clippingPlanes={clippingPlanes}
-              onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
-              onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
-              onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
-              onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-        </group>
-      )}
-
-      {hoveredOverlayEntries.map((hoveredOverlayEntry) => (
-        <group
-          key={`proxy-hover:${hoveredOverlayEntry.modelKey}`}
-          userData={{ modelId: hoveredOverlayEntry.modelId ?? null }}
-          position={hoveredOverlayEntry.zOffset !== 0 ? [0, 0, hoveredOverlayEntry.zOffset] as [number, number, number] : undefined}
-        >
-          {hoveredOverlayEntry.geometry.shafts.length > 0 && (
-            <InstancedShaftGroup
-              shafts={hoveredOverlayEntry.geometry.shafts}
-              color={hoveredOverlayColor}
-              emissive={hoveredOverlayColor}
-              emissiveIntensity={0.1}
-              transparent={hoverOverlayTransparent}
-              opacity={hoveredOverlayEntry.opacity}
-              radialSegments={10}
-              clippingPlanes={clippingPlanes}
-              onShaftClick={pointerSelectionEnabled ? handleProxyShaftClick : undefined}
-              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
-              onShaftPointerMove={pointerHoverEnabled ? handleProxyShaftPointerMove : undefined}
-              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-
-          {hoveredOverlayEntry.geometry.roots.length > 0 && (
-            <InstancedRootsGroup
-              roots={hoveredOverlayEntry.geometry.roots}
-              color={hoveredOverlayColor}
-              emissive={hoveredOverlayColor}
-              emissiveIntensity={0.1}
-              transparent={hoverOverlayTransparent}
-              opacity={hoveredOverlayEntry.opacity}
-              clippingPlanes={clippingPlanes}
-              onRootClick={pointerSelectionEnabled ? handleProxyRootClick : undefined}
-              onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
-              onRootPointerMove={pointerHoverEnabled ? handleProxyRootPointerMove : undefined}
-              onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-
-          {includeDetailedPrimitives && hoveredOverlayEntry.geometry.joints.length > 0 && (
-            <InstancedJointGroup
-              joints={hoveredOverlayEntry.geometry.joints}
-              color={hoveredOverlayColor}
-              emissive={hoveredOverlayColor}
-              emissiveIntensity={0.1}
-              transparent={hoverOverlayTransparent}
-              opacity={hoveredOverlayEntry.opacity}
-              clippingPlanes={clippingPlanes}
-              onJointClick={pointerSelectionEnabled ? (joint) => handleProxyJointClick(joint) : undefined}
-              onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
-              onJointPointerMove={pointerHoverEnabled ? handleProxyJointPointerMove : undefined}
-              onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-
-          {includeDetailedPrimitives && hoveredOverlayEntry.geometry.cones.length > 0 && (
-            <InstancedContactConeGroup
-              cones={hoveredOverlayEntry.geometry.cones}
-              color={hoveredOverlayColor}
-              emissive={hoveredOverlayColor}
-              emissiveIntensity={0.1}
-              transparent={hoverOverlayTransparent}
-              opacity={hoveredOverlayEntry.opacity}
-              clippingPlanes={clippingPlanes}
-              onConeClick={pointerSelectionEnabled ? (cone) => handleProxyConeClick(cone) : undefined}
-              onConePointerDown={pointerDragStartEnabled ? (cone, event) => reportModelDragStart(cone.modelId, event) : undefined}
-              onConePointerMove={pointerHoverEnabled ? handleProxyConePointerMove : undefined}
-              onConePointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-        </group>
-      ))}
     </group>
   );
 }

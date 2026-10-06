@@ -6,6 +6,226 @@ this page is the fleshed-out explanation. Add entries here when a rule is too
 long for `AGENTS.md`, is expected to be lifted once an upstream change lands,
 or is a known refactor we intend to do.
 
+## Known cost: support batches are one mesh per geometry-parameter set
+
+The support proxy batches group their instances into a mesh per **distinct
+geometry parameter set**, quantized to 0.001 mm. For a scene whose support
+dimensions vary continuously that degenerates into roughly one mesh per support,
+and the frame pays for it in `projectObject` / `setProgram` /
+`renderBufferDirect`, not in triangles.
+
+Measured on `randombits-skeletuns (1)_DF_Scene.voxl` (17 models, 6.0M
+triangles, 6482 shafts, 3260 joints, 1885 contact cones, 1109 roots), with the
+app instrumented at the WebGL level:
+
+| | value |
+| --- | --- |
+| draw calls per frame | **3282**, of which 3214 instanced |
+| instanced meshes from the buckets | ~2600 |
+| contact cones | 1885 instances -> **842 buckets** |
+| roots / joints / shafts | 10 / 30 buckets / one mesh |
+| frame rate | 53 fps, median frame 18.2 ms |
+
+The cone key is
+`profileType : contactRadius : bodyRadius : length : diskThickness : penetration`,
+each at 0.001 mm — and **`penetration` varies continuously with the model
+surface**, so almost every cone is its own bucket. Each bucket renders up to
+three meshes (disk, body, tip) plus an overlay.
+
+Coarsening the quantization is not enough: 0.05 mm still leaves 1035 meshes and
+0.1 mm leaves 791, because the parameters genuinely differ. The direction is to
+put the varying dimensions in the **instance matrix** (a unit cone scaled per
+instance) so the cone batch is one mesh again. The caveat to solve with it is
+the cone profile's slanted side normals: a non-uniform instance scale skews
+them, since three has no per-instance normal matrix. A disk profile is a flat
+disc whose normals are axial and unaffected; a cone profile is a 1-3 mm tip, so
+the error may be acceptable, or the batch needs an inverse-scale normal in a
+custom attribute.
+
+For contrast, the same measurement on a plate of 18 poussin models (3.1M
+triangles, one support profile each) is a handful of buckets and holds 165 fps —
+which is what the scene above should reach.
+
+**Fixed** by putting the dimensions in the instance matrix: the cone batch is
+keyed on the tip's shape ratio alone, the primitives are unit-sized, and the
+matrix carries the scale. three corrects instance normals for a non-uniform
+scale (`defaultnormal_vertex`, "in lieu of a per-instance normal-matrix"), so the
+frustum body shades correctly at any ratio. Measured on the same scene: **3282 ->
+291 draw calls per frame, 53 -> 163 fps**, median frame 18.2 -> 6.1 ms.
+
+## Known cost: a model selection rebuilt the raft
+
+Selecting a model took 19 seconds on that scene, and the whole of it was the
+crenellated raft's footprint clustering: 1109 roots, every pair asked whether the
+segment between them clears the model, answered against every edge of the models'
+plate footprint.
+
+Two fixes, both measured on the same scene:
+
+| | selection cost |
+| --- | --- |
+| as found | 18,861 ms (`segmentDistanceMm` 73%) |
+| edges in a grid (`buildClearanceEdgeGrid`) | 937 ms |
+| containment hoisted out of the pair loop | 685 ms |
+| clearance no longer follows the live transform | **295 ms, all React** |
+
+The last one is the interesting one. `plateClearanceTargets` substituted the
+active model's *live* transform, which made it depend on `activeModelId`; the live
+transform is also a frame behind a selection, so choosing a model rebuilt the
+array twice — once with the previous model's transform — and with it the clearance,
+every raft mesh and the clustering behind them. The clearance is where the models
+stand, not where a gizmo drags them, so it now takes the stored transforms and the
+outline display keeps its own live-transform targets.
+
+Still open: `bakedAoVersion` rides on the `models` entries, so each of the AO
+bakes that run after a load replaces the `models` array and invalidates the
+clearance and the raft with it — 17 rebuilds in the fifteen seconds after a load.
+The version is render-only state read by `StlMesh`; a store of its own would keep
+it out of the scene array.
+
+**And the last one, found by measuring the production build rather than the dev
+server.** The clearance is keyed on the array of visible models, and a re-render
+of a parent hands `RaftProxyMeshLayer` a *fresh array of the same models*, so
+every selection rebuilt the plate footprint — Clipper offsets over all 17 models,
+128-232 ms of blocking long tasks on a click. The dev server's element churn hid
+it behind `jsxDEV`. `clearanceFor` caches the clearance at module level, keyed on
+the *elements* (each model's own geometry and transform objects, which survive a
+new array) rather than on the array, which also covers a remount.
+
+Measured after: no long task on a selection change, worst frame 24-42 ms, and a
+steady 165 fps with a 6.2 ms worst frame. Two lessons that generalise: an identity
+key on a *container* is not the same as a key on its *contents*, and a dev-server
+profile cannot tell you what a production build will do.
+
+## Known cost: the out-of-bounds test walked every vertex, every drag frame
+
+A model's world bounds come from its transform, and the precise path -
+`computePreciseModelWorldBounds` in `src/utils/modelBounds.ts`, taken whenever a
+model sits off the axes - walks every vertex to find the box. Its cache was keyed
+on the *whole* transform, position included, so a drag produced a fresh key on
+every frame and paid the walk again with it. Small models hid it; a complex one
+paid it as a per-frame stall. The out-of-bounds indication reads those bounds
+every frame of a gesture, which is how it surfaced.
+
+Measured on a 750k-vertex mesh: **one walk 5.3 ms, so 5.8 ms per drag frame** -
+over a third of a 16.7 ms budget, which is what "dragging a complex model is
+sluggish" turned out to be. The same measurement after the fix is 0.004 ms per
+frame.
+
+**Fixed** by keying the walk on the orientation alone (`makeOrientationKey`:
+rotation and scale) and adding the position to the box afterwards. A translation
+moves every vertex by the same vector, so it moves the box by that vector and
+changes nothing else - the walk is over the same points either way, and
+translating a box is exact. The cache now survives the whole gesture. It is the
+raft lesson again: the key covered the transform, but only part of the transform
+was the *input* to the work.
+
+## Known cost: a support hover re-derived the scene, and a selection remounted it
+
+Selecting a support felt like it could take up to a second, and sometimes did.
+Three things run off a single write to the support store, and two of them did not
+depend on what changed.
+
+**A hover writes the same store a selection does.** `setHoveredState` calls
+`setState({ ...state, hoveredCategory, hoveredId })`, so the snapshot object is
+new on every hover. Anything keyed on that *object* rather than on the
+collections it reads re-ran for each one:
+
+- The app root held `useSyncExternalStore(subscribeSupportState,
+  getSupportSnapshot)`, so the whole page - and the scene canvas, which is a plain
+  function component it renders as an element - re-rendered for a hover that
+  changed neither the selection nor the braces that subscription was there for.
+- `SupportRenderer`'s `selectionCollections` was keyed on the snapshot, so a hover
+  rebuilt the knot index, the per-type selection sets and every batch partition,
+  and with them every merged curved-tube geometry.
+
+Measured: one `buildBatchedBezierTubes` merge over 2000 curved shafts (144k
+vertices) is **36 ms** with the per-shaft sweep cache warm, and a hover paid it.
+
+**A selection changes the colour partition, and the partition is the React key.**
+`dimNonSelected` flips false to true on the first selection, and
+`resolveSceneSupportColor` then returns a flat `#666666` for every support, so the
+partition collapses from one bucket per model to one bucket. The group keys are
+`scene-${typeId}-batch:${color}` and its three siblings, so every instanced group
+unmounts and remounts, reallocating its instance buffers. That is the part that is
+*sometimes*: it happens on the null-to-selected transition, not on every click.
+
+**Fixed**: the app root subscribes to the selection and the braces collection
+separately (`getSelectedId`, `getSelectedCategory` and the identity-cached
+`getHomeSupportCollectionsSnapshot`), and `SupportRenderer`'s derivations carry
+`supportCollectionRefs(state)` - the collections themselves - so a hover that
+moves nothing they read no longer re-runs them.
+
+**Still open**: `supportStateForBounds` in `SceneCanvas` reads the snapshot whole
+and legitimately needs the hovered category and id, so it re-renders per hover by
+design; narrowing that subscription to those two fields is the next step. The
+colour-in-key remount is inherent to partitioning the batches into one mesh per
+colour - the per-instance colour path the proxy groups already expose is what
+removes it.
+
+## Known cost: a preset switch re-rendered everything that reads a support setting
+
+Pressing a preset hotkey while placing a support hitched. `setSettings` rebuilds
+the whole settings object through `mergeWithDefaults`, so every consumer of
+`subscribeToSettings` re-ran, and most of them read a field the switch had not
+touched:
+
+- `SceneCanvas` read exactly one value from the settings - the tip's contact
+  diameter - but subscribed to the object, so the whole scene canvas and the tree
+  under it re-rendered for a number that usually did not move.
+- `ModelAttachedSupportLayer` read two debug flags as one question.
+- `SupportRenderer` read four debug flags, one of them nested.
+- `usePresetHotkeys` held six `useActionActive` subscriptions to find a rising
+  edge, so the keypress alone re-rendered the settings sidebar - which holds the
+  anatomy preview canvas - before the settings write re-rendered it again.
+
+**Fixed**: each of those carries a snapshot of the values it actually reads, so a
+write that leaves them alone costs no render, and the preset hook reads its rising
+edges inside a single store subscription whose snapshot never changes, so a
+keypress costs no render at all.
+
+**Measured, and left alone**: the raft anatomy preview build is **1.3 ms** over
+its five-circle pattern, so it is not the hitch. Still on this path, in order of
+size: `setActivePreset` makes three synchronous `localStorage.setItem` calls, two
+of them `JSON.stringify` - one stringifying the *entire preset collection* on a
+switch that only moved `activePresetId`; `checkPresetDrift` runs four
+`JSON.stringify` round-trips from a raw settings listener on every notify; and the
+anatomy preview's own support-geometry memo depends on the whole settings object,
+so it rebuilds twice (once from the settings render, once from the `liveConfig`
+effect that follows it). Persistence is the one to treat carefully - it is
+synchronous on purpose, and a deferred write trades durability for the frame.
+
+## Known cost: a preset switch rebuilt the router's column map
+
+Pressing a preset key while a placement preview was being hovered hitched. The
+hover builds a candidate support per pointer move, and that runs the V3 router,
+which asks `SDFCache.enableColumnMap` for a column clearance map. The map is
+clearance-specific - built for one clearance and meaningless for any other - and
+its build walks every vertex of the mesh: **tens of milliseconds**. The clearance
+is `shaft.diameterMm / 2 + COLLISION_AVOIDANCE_MM`, which is exactly what a
+preset changes, so the hover after each press rebuilt the whole map.
+
+Measured with the app's own instrumentation (`__dfPerf.summary(20)`) while
+cycling three presets: `trunk:build` at **avg 104.6 ms / max 541.2 ms** per hover
+frame, with every instrumented sub-phase inside it (`router:cone-gate`,
+`router:roots`, `router:standard`, `router:base`) at ~0.1 ms. The time was in the
+map build, which nothing measured.
+
+**Fixed** two ways, because the first alone still pays once per clearance:
+
+- `SDFCache` keeps the maps it has built, most recently used first and bounded by
+  the bytes they hold (`COLUMN_MAP_CACHE_BYTES`), so switching back to a preset
+  reuses its map rather than rebuilding it.
+- `prewarmPinnedPresetColumnMaps` builds the maps for the six pinned preset slots
+  while the thread is idle, one per idle callback, so a switch finds its map
+  already there. Its idle probe is guarded: a worker realm can expose a `window`
+  that traps every property read - the auto-support worker's test builds one -
+  and the run must not throw over an opportunistic prewarm.
+
+The clearance and the cell size are each one function shared by the ask and the
+prewarm, so a prewarmed map cannot miss the clearance the hover then asks for and
+rebuild anyway.
+
 ## Decision: auto-support borrows its sizing band from a Support Studio preset
 
 `src/supports/Settings/autoSupportPresets.ts` stores presets for the
@@ -639,3 +859,91 @@ At the X borders this removes an entry or exit crossing: an isolated object can
 disappear, and several objects can produce an inverted band through their gaps.
 Zero XY projected area is not a valid reason to drop a 3D triangle: vertical walls
 can have zero XY area while supplying essential winding crossings.
+
+## Known: a scene history push snapshots the whole support state, twice
+
+Every scene-level edit pushes a `{ before, after }` pair into
+`sceneSnapshotRegistry` (`useSceneCollectionManager.ts`), and each half carries a
+full deep copy of the support store — thousands of entities once a plate has been
+auto-supported. `Confirm Duplicate` measured ~340 ms on a synthetic 20-model ×
+150-support scene (9,000 entities) with 8 copies: ~130 ms for the two support
+snapshots and ~195 ms for the per-copy support paste.
+
+Fixed so far, measured with `npm run bench:duplicate-confirm` (same scene, best
+of five runs):
+
+- the snapshot copy walks plain data (`clonePlainData` in
+  `src/utils/plainDataClone.ts`) instead of `structuredClone`, whose ~10 µs fixed
+  cost per call dominates thousands of small records — ~2.8× faster on the same
+  state;
+- `cloneSupportState` installs the collection views over the copy instead of
+  re-deriving them through `normaliseSupportState`, which walked the whole state
+  twice more per snapshot;
+- `pasteModelSupports` merges every target of one gesture into a single store
+  write; the per-copy call rebuilt the store's whole index once per copy.
+
+That scene and copy count now measures ~146 ms. Still open:
+
+1. Both halves are full copies, so a duplicate adding N entities still pays
+   2 × O(total support entities). A patch-shaped entry — the ids added, and the
+   ids removed with their entities — would make it O(N) and delete the copies
+   from the confirm path entirely.
+2. `estimateSceneSnapshotRegistryBytes` counts geometry only, so support copies
+   sit outside the ~300 MB eviction budget: 200 entries of a 9,000-entity state
+   are retained with nothing accounting for them.
+3. Undo copies the stored snapshot again (`applySceneSnapshot`), so a restore
+   pays a third full copy.
+
+## Known: Select-mode hover and selection pay per support
+
+Outside support mode the supports draw through `SupportProxyMeshLayer`'s four
+instanced batches, and R3F raycasts every instance of every mesh carrying a
+hover handler on each pointer move. Measured with the app's three.js: ~0.11 µs
+per instance, so ~3 ms per move at 5k supports, ~13 ms at 20k, which is a hover
+that stutters and drags the frame rate down as a plate fills up. A selection
+click paid its own O(total supports) pass: the base/highlighted split was
+rebuilt, both `InstancedMesh`es were remounted (new geometry, new material, full
+matrix upload) because each batch is keyed by its instance count, and both
+batches then rewrote every instance matrix.
+
+Fixed so far:
+
+- hover, clicks and drag starts on the proxy batches go through a grid-indexed
+  raycast (`src/supports/proxyHoverIndex.ts`): the supports are indexed into
+  cells and a ray only tests the cells it crosses, so a hover costs O(cells)
+  instead of the O(supports) three's per-instance walk paid. The hit stays per
+  support, within a grab radius that scales with distance, so a support a
+  fraction of a pixel wide is still grabbable. A box per model was tried first
+  and rejected: it covers the gaps between supports and the model itself;
+- a selection, and the hover tint with it, recolours the batch instances
+  (`instanceColor`) instead of drawing one overlay per model. The tint is a
+  computed colour that replaces the base, so a hovered support reads the same
+  whether or not it is also selected. Curved shafts are merged one mesh per
+  colour, so their colour takes the material route rather than a vertex
+  attribute. Selecting all models costs one colour pass (~2 ms at 100k
+  instances) with no extra meshes and no second draw of the same geometry. The
+  colour pass is a separate layout effect from the matrices;
+- the layouts stopped minting a `Vector3`/`Quaternion` per instance per pass
+  (the cone batch ran six passes), and each curved shaft's swept tube is cached
+  by the shaft object, so a re-layout merges cached tubes instead of building
+  them again;
+- the raft proxy geometries got a bounds tree: without one their raycast is a
+  per-triangle walk paid per visible raft on every pointer move (measured ~7 ms
+  for 20×5k triangles, ~50 ms for 20×20k, against ~0.12 ms with a tree);
+- the world layer no longer drops the active model from its batches. It keeps it
+  and zero-scales its instances (`isHidden`), so making a model active costs the
+  instances whose state changed instead of a full re-layout of the plate. Curved
+  shafts come from the visible set and are merged again, which is cheap now that
+  each shaft's sweep is cached.
+
+Still open:
+
+1. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
+   module cache keyed on the whole support-store snapshot, so any store write
+   (including hover and selection writes) rebuilds every proxy primitive.
+2. `sharedProxyCache`'s geometries are never disposed when the cache is
+   replaced; the raft cache leaks its per-model geometries the same way.
+3. A model drop offset (`modelDropOffsetsById`, live during a drag or a drop
+   animation) re-appends every primitive in the scene with the offset, so the
+   base batch rebuilds and re-uploads all of its matrices per frame. The offset
+   belongs on the group transform, as the overlays already do it.

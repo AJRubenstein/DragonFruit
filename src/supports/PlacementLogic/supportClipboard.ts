@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getSnapshot, setSnapshot, transformSupportsForModel } from '@/supports/state';
+import { buildSupportDeltaTransform, getSnapshot, setSnapshot, transformSupportRecord, type SupportDeltaTransform } from '@/supports/state';
 import type { Knot, Roots, Segment, SupportState, Vec3 } from '@/supports/types';
 import type { Kickstand } from '@/supports/SupportTypes/Kickstand/types';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '@/supports/history/supportEditHistory';
@@ -8,6 +8,7 @@ import { computeFootprint } from '@/supports/Rafts/Crenelated/geometry/computeFo
 import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/computeRaftOuterBoundary';
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { v4 as uuidv4 } from 'uuid';
+import { clonePlainData } from '@/utils/plainDataClone';
 import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeDescriptor } from '@/supports/supportTypeRegistry';
 
 /**
@@ -29,13 +30,6 @@ export type SupportModelBounds2D = {
   minY: number;
   maxY: number;
 };
-
-function clonePlain<T>(value: T): T {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(value) as T;
-  }
-  return JSON.parse(JSON.stringify(value)) as T;
-}
 
 function getOrCreateMappedId(sourceId: string, idMap: Map<string, string>): string {
   const mapped = idMap.get(sourceId);
@@ -70,19 +64,19 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
     const record = state[key] as Record<string, { modelId?: string }>;
     (owned as Record<string, unknown[]>)[key] = Object.values(record)
       .filter((item) => item.modelId === modelId)
-      .map(clonePlain);
+      .map((item) => clonePlainData(item));
   }
   const kickstands = Object.values(snapshot.kickstands)
     .filter((item) => item.modelId === modelId)
-    .map(clonePlain);
+    .map((item) => clonePlainData(item));
   const kickstandRootIds = new Set(kickstands.map((item) => item.rootId));
   const kickstandKnotIds = new Set(kickstands.map((item) => item.hostKnotId));
   const kickstandRoots = Object.values(snapshot.roots)
     .filter((item) => kickstandRootIds.has(item.id))
-    .map(clonePlain);
+    .map((item) => clonePlainData(item));
   const kickstandKnots = Object.values(snapshot.knots)
     .filter((item) => kickstandKnotIds.has(item.id))
-    .map(clonePlain);
+    .map((item) => clonePlainData(item));
 
   // Every type's segments, by what the registry declares: a shafted type
   // contributes its segment ids, a prefixed one its own id under that prefix.
@@ -135,7 +129,7 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
       }
       return false;
     })
-    .map(clonePlain);
+    .map((item) => clonePlainData(item));
 
   const hasData = SUPPORT_COLLECTION_KEYS.some((key) => owned[key].length > 0)
     || knots.length > 0
@@ -152,12 +146,20 @@ function extractSupportClipboardPayload(modelId: string): SupportClipboardPayloa
   };
 }
 
+/**
+ * One payload cloned onto `targetModelId` and merged into `base`.
+ *
+ * `delta` moves the clone as it is made, which is what a copy needs: the
+ * entities are new, so their geometry can be carried straight to the target's
+ * transform instead of being merged and then walked again in the store.
+ */
 function mergeSupportClipboardPayload(
   payload: SupportClipboardPayload,
   targetModelId: string,
+  options?: { base?: SupportState; delta?: SupportDeltaTransform | null },
 ): { mergedState: SupportState } {
-  const state = getSnapshot();
-  const snapshot = getSnapshot();
+  const state = options?.base ?? getSnapshot();
+  const delta = options?.delta ?? null;
 
   const idMapsByCollection = new Map<SupportCollectionKey, Map<string, string>>();
   for (const key of SUPPORT_COLLECTION_KEYS) idMapsByCollection.set(key, new Map());
@@ -174,11 +176,8 @@ function mergeSupportClipboardPayload(
   const clonedRoots = payload.roots.map((root) => {
     const id = uuidv4();
     rootIdMap.set(root.id, id);
-    return {
-      ...clonePlain(root),
-      id,
-      modelId: targetModelId,
-    };
+    const cloned = { ...clonePlainData(root), id, modelId: targetModelId };
+    return (delta ? transformSupportRecord('roots', cloned, delta) : cloned) as Roots;
   });
 
   // Knot ids are claimed before the entities that point at them, so an edge
@@ -200,14 +199,14 @@ function mergeSupportClipboardPayload(
     const id = uuidv4();
     mapFor(descriptor.location.key).set(entity.id as string, id);
 
-    const next: Record<string, unknown> = { ...clonePlain(entity), id, modelId: targetModelId };
+    const next: Record<string, unknown> = { ...clonePlainData(entity), id, modelId: targetModelId };
 
     if (descriptor.hasSegments) {
       next.segments = ((entity.segments as Segment[] | undefined) ?? []).map((segment) => {
         const segmentId = uuidv4();
         segmentIdMap.set(segment.id, segmentId);
         return {
-          ...clonePlain(segment),
+          ...clonePlainData(segment),
           id: segmentId,
           topJoint: remapSupportJoint(segment.topJoint, jointIdMap),
           bottomJoint: remapSupportJoint(segment.bottomJoint, jointIdMap),
@@ -223,7 +222,7 @@ function mergeSupportClipboardPayload(
       const contact = entity[field] as { id: string; socketJointId?: string } | undefined;
       if (!contact) continue;
       next[field] = {
-        ...clonePlain(contact),
+        ...clonePlainData(contact),
         id: uuidv4(),
         ...(contact.socketJointId
           ? { socketJointId: getOrCreateMappedId(contact.socketJointId, jointIdMap) }
@@ -240,7 +239,7 @@ function mergeSupportClipboardPayload(
         : getOrCreateMappedId(value, mapFor(edge.to));
     }
 
-    return next;
+    return delta ? transformSupportRecord(descriptor.id, next, delta) : next;
   };
 
   /** Cloned entities per collection, keyed the way the merge writes them. */
@@ -269,31 +268,30 @@ function mergeSupportClipboardPayload(
       parentShaftId = getOrCreateMappedId(parentShaftId, segmentIdMap);
     }
 
-    return {
-      ...clonePlain(knot),
+    const cloned = {
+      ...clonePlainData(knot),
       id,
       parentShaftId,
-    } as Knot;
+    };
+    return (delta ? transformSupportRecord('knots', cloned, delta) : cloned) as Knot;
   });
 
   const clonedKickstandRoots = payload.kickstandRoots.map((root) => {
     const id = uuidv4();
     kickstandRootIdMap.set(root.id, id);
-    return {
-      ...clonePlain(root),
-      id,
-      modelId: targetModelId,
-    };
+    const cloned = { ...clonePlainData(root), id, modelId: targetModelId };
+    return (delta ? transformSupportRecord('roots', cloned, delta) : cloned) as Roots;
   });
 
   const clonedKickstandKnots = payload.kickstandKnots.map((knot) => {
     const id = uuidv4();
     kickstandKnotIdMap.set(knot.id, id);
-    return {
-      ...clonePlain(knot),
+    const cloned = {
+      ...clonePlainData(knot),
       id,
       parentShaftId: getOrCreateMappedId(knot.parentShaftId, segmentIdMap),
     };
+    return (delta ? transformSupportRecord('knots', cloned, delta) : cloned) as Knot;
   });
 
   const clonedKickstands = payload.kickstands.map((kickstand) => {
@@ -303,22 +301,23 @@ function mergeSupportClipboardPayload(
     const clonedSegments = kickstand.segments.map((segment) => {
       const segmentId = getOrCreateMappedId(segment.id, segmentIdMap);
       return {
-        ...clonePlain(segment),
+        ...clonePlainData(segment),
         id: segmentId,
         topJoint: remapSupportJoint(segment.topJoint, jointIdMap),
         bottomJoint: remapSupportJoint(segment.bottomJoint, jointIdMap),
       };
     });
 
-    return {
-      ...clonePlain(kickstand),
+    const cloned = {
+      ...clonePlainData(kickstand),
       id,
       modelId: targetModelId,
       rootId: getOrCreateMappedId(kickstand.rootId, kickstandRootIdMap),
       hostKnotId: getOrCreateMappedId(kickstand.hostKnotId, kickstandKnotIdMap),
       hostSegmentId: getOrCreateMappedId(kickstand.hostSegmentId, segmentIdMap),
       segments: clonedSegments,
-    } as Kickstand;
+    };
+    return (delta ? transformSupportRecord('kickstand', cloned, delta) : cloned) as Kickstand;
   });
 
   // Every entity collection, from the registry.
@@ -494,6 +493,61 @@ export function estimateSupportBoundsForModel(modelId: string): SupportModelBoun
   return hasAny ? { minX, maxX, minY, maxY } : null;
 }
 
+/** One paste: a payload, the model it lands on, and where that model sits. */
+export type SupportPasteTarget = {
+  payload: SupportClipboardPayload;
+  targetModelId: string;
+  sourceTransform: { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 };
+  targetTransform: { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 };
+};
+
+/**
+ * Paste supports for one or more targets in a single store write.
+ *
+ * Each clone is moved from the source model's transform to its target's while
+ * it is made, so nothing has to walk the store again, and every target lands in
+ * one merged state: a duplicate of N copies costs one write and one history
+ * entry rather than N of each.
+ */
+export function pasteModelSupports(
+  targets: readonly SupportPasteTarget[],
+  options?: {
+    recordHistory?: boolean;
+    historyDescription?: string;
+  },
+): number {
+  const before = captureSupportEditSnapshot();
+
+  let mergedState = getSnapshot();
+  let pastedCount = 0;
+
+  for (const target of targets) {
+    if (!target.payload || !target.targetModelId) continue;
+
+    // Every collection, from the registry.
+    const hasSupports = SUPPORT_COLLECTION_KEYS
+      .reduce((total, key) => total + (target.payload[key]?.length ?? 0), 0);
+    if (hasSupports === 0) continue;
+
+    const delta = buildSupportDeltaTransform(target.sourceTransform, target.targetTransform);
+    mergedState = mergeSupportClipboardPayload(target.payload, target.targetModelId, {
+      base: mergedState,
+      delta,
+    }).mergedState;
+    pastedCount += hasSupports;
+  }
+
+  if (pastedCount === 0) return 0;
+
+  setSnapshot(mergedState);
+
+  const shouldRecordHistory = options?.recordHistory ?? true;
+  if (shouldRecordHistory) {
+    pushSupportEditHistory(options?.historyDescription ?? 'Paste supports', before, captureSupportEditSnapshot());
+  }
+  return pastedCount;
+}
+
 export function pasteModelSupportsFromClipboard(
   payload: SupportClipboardPayload | null | undefined,
   targetModelId: string,
@@ -506,24 +560,7 @@ export function pasteModelSupportsFromClipboard(
 ): number {
   if (!payload || !targetModelId) return 0;
 
-  const before = captureSupportEditSnapshot();
-
-  // Every collection, from the registry.
-  const hasSupports = SUPPORT_COLLECTION_KEYS
-    .reduce((total, key) => total + (payload[key]?.length ?? 0), 0);
-
-  if (hasSupports === 0) return 0;
-
-  const { mergedState } = mergeSupportClipboardPayload(payload, targetModelId);
-  setSnapshot(mergedState);
-
-  transformSupportsForModel(targetModelId, sourceTransform, targetTransform);
-
-  const shouldRecordHistory = options?.recordHistory ?? true;
-  if (shouldRecordHistory) {
-    pushSupportEditHistory(options?.historyDescription ?? 'Paste supports', before, captureSupportEditSnapshot());
-  }
-  return hasSupports;
+  return pasteModelSupports([{ payload, targetModelId, sourceTransform, targetTransform }], options);
 }
 
 export type { SupportClipboardPayload };

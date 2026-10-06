@@ -144,6 +144,17 @@ function optionalFlag(flags: Record<string, string | boolean>, key: string): str
   return val as string;
 }
 
+/** Reads and parses the JSON file a flag names, if the flag was given. */
+function readJsonFlag(flags: Record<string, string | boolean>, key: string): unknown {
+  const path = optionalFlag(flags, key);
+  if (path === undefined) return undefined;
+  try {
+    return JSON.parse(readFileSync(resolve(path), 'utf-8')) as unknown;
+  } catch (err) {
+    throw new Error(`--${key} ${path}: ${(err as Error).message}`);
+  }
+}
+
 function jsonOutput(flags: Record<string, string | boolean>): boolean {
   return flags['json'] === true;
 }
@@ -1338,7 +1349,9 @@ function sceneSlice(args: ReturnType<typeof parseArgs>): void {
       'Usage: scene slice <scene.voxl> --o <output> [--mesh-dir <dir>]\n'
       + '  [--printer <profile.json>] [--printer-id <id>]  preset, profile or app-exported bundle; builds the job the app would\n'
       + '  [--material <profile.json>]                      default: the bundle\'s first material, else the app\'s default\n'
-      + '  [--aa-preset sharp|balanced|smooth|raw]          named AA (via computePhysicalAaConfig)\n'
+      + '  [--aa-preset sharp|balanced|smooth|raw]          the panel\'s auto AA preset (default: balanced)\n'
+      + '  [--aa-settings <aa.json>]                        AA settings on top of the material\'s, like a session override\n'
+      + '  [--lut-curves <curves.json>]                     the curve library a custom LUT is looked up in\n'
       + '  [--dither on|off] [--dither-bit-depth N] [--dither-device-gamma G]\n'
       + '  [--layer-height N] [--build-width-mm N] [--build-depth-mm N]  override the material / printer',
     );
@@ -1358,6 +1371,8 @@ function sceneSlice(args: ReturnType<typeof parseArgs>): void {
     buildWidthMm: optionalFlag(args.flags, 'build-width-mm'),
     buildDepthMm: optionalFlag(args.flags, 'build-depth-mm'),
     aaPreset,
+    aaSettings: readJsonFlag(args.flags, 'aa-settings'),
+    lutCurves: readJsonFlag(args.flags, 'lut-curves'),
     dither: optionalFlag(args.flags, 'dither'), // 'on' | 'off' | undefined
     ditherBitDepth: optionalFlag(args.flags, 'dither-bit-depth'),
     ditherDeviceGamma: optionalFlag(args.flags, 'dither-device-gamma'),
@@ -1478,8 +1493,9 @@ function sceneSlice(args: ReturnType<typeof parseArgs>): void {
       polygonCount: model.polygonCount,
       transform: model.transform,
     })),
-  }, mergedPath, resolve(output));
-  const { assembled, aa } = run;
+  }, mergedPath, resolve(output), resolve(tmpDir, 'job.json'));
+  if (run.jobJson) writeFileSync(resolve(tmpDir, 'job.json'), run.jobJson);
+  const { assembled } = run;
   if (assembled && job.printer) {
     console.error(
       `scene slice: printer '${job.printer.name}' -> ${assembled.sourceWidthPx}x${assembled.sourceHeightPx} ${assembled.xPackingMode} `
@@ -1490,9 +1506,11 @@ function sceneSlice(args: ReturnType<typeof parseArgs>): void {
       `scene slice: dither ${assembled.ditherEnabled ? `on (${assembled.ditherBitDepth}-bit, gamma ${assembled.ditherDeviceGamma})` : 'off'}`,
     );
   }
-  if (aa) {
+  if (assembled && job.antiAliasing) {
+    const aa = assembled.antiAliasing;
     console.error(
-      `scene slice: AA '${aaPreset}' -> ${aa.aaSteps}x ${aa.antiAliasingMode} `
+      `scene slice: AA '${job.antiAliasing.preset}'${job.antiAliasing.override ? ' + settings' : ''} -> `
+      + `${aa.antiAliasingLevel} ${aa.antiAliasingMode} `
       + `blur=${aa.blurBrushRadiusPx}px zblur=${aa.zBlurRadiusLayers} lookback=${aa.zBlendLookBack}`,
     );
   }
@@ -1511,7 +1529,7 @@ function sceneSlice(args: ReturnType<typeof parseArgs>): void {
     // Surface the named preset in the AA block — the Rust engine only knows the
     // resolved level/mode, but the preset name is what a user reads in the log.
     if (sliceResult.anti_aliasing && typeof sliceResult.anti_aliasing === 'object') {
-      sliceResult.anti_aliasing = { preset: aaPreset ?? 'raw', ...sliceResult.anti_aliasing };
+      sliceResult.anti_aliasing = { preset: job.antiAliasing?.preset ?? 'raw', ...sliceResult.anti_aliasing };
     }
     sliceResult.scene = {
       voxl: resolve(voxlPath),

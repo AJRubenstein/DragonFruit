@@ -285,13 +285,6 @@ function schedulePostPaint(callback: () => void): void {
 
 // ─────────────────────────────────────────────────────────────────────────
 
-function clonePlainObject<T>(value: T): T {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(value) as T;
-  }
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
 function captureSceneSnapshot(
   models: LoadedModel[],
   activeModelId: string | null,
@@ -307,7 +300,7 @@ function captureSceneSnapshot(
     selectedModelIds: [...selectedModelIds],
     ...(includeSupportState
       ? {
-          supportState: clonePlainObject(supportStateOverride ?? getSnapshot()),
+          supportState: clonePlainData(supportStateOverride ?? getSnapshot()),
         }
       : {}),
   };
@@ -981,6 +974,7 @@ import { beginSupportStateBatch, endSupportStateBatch } from '@/supports/state';
 import {
   captureModelSupportsToClipboard,
   estimateSupportBoundsForModel,
+  pasteModelSupports,
   pasteModelSupportsFromClipboard,
   type SupportClipboardPayload,
 } from '@/supports/PlacementLogic/supportClipboard';
@@ -991,6 +985,7 @@ import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/c
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { getImportDefaultsRaftPatch, getSavedImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
 import { readNativeFileSize } from '@/utils/pluginNetworkBridge';
+import { clonePlainData } from '@/utils/plainDataClone';
 import { DEFAULT_LIFT_DISTANCE_MM } from '@/features/transform/liftDefaults';
 
 type ImportProgressState = {
@@ -1931,7 +1926,7 @@ export function useSceneCollectionManager() {
     // ordinary SupportState collections, and their roots and host knots ride in
     // `roots` and `knots`.
     if (snapshot.supportState) {
-      setSupportSnapshot(clonePlainObject(snapshot.supportState));
+      setSupportSnapshot(clonePlainData(snapshot.supportState));
     }
   }, []);
 
@@ -3073,7 +3068,7 @@ export function useSceneCollectionManager() {
       visible: true,
       color: base.color,
       polygonCount,
-      meshModifiers: base.meshModifiers ? clonePlainObject(base.meshModifiers) : undefined,
+      meshModifiers: base.meshModifiers ? clonePlainData(base.meshModifiers) : undefined,
     };
 
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current, { includeSupportState: false });
@@ -3200,7 +3195,7 @@ export function useSceneCollectionManager() {
       visible: true,
       color: source.color,
       polygonCount: polyCount(pg.geometry),
-      meshModifiers: source.meshModifiers ? clonePlainObject(source.meshModifiers) : undefined,
+      meshModifiers: source.meshModifiers ? clonePlainData(source.meshModifiers) : undefined,
     }));
 
     // ONE atomic update: source becomes part 0 (geometry swapped + position
@@ -4642,17 +4637,19 @@ export function useSceneCollectionManager() {
         beginSupportStateBatch();
         beginSupportStateBatch();
         try {
-          pastedModels.forEach((pastedModel, index) => {
-            const sourceEntry = entries[index];
-            if (!sourceEntry) return;
-            pasteModelSupportsFromClipboard(
-              sourceEntry.supportClipboard,
-              pastedModel.id,
-              sourceEntry.transform,
-              pastedModel.transform,
-              { recordHistory: false },
-            );
-          });
+          pasteModelSupports(
+            pastedModels.flatMap((pastedModel, index) => {
+              const sourceEntry = entries[index];
+              if (!sourceEntry?.supportClipboard) return [];
+              return [{
+                payload: sourceEntry.supportClipboard,
+                targetModelId: pastedModel.id,
+                sourceTransform: sourceEntry.transform,
+                targetTransform: pastedModel.transform,
+              }];
+            }),
+            { recordHistory: false },
+          );
         } finally {
           endSupportStateBatch();
           endSupportStateBatch();
@@ -4749,15 +4746,17 @@ export function useSceneCollectionManager() {
       const nextModels = [...withSourceGroup, ...newModels];
       setModels(nextModels);
 
-      newModels.forEach((model) => {
-        pasteModelSupportsFromClipboard(
-          supportClipboard,
-          model.id,
-          originalSourceTransform,
-          model.transform,
-          { recordHistory: false },
-        );
-      });
+      // One write for every copy: the merge and the store's own index rebuild
+      // are per-write, so pasting them one at a time cost N of each.
+      pasteModelSupports(
+        newModels.map((model) => ({
+          payload: supportClipboard as SupportClipboardPayload,
+          targetModelId: model.id,
+          sourceTransform: originalSourceTransform,
+          targetTransform: model.transform,
+        })),
+        { recordHistory: false },
+      );
 
       if (createdIds.length > 0) {
         setActiveModelId(createdIds[0]);

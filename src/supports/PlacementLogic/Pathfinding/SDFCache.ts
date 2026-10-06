@@ -100,6 +100,13 @@ const MARCH_DISTANCE_BOUND_MM = 8;
  * falls back to a `Map` (correct, just slower).
  */
 const CELL_TABLE_SLOTS = 1 << 22;
+/**
+ * How much the reused column maps may hold, in bytes. A map is one float per XY
+ * cell of the mesh, so a plate at 0.2 mm is a few megabytes; this holds several
+ * of them - enough for the presets a user cycles through - at the same scale as
+ * the cell table above.
+ */
+const COLUMN_MAP_CACHE_BYTES = 32 * 1024 * 1024;
 
 // ---------- SDFCache ----------
 
@@ -128,6 +135,18 @@ export class SDFCache {
     /** Opt-in exact fast path for vertical segments; see `enableColumnMap`. */
     private _columnMap: ColumnClearanceMap | null = null;
     private _columnMapClearance = 0;
+
+    /**
+     * Column maps built earlier, most recently used first.
+     *
+     * The map is clearance-specific and its build is tens of milliseconds over
+     * every vertex of the mesh, and the clearance comes from the shaft diameter -
+     * so a preset switch changes it, and a run of preset switches rebuilt the
+     * whole map on the hover after each one. Each map is a float per XY cell, so
+     * the list is bounded by the bytes it holds rather than by a count.
+     */
+    private readonly _columnMapCache: Array<{ clearance: number; map: ColumnClearanceMap }> = [];
+    private _columnMapCacheBytes = 0;
 
     // Reusable temporaries — avoids per-query allocation
     private readonly _localPoint = new THREE.Vector3();
@@ -716,11 +735,60 @@ export class SDFCache {
      */
     enableColumnMap(clearanceMm: number, cellMm: number): boolean {
         if (this._columnMap !== null && Math.abs(clearanceMm - this._columnMapClearance) < 1e-9) return true;
+
+        const reused = this._takeCachedColumnMap(clearanceMm);
+        if (reused) {
+            this._columnMap = reused;
+            this._columnMapClearance = clearanceMm;
+            return true;
+        }
+
         const map = ColumnClearanceMap.build(this.mesh, clearanceMm, cellMm);
         if (!map) return false;
         this._columnMap = map;
         this._columnMapClearance = clearanceMm;
+        this._rememberColumnMap(clearanceMm, map);
         return true;
+    }
+
+    /**
+     * Build and keep the map for a clearance without changing the one in use.
+     *
+     * For a caller that knows which clearances are coming - the pinned preset
+     * slots - so the build happens while the thread is idle rather than on the
+     * hover that follows the key press.
+     */
+    prewarmColumnMap(clearanceMm: number, cellMm: number): void {
+        if (this._takeCachedColumnMap(clearanceMm)) return;
+        const map = ColumnClearanceMap.build(this.mesh, clearanceMm, cellMm);
+        if (!map) return;
+        this._rememberColumnMap(clearanceMm, map);
+    }
+
+    /** A map already built for this clearance, moved to the front of the list. */
+    private _takeCachedColumnMap(clearanceMm: number): ColumnClearanceMap | null {
+        for (let i = 0; i < this._columnMapCache.length; i += 1) {
+            const entry = this._columnMapCache[i];
+            if (Math.abs(entry.clearance - clearanceMm) >= 1e-9) continue;
+            this._columnMapCache.splice(i, 1);
+            this._columnMapCache.unshift(entry);
+            return entry.map;
+        }
+        return null;
+    }
+
+    /**
+     * Keep the map just built, dropping the least recently used until the list
+     * fits. The front is never dropped, and the front is the map in use.
+     */
+    private _rememberColumnMap(clearanceMm: number, map: ColumnClearanceMap): void {
+        this._columnMapCache.unshift({ clearance: clearanceMm, map });
+        this._columnMapCacheBytes += map.stats.bytes;
+        while (this._columnMapCache.length > 1 && this._columnMapCacheBytes > COLUMN_MAP_CACHE_BYTES) {
+            const evicted = this._columnMapCache.pop();
+            if (!evicted) break;
+            this._columnMapCacheBytes -= evicted.map.stats.bytes;
+        }
     }
 
     /**

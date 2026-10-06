@@ -5,7 +5,15 @@ import {
   resolveOutputSettingsMode,
   resolveSlicingFormatDefinition,
 } from '@/features/slicing/formats/registry';
+import type { PngCompressionStrategy } from '@/components/settings/performancePreferences';
 import { resolveEffectiveDitherPolicy, type DitherPolicyInput } from '@/features/slicing/resolveEffectiveDitherPolicy';
+import type { SlicingFormatDefinition } from '@/features/slicing/formats/types';
+import type { AntiAliasingLevel } from '@/features/slicing/tauri/nativeSlicerBridge';
+import {
+  resolveSliceJobAntiAliasing,
+  type SliceJobAntiAliasing,
+  type SliceJobAntiAliasingRequest,
+} from '@/features/slicing/sliceAntiAliasing';
 
 /**
  * Slice-job assembly: printer profile, material profile and scene facts in, the
@@ -391,15 +399,19 @@ export type AssembledSliceJob = {
   ditherEnabled: boolean;
   ditherBitDepth: number;
   ditherDeviceGamma: number;
+  /** The anti-aliasing fields; see `resolveSliceJobAntiAliasing`. */
+  antiAliasing: SliceJobAntiAliasing;
+  /** How the format's encoder takes its layers, which decides the PNG compression. */
+  layerDataKind: SlicingFormatDefinition['layerDataKind'];
   metadataJson: string;
 };
 
 /**
- * Builds the profile-driven half of a native slice job.
+ * Builds the profile-driven part of a native slice job.
  *
  * `printerProfile` must be resolved the way the profile store holds it (build
- * volume filled in, for instance), not a raw preset. Anti-aliasing, mesh
- * transport and plugin metadata payloads stay with the caller.
+ * volume filled in, for instance), not a raw preset. Mesh transport and plugin
+ * metadata payloads stay with the caller.
  */
 export function assembleSliceJob(options: {
   printerProfile: PrinterProfile;
@@ -407,6 +419,8 @@ export function assembleSliceJob(options: {
   scene: SliceJobScene;
   /** The user's dithering choice, when the caller has one; see `resolveEffectiveDitherPolicy`. */
   dither?: Pick<DitherPolicyInput, 'ditherEnabled' | 'ditherBitDepth' | 'ditherDeviceGamma'>;
+  /** The user's anti-aliasing choice, when the caller has one; see `resolveSliceJobAntiAliasing`. */
+  antiAliasing?: SliceJobAntiAliasingRequest;
   createdAt?: Date;
 }): AssembledSliceJob {
   const { printerProfile, materialProfile, scene } = options;
@@ -447,6 +461,13 @@ export function assembleSliceJob(options: {
     ditherEnabled: dither.ditherEnabled,
     ditherBitDepth: dither.ditherBitDepth,
     ditherDeviceGamma: dither.ditherDeviceGamma,
+    antiAliasing: resolveSliceJobAntiAliasing({
+      printerProfile,
+      materialProfile,
+      layerHeightMm: settings.layerHeightMm,
+      request: options.antiAliasing,
+    }),
+    layerDataKind: format.layerDataKind,
     metadataJson: mergeMetadataOverridesIntoMetadata(
       JSON.stringify(manifest),
       format.outputFormat,
@@ -456,3 +477,93 @@ export function assembleSliceJob(options: {
     ),
   };
 }
+
+type PngCompression = Exclude<PngCompressionStrategy, 'auto'>;
+
+/**
+ * The PNG compression a job encodes with. `auto` compresses harder once
+ * anti-aliasing adds gray edge pixels, which would otherwise balloon the file.
+ */
+export function resolvePngCompressionStrategy(
+  mode: PngCompressionStrategy,
+  antiAliasingLevel: AntiAliasingLevel,
+  outputUsesPngLayers: boolean,
+): PngCompression {
+  if (!outputUsesPngLayers) return 'fastest';
+  if (mode !== 'auto') return mode;
+  return antiAliasingLevel === 'Off' ? 'fastest' : 'balanced';
+}
+
+export function resolveContainerCompressionLevel(strategy: PngCompression): number {
+  switch (strategy) {
+    case 'fastest': return 1;
+    case 'balanced': return 3;
+    case 'smallest': return 6;
+    case 'optimal': return 9;
+    default: return 2;
+  }
+}
+
+/**
+ * The native slice job an assembled job becomes, short of the mesh, the
+ * thumbnail and the output path. The app's export and `scene slice` both send
+ * this, so the two hand the engine the same job for the same profiles.
+ */
+export function buildNativeSliceJob(assembled: AssembledSliceJob, options: {
+  /** The performance setting; `auto` unless the user picked one. */
+  pngCompressionMode: PngCompressionStrategy;
+  /** Used when the anti-aliasing request did not decide `aaOnSupports`. */
+  aaOnSupportsFallback: boolean;
+  modelTriangleCount: number;
+}) {
+  const antiAliasing = assembled.antiAliasing;
+  const pngCompressionStrategy = resolvePngCompressionStrategy(
+    options.pngCompressionMode,
+    antiAliasing.antiAliasingLevel,
+    assembled.layerDataKind === 'png',
+  );
+  return {
+    outputFormat: assembled.outputFormat,
+    formatVersion: assembled.formatVersion,
+    settingsMode: assembled.settingsMode,
+    sourceWidthPx: assembled.sourceWidthPx,
+    sourceHeightPx: assembled.sourceHeightPx,
+    widthPx: assembled.widthPx,
+    heightPx: assembled.heightPx,
+    xPackingMode: assembled.xPackingMode,
+    pngCompressionStrategy,
+    antiAliasingLevel: antiAliasing.antiAliasingLevel,
+    antiAliasingMode: antiAliasing.antiAliasingMode,
+    blurBrushRadiusPx: antiAliasing.blurBrushRadiusPx,
+    blurBrushKernel: antiAliasing.blurBrushKernel,
+    blurBrushSigmaX: antiAliasing.blurBrushSigmaX,
+    blurBrushSigmaY: antiAliasing.blurBrushSigmaY,
+    zBlurRadiusLayers: antiAliasing.zBlurRadiusLayers,
+    zBlurKernel: antiAliasing.zBlurKernel,
+    zBlurSigma: antiAliasing.zBlurSigma,
+    zBlendLookBack: antiAliasing.zBlendLookBack,
+    zBlendMinimumAlphaPercent: antiAliasing.zBlendMinimumAlphaPercent,
+    zBlendMaxAlphaPercent: antiAliasing.zBlendMaxAlphaPercent,
+    zBlendCustomLut: antiAliasing.zBlendCustomLut,
+    zaaKernel: antiAliasing.zaaKernel,
+    zaaPattern: antiAliasing.zaaPattern,
+    zaaDuplicateZ: antiAliasing.zaaDuplicateZ,
+    aaOnSupports: antiAliasing.aaOnSupports ?? options.aaOnSupportsFallback,
+    minimumAaAlphaPercent: antiAliasing.minimumAaAlphaPercent,
+    mirrorX: assembled.mirrorX,
+    mirrorY: assembled.mirrorY,
+    ditherEnabled: assembled.ditherEnabled,
+    ditherBitDepth: assembled.ditherBitDepth,
+    ditherDeviceGamma: assembled.ditherDeviceGamma,
+    modelTriangleCount: options.modelTriangleCount,
+    containerCompressionLevel: resolveContainerCompressionLevel(pngCompressionStrategy),
+    buildWidthMm: assembled.buildWidthMm,
+    buildDepthMm: assembled.buildDepthMm,
+    layerHeightMm: assembled.layerHeightMm,
+    totalLayers: assembled.totalLayers,
+    metadataJson: assembled.metadataJson,
+  };
+}
+
+/** The native job's fields that the mesh, the thumbnail and the output path do not decide. */
+export type NativeSliceJobFields = ReturnType<typeof buildNativeSliceJob>;

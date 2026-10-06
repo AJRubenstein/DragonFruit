@@ -175,6 +175,8 @@ nav:
           - RTSP Relay: dev/rtsp-relay.md
           - Release Process: dev/releases.md
           - Flatpak Packaging: dev/flatpak.md
+          - Issue Guts Labels: dev/issue-guts.md
+          - Retuning Issue Guts: dev/issue-guts-tuning.md
           - OS Thumbnails:
               - Overview: dev/voxl-thumbnail/index.md
               - macOS QuickLook Extension: dev/voxl-thumbnail/macos-quicklook.md

@@ -9,6 +9,7 @@ import LineRaftRenderer from '@/supports/Rafts/Crenelated/rendering/LineRaftRend
 import { getSettings, subscribeToSettings } from '@/supports/Settings/state';
 import type { SupportPlacementPreviews } from '@/supports/rendering';
 import type { PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
+import { noteActivity } from '@/utils/debug/heartbeatContext';
 export type ModelAttachedSupportLayerProps = {
   mode?: SupportMode;
   modelFilterId?: string | null;
@@ -103,15 +104,28 @@ export function ModelAttachedSupportLayer({
   modelWorldInverseById,
   plateClearanceTargets,
 }: ModelAttachedSupportLayerProps) {
+  noteActivity(mode === 'support' ? 'support-mode:layer' : 'prepare-mode:layer');
   // Performance policy: use proxy support/raft rendering everywhere except
   // support workspace, where full editable primitives are required.
   const useUltraLazySupports = mode !== 'support';
   const proxyPointerSelectionEnabled = mode === 'prepare' && !navigationLodActive && !disableSelectionAndHover && !passive;
   const proxyIncludeDetailedPrimitives = supportProxyIncludeDetailedPrimitives;
-  const settingsForSimpleRender = React.useSyncExternalStore(subscribeToSettings, getSettings, getSettings);
+  // Both flags answer one question, and a preset switch rewrites the whole
+  // settings object. The snapshot is the answer itself, so only a change to it
+  // re-renders this layer and the raft and support meshes under it.
+  const simpleRender = React.useSyncExternalStore(
+    subscribeToSettings,
+    () => {
+      const settings = getSettings();
+      return settings.debugSimpleSupportRender || settings.navigationDiscsOnly;
+    },
+    () => {
+      const settings = getSettings();
+      return settings.debugSimpleSupportRender || settings.navigationDiscsOnly;
+    },
+  );
   // The navigation view (the Studio's eye button) is a line view too, so the
   // raft goes with the shafts: it is the biggest solid thing on screen.
-  const simpleRender = settingsForSimpleRender.debugSimpleSupportRender || settingsForSimpleRender.navigationDiscsOnly;
   const hideRaftPrimitivesEffective = hideRaftPrimitives || simpleRender;
 
   return (

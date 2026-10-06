@@ -103,6 +103,26 @@ jobs:
       - name: Export Apple Team ID for notarization
         run: echo "APPLE_TEAM_ID=MHNF3GA2MM" >> "$GITHUB_ENV"
 
+      # `swatinem/rust-cache` hashes every toolchain `rustup` lists, not only the
+      # one the build uses, and the runner image ships its own `stable` (1.98.1
+      # when this was written). Pinning the channel alone left the key to move
+      # whenever the image moved that one; removing the rest leaves the pinned
+      # toolchain as the only Rust input to the key.
+      - name: Drop the runner's other Rust toolchains
+        shell: bash
+        env:
+          PINNED: ${{ steps.rust_toolchain.outputs.channel }}
+        run: |
+          rustup default "$PINNED"
+          rustup toolchain list | awk '{print $1}' | while read -r tc; do
+            case "$tc" in
+              # `system` is a rustc outside rustup, which rustup cannot remove.
+              "$PINNED"-* | system) ;;
+              *) rustup toolchain uninstall "$tc" || echo "::warning::could not uninstall $tc" ;;
+            esac
+          done
+          rustup toolchain list
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:

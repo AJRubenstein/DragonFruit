@@ -126,6 +126,13 @@ function WorldSpaceVoxelEditOverlay({
 export type SceneOverlaysProps = {
   /** Raycast helper supplied by SceneCanvas via the renderSceneOverlays render-prop. */
   raycastActiveModelFromRay: (ray: THREE.Ray) => THREE.Intersection | null;
+  /**
+   * Whether the active model is being dragged. The hole punch markers are placed
+   * at committed world points, and a drag moves the model imperatively without
+   * touching those, so they would sit still and snap on release. They are markers,
+   * so they stand down for the gesture instead.
+   */
+  modelDragging?: boolean;
 
   scene: SceneManager;
   transformMgr: TransformManager;
@@ -176,6 +183,7 @@ export type SceneOverlaysProps = {
  */
 export function SceneOverlays({
   raycastActiveModelFromRay,
+  modelDragging = false,
   scene,
   transformMgr,
   ghostData,
@@ -240,7 +248,7 @@ export function SceneOverlays({
     <>
       {ghostData && LysGhostOverlay ? <LysGhostOverlay data={ghostData} visible /> : null}
 
-      {placedPunches.map((placement) => {
+      {!modelDragging && placedPunches.map((placement) => {
         const isApplied = appliedHolePunchPlacementIds.has(placement.id);
         // Draft markers (blue, unapplied) always show so the user
         // can see what needs applying. Applied markers (orange/grey)
@@ -285,7 +293,7 @@ export function SceneOverlays({
         );
       })}
 
-      {showDraftHolePunchMarkers && hoverPunchPreview && (
+      {!modelDragging && showDraftHolePunchMarkers && hoverPunchPreview && (
         <HolePunchPreviewCylinder
           key="hole-punch-hover-preview"
           position={hoverPunchPreview.worldPoint}
@@ -298,7 +306,7 @@ export function SceneOverlays({
         />
       )}
 
-      {isInHollowingTool && selectedHolePunchPlacementIds.length === 1 && (() => {
+      {!modelDragging && isInHollowingTool && selectedHolePunchPlacementIds.length === 1 && (() => {
         const selectedPlacement = placedPunches.find(
           (p) => selectedHolePunchPlacementIdSet.has(p.id),
         );
@@ -321,7 +329,7 @@ export function SceneOverlays({
         );
       })()}
 
-      {hollowPreview && previewModel && hollowingEditMode && !(isHollowingApplied && !isHollowingDirty) && (
+      {!modelDragging && hollowPreview && previewModel && hollowingEditMode && !(isHollowingApplied && !isHollowingDirty) && (
         <WorldSpaceVoxelEditOverlay
           voxelCenters={hollowPreview.removedVoxelCenters}
           blockedVoxelCenters={hollowPreview.blockedVoxelCenters}

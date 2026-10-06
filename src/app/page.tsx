@@ -336,7 +336,7 @@ import {
   getSavedUvToolsSettings,
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
-import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, resolveDeclaredHosts, toggleSegmentCurve, transformSupportsForModel, updateKnot } from '@/supports/state';
+import { subscribe as subscribeSupportState, findShaftOwnerOfSegment, getSnapshot as getSupportSnapshot, getModelIdForSupportEntityId, getSupportEntity, resolveDeclaredHosts, toggleSegmentCurve, transformSupportsForModel, updateKnot, getSelectedId, getSelectedCategory } from '@/supports/state';
 import { bracePlacementStore } from '@/supports/SupportTypes/Brace/bracePlacementState';
 import { splitSupportShaft } from '@/supports/SupportPrimitives/Joint/jointUtils';
 import { resolveSegmentEndpoints, type ShaftEntity } from '@/supports/SupportPrimitives/Knot/segmentEndpoints';
@@ -394,6 +394,7 @@ import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/Isl
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
 import { uploadPrintJobWithProgress, type PluginUploadProgressEvent } from '@/features/plugins/pluginUploadBridge';
 import { pluginNetworkFetch } from '@/utils/pluginNetworkBridge';
+import { clonePlainData } from '@/utils/plainDataClone';
 import { fetchRtspRelayStatus } from '@/utils/rtspRelayBridge';
 import {
   hollowApplyFromCapturedSource,
@@ -2202,20 +2203,27 @@ export default function Home() {
   const { getHotkey } = useHotkeyConfig();
   const supportSpotlightHoldHotkey = getHotkey('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
 
-  const supportMenuSnapshot = React.useSyncExternalStore(
+  // The menu reads the selection and the braces collection, so it subscribes to
+  // those rather than to the snapshot object. The snapshot is rebuilt on every
+  // store write, a support hover included, and this is the app root: the whole
+  // page and the scene canvas re-rendered for a hover that changed neither. The
+  // collections snapshot is identity-cached, so an edit still invalidates it.
+  const supportMenuSelectedId = React.useSyncExternalStore(subscribeSupportState, getSelectedId, getSelectedId);
+  const supportMenuSelectedCategory = React.useSyncExternalStore(subscribeSupportState, getSelectedCategory, getSelectedCategory);
+  const supportMenuCollections = React.useSyncExternalStore(
     subscribeSupportState,
-    getSupportSnapshot,
-    getSupportSnapshot,
+    getHomeSupportCollectionsSnapshot,
+    getHomeSupportCollectionsSnapshot,
   );
 
   const supportMenuSelection = React.useMemo(() => {
-    const selectedId = supportMenuSnapshot.selectedId;
+    const selectedId = supportMenuSelectedId;
     return {
       selectedId,
-      selectedCategory: supportMenuSnapshot.selectedCategory,
-      isBraceSelected: Boolean(selectedId && supportMenuSnapshot.braces[selectedId]),
+      selectedCategory: supportMenuSelectedCategory,
+      isBraceSelected: Boolean(selectedId && supportMenuCollections.braces[selectedId]),
     };
-  }, [supportMenuSnapshot]);
+  }, [supportMenuSelectedId, supportMenuSelectedCategory, supportMenuCollections]);
 
   const supportsCanToggleCurve = React.useMemo(() => {
     if (scene.mode !== 'support') return false;
@@ -2228,7 +2236,10 @@ export default function Home() {
   const supportContextMenuSegmentOwner = React.useMemo(() => {
     const segmentId = editorContextMenuSupportTarget?.segmentId;
     return segmentId ? findShaftOwnerOfSegment(segmentId) : null;
-  }, [editorContextMenuSupportTarget?.segmentId, supportMenuSnapshot]);
+    // The collections are read through a helper, not named here: the lookup is
+    // the invalidation this memo needs, and a support edit is what moves it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorContextMenuSupportTarget?.segmentId, supportMenuCollections]);
 
   const supportsCanAddJoint = React.useMemo(() => {
     if (scene.mode !== 'support') return false;
@@ -5338,7 +5349,7 @@ export default function Home() {
   }, []);
 
   const captureTransformSupportSnapshot = React.useCallback(() => {
-    const supportSnapshot = structuredClone(getSupportSnapshot());
+    const supportSnapshot = clonePlainData(getSupportSnapshot());
     supportSnapshot.selectedId = null;
     supportSnapshot.selectedCategory = null;
     supportSnapshot.hoveredId = null;
@@ -10164,7 +10175,7 @@ export default function Home() {
               resolveSelection: resolveBlockedHollowVoxelMarqueeSelection,
               onSelectionChange: handleBlockedHollowVoxelMarqueeSelection,
             }}
-            renderSceneOverlays={({ raycastActiveModelFromRay }) => {
+            renderSceneOverlays={({ raycastActiveModelFromRay, isDragging }) => {
               // Update raycast ref for island co-visibility checks
               modelRaycastRef.current = (start, end) => {
                 const dir = new THREE.Vector3().subVectors(end, start).normalize();
@@ -10179,6 +10190,7 @@ export default function Home() {
               return (
               <SceneOverlays
                 raycastActiveModelFromRay={raycastActiveModelFromRay}
+                modelDragging={isDragging}
                 scene={scene}
                 transformMgr={transformMgr}
                 ghostData={ghostData}
