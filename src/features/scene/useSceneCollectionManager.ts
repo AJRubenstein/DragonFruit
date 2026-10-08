@@ -97,6 +97,7 @@ import {
 } from '@/features/profiles/voxlPrinterBundle';
 import type { VoxlPrinterBundle } from '@/features/scene/voxl/types';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
+import { base64ToBytes } from '@/utils/base64';
 import {
   deleteStoredMeshModifiers,
   getStoredMeshModifiers,
@@ -1046,6 +1047,91 @@ export type SceneImportPlacementPrompt = {
   offPlateModelCount: number;
 };
 
+export type SceneImportHollowingChoice = 'bake' | 'keep_solid';
+
+export type SceneImportHollowingPrompt = {
+  source: string;
+  fileName: string;
+  modelCount: number;
+  hollowedModelCount: number;
+};
+
+/**
+ * Joins a pre-baked cavity to its outer shell as one hollow solid.
+ *
+ * A slicer that hollows before export (Lychee) ships the outer surface and the
+ * cavity as two meshes, so the model alone slices filled. The cavity is stored
+ * wound inward, which is what a shell's inner surface needs, making this a
+ * concatenation rather than a repair.
+ *
+ * Positions only: geometry prep recomputes normals, and every other attribute
+ * would have to be invented for the cavity's vertices.
+ */
+function mergeCavityIntoShell(
+  shell: THREE.BufferGeometry,
+  cavityPositions: Float32Array,
+): THREE.BufferGeometry {
+  const shellPositions = geometryPositionsAsSoup(shell);
+  if (!shellPositions) return shell;
+
+  const merged = new Float32Array(shellPositions.length + cavityPositions.length);
+  merged.set(shellPositions, 0);
+  merged.set(cavityPositions, shellPositions.length);
+
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(merged, 3));
+  return out;
+}
+
+/**
+ * A payload's pre-baked cavity positions, or `null` when it carries none.
+ *
+ * The cavity rides in the hollowing modifier as base64 rather than as geometry,
+ * so this is also the test for "was this model hollowed before export".
+ */
+function readPayloadCavity(payload: PluginSceneImportPayload): Float32Array | null {
+  const hollowing = (payload.meshModifiers as ModelMeshModifiers | undefined)?.hollowing;
+  if (!hollowing?.enabled) return null;
+  if (!hollowing.cavityPositionsBase64 || !hollowing.cavityPositionCount) return null;
+
+  try {
+    const bytes = base64ToBytes(hollowing.cavityPositionsBase64);
+    if (bytes.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0) return null;
+    const view = new Float32Array(
+      bytes.buffer,
+      bytes.byteOffset,
+      bytes.byteLength / Float32Array.BYTES_PER_ELEMENT,
+    );
+    if (view.length !== hollowing.cavityPositionCount * 3) return null;
+    // Copy: the decoded buffer is not guaranteed to outlive this call.
+    const positions = new Float32Array(view.length);
+    positions.set(view);
+    return positions;
+  } catch {
+    return null;
+  }
+}
+
+/** Positions as a flat triangle soup, resolving an index when one is present. */
+function geometryPositionsAsSoup(geometry: THREE.BufferGeometry): Float32Array | null {
+  const attr = geometry.getAttribute('position');
+  if (!attr) return null;
+  const src = attr.array as ArrayLike<number>;
+  const index = geometry.getIndex();
+  if (!index) return src instanceof Float32Array ? src : Float32Array.from(src);
+
+  const idx = index.array as ArrayLike<number>;
+  const soup = new Float32Array(idx.length * 3);
+  for (let i = 0; i < idx.length; i += 1) {
+    const s = idx[i] * 3;
+    const d = i * 3;
+    soup[d] = src[s];
+    soup[d + 1] = src[s + 1];
+    soup[d + 2] = src[s + 2];
+  }
+  return soup;
+}
+
 export type MeshRepairConfirmPrompt = {
   fileName: string;
   analysis: MeshAnalysisJson;
@@ -1392,12 +1478,14 @@ export function useSceneCollectionManager(options?: {
   const [sceneImportPlacementPrompt, setSceneImportPlacementPrompt] = useState<SceneImportPlacementPrompt | null>(null);
   const [obsoleteVoxlScene, setObsoleteVoxlScene] = useState<ObsoleteVoxlScenePrompt | null>(null);
   const [printerMismatch, setPrinterMismatch] = useState<PrinterMismatchPrompt | null>(null);
+  const [sceneImportHollowingPrompt, setSceneImportHollowingPrompt] = useState<SceneImportHollowingPrompt | null>(null);
   const [meshRepairConfirmPrompt, setMeshRepairConfirmPrompt] = useState<MeshRepairConfirmPrompt | null>(null);
   const [meshRepairReports, setMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
   const [meshRepairReportPresentation, setMeshRepairReportPresentation] = useState<MeshRepairReportPresentation>('default');
   const [pendingMeshRepairReports, setPendingMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
   const sceneImportReportTimeoutRef = useRef<number | null>(null);
   const sceneImportPlacementResolveRef = useRef<((choice: SceneImportPlacementChoice) => void) | null>(null);
+  const sceneImportHollowingResolveRef = useRef<((choice: SceneImportHollowingChoice) => void) | null>(null);
   const meshRepairConfirmResolveRef = useRef<((choice: MeshRepairConfirmChoice) => void) | null>(null);
 
   const deferredAccelerationQueueRef = useRef<THREE.BufferGeometry[]>([]);
@@ -1499,6 +1587,13 @@ export function useSceneCollectionManager(options?: {
     resolve?.(choice);
   }, []);
 
+  const resolveSceneImportHollowingPrompt = useCallback((choice: SceneImportHollowingChoice) => {
+    const resolve = sceneImportHollowingResolveRef.current;
+    sceneImportHollowingResolveRef.current = null;
+    setSceneImportHollowingPrompt(null);
+    resolve?.(choice);
+  }, []);
+
   const resolveMeshRepairConfirmPrompt = useCallback((choice: MeshRepairConfirmChoice) => {
     const resolve = meshRepairConfirmResolveRef.current;
     meshRepairConfirmResolveRef.current = null;
@@ -1544,12 +1639,38 @@ export function useSceneCollectionManager(options?: {
     });
   }, []);
 
+  const requestSceneImportHollowingChoice = useCallback(async (
+    prompt: SceneImportHollowingPrompt,
+  ): Promise<SceneImportHollowingChoice> => {
+    // Headless: take the file at its word and keep the authored hollow.
+    if (typeof window === 'undefined') {
+      return 'bake';
+    }
+
+    if (sceneImportHollowingResolveRef.current) {
+      // Fail-safe: resolve previous unresolved prompt so imports never deadlock.
+      sceneImportHollowingResolveRef.current('bake');
+      sceneImportHollowingResolveRef.current = null;
+    }
+
+    setSceneImportHollowingPrompt(prompt);
+
+    return await new Promise<SceneImportHollowingChoice>((resolve) => {
+      sceneImportHollowingResolveRef.current = resolve;
+    });
+  }, []);
+
   useEffect(() => {
     return () => {
       if (sceneImportPlacementResolveRef.current) {
         const resolve = sceneImportPlacementResolveRef.current;
         sceneImportPlacementResolveRef.current = null;
         resolve('load_as_is');
+      }
+      if (sceneImportHollowingResolveRef.current) {
+        const resolve = sceneImportHollowingResolveRef.current;
+        sceneImportHollowingResolveRef.current = null;
+        resolve('bake');
       }
     };
   }, []);
@@ -5386,6 +5507,24 @@ export function useSceneCollectionManager(options?: {
         throw new Error(`Plugin "${pluginImport.pluginId}" returned an unsupported scene payload.`);
       }
 
+      // A scene whose models were hollowed before export carries the cavity as a
+      // second mesh, so the model alone slices filled. Ask before baking it in:
+      // the answer decides the geometry every stage below works on, so it is
+      // settled here, before any of it runs.
+      const hollowedPayloads = normalizedPayloads.filter(
+        (p) => readPayloadCavity(p) !== null,
+      );
+      let bakeImportedHollowing = true;
+      if (hollowedPayloads.length > 0 && !options?.suppressPlacementPrompt) {
+        const choice = await requestSceneImportHollowingChoice({
+          source: extension.slice(1).toUpperCase(),
+          fileName: file.name,
+          modelCount: normalizedPayloads.length,
+          hollowedModelCount: hollowedPayloads.length,
+        });
+        bakeImportedHollowing = choice === 'bake';
+      }
+
       // Process all geometries sequentially
       const processedItems: Array<{
         normalized: PluginSceneImportPayload;
@@ -5397,6 +5536,20 @@ export function useSceneCollectionManager(options?: {
         // keep the normals the command returns: they are welded and split at
         // creases, which `computeVertexNormals` would flatten again.
         let geometry = normalized.geometry;
+        // Bake the cavity in first, so refine, classification and the BVH all
+        // describe the hollow solid rather than the shell that encloses it.
+        if (bakeImportedHollowing) {
+          const cavity = readPayloadCavity(normalized);
+          if (cavity) {
+            const shellTris = (geometry.getAttribute('position')?.count ?? 0) / 3;
+            geometry = mergeCavityIntoShell(geometry, cavity);
+            console.log(
+              `[SceneCollection] Baked cavity into model: ${shellTris.toLocaleString()} + `
+              + `${(cavity.length / 9).toLocaleString()} = `
+              + `${((geometry.getAttribute('position')?.count ?? 0) / 3).toLocaleString()} triangles`,
+            );
+          }
+        }
         let skipComputeNormals = false;
         try {
           const refined = await refineCoarseFaces(geometry);
@@ -5602,7 +5755,20 @@ export function useSceneCollectionManager(options?: {
 
         // Store meshModifiers externally so model objects stay lightweight
         if (meshModifiers) {
-          storeModelMeshModifiers(model.id, cloneMeshModifiersShallow(meshModifiers));
+          const stored = cloneMeshModifiersShallow(meshModifiers);
+          const hollowing = (stored as ModelMeshModifiers).hollowing;
+          if (hollowing?.enabled && hollowing.cavityPositionsBase64) {
+            // `bakedIntoGeometry` is what the hollowing panel trusts when it
+            // decides whether the cavity is already in the mesh, so it has to
+            // follow the choice rather than the file's own claim. Declining
+            // keeps the cavity for Interior View and leaves the panel able to
+            // bake it later.
+            (stored as ModelMeshModifiers).hollowing = {
+              ...hollowing,
+              bakedIntoGeometry: bakeImportedHollowing,
+            };
+          }
+          storeModelMeshModifiers(model.id, stored);
         }
 
         newModels.push(model);
@@ -5677,7 +5843,7 @@ export function useSceneCollectionManager(options?: {
         });
       }
     }
-  }, [_, emitSceneImportReport, findFreeSpotCentersForModels, getSceneExtension, isModelFootprintInsidePlate, processGeometry, requestSceneImportPlacementChoice, scenePluginImportHandlersByExtension, setActiveModelId, setModels, setSelectedModelIds, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
+  }, [_, emitSceneImportReport, findFreeSpotCentersForModels, getSceneExtension, isModelFootprintInsidePlate, processGeometry, requestSceneImportHollowingChoice, requestSceneImportPlacementChoice, scenePluginImportHandlersByExtension, setActiveModelId, setModels, setSelectedModelIds, shouldAutoRepairSceneImports, trackRecentOpenedFiles, waitForUiYield]);
 
   const handleImportVoxlFile = useCallback(async (file: File, options?: SceneImportRunOptions): Promise<boolean> => {
     if (!options?.suppressRecentTracking) {
@@ -7246,6 +7412,8 @@ export function useSceneCollectionManager(options?: {
     resolveSceneImportPlacementPrompt,
     obsoleteVoxlScene,
     dismissObsoleteVoxlScene,
+    sceneImportHollowingPrompt,
+    resolveSceneImportHollowingPrompt,
     meshRepairConfirmPrompt,
     resolveMeshRepairConfirmPrompt,
     repairModelInPlace,

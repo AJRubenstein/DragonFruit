@@ -27,6 +27,12 @@ msgstr "{0, plural, one {# isla} other {# islas}}"
 msgid "{0, plural, one {# polygon} other {# polygons}}"
 msgstr "{0, plural, one {# polígono} other {# polígonos}}"
 
+#. placeholder {0}: scene.sceneImportHollowingPrompt.hollowedModelCount
+#. placeholder {1}: scene.sceneImportHollowingPrompt.modelCount
+#: src/components/organisms/modals/SceneFileModals.tsx:385
+msgid "{0} of {1, plural, one {# model carries an interior cavity.} other {# models carry an interior cavity.}}"
+msgstr "{0} de {1, plural, one {# modelo tiene una cavidad interior.} other {# modelos tienen una cavidad interior.}}"
+
 #. Badge counting the printers the network scan turned up.
 #: src/components/settings/FleetManagement.tsx:23
 msgid "{count, plural, one {# found} other {# found}}"
@@ -197,6 +203,14 @@ msgstr "<0>{overwriteCollisionCount}</0> archivos que va a escribir este proceso
 msgid "<0>{recordedLabel}</0> has a build volume of {0} × {1} × {2} mm."
 msgstr "tiene un volumen de impresión de"
 
+#: src/components/organisms/modals/SceneFileModals.tsx:401
+msgid "<0>Import Solid</0> loads the outer shape only. The cavity is kept, so you can apply it later from the Hollowing panel."
+msgstr "<0>Importar sólido</0> carga solo la forma exterior. La cavidad se conserva, así que puedes aplicarla más tarde desde el panel de vaciado."
+
+#: src/components/organisms/modals/SceneFileModals.tsx:397
+msgid "<0>Keep Hollow</0> builds the stored cavity into each model, so it prints hollow exactly as authored."
+msgstr "<0>Mantener hueco</0> incorpora la cavidad guardada en cada modelo, para que se imprima hueco tal como se diseñó."
+
 #. Approximate estimated print time (the "~" marks it as a rough estimate). {hours}/{mins} are whole-number quantities.
 #: src/app/page.tsx:473
 msgid "~{hours} h {mins} min"
@@ -330,7 +344,7 @@ msgid "Add or switch printer anytime from the top bar."
 msgstr "Añade o cambia de impresora en cualquier momento desde la barra superior."
 
 #. Accessible name of the button beside the build plate that will add another plate. Inert for now, so it reads as unavailable to a screen reader too.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1680
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1682
 msgid "Add plate"
 msgstr "Añadir plataforma"
 
@@ -489,7 +503,7 @@ msgid "Auto adapts by AA level, Off is fastest, On favors smaller PNG files"
 msgstr "Automático se adapta al nivel de AA, Desactivado es lo más rápido, Activado prioriza archivos PNG más pequeños"
 
 #. Tooltip on the arrange button beside the build plate. Runs the standard arrange across every model, 1mm apart, with Z-rotation allowed.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1774
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1776
 msgid "Auto arrange the plate"
 msgstr "Ordenar la plataforma automáticamente"
 
@@ -684,7 +698,7 @@ msgstr "Área media de isla"
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/layout/FirstRunOnboarding.tsx:278
 #: src/components/layout/OnboardingPrinterLibrary.tsx:279
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1780
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1782
 msgid "Back"
 msgstr "Atrás"
 
@@ -827,7 +841,7 @@ msgid "Border Margin"
 msgstr "Margen del borde"
 
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1784
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1786
 msgid "Bottom"
 msgstr "Abajo"
 
@@ -1053,6 +1067,10 @@ msgstr "Elegir carpeta"
 msgid "Choose slice action"
 msgstr "Elegir la acción de laminado"
 
+#: src/components/organisms/modals/SceneFileModals.tsx:363
+msgid "Choose whether to keep the hollow."
+msgstr "Elige si quieres conservar el vaciado."
+
 #: src/components/layout/FirstRunOnboarding.tsx:199
 msgid "Choose your theme"
 msgstr "Elige tu tema"
@@ -1104,7 +1122,7 @@ msgstr "«Borrar todo» ha fallado. Mira la consola para más detalles."
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #: src/app/page.tsx:10859
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1771
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1773
 msgid "Clear build plate"
 msgstr "Vaciar la plataforma"
 
@@ -1186,6 +1204,10 @@ msgstr "Cerrar la placa"
 msgid "Close program"
 msgstr "Cerrar programa"
 
+#: src/components/organisms/modals/SceneFileModals.tsx:371
+msgid "Close scene import hollowing prompt"
+msgstr "Cerrar el aviso de vaciado al importar la escena"
+
 #: src/features/slicing/components/SlicingPanel.tsx:3842
 msgid "Close session anti-aliasing override"
 msgstr "Cerrar la anulación de antialiasing de la sesión"
@@ -1258,7 +1280,7 @@ msgid "Color Scheme"
 msgstr "Esquema de color"
 
 #. Hover text on the add-plate button beside the build plate. The app has one plate for now, so the button says so instead of doing nothing.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1681
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1683
 msgid "Coming Soon!"
 msgstr "¡Próximamente!"
 
@@ -2385,7 +2407,7 @@ msgid "From the community, for the community. Free to use, open to contribute, a
 msgstr "De la comunidad y para la comunidad. Libre de usar, abierto a contribuciones y moldeado por quienes imprimen con él."
 
 #. Orientation label, rendered uppercase on the view cube and on the build plate's front edge. Keep it as short as possible — long words are auto-shrunk to fit and become hard to read.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1776
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1778
 msgid "Front"
 msgstr "Frente"
 
@@ -2449,7 +2471,7 @@ msgid "GitHub OAuth popup opened."
 msgstr "Ventana de OAuth de GitHub abierta."
 
 #. Tooltip on the build plate's name widget while it is still unnamed.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1679
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1681
 msgid "Give this build plate a name"
 msgstr "Dale un nombre a esta plataforma"
 
@@ -2672,6 +2694,14 @@ msgstr "Importar escena"
 msgid "Import scene…"
 msgstr "Importar escena…"
 
+#: src/components/organisms/modals/SceneFileModals.tsx:413
+msgid "Import Solid"
+msgstr "Importar sólido"
+
+#: src/components/organisms/modals/SceneFileModals.tsx:380
+msgid "Imported scene"
+msgstr "Escena importada"
+
 #: src/features/scene/sceneImportMessages.ts:60
 msgid "Importing {fileTypeName}…"
 msgstr "Importando {fileTypeName}…"
@@ -2856,6 +2886,10 @@ msgstr "Seguir editando"
 msgid "Keep going without a printer. You can add one later."
 msgstr "Continúa sin impresora. Puedes añadir una más adelante."
 
+#: src/components/organisms/modals/SceneFileModals.tsx:420
+msgid "Keep Hollow"
+msgstr "Mantener hueco"
+
 #: src/components/controls/AutoSupportPanel.tsx:650
 msgid "Keep the existing supports and do nothing"
 msgstr "Conserva los soportes existentes y no hace nada"
@@ -2965,7 +2999,7 @@ msgid "Leave the collection as it is"
 msgstr "Deja la colección como está"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1782
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1784
 #: src/components/settings/GeneralSettingsTab.tsx:280
 msgid "Left"
 msgstr "Izq."
@@ -3117,7 +3151,7 @@ msgid "LocalStorage Keys"
 msgstr "Claves de LocalStorage"
 
 #. Tooltip on the lock button beside the build plate while it is unlocked. Locking refuses new meshes and moves of the models already on the plate.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1769
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1771
 msgid "Lock build plate"
 msgstr "Bloquear la plataforma"
 
@@ -4071,7 +4105,7 @@ msgid "Plate {index}"
 msgstr "Plata {index}"
 
 #. What the build plate's name widget shows while the plate has no name of its own, including after the plate is cleared or a new scene is started. The number is the plate's, plural forms come later with multiple plates.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1677
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1679
 msgid "Plate 1"
 msgstr "Plataforma 1"
 
@@ -4479,7 +4513,7 @@ msgid "Rename"
 msgstr "Renombrar"
 
 #. Tooltip on the pencil beside the build plate's name.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1678
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1680
 msgid "Rename build plate"
 msgstr "Renombrar la plataforma"
 
@@ -4647,7 +4681,7 @@ msgid "Revert Changes"
 msgstr "Descartar los cambios"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1781
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1783
 msgid "Right"
 msgstr "Dcha."
 
@@ -4871,9 +4905,17 @@ msgstr "Guardado automático de escenas"
 msgid "Scene built for another printer"
 msgstr "Escena creada para otra impresora"
 
+#: src/components/organisms/modals/SceneFileModals.tsx:344
+msgid "Scene import hollowing decision"
+msgstr "Decisión de vaciado al importar la escena"
+
 #: src/components/settings/PerformanceSettingsTab.tsx:139
 msgid "Scene mood overlay in thumbnail"
 msgstr "Superposición ambiental de la escena en la miniatura"
+
+#: src/components/organisms/modals/SceneFileModals.tsx:360
+msgid "Scene was hollowed before export"
+msgstr "La escena se vació antes de exportarla"
 
 #: src/components/controls/toolRailEntries.ts:60
 msgid "Sculpt and smooth surface"
@@ -5002,12 +5044,12 @@ msgid "Selected printer is offline"
 msgstr "La impresora seleccionada está sin conexión"
 
 #. Shown while dragging a selection rectangle right to left, which takes every object the rectangle touches. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3295
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3307
 msgid "Selection Mode: Contact (Right to Left)"
 msgstr "Modo de selección: contacto (de derecha a izquierda)"
 
 #. Shown while dragging a selection rectangle left to right, which takes only the objects the rectangle fully encloses. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3299
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3311
 msgid "Selection Mode: Enclosed (Left to Right)"
 msgstr "Modo de selección: volumen completo (de izquierda a derecha)"
 
@@ -5860,7 +5902,7 @@ msgid "Toolbar position"
 msgstr "Posición de la barra de herramientas"
 
 #. View cube face (seen from above), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1783
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1785
 #: src/components/settings/GeneralSettingsTab.tsx:279
 msgid "Top"
 msgstr "Arriba"
@@ -5949,7 +5991,7 @@ msgid "Unknown manufacturer"
 msgstr "Fabricante desconocido"
 
 #. Tooltip on the lock button beside the build plate while it is locked.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1770
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1772
 msgid "Unlock build plate"
 msgstr "Desbloquear la plataforma"
 
@@ -5958,12 +6000,12 @@ msgid "Unlock it to add or move models."
 msgstr "Desbloquéala para añadir o mover modelos."
 
 #. Tooltip on the arrange button beside the build plate while the plate is locked, which is why it is disabled.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1775
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1777
 msgid "Unlock the plate to arrange it"
 msgstr "Desbloquea la plataforma para ordenarla"
 
 #. Tooltip on the bin beside the build plate while the plate is locked, which is why it is disabled.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1773
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1775
 msgid "Unlock the plate to clear it"
 msgstr "Desbloquea la plataforma para vaciarla"
 
