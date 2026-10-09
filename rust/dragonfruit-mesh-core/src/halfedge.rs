@@ -60,19 +60,25 @@ impl Topology {
     }
 
     pub fn boundary_edges(&self) -> Vec<EdgeKey> {
-        self.edges
+        let mut edges: Vec<EdgeKey> = self
+            .edges
             .iter()
             .filter(|(_, info)| info.faces.len() == 1)
             .map(|(k, _)| *k)
-            .collect()
+            .collect();
+        edges.sort_unstable();
+        edges
     }
 
     pub fn non_manifold_edges(&self) -> Vec<EdgeKey> {
-        self.edges
+        let mut edges: Vec<EdgeKey> = self
+            .edges
             .iter()
             .filter(|(_, info)| info.faces.len() > 2)
             .map(|(k, _)| *k)
-            .collect()
+            .collect();
+        edges.sort_unstable();
+        edges
     }
 
     /// Count of edges where the two incident faces traverse the edge in the
@@ -94,57 +100,72 @@ impl Topology {
     /// Walk boundary edges into closed loops. Returns loops as sequences of
     /// vertex indices.
     pub fn boundary_loops(&self) -> Vec<Vec<u32>> {
-        // Build adjacency: vertex -> unvisited boundary neighbours.
+        // Hash iteration order varies per process, and both the start vertex and
+        // the neighbour chosen at a junction change which loop is walked, so the
+        // adjacency is built and walked in sorted order.
+        let mut edges: Vec<EdgeKey> = self
+            .edges
+            .iter()
+            .filter(|(_, info)| info.faces.len() == 1)
+            .map(|(k, _)| *k)
+            .collect();
+        edges.sort_unstable();
         let mut adj: AHashMap<u32, smallvec::SmallVec<[u32; 4]>> = AHashMap::new();
-        for (k, info) in &self.edges {
-            if info.faces.len() == 1 {
-                adj.entry(k.0).or_default().push(k.1);
-                adj.entry(k.1).or_default().push(k.0);
-            }
+        for (a, b) in edges {
+            adj.entry(a).or_default().push(b);
+            adj.entry(b).or_default().push(a);
         }
+        for neighbours in adj.values_mut() {
+            neighbours.sort_unstable();
+        }
+        let mut starts: Vec<u32> = adj.keys().copied().collect();
+        starts.sort_unstable();
+
         let mut loops = Vec::new();
-        while let Some((&start, _)) = adj.iter().next() {
-            let mut loop_verts = vec![start];
-            let mut current = start;
-            let mut prev: Option<u32> = None;
-            loop {
-                let next = {
-                    let neighbours = adj.get_mut(&current);
-                    if neighbours.is_none() {
+        for start in starts {
+            while adj.get(&start).map(|v| !v.is_empty()).unwrap_or(false) {
+                let mut loop_verts = vec![start];
+                let mut current = start;
+                let mut prev: Option<u32> = None;
+                loop {
+                    let next = {
+                        let neighbours = adj.get_mut(&current);
+                        if neighbours.is_none() {
+                            break;
+                        }
+                        let neighbours = neighbours.unwrap();
+                        // Prefer a neighbour that isn't the previous vertex.
+                        let pick_idx = neighbours
+                            .iter()
+                            .position(|&n| Some(n) != prev)
+                            .or_else(|| if neighbours.is_empty() { None } else { Some(0) });
+                        match pick_idx {
+                            Some(i) => neighbours.remove(i),
+                            None => break,
+                        }
+                    };
+                    // Remove reverse edge.
+                    if let Some(back) = adj.get_mut(&next) {
+                        if let Some(pos) = back.iter().position(|&n| n == current) {
+                            back.remove(pos);
+                        }
+                    }
+                    if adj.get(&current).map(|v| v.is_empty()).unwrap_or(true) {
+                        adj.remove(&current);
+                    }
+                    if next == start {
                         break;
                     }
-                    let neighbours = neighbours.unwrap();
-                    // Prefer a neighbour that isn't the previous vertex.
-                    let pick_idx = neighbours
-                        .iter()
-                        .position(|&n| Some(n) != prev)
-                        .or_else(|| if neighbours.is_empty() { None } else { Some(0) });
-                    match pick_idx {
-                        Some(i) => neighbours.remove(i),
-                        None => break,
-                    }
-                };
-                // Remove reverse edge.
-                if let Some(back) = adj.get_mut(&next) {
-                    if let Some(pos) = back.iter().position(|&n| n == current) {
-                        back.remove(pos);
-                    }
+                    loop_verts.push(next);
+                    prev = Some(current);
+                    current = next;
                 }
-                if adj.get(&current).map(|v| v.is_empty()).unwrap_or(true) {
-                    adj.remove(&current);
+                if adj.get(&start).map(|v| v.is_empty()).unwrap_or(true) {
+                    adj.remove(&start);
                 }
-                if next == start {
-                    break;
+                if loop_verts.len() >= 3 {
+                    loops.push(loop_verts);
                 }
-                loop_verts.push(next);
-                prev = Some(current);
-                current = next;
-            }
-            if adj.get(&start).map(|v| v.is_empty()).unwrap_or(true) {
-                adj.remove(&start);
-            }
-            if loop_verts.len() >= 3 {
-                loops.push(loop_verts);
             }
         }
         loops

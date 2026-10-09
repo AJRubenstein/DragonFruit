@@ -14,6 +14,7 @@ pub use dragonfruit_mesh_core as core;
 pub mod decimation_config;
 pub mod hollowing;
 pub mod io;
+mod topology_passes;
 pub mod repair;
 pub mod report;
 pub mod stl_budget;

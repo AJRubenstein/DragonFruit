@@ -42,6 +42,37 @@ pub struct AnalysisTimings {
     pub total_ms: f64,
 }
 
+/// Topology over position-welded vertex ids, with triangles that collapse to
+/// repeated indices dropped — an STL re-read sees exactly this, since the
+/// format stores no vertex identity. `None` when the mesh is already welded and
+/// free of degenerate indices, so the caller can reuse its own mesh.
+fn welded_topology(mesh: &IndexedMesh) -> (Option<IndexedMesh>, Topology) {
+    let ids = mesh.position_weld_ids();
+    let distinct = ids.iter().copied().max().map_or(0, |m| m as usize + 1);
+    let degenerate = |t: &[u32; 3]| t[0] == t[1] || t[1] == t[2] || t[0] == t[2];
+    if distinct == mesh.positions.len() && !mesh.triangles.iter().any(degenerate) {
+        return (None, Topology::build(mesh));
+    }
+    let triangles: Vec<[u32; 3]> = mesh
+        .triangles
+        .iter()
+        .map(|t| {
+            [
+                ids[t[0] as usize],
+                ids[t[1] as usize],
+                ids[t[2] as usize],
+            ]
+        })
+        .filter(|t| !degenerate(t))
+        .collect();
+    let welded = IndexedMesh {
+        positions: mesh.positions.clone(),
+        triangles,
+    };
+    let topo = Topology::build(&welded);
+    (Some(welded), topo)
+}
+
 pub fn analyze(mesh: &IndexedMesh) -> MeshAnalysis {
     let t_start = std::time::Instant::now();
 
@@ -49,7 +80,7 @@ pub fn analyze(mesh: &IndexedMesh) -> MeshAnalysis {
     let signed_volume = mesh.signed_volume();
 
     let t_topo = std::time::Instant::now();
-    let topo = Topology::build(mesh);
+    let (welded, topo) = welded_topology(mesh);
     let topology_ms = t_topo.elapsed().as_secs_f64() * 1000.0;
 
     let mut degenerate_triangles = 0usize;
@@ -94,7 +125,7 @@ pub fn analyze(mesh: &IndexedMesh) -> MeshAnalysis {
     let boundary_loops = boundary_loops_vec.len();
     let inconsistent_winding_edges = topo.inconsistent_edges();
 
-    let non_manifold_vertices = count_non_manifold_vertices(mesh, &topo);
+    let non_manifold_vertices = count_non_manifold_vertices(welded.as_ref().unwrap_or(mesh), &topo);
 
     let t_components = std::time::Instant::now();
     let connected_components = count_components(mesh);
@@ -155,7 +186,7 @@ pub fn analyze_lightweight(mesh: &IndexedMesh) -> MeshAnalysis {
     let signed_volume = mesh.signed_volume();
 
     let t_topo = std::time::Instant::now();
-    let topo = Topology::build(mesh);
+    let (welded, topo) = welded_topology(mesh);
     let topology_ms = t_topo.elapsed().as_secs_f64() * 1000.0;
 
     let mut degenerate_triangles = 0usize;
@@ -195,7 +226,7 @@ pub fn analyze_lightweight(mesh: &IndexedMesh) -> MeshAnalysis {
     let boundary_loops = boundary_loops_vec.len();
     let inconsistent_winding_edges = topo.inconsistent_edges();
 
-    let non_manifold_vertices = count_non_manifold_vertices(mesh, &topo);
+    let non_manifold_vertices = count_non_manifold_vertices(welded.as_ref().unwrap_or(mesh), &topo);
 
     let t_components = std::time::Instant::now();
     let connected_components = count_components(mesh);

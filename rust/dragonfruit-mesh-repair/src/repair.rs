@@ -23,6 +23,7 @@ use crate::arrangement::corefine_self_intersections;
 use crate::core::bvh::Bvh;
 use crate::core::halfedge::{edge_key, Topology};
 use crate::core::mesh::{IndexedMesh, Vec3};
+use crate::topology_passes;
 use crate::report::{MeshHealthReport, RepairStepReport};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,7 +67,7 @@ impl Default for RepairOptions {
     fn default() -> Self {
         Self {
             weld_epsilon: 1e-5,
-            fill_holes_max_edges: 64,
+            fill_holes_max_edges: 1024,
             keep_largest_n_components: None,
             repair_orientation: true,
             // Off by default because this path can be expensive on huge meshes;
@@ -140,6 +141,32 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
         notes: None,
         elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
     });
+
+    // 2b. Stitch before any hole is capped.
+    let t = std::time::Instant::now();
+    let stitch_tol = topology_passes::stitch_tolerance(&mesh);
+    let stitched = topology_passes::stitch_borders(&mut mesh, stitch_tol, 4);
+    if stitched > 0 {
+        cull_degenerate_and_duplicate(&mut mesh);
+    }
+    report.steps.push(RepairStepReport {
+        name: "stitch_borders".into(),
+        changed: stitched as u32,
+        notes: Some(format!("tolerance {stitch_tol:.6}")),
+        elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+    });
+
+    // 2c. Hole patches take their winding from the border, so it must be coherent first.
+    if options.repair_orientation {
+        let t = std::time::Instant::now();
+        let flipped = topology_passes::unify_winding(&mut mesh);
+        report.steps.push(RepairStepReport {
+            name: "unify_winding".into(),
+            changed: flipped as u32,
+            notes: None,
+            elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+        });
+    }
 
     // 3. Fill small holes.
     //
@@ -580,87 +607,116 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
             break 'topology_loop;
         }
 
-        let mut progress_this_iter = false;
-
-        // 7. Targeted non-manifold face cleanup (VCGlib-inspired), rollback-safe.
-        let t = std::time::Instant::now();
-        match attempt_non_manifold_face_cleanup(&mut mesh, options.fill_holes_max_edges) {
-            NonManifoldFaceCleanupOutcome::Skipped => {}
-            NonManifoldFaceCleanupOutcome::Applied { changed, notes } => {
-                progress_this_iter = true;
-                report.steps.push(RepairStepReport {
-                    name: "remove_non_manifold_faces".into(),
-                    changed: changed as u32,
-                    notes: Some(notes),
-                    elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
-                });
-
-                // Re-orient after topology edits so winding coherence has a
-                // chance to recover before the micro-heal pass.
-                if options.repair_orientation {
-                    let t = std::time::Instant::now();
-                    let flipped = repair_orientation(&mut mesh);
-                    report.steps.push(RepairStepReport {
-                        name: "orient_components_post_non_manifold_cleanup".into(),
-                        changed: flipped as u32,
-                        notes: None,
-                        elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
-                    });
-                }
-            }
-            NonManifoldFaceCleanupOutcome::RolledBack { notes } => {
-                report.steps.push(RepairStepReport {
-                    name: "rollback_non_manifold_cleanup".into(),
-                    changed: 0,
-                    notes: Some(notes),
-                    elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
-                });
-            }
-        }
-
-        // 8. Last-mile micro topology heal for tiny residual defects.
-        //
-        // This targets cases like support-heavy imported meshes where we end
-        // up with a handful of non-manifold/boundary edges after the main
-        // passes. It is tightly gated and internally rollback-protected.
-        let t = std::time::Instant::now();
-        match attempt_micro_topology_heal(&mut mesh, options.fill_holes_max_edges) {
-            MicroHealOutcome::Skipped => {}
-            MicroHealOutcome::Applied { changed, notes } => {
-                progress_this_iter = true;
-                report.steps.push(RepairStepReport {
-                    name: "micro_topology_heal".into(),
-                    changed: changed as u32,
-                    notes: Some(notes),
-                    elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
-                });
-
-                // Re-run orientation after local topology surgery.
-                if options.repair_orientation {
-                    let t = std::time::Instant::now();
-                    let flipped = repair_orientation(&mut mesh);
-                    report.steps.push(RepairStepReport {
-                        name: "orient_components_post_micro_heal".into(),
-                        changed: flipped as u32,
-                        notes: None,
-                        elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
-                    });
-                }
-            }
-            MicroHealOutcome::RolledBack { notes } => {
-                report.steps.push(RepairStepReport {
-                    name: "rollback_micro_topology_heal".into(),
-                    changed: 0,
-                    notes: Some(notes),
-                    elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
-                });
-            }
-        }
-
-        if !progress_this_iter {
+        if !run_topology_repair_pass(&mut mesh, options, &mut report) {
             // Neither pass made progress; further iterations won't help.
             break 'topology_loop;
         }
+    }
+
+    // 8b. Union overlapping parts once the topology passes have closed them.
+    #[cfg(feature = "manifold")]
+    if !applied_self_intersection_path
+        && report.pre.connected_components > 1
+        && report.pre.self_intersection_triangles > 0
+    {
+        let t = std::time::Instant::now();
+        let components = triangle_components(&mesh);
+        let before = mesh.clone();
+        match topology_passes::union_closed_components(&mut mesh, &components) {
+            Some((unioned, kept_tris)) => {
+                prune_unused_vertices(&mut mesh);
+                report.steps.push(RepairStepReport {
+                    name: "union_overlapping_parts".into(),
+                    changed: unioned as u32,
+                    notes: Some(format!(
+                        "{unioned} closed components unioned, {kept_tris} triangles kept verbatim, tris {} -> {}",
+                        before.triangles.len(),
+                        mesh.triangles.len()
+                    )),
+                    elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+                });
+                applied_self_intersection_path = true;
+            }
+            None => mesh = before,
+        }
+    }
+
+    // 8c. Parts that touch keep one vertex record each through the union, while
+    // a re-read of the exported STL welds them by position and can see seams
+    // this mesh has not. Weld here and give the topology passes one more pass
+    // at whatever that exposes.
+    let t = std::time::Instant::now();
+    let welded = mesh.weld_by_position();
+    report.steps.push(RepairStepReport {
+        name: "weld_position_duplicates".into(),
+        changed: welded as u32,
+        notes: None,
+        elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+    });
+    if welded > 0 {
+        run_topology_repair_pass(&mut mesh, options, &mut report);
+    }
+
+    // 8d. Surfaces that still share an edge are separated rather than trimmed,
+    // and the rims that exposes are filled. The offset is a few cells of the
+    // import weld grid, so loading the exported file does not merge them again.
+    // Faces the split leaves on a shared edge are sheets that merge back into
+    // the surface; the face cleanup takes those, and the fill closes behind it.
+    const MAX_SPLIT_ROUNDS: usize = 6;
+    let offset = 4.0 * (options.weld_epsilon * mesh.bbox().diag()).max(1e-7);
+    let mut before = analyze(&mesh);
+    for _ in 0..MAX_SPLIT_ROUNDS {
+        if before.non_manifold_edges == 0 {
+            break;
+        }
+        let t = std::time::Instant::now();
+        let mut candidate = mesh.clone();
+        let walls = topology_passes::remove_coincident_faces(&mut candidate);
+        let split = walls + topology_passes::split_non_manifold_edges(&mut candidate, offset);
+        topology_passes::remove_open_fragments(&mut candidate, 16);
+        let mut filled = fill_small_holes(&mut candidate, options.fill_holes_max_edges);
+        let mut inner = report.clone();
+        inner.steps.clear();
+        run_topology_repair_pass(&mut candidate, options, &mut inner);
+        filled += fill_small_holes(&mut candidate, options.fill_holes_max_edges);
+        let mut after = analyze(&candidate);
+        // Whatever no pairing can resolve is cut out and filled over.
+        for _ in 0..3 {
+            if after.non_manifold_edges + after.boundary_edges == 0 || after.non_manifold_edges > 64 {
+                break;
+            }
+            let mut excised = candidate.clone();
+            if topology_passes::excise_tangles(&mut excised) == 0 {
+                break;
+            }
+            let refilled = fill_small_holes(&mut excised, options.fill_holes_max_edges);
+            let check = analyze(&excised);
+            if check.non_manifold_edges + check.boundary_edges
+                >= after.non_manifold_edges + after.boundary_edges
+            {
+                break;
+            }
+            candidate = excised;
+            filled += refilled;
+            after = check;
+        }
+        let accepted = after.non_manifold_edges < before.non_manifold_edges
+            && after.boundary_edges <= before.boundary_edges;
+        report.steps.push(RepairStepReport {
+            name: if accepted { "split_non_manifold_edges" } else { "rollback_split_non_manifold_edges" }.into(),
+            changed: if accepted { (split + filled) as u32 } else { 0 },
+            notes: Some(format!(
+                "vertices split {split}, holes filled {filled}, nme {} -> {}, boundary {} -> {}",
+                before.non_manifold_edges, after.non_manifold_edges, before.boundary_edges, after.boundary_edges
+            )),
+            elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+        });
+        if !accepted {
+            break;
+        }
+        report.steps.extend(inner.steps);
+        mesh = candidate;
+        before = after;
     }
 
     // 9. Drop unused vertices (post-cull cleanup).
@@ -739,6 +795,12 @@ pub fn repair(mut mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
         residuals.push(format!(
             "{} inconsistently wound edges remain",
             report.post.inconsistent_winding_edges
+        ));
+    }
+    if report.post.degenerate_triangles > 0 {
+        residuals.push(format!(
+            "{} degenerate (zero-area) triangles remain",
+            report.post.degenerate_triangles
         ));
     }
 
@@ -1570,6 +1632,93 @@ enum NonManifoldFaceCleanupOutcome {
     RolledBack { notes: String },
 }
 
+/// One ordered pass of the two topology-repair passes: targeted non-manifold
+/// face cleanup, then the last-mile micro topology heal. Both are internally
+/// gated and rollback-protected; returns whether either made progress.
+fn run_topology_repair_pass(
+    mesh: &mut IndexedMesh,
+    options: &RepairOptions,
+    report: &mut MeshHealthReport,
+) -> bool {
+    let mut progress = false;
+
+    // 7. Targeted non-manifold face cleanup (VCGlib-inspired), rollback-safe.
+    let t = std::time::Instant::now();
+    match attempt_non_manifold_face_cleanup(mesh, options.fill_holes_max_edges) {
+        NonManifoldFaceCleanupOutcome::Skipped => {}
+        NonManifoldFaceCleanupOutcome::Applied { changed, notes } => {
+            progress = true;
+            report.steps.push(RepairStepReport {
+                name: "remove_non_manifold_faces".into(),
+                changed: changed as u32,
+                notes: Some(notes),
+                elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+            });
+
+            // Re-orient after topology edits so winding coherence has a chance
+            // to recover before the micro-heal pass.
+            if options.repair_orientation {
+                let t = std::time::Instant::now();
+                let flipped = repair_orientation(mesh);
+                report.steps.push(RepairStepReport {
+                    name: "orient_components_post_non_manifold_cleanup".into(),
+                    changed: flipped as u32,
+                    notes: None,
+                    elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+                });
+            }
+        }
+        NonManifoldFaceCleanupOutcome::RolledBack { notes } => {
+            report.steps.push(RepairStepReport {
+                name: "rollback_non_manifold_cleanup".into(),
+                changed: 0,
+                notes: Some(notes),
+                elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+            });
+        }
+    }
+
+    // 8. Last-mile micro topology heal for tiny residual defects.
+    //
+    // This targets cases like support-heavy imported meshes where we end up
+    // with a handful of non-manifold/boundary edges after the main passes.
+    let t = std::time::Instant::now();
+    match attempt_micro_topology_heal(mesh, options.fill_holes_max_edges) {
+        MicroHealOutcome::Skipped => {}
+        MicroHealOutcome::Applied { changed, notes } => {
+            progress = true;
+            report.steps.push(RepairStepReport {
+                name: "micro_topology_heal".into(),
+                changed: changed as u32,
+                notes: Some(notes),
+                elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+            });
+
+            // Re-run orientation after local topology surgery.
+            if options.repair_orientation {
+                let t = std::time::Instant::now();
+                let flipped = repair_orientation(mesh);
+                report.steps.push(RepairStepReport {
+                    name: "orient_components_post_micro_heal".into(),
+                    changed: flipped as u32,
+                    notes: None,
+                    elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+                });
+            }
+        }
+        MicroHealOutcome::RolledBack { notes } => {
+            report.steps.push(RepairStepReport {
+                name: "rollback_micro_topology_heal".into(),
+                changed: 0,
+                notes: Some(notes),
+                elapsed_ms: t.elapsed().as_secs_f64() * 1000.0,
+            });
+        }
+    }
+
+    progress
+}
+
 fn attempt_non_manifold_face_cleanup(
     mesh: &mut IndexedMesh,
     fill_holes_max_edges: usize,
@@ -1768,7 +1917,7 @@ fn non_manifold_cleanup_is_improvement(before: &MeshAnalysis, after: &MeshAnalys
     // Primary target is reducing non-manifold edges without damaging other
     // critical quality indicators.
     after.non_manifold_edges < before.non_manifold_edges
-        && after.self_intersection_triangles <= before.self_intersection_triangles
+        && after.self_intersection_triangles <= before.self_intersection_triangles.saturating_add(64)
         && after.degenerate_triangles <= before.degenerate_triangles
         && after.duplicate_triangles <= before.duplicate_triangles
 }
@@ -2031,6 +2180,7 @@ fn cull_degenerate_and_duplicate(mesh: &mut IndexedMesh) -> usize {
         }
         true
     });
+    topology_passes::flip_degenerate_caps(mesh, 1e-16, 4);
     // Zero-area filter (positional).
     let positions = &mesh.positions;
     mesh.triangles.retain(|tri| {
@@ -2074,162 +2224,8 @@ fn prune_unused_vertices(mesh: &mut IndexedMesh) -> usize {
     before - mesh.positions.len()
 }
 
-/// Ear-clipping hole filler. For each boundary loop of size <= `max_edges`,
-/// project loop vertices onto a best-fit plane (via normal averaging) and
-/// triangulate 2D. Convex-first greedy — does not handle self-intersecting
-/// polygons but handles the common case of small planar/near-planar holes.
 fn fill_small_holes(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
-    let topo = Topology::build(mesh);
-    let loops = topo.boundary_loops();
-    let mut added = 0usize;
-
-    for loop_verts in loops
-        .into_iter()
-        .filter(|l| l.len() <= max_edges && l.len() >= 3)
-    {
-        // Compute average normal of one-ring faces along the loop to orient
-        // the fill (so ear clipping produces outward-facing triangles).
-        let avg_normal = {
-            let mut sum = Vec3::ZERO;
-            for &v in &loop_verts {
-                for &face in &topo.vertex_faces[v as usize] {
-                    sum = sum.add(mesh.tri_normal(face));
-                }
-            }
-            let len = sum.length();
-            if len > 1e-8 {
-                sum.scale(1.0 / len)
-            } else {
-                Vec3::new(0.0, 0.0, 1.0)
-            }
-        };
-
-        // Build a local 2D frame perpendicular to `avg_normal`.
-        let up = if avg_normal.z.abs() < 0.9 {
-            Vec3::new(0.0, 0.0, 1.0)
-        } else {
-            Vec3::new(1.0, 0.0, 0.0)
-        };
-        let u_axis = {
-            let n = avg_normal.cross(up);
-            let len = n.length();
-            if len > 1e-8 {
-                n.scale(1.0 / len)
-            } else {
-                Vec3::new(1.0, 0.0, 0.0)
-            }
-        };
-        let v_axis = avg_normal.cross(u_axis);
-
-        let pts2d: Vec<(f32, f32)> = loop_verts
-            .iter()
-            .map(|&v| {
-                let p = mesh.positions[v as usize];
-                (p.dot(u_axis), p.dot(v_axis))
-            })
-            .collect();
-
-        // Orient loop counter-clockwise in the 2D frame for consistent winding.
-        let mut verts_ordered: Vec<u32> = loop_verts.clone();
-        let mut pts_ordered = pts2d.clone();
-        if polygon_signed_area(&pts_ordered) < 0.0 {
-            verts_ordered.reverse();
-            pts_ordered.reverse();
-        }
-
-        // Ear clipping.
-        let tris = ear_clip(&pts_ordered);
-        for [i, j, k] in tris {
-            mesh.triangles
-                .push([verts_ordered[i], verts_ordered[j], verts_ordered[k]]);
-            added += 1;
-        }
-    }
-    added
-}
-
-fn polygon_signed_area(pts: &[(f32, f32)]) -> f32 {
-    let mut s = 0.0f32;
-    let n = pts.len();
-    for i in 0..n {
-        let (x0, y0) = pts[i];
-        let (x1, y1) = pts[(i + 1) % n];
-        s += x0 * y1 - x1 * y0;
-    }
-    s * 0.5
-}
-
-fn ear_clip(pts: &[(f32, f32)]) -> Vec<[usize; 3]> {
-    let n = pts.len();
-    if n < 3 {
-        return Vec::new();
-    }
-    let mut remaining: Vec<usize> = (0..n).collect();
-    let mut tris: Vec<[usize; 3]> = Vec::with_capacity(n - 2);
-    let mut guard = 0usize;
-    while remaining.len() > 3 && guard < n * n {
-        guard += 1;
-        let m = remaining.len();
-        let mut ear_found = false;
-        for i in 0..m {
-            let ia = remaining[(i + m - 1) % m];
-            let ib = remaining[i];
-            let ic = remaining[(i + 1) % m];
-            if !is_convex(pts[ia], pts[ib], pts[ic]) {
-                continue;
-            }
-            let mut contains_other = false;
-            for (j, &idx) in remaining.iter().enumerate() {
-                if j == (i + m - 1) % m || j == i || j == (i + 1) % m {
-                    continue;
-                }
-                if point_in_tri(pts[idx], pts[ia], pts[ib], pts[ic]) {
-                    contains_other = true;
-                    break;
-                }
-            }
-            if !contains_other {
-                tris.push([ia, ib, ic]);
-                remaining.remove(i);
-                ear_found = true;
-                break;
-            }
-        }
-        if !ear_found {
-            // Fallback: centroid fan (robust but may produce skinny tris).
-            break;
-        }
-    }
-    if remaining.len() == 3 {
-        tris.push([remaining[0], remaining[1], remaining[2]]);
-    } else if remaining.len() > 3 {
-        // Fan-fallback when ear clipping cannot progress.
-        let anchor = remaining[0];
-        for i in 1..remaining.len() - 1 {
-            tris.push([anchor, remaining[i], remaining[i + 1]]);
-        }
-    }
-    tris
-}
-
-fn is_convex(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
-    let ux = b.0 - a.0;
-    let uy = b.1 - a.1;
-    let vx = c.0 - b.0;
-    let vy = c.1 - b.1;
-    (ux * vy - uy * vx) > 0.0
-}
-
-fn point_in_tri(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
-    fn sign(p: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
-        (p.0 - b.0) * (a.1 - b.1) - (a.0 - b.0) * (p.1 - b.1)
-    }
-    let d1 = sign(p, a, b);
-    let d2 = sign(p, b, c);
-    let d3 = sign(p, c, a);
-    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
-    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
-    !(has_neg && has_pos)
+    topology_passes::fill_holes_oriented(mesh, max_edges)
 }
 
 /// Drop topologically open components that commonly appear as seam shards
@@ -2623,24 +2619,81 @@ fn classify_and_reorder_model_support_triangles(
     }
 }
 
-/// Assign a component id to each triangle via union-find over shared edges;
-/// for each component, cast a ray from a point well outside the bbox along a
-/// random direction and count hits. If the count is even when the component
-/// is supposed to contain the origin, or if the signed volume disagrees with
-/// the majority-normal direction, flip every triangle's winding.
+/// Ray directions for the nesting-depth vote; fixed so results stay deterministic.
+const DEPTH_RAY_DIRS: [Vec3; 5] = [
+    Vec3::new(0.5773503, 0.5773503, 0.5773503),
+    Vec3::new(-0.4361, 0.7253, 0.5327),
+    Vec3::new(0.2672, -0.8019, 0.5346),
+    Vec3::new(-0.6247, -0.3122, -0.7158),
+    Vec3::new(0.8017, 0.2671, -0.5347),
+];
+
+/// Up to `max` sample points inside the component's solid: the centroids of its
+/// largest faces moved off their planes against their normals.
+fn interior_sample_points(mesh: &IndexedMesh, faces: &[u32], eps: f32, max: usize) -> Vec<Vec3> {
+    let mut ranked: Vec<(f32, u32)> = faces.iter().map(|&f| (mesh.tri_area(f), f)).collect();
+    ranked.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.cmp(&b.1))
+    });
+    ranked
+        .into_iter()
+        .take(max)
+        .filter_map(|(_, fi)| {
+            let n = mesh.tri_normal(fi);
+            if n.length() < 1e-8 {
+                return None;
+            }
+            let [a, b, c] = mesh.tri_positions(fi);
+            Some(a.add(b).add(c).scale(1.0 / 3.0).sub(n.scale(eps)))
+        })
+        .collect()
+}
+
+/// Whether a component is a cavity boundary. One sample can land in a
+/// neighbouring part, so several of the component's largest faces vote.
+fn nesting_depth_is_odd(
+    bvh: &Bvh,
+    mesh: &IndexedMesh,
+    components: &[u32],
+    comp_id: u32,
+    samples: &[Vec3],
+) -> bool {
+    let mut odd = 0usize;
+    for sample in samples {
+        let mut votes = 0usize;
+        for dir in DEPTH_RAY_DIRS {
+            let hits = bvh.ray_hit_count_with_filter(mesh, *sample, dir, &|f| {
+                components[f as usize] != comp_id
+            });
+            votes += (hits & 1) as usize;
+        }
+        odd += (votes * 2 > DEPTH_RAY_DIRS.len()) as usize;
+    }
+    odd * 2 > samples.len()
+}
+
+/// Orient each component: a negative signed volume means an inward winding,
+/// which is what a cavity boundary should have, so a component nested inside
+/// another keeps it. Everything else with a negative volume is flipped.
 fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     if mesh.triangles.is_empty() {
         return 0;
     }
+    let mut flipped_faces = topology_passes::unify_winding(mesh);
     let components = triangle_components(mesh);
     let n_components = components.iter().max().copied().unwrap_or(0) + 1;
-    let mut flipped_faces = 0usize;
+    let sample_eps = (mesh.bbox().diag() * 1e-4).max(1e-6);
 
-    // Per-component signed volume gives us the simplest orientation check —
-    // if a component is watertight and signed volume is negative, flip it.
-    // For non-watertight components we fall back to a ray-cast vote using the
-    // overall BVH.
+    // Open components have no usable depth, so they keep the ray-cast vote.
     let bvh = Bvh::build(mesh);
+    let mut edge_uses: AHashMap<(u32, u32), u32> = AHashMap::with_capacity(mesh.triangles.len() * 3 / 2);
+    for t in &mesh.triangles {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            *edge_uses.entry(edge_key(a, b)).or_insert(0) += 1;
+        }
+    }
 
     for comp_id in 0..n_components {
         let face_indices: Vec<u32> = components
@@ -2665,12 +2718,28 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
         }
         vol /= 6.0;
 
-        let flip_by_volume = vol < -1e-6;
+        // An open component's signed volume depends on where the origin is, so
+        // its sign says nothing about which way the faces point.
+        let is_open = face_indices.iter().any(|&fi| {
+            let t = mesh.triangles[fi as usize];
+            [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])]
+                .iter()
+                .any(|&(a, b)| edge_uses.get(&edge_key(a, b)).copied().unwrap_or(0) == 1)
+        });
 
-        let should_flip = if flip_by_volume {
-            true
+        let should_flip = if is_open {
+            open_component_is_inverted(mesh, &face_indices)
+                && !(n_components > 1
+                    && nesting_depth_is_odd(
+                        &bvh,
+                        mesh,
+                        &components,
+                        comp_id,
+                        &interior_sample_points(mesh, &face_indices, sample_eps, 5),
+                    ))
         } else if vol.abs() < 1e-6 {
-            // Likely not watertight — ray-cast vote using triangle centroids.
+            // Not watertight, so depth carries no information — ray-cast vote
+            // using triangle centroids.
             let votes: usize = face_indices
                 .par_iter()
                 .map(|&fi| {
@@ -2692,7 +2761,18 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
                 .sum();
             votes * 2 > face_indices.len()
         } else {
-            false
+            // A cavity boundary is wound inward on purpose, so a negative
+            // volume only means inversion when the component is not nested
+            // inside another. Depth can hold a flip back, never add one.
+            let is_cavity = n_components > 1
+                && nesting_depth_is_odd(
+                    &bvh,
+                    mesh,
+                    &components,
+                    comp_id,
+                    &interior_sample_points(mesh, &face_indices, sample_eps, 5),
+                );
+            vol < -1e-6 && !is_cavity
         };
 
         if should_flip {
@@ -2704,6 +2784,57 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
         }
     }
     flipped_faces
+}
+
+/// Generalised winding number at `p` from `faces`, leaving out `skip`.
+fn winding_number_at(mesh: &IndexedMesh, faces: &[u32], skip: u32, p: Vec3) -> f64 {
+    let mut omega = 0.0f64;
+    for &fi in faces {
+        if fi == skip {
+            continue;
+        }
+        let [a, b, c] = mesh.tri_positions(fi);
+        let d = |v: Vec3| [(v.x - p.x) as f64, (v.y - p.y) as f64, (v.z - p.z) as f64];
+        let (a, b, c) = (d(a), d(b), d(c));
+        let dot = |u: [f64; 3], v: [f64; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+        let len = |u: [f64; 3]| dot(u, u).sqrt();
+        let bxc = [b[1] * c[2] - b[2] * c[1], b[2] * c[0] - b[0] * c[2], b[0] * c[1] - b[1] * c[0]];
+        let (la, lb, lc) = (len(a), len(b), len(c));
+        let den = la * lb * lc + dot(a, b) * lc + dot(a, c) * lb + dot(b, c) * la;
+        omega += 2.0 * dot(a, bxc).atan2(den);
+    }
+    omega / (4.0 * std::f64::consts::PI)
+}
+
+/// At a face's own centroid the winding number from the rest of its component
+/// sits halfway between the values on its two sides: about +0.5 when the solid
+/// is behind the face, -0.5 when the face points into it. Holes shrink the
+/// magnitude but not the sign, so a clear majority of negative samples means
+/// the component is inside out.
+fn open_component_is_inverted(mesh: &IndexedMesh, faces: &[u32]) -> bool {
+    const SAMPLES: usize = 64;
+    let usable: Vec<u32> = faces
+        .iter()
+        .copied()
+        .filter(|&fi| mesh.tri_normal(fi).length() > 1e-12)
+        .collect();
+    if usable.len() < 4 {
+        return false;
+    }
+    let step = (usable.len() / SAMPLES).max(1);
+    let (pos, neg) = usable
+        .iter()
+        .step_by(step)
+        .take(SAMPLES)
+        .collect::<Vec<_>>()
+        .par_iter()
+        .map(|&&fi| {
+            let [a, b, c] = mesh.tri_positions(fi);
+            let w = winding_number_at(mesh, faces, fi, a.add(b).add(c).scale(1.0 / 3.0));
+            ((w > 0.1) as usize, (w < -0.1) as usize)
+        })
+        .reduce(|| (0, 0), |x, y| (x.0 + y.0, x.1 + y.1));
+    neg >= 3 && neg > 2 * pos
 }
 
 /// Assign each triangle to a connected-component id (edge-shared).
@@ -3113,6 +3244,181 @@ mod tests {
         };
         let outcome = classify_support_split(mesh, &options);
         assert!(outcome.report.likely_support_geometry);
+    }
+
+    /// Icosphere of the subdivided-icosahedron topology, scaled to `radius` and
+    /// wound outward.
+    fn icosphere(radius: f32, subdiv: usize) -> IndexedMesh {
+        let t = (1.0f32 + 5.0f32.sqrt()) / 2.0;
+        let mut verts: Vec<[f32; 3]> = vec![
+            [-1.0, t, 0.0],
+            [1.0, t, 0.0],
+            [-1.0, -t, 0.0],
+            [1.0, -t, 0.0],
+            [0.0, -1.0, t],
+            [0.0, 1.0, t],
+            [0.0, -1.0, -t],
+            [0.0, 1.0, -t],
+            [t, 0.0, -1.0],
+            [t, 0.0, 1.0],
+            [-t, 0.0, -1.0],
+            [-t, 0.0, 1.0],
+        ];
+        let mut faces: Vec<[u32; 3]> = vec![
+            [0, 11, 5],
+            [0, 5, 1],
+            [0, 1, 7],
+            [0, 7, 10],
+            [0, 10, 11],
+            [1, 5, 9],
+            [5, 11, 4],
+            [11, 10, 2],
+            [10, 7, 6],
+            [7, 1, 8],
+            [3, 9, 4],
+            [3, 4, 2],
+            [3, 2, 6],
+            [3, 6, 8],
+            [3, 8, 9],
+            [4, 9, 5],
+            [2, 4, 11],
+            [6, 2, 10],
+            [8, 6, 7],
+            [9, 8, 1],
+        ];
+        for _ in 0..subdiv {
+            let mut midpoints: AHashMap<(u32, u32), u32> = AHashMap::new();
+            let mut refined = Vec::with_capacity(faces.len() * 4);
+            for f in &faces {
+                let mut mid = [0u32; 3];
+                for k in 0..3 {
+                    let (a, b) = (f[k], f[(k + 1) % 3]);
+                    let key = (a.min(b), a.max(b));
+                    mid[k] = *midpoints.entry(key).or_insert_with(|| {
+                        let (pa, pb) = (verts[a as usize], verts[b as usize]);
+                        verts.push([
+                            (pa[0] + pb[0]) * 0.5,
+                            (pa[1] + pb[1]) * 0.5,
+                            (pa[2] + pb[2]) * 0.5,
+                        ]);
+                        (verts.len() - 1) as u32
+                    });
+                }
+                refined.push([f[0], mid[0], mid[2]]);
+                refined.push([mid[0], f[1], mid[1]]);
+                refined.push([mid[2], mid[1], f[2]]);
+                refined.push([mid[0], mid[1], mid[2]]);
+            }
+            faces = refined;
+        }
+        let positions: Vec<Vec3> = verts
+            .iter()
+            .map(|p| {
+                let len = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+                Vec3::new(p[0] * radius / len, p[1] * radius / len, p[2] * radius / len)
+            })
+            .collect();
+        let mut mesh = IndexedMesh {
+            positions,
+            triangles: faces,
+        };
+        if mesh.signed_volume() < 0.0 {
+            for tri in &mut mesh.triangles {
+                tri.swap(1, 2);
+            }
+        }
+        mesh
+    }
+
+    /// Outer shell at r=10 and cavity shell at r=8, both wound correctly, plus
+    /// the triangle range the cavity occupies.
+    fn hollow_sphere() -> (IndexedMesh, std::ops::Range<usize>) {
+        let outer = icosphere(10.0, 3);
+        let mut inner = icosphere(8.0, 3);
+        for tri in &mut inner.triangles {
+            tri.swap(1, 2);
+        }
+        let base = outer.positions.len() as u32;
+        let start = outer.triangles.len();
+        let mut positions = outer.positions;
+        positions.extend(inner.positions.iter().copied());
+        let mut triangles = outer.triangles;
+        triangles.extend(
+            inner
+                .triangles
+                .iter()
+                .map(|f| [f[0] + base, f[1] + base, f[2] + base]),
+        );
+        let end = triangles.len();
+        (IndexedMesh { positions, triangles }, start..end)
+    }
+
+    #[test]
+    fn hollow_sphere_orientation_is_preserved() {
+        let (mut mesh, _) = hollow_sphere();
+        let before = mesh.signed_volume();
+        assert!(before > 0.0, "cavity must subtract from the outer volume");
+        let flips = repair_orientation(&mut mesh);
+        assert_eq!(flips, 0, "correctly wound cavity must not be flipped");
+        assert!(
+            (mesh.signed_volume() - before).abs() <= before * 1e-6,
+            "orientation pass disturbed a correctly wound hollow sphere"
+        );
+    }
+
+    /// A box with its +x face missing, far enough from the origin that its
+    /// signed volume reads negative while every face points outward.
+    fn open_box(flip: bool) -> IndexedMesh {
+        let positions = [
+            [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [1.0, 1.0, 1.0], [0.0, 1.0, 1.0],
+        ]
+        .iter()
+        .map(|p| Vec3::new(p[0] + 10.0, p[1], p[2]))
+        .collect();
+        let mut triangles = vec![
+            [0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5],
+            [0, 5, 4], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7],
+        ];
+        if flip {
+            triangles.iter_mut().for_each(|t: &mut [u32; 3]| t.swap(1, 2));
+        }
+        IndexedMesh { positions, triangles }
+    }
+
+    #[test]
+    fn open_body_with_negative_volume_is_not_flipped() {
+        let mut mesh = open_box(false);
+        assert!(mesh.signed_volume() < 0.0);
+        assert_eq!(repair_orientation(&mut mesh), 0);
+    }
+
+    #[test]
+    fn inverted_open_body_is_flipped() {
+        let mut mesh = open_box(true);
+        assert!(mesh.signed_volume() > 0.0);
+        assert_eq!(repair_orientation(&mut mesh), 10);
+    }
+
+    #[test]
+    fn hollow_sphere_outer_shell_is_restored_after_inversion() {
+        let (mut mesh, cavity) = hollow_sphere();
+        let expected = mesh.signed_volume();
+        let outer = 0..cavity.start;
+        for tri in &mut mesh.triangles[outer.clone()] {
+            tri.swap(1, 2);
+        }
+        assert!(
+            mesh.signed_volume() < 0.0,
+            "inverting the outer shell must invert the whole mesh"
+        );
+        let flips = repair_orientation(&mut mesh);
+        assert_eq!(
+            flips,
+            outer.len(),
+            "the inverted outer shell must be flipped back and the cavity left alone"
+        );
+        assert!((mesh.signed_volume() - expected).abs() <= expected * 1e-6);
     }
 }
 

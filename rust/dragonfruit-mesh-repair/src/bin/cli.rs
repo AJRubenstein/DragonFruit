@@ -41,7 +41,7 @@ enum Command {
         pretty: bool,
         #[arg(long, default_value_t = 1e-5)]
         weld_epsilon: f32,
-        #[arg(long, default_value_t = 64)]
+        #[arg(long, default_value_t = RepairOptions::default().fill_holes_max_edges)]
         fill_holes_max_edges: usize,
         #[arg(long)]
         keep_largest_n: Option<usize>,
