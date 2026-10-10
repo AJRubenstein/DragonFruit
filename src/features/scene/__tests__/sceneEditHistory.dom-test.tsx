@@ -132,12 +132,27 @@ test('scene edits from the model list land in undo history', async (t) => {
     await t.test('repairing a model in place', async () => {
       clearHistory();
       const original = model()!.geometry.geometry;
-      assert.equal(await scene().repairModelInPlace(cube.id), true);
+      assert.equal(await scene().repairModelsInPlace([cube.id]), true);
       await settle(20);
       const repaired = model()!.geometry.geometry;
       assert.notEqual(repaired, original);
       assert.equal(getUndoCount(), 1);
       await assertUndoRedo(() => model()?.geometry.geometry, original, repaired);
+    });
+
+    await t.test('repairing several models is one step', async () => {
+      const other = await loadCube(scene, 'other.stl');
+      clearHistory();
+      const geometries = () => scene().models
+        .filter((m) => m.id === cube.id || m.id === other.id)
+        .map((m) => m.geometry.geometry);
+      const originals = geometries();
+      assert.equal(await scene().repairModelsInPlace([cube.id, other.id]), true);
+      await settle(20);
+      const repaired = geometries();
+      repaired.forEach((geometry, i) => assert.notEqual(geometry, originals[i]));
+      assert.equal(getUndoCount(), 1);
+      await assertUndoRedo(geometries, originals, repaired);
     });
   } finally {
     await tree.unmount();

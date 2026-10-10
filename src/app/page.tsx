@@ -1347,7 +1347,7 @@ export default function Home() {
     segmentId: string;
     point: { x: number; y: number; z: number };
   } | null>(null);
-  const [manualRepairModelId, setManualRepairModelId] = React.useState<string | null>(null);
+  const [manualRepairModelIds, setManualRepairModelIds] = React.useState<string[] | null>(null);
   // `autoStartRepair` marks a repair that must begin on its own — the manifold warning's
   // Repair Now — instead of waiting in the Repair Mesh dialog for a second confirmation.
   const [autoStartRepair, setAutoStartRepair] = React.useState(false);
@@ -5903,10 +5903,15 @@ export default function Home() {
     setEditorContextMenuPos(position);
   }, [scene]);
 
+  /** A row's repair button repairs the whole selection when that row is part of it. */
   const handleRepairModel = React.useCallback((modelId: string) => {
     setAutoStartRepair(false);
-    setManualRepairModelId(modelId);
-  }, []);
+    setManualRepairModelIds(
+      scene.selectedModelIds.length > 1 && scene.selectedModelIds.includes(modelId)
+        ? [...scene.selectedModelIds]
+        : [modelId],
+    );
+  }, [scene.selectedModelIds]);
 
   const handleOpenModelSupportsInfo = React.useCallback((modelId: string) => {
     setSupportsInfoModelId(modelId);
@@ -6633,10 +6638,15 @@ export default function Home() {
         break;
       }
       case 'repair': {
-        const targetId = scene.activeModelId;
-        if (targetId) {
+        const targetIds = resolveModelActionTargetIds({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        });
+        if (targetIds.length > 0) {
           closeEditorContextMenu();
-          handleRepairModel(targetId);
+          setAutoStartRepair(false);
+          setManualRepairModelIds(targetIds);
           return;
         }
         break;
@@ -11790,19 +11800,19 @@ export default function Home() {
           if (!manifoldWarningModelId) return;
           // Straight into the repair: the Repair Mesh dialog opens already running.
           setAutoStartRepair(true);
-          setManualRepairModelId(manifoldWarningModelId);
+          setManualRepairModelIds([manifoldWarningModelId]);
         }}
       />
 
 
       <MeshRepairModals
         isManualRepairing={isManualRepairing}
-        manualRepairModelId={manualRepairModelId}
+        manualRepairModelIds={manualRepairModelIds}
         autoStartRepair={autoStartRepair}
         setAutoStartRepair={setAutoStartRepair}
         scene={scene}
         setIsManualRepairing={setIsManualRepairing}
-        setManualRepairModelId={setManualRepairModelId}
+        setManualRepairModelIds={setManualRepairModelIds}
         setShowDamagedModelDialog={setShowDamagedModelDialog}
         showDamagedModelDialog={showDamagedModelDialog}
       />
