@@ -10,6 +10,7 @@ import { OrganicCutPanel, type OrganicCutSession } from '@/features/organicCut';
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
 import type { useArrangeManager } from '@/features/scene/arrange/useArrangeManager';
+import type { SelectionRotationMode } from '@/features/scene/selectionTransform';
 
 export type PreparePanelStackProps = {
   scene: ReturnType<typeof useSceneCollectionManager>;
@@ -56,6 +57,12 @@ export type PreparePanelStackProps = {
   handleCenterSelectedModels: () => void;
   handleLiftSelectedModels: () => void;
   handleDropSelectedModels: () => void;
+  handleRotateSelectedModels: (x: number, y: number, z: number) => void;
+  handleSelectionTransformCommit: () => void;
+  handleScaleSelectedModels: (x: number, y: number, z: number) => void;
+  handleResetSelectedModels: (reset: 'rotation' | 'scale') => void;
+  selectionRotationMode: SelectionRotationMode;
+  setSelectionRotationMode: (mode: SelectionRotationMode) => void;
   scheduleCommitPendingTransformHistory: (frameDelay?: number) => void;
   uniformScaling: boolean;
   setUniformScaling: (value: boolean) => void;
@@ -102,6 +109,12 @@ export function PreparePanelStack({
   handleCenterSelectedModels,
   handleLiftSelectedModels,
   handleDropSelectedModels,
+  handleRotateSelectedModels,
+  handleSelectionTransformCommit,
+  handleScaleSelectedModels,
+  handleResetSelectedModels,
+  selectionRotationMode,
+  setSelectionRotationMode,
   scheduleCommitPendingTransformHistory,
   uniformScaling,
   setUniformScaling,
@@ -166,6 +179,7 @@ export function PreparePanelStack({
     isDuplicating,
     activeArrangeOperation,
   } = arrange;
+  const isMultiSelection = scene.selectedModelIds.length > 1;
   return (
     <>
       <ModelsPanel
@@ -194,19 +208,21 @@ export function PreparePanelStack({
       {scene.geom && transformMgr.transformMode === 'transform' && (
         <TransformControls
           key="prepare-transform-controls"
-          position={scene.selectedModelIds.length > 1
+          position={isMultiSelection
             ? selectionPositionOrigin
             : transformMgr.transform.position}
-          onPositionChange={scene.selectedModelIds.length > 1
+          onPositionChange={isMultiSelection
             ? handlePositionSelectedModels
             : transformMgr.transformHook.setPosition}
-          onPositionCommit={scene.selectedModelIds.length > 1
+          onPositionCommit={isMultiSelection
             ? commitPendingSelectionPositionHistory
             : scheduleCommitPendingTransformHistory}
           onCenter={handleCenterSelectedModels}
           onPlatform={transformMgr.transformHook.setPlatformZ}
           rotation={transformMgr.transform.rotation}
-          onRotationChange={(x, y, z) => {
+          selectionRotationMode={isMultiSelection ? selectionRotationMode : undefined}
+          onSelectionRotationModeChange={setSelectionRotationMode}
+          onRotationChange={isMultiSelection ? handleRotateSelectedModels : (x, y, z) => {
             const current = transformMgr.transform.rotation;
             const EPS = 1e-6;
             const hasDestructiveRotate = Math.abs(x - current.x) > EPS
@@ -224,10 +240,12 @@ export function PreparePanelStack({
 
             transformMgr.transformHook.setRotation(x, y, z);
           }}
-          onResetRotation={transformMgr.transformHook.resetRotation}
-          onRotationComplete={handleRotationComplete}
+          onResetRotation={isMultiSelection
+            ? () => handleResetSelectedModels('rotation')
+            : transformMgr.transformHook.resetRotation}
+          onRotationComplete={isMultiSelection ? handleSelectionTransformCommit : handleRotationComplete}
           scale={transformMgr.transform.scale}
-          onScaleChange={(x, y, z) => {
+          onScaleChange={isMultiSelection ? handleScaleSelectedModels : (x, y, z) => {
             const current = transformMgr.transform.scale;
             const EPS = 1e-6;
             const hasDestructiveScale = Math.abs(x - current.x) > EPS
@@ -245,7 +263,9 @@ export function PreparePanelStack({
 
             transformMgr.transformHook.setScale(x, y, z);
           }}
-          onResetScale={transformMgr.transformHook.resetScale}
+          onResetScale={isMultiSelection
+            ? () => handleResetSelectedModels('scale')
+            : transformMgr.transformHook.resetScale}
           uniformScaling={uniformScaling}
           onUniformScalingChange={setUniformScaling}
           localSpace={localTransformSpace}
@@ -257,7 +277,9 @@ export function PreparePanelStack({
           onLiftDistanceChange={transformMgr.setLiftDistance}
           onLift={handleLiftSelectedModels}
           onDrop={handleDropSelectedModels}
-          onTransformCommit={scheduleCommitPendingTransformHistory}
+          onTransformCommit={isMultiSelection
+            ? handleSelectionTransformCommit
+            : scheduleCommitPendingTransformHistory}
         />
       )}
 

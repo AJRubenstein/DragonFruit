@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useSceneFileExtensionLabels } from '@/features/plugins/pluginFileTypeExtensions';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
 import { detectIsIOS } from '@/hooks/usePlatform';
@@ -96,6 +96,12 @@ import {
   buildSelectionPositionUpdates,
   getSelectionPositionOrigin,
 } from '@/features/scene/selectionPosition';
+import {
+  resetSelectionTransforms,
+  rotateSelectionFromActive,
+  scaleSelectionFromActive,
+  type SelectionRotationMode,
+} from '@/features/scene/selectionTransform';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
@@ -114,7 +120,7 @@ import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPl
 import { BlockingOverlay, Button, IconButton, Toast, ToastViewport } from '@/components/atoms';
 import { EditorContextMenu, MENU_ITEMS, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
-import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
 import { HistoryDebugModal } from '@/components/modals/HistoryDebugModal';
 import { ModelSupportsModal } from '@/components/modals/ModelSupportsModal';
@@ -450,6 +456,11 @@ function areSortedNumberArraysEqual(a: readonly number[], b: readonly number[]):
     }
   }
   return true;
+}
+
+// Module scope for the same React Compiler reason as the duration formatters below.
+function formatSelectedModelCount(translate: (descriptor: MessageDescriptor) => string, count: number): string {
+  return translate(msg`${plural(count, { one: '# model', other: '# models' })}`);
 }
 
 function isKeyboardTargetEditable(target: EventTarget | null): boolean {
@@ -859,6 +870,7 @@ export default function Home() {
   const [uniformScaling, setUniformScaling] = React.useState(true);
   // Gizmo frame: world axes, or the active model's own (issue #504).
   const [localTransformSpace, setLocalTransformSpace] = React.useState(false);
+  const [selectionRotationMode, setSelectionRotationMode] = React.useState<SelectionRotationMode>('group');
 
   // --- Hollowing manager: placed early so its state/setters are in scope for
   //     useHolePunchManager below. Late/cross deps supplied via a ref populated
@@ -1009,6 +1021,7 @@ export default function Home() {
   } | null>(null);
   const pendingSelectionPositionHistoryRef = React.useRef<{
     targetIdsKey: string;
+    description: string;
     beforeTransforms: Array<{ id: string; transform: ModelTransform }>;
     supportBefore: ReturnType<typeof getSupportSnapshot>;
   } | null>(null);
@@ -1890,7 +1903,7 @@ export default function Home() {
   const [supportRenderRefreshNonce, setSupportRenderRefreshNonce] = React.useState(0);
   const [gizmoResetNonce, setGizmoResetNonce] = React.useState(0);
   const [pendingDestructiveTransform, setPendingDestructiveTransform] = React.useState<{
-    modelId: string;
+    modelIds: string[];
     modelName: string;
     supportCount: number;
     operationLabel: string;
@@ -2334,22 +2347,35 @@ export default function Home() {
     return MODEL_ID_COLLECTION_KEYS.reduce((total, key) => total + supportIds[key].length, 0);
   }, []);
 
-  const requestDestructiveTransformSupportDeletion = React.useCallback((operationLabel: string) => {
+  /**
+   * Asks before a transform that would invalidate supports. `modelIds` defaults to the active
+   * model; a selection edit passes the whole selection, so the prompt counts, and the
+   * confirmation deletes, the supports of every model it is about to change.
+   */
+  const requestDestructiveTransformSupportDeletion = React.useCallback((
+    operationLabel: string,
+    modelIds?: readonly string[],
+  ) => {
     if (scene.mode !== 'prepare') return true;
-    if (!scene.activeModelId) return true;
+    const targetIds = modelIds ?? (scene.activeModelId ? [scene.activeModelId] : []);
+    if (targetIds.length === 0) return true;
     if (pendingDestructiveTransform) return false;
 
-    const supportCount = getSupportPrimitiveCountForModel(scene.activeModelId);
-    if (supportCount <= 0) return true;
+    const supportedIds = targetIds.filter((modelId) => getSupportPrimitiveCountForModel(modelId) > 0);
+    if (supportedIds.length === 0) return true;
+    const supportCount = supportedIds.reduce((total, modelId) => total + getSupportPrimitiveCountForModel(modelId), 0);
 
+    const firstModel = scene.models.find((model) => model.id === supportedIds[0]);
     setPendingDestructiveTransform({
-      modelId: scene.activeModelId,
-      modelName: (scene.activeModel?.name ?? scene.activeModelId).trim(),
+      modelIds: supportedIds,
+      modelName: supportedIds.length === 1
+        ? (firstModel?.name ?? supportedIds[0]).trim()
+        : formatSelectedModelCount(_, supportedIds.length),
       supportCount,
       operationLabel,
     });
     return false;
-  }, [getSupportPrimitiveCountForModel, pendingDestructiveTransform, scene]);
+  }, [_, getSupportPrimitiveCountForModel, pendingDestructiveTransform, scene.activeModelId, scene.mode, scene.models]);
 
   const requestDestructiveTransformSupportDeletionWithContinuation = React.useCallback((
     operationLabel: string,
@@ -2373,7 +2399,7 @@ export default function Home() {
     const supportCount = getSupportPrimitiveCountForModel(scene.activeModelId);
     if (supportCount <= 0) return true;
     setPendingDestructiveTransform({
-      modelId: scene.activeModelId,
+      modelIds: [scene.activeModelId],
       modelName: (scene.activeModel?.name ?? scene.activeModelId).trim(),
       supportCount,
       operationLabel: 'Auto Orient',
@@ -2416,7 +2442,7 @@ export default function Home() {
     if (!pending) return;
 
     scene.deleteSupportsForModels(
-      [pending.modelId],
+      pending.modelIds,
       // i18n-ignore: undo-history description, only shown in the history debug modal
       `Delete Supports Before ${pending.operationLabel} ${pending.modelName}`,
     );
@@ -9247,7 +9273,7 @@ export default function Home() {
     const afterSupportSnapshot = captureTransformSupportSnapshot();
     scene.commitModelTransformsHistory(
       pending.beforeTransforms,
-      'Move Selected Models',
+      pending.description,
       {
         includeSupportState: true,
         supportBefore: pending.supportBefore,
@@ -9292,51 +9318,187 @@ export default function Home() {
     setSupportRenderRefreshNonce((value) => value + 1);
   }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
 
-  const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
-    const targetIds = resolveModelActionTargetIds({
-      modelIds: scene.models.map((model) => model.id),
-      selectedModelIds: scene.selectedModelIds,
-      activeModelId: scene.activeModelId,
-    });
-    if (targetIds.length === 0) return;
-
+  /**
+   * Opens one undo step for a run of panel edits on the selection: every keystroke updates the
+   * models without history, and the step closes on blur. A different selection or a different
+   * kind of edit closes the open step first.
+   */
+  const ensurePendingSelectionHistory = React.useCallback((targetIds: readonly string[], description: string) => {
     const targetIdsKey = targetIds.join('\0');
-    if (
-      pendingSelectionPositionHistoryRef.current
-      && pendingSelectionPositionHistoryRef.current.targetIdsKey !== targetIdsKey
-    ) {
+    const pending = pendingSelectionPositionHistoryRef.current;
+    if (pending && (pending.targetIdsKey !== targetIdsKey || pending.description !== description)) {
       commitPendingSelectionPositionHistory();
     }
-    if (!pendingSelectionPositionHistoryRef.current) {
-      invalidatePendingTransformHistory();
-      const beforeSupportSnapshot = captureTransformSupportSnapshot();
-      pendingSelectionPositionHistoryRef.current = {
-        targetIdsKey,
-        beforeTransforms: scene.models.map((model) => ({
-          id: model.id,
-          transform: {
-            position: model.transform.position.clone(),
-            rotation: model.transform.rotation.clone(),
-            scale: model.transform.scale.clone(),
-          },
-        })),
-        supportBefore: beforeSupportSnapshot.support,
-      };
-    }
+    if (pendingSelectionPositionHistoryRef.current) return;
 
+    invalidatePendingTransformHistory();
+    const beforeSupportSnapshot = captureTransformSupportSnapshot();
+    pendingSelectionPositionHistoryRef.current = {
+      targetIdsKey,
+      description,
+      beforeTransforms: scene.models.map((model) => ({
+        id: model.id,
+        transform: {
+          position: model.transform.position.clone(),
+          rotation: model.transform.rotation.clone(),
+          scale: model.transform.scale.clone(),
+        },
+      })),
+      supportBefore: beforeSupportSnapshot.support,
+    };
+  }, [captureTransformSupportSnapshot, commitPendingSelectionPositionHistory, invalidatePendingTransformHistory, scene.models]);
+
+  const getSelectionTargetIds = React.useCallback(() => resolveModelActionTargetIds({
+    modelIds: scene.models.map((model) => model.id),
+    selectedModelIds: scene.selectedModelIds,
+    activeModelId: scene.activeModelId,
+  }), [scene.activeModelId, scene.models, scene.selectedModelIds]);
+
+  const getSelectionTransformEntries = React.useCallback((targetIds: readonly string[]) => {
+    const targetIdSet = new Set(targetIds);
+    return scene.models
+      .filter((model) => targetIdSet.has(model.id))
+      .map((model) => ({ id: model.id, transform: model.transform }));
+  }, [scene.models]);
+
+  /**
+   * The selection as it stood when the open panel edit began. Each keystroke is applied from
+   * here rather than on top of the previous one, so typing "0.5" through a transient "0" cannot
+   * leave a scale of zero that no later factor can recover from.
+   */
+  const getPendingSelectionStartEntries = React.useCallback((targetIds: readonly string[]) => {
+    const targetIdSet = new Set(targetIds);
+    return (pendingSelectionPositionHistoryRef.current?.beforeTransforms ?? [])
+      .filter((entry) => targetIdSet.has(entry.id));
+  }, []);
+
+  const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const targetIds = getSelectionTargetIds();
+    if (targetIds.length === 0) return;
+
+    ensurePendingSelectionHistory(targetIds, 'Move Selected Models');
     applySelectionPositionUpdates(buildSelectionPositionUpdates(
       scene.models,
       targetIds,
       new THREE.Vector3(x, y, z),
     ), { pushHistory: false });
+  }, [applySelectionPositionUpdates, ensurePendingSelectionHistory, getSelectionTargetIds, scene.models]);
+
+  /**
+   * Seats the models the way a single model is seated after a rotation: lowest point at the lift
+   * distance with Auto on, on the plate with it off, and left alone with auto-snap disabled. A
+   * group scale needs it too, since it spreads the models along Z from their centre.
+   */
+  const seatSelectionOnPlate = React.useCallback((
+    entries: Array<{ id: string; transform: ModelTransform }>,
+  ) => {
+    if (!transformMgr.autoSnapEnabled) return entries;
+    const targetZ = transformMgr.autoLift ? transformMgr.liftDistance : 0;
+    const geometryById = new Map(scene.models.map((model) => [model.id, model.geometry]));
+    const seatable = entries.flatMap((entry) => {
+      const geometry = geometryById.get(entry.id);
+      return geometry ? [{ ...entry, geometry }] : [];
+    });
+    return buildLiftDropUpdates(seatable, seatable.map((entry) => entry.id), targetZ);
+  }, [scene.models, transformMgr.autoLift, transformMgr.autoSnapEnabled, transformMgr.liftDistance]);
+
+  const handleRotateSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const activeModel = scene.activeModel;
+    const targetIds = getSelectionTargetIds();
+    if (!activeModel || !targetIds.includes(activeModel.id)) return;
+
+    const current = activeModel.transform.rotation;
+    const EPS = 1e-6;
+    const hasDestructiveRotate = Math.abs(x - current.x) > EPS || Math.abs(y - current.y) > EPS;
+    if (hasDestructiveRotate && !requestDestructiveTransformSupportDeletion('Rotate X/Y', targetIds)) return;
+
+    ensurePendingSelectionHistory(targetIds, 'Rotate Selected Models');
+    applySelectionPositionUpdates(rotateSelectionFromActive(
+      getPendingSelectionStartEntries(targetIds),
+      activeModel.id,
+      eulerFromGlobalEuler({ x, y, z }),
+      selectionRotationMode,
+    ), { pushHistory: false });
   }, [
     applySelectionPositionUpdates,
-    captureTransformSupportSnapshot,
+    ensurePendingSelectionHistory,
+    getPendingSelectionStartEntries,
+    getSelectionTargetIds,
+    requestDestructiveTransformSupportDeletion,
+    scene.activeModel,
+    selectionRotationMode,
+  ]);
+
+  /** Closes the panel's open undo step, seating the models first after a rotation or a scale. */
+  const handleSelectionTransformCommit = React.useCallback(() => {
+    const description = pendingSelectionPositionHistoryRef.current?.description;
+    if (description !== 'Rotate Selected Models' && description !== 'Scale Selected Models') {
+      commitPendingSelectionPositionHistory();
+      return;
+    }
+    if (description === 'Rotate Selected Models') islands.clearScanData();
+    const targetIds = getSelectionTargetIds();
+    applySelectionPositionUpdates(
+      seatSelectionOnPlate(getSelectionTransformEntries(targetIds)),
+      { pushHistory: false },
+    );
+    commitPendingSelectionPositionHistory();
+  }, [
+    applySelectionPositionUpdates,
     commitPendingSelectionPositionHistory,
-    invalidatePendingTransformHistory,
-    scene.activeModelId,
-    scene.models,
-    scene.selectedModelIds,
+    getSelectionTargetIds,
+    getSelectionTransformEntries,
+    islands,
+    seatSelectionOnPlate,
+  ]);
+
+  const handleScaleSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const activeModel = scene.activeModel;
+    const targetIds = getSelectionTargetIds();
+    if (!activeModel || !targetIds.includes(activeModel.id)) return;
+
+    const current = activeModel.transform.scale;
+    const EPS = 1e-6;
+    const hasScaleChange = Math.abs(x - current.x) > EPS
+      || Math.abs(y - current.y) > EPS
+      || Math.abs(z - current.z) > EPS;
+    if (!hasScaleChange || x <= 0 || y <= 0 || z <= 0) return;
+    if (!requestDestructiveTransformSupportDeletion('Scale XYZ', targetIds)) return;
+
+    ensurePendingSelectionHistory(targetIds, 'Scale Selected Models');
+    applySelectionPositionUpdates(scaleSelectionFromActive(
+      getPendingSelectionStartEntries(targetIds),
+      activeModel.id,
+      new THREE.Vector3(x, y, z),
+    ), { pushHistory: false });
+  }, [
+    applySelectionPositionUpdates,
+    ensurePendingSelectionHistory,
+    getPendingSelectionStartEntries,
+    getSelectionTargetIds,
+    requestDestructiveTransformSupportDeletion,
+    scene.activeModel,
+  ]);
+
+  const handleResetSelectedModels = React.useCallback((reset: 'rotation' | 'scale') => {
+    const targetIds = getSelectionTargetIds();
+    if (targetIds.length === 0) return;
+    const operationLabel = reset === 'rotation' ? _(msg`Reset Rotation`) : _(msg`Reset Scale`);
+    if (!requestDestructiveTransformSupportDeletion(operationLabel, targetIds)) return;
+
+    commitPendingSelectionPositionHistory();
+    const resetEntries = resetSelectionTransforms(getSelectionTransformEntries(targetIds), { [reset]: true });
+    if (reset === 'rotation') islands.clearScanData();
+    applySelectionPositionUpdates(seatSelectionOnPlate(resetEntries));
+  }, [
+    _,
+    applySelectionPositionUpdates,
+    commitPendingSelectionPositionHistory,
+    getSelectionTargetIds,
+    getSelectionTransformEntries,
+    islands,
+    requestDestructiveTransformSupportDeletion,
+    seatSelectionOnPlate,
   ]);
 
   const selectionPositionOrigin = React.useMemo(() => {
@@ -10666,6 +10828,12 @@ export default function Home() {
               handleCenterSelectedModels: handleCenterSelectedModels,
               handleLiftSelectedModels: handleLiftSelectedModels,
               handleDropSelectedModels: handleDropSelectedModels,
+              handleRotateSelectedModels: handleRotateSelectedModels,
+              handleSelectionTransformCommit: handleSelectionTransformCommit,
+              handleScaleSelectedModels: handleScaleSelectedModels,
+              handleResetSelectedModels: handleResetSelectedModels,
+              selectionRotationMode: selectionRotationMode,
+              setSelectionRotationMode: setSelectionRotationMode,
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
