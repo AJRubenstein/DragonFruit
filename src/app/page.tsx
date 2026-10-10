@@ -9188,6 +9188,24 @@ export default function Home() {
     skipNextTransformEndCommitRef.current = null;
   }, [captureTransformSupportSnapshot, scene]);
 
+  /**
+   * Seats the models the way a single model is seated after a rotation: lowest point at the lift
+   * distance with Auto on, on the plate with it off, and left alone with auto-snap disabled. A
+   * group scale needs it too, since it spreads the models along Z from their centre.
+   */
+  const seatSelectionOnPlate = React.useCallback((
+    entries: Array<{ id: string; transform: ModelTransform }>,
+  ) => {
+    if (!transformMgr.autoSnapEnabled) return entries;
+    const targetZ = transformMgr.autoLift ? transformMgr.liftDistance : 0;
+    const geometryById = new Map(scene.models.map((model) => [model.id, model.geometry]));
+    const seatable = entries.flatMap((entry) => {
+      const geometry = geometryById.get(entry.id);
+      return geometry ? [{ ...entry, geometry }] : [];
+    });
+    return buildLiftDropUpdates(seatable, seatable.map((entry) => entry.id), targetZ);
+  }, [scene.models, transformMgr.autoLift, transformMgr.autoSnapEnabled, transformMgr.liftDistance]);
+
   const handleGizmoTransformGroupCommit = React.useCallback((payload: {
     operation: 'move' | 'rotate' | 'scale';
     entries: Array<{
@@ -9209,7 +9227,7 @@ export default function Home() {
       );
     };
 
-    const updates = payload.entries
+    const changedEntries = payload.entries
       .filter((entry) => isFiniteTransform(entry.after) && hasMeaningfulChange(entry.before, entry.after))
       .map((entry) => ({
         id: entry.modelId,
@@ -9219,6 +9237,9 @@ export default function Home() {
           scale: entry.after.scale.clone(),
         },
       }));
+    // A turned selection is seated as a single turned model is, in the same undo step.
+    if (payload.operation === 'rotate' && changedEntries.length > 0) islands.clearScanData();
+    const updates = payload.operation === 'rotate' ? seatSelectionOnPlate(changedEntries) : changedEntries;
 
     if (updates.length === 0) {
       beginSupportDragSyncTransaction([], {
@@ -9256,7 +9277,7 @@ export default function Home() {
 
     setSupportRenderRefreshNonce((value) => value + 1);
     skipNextTransformEndCommitRef.current = null;
-  }, [beginSupportDragSyncTransaction, isFiniteTransform, scene, transformMgr.transformHook]);
+  }, [beginSupportDragSyncTransaction, isFiniteTransform, islands, scene, seatSelectionOnPlate, transformMgr.transformHook]);
 
   const handleAutoLiftChange = React.useCallback((enabled: boolean) => {
     if (scene.activeModelId) {
@@ -9383,24 +9404,6 @@ export default function Home() {
       new THREE.Vector3(x, y, z),
     ), { pushHistory: false });
   }, [applySelectionPositionUpdates, ensurePendingSelectionHistory, getSelectionTargetIds, scene.models]);
-
-  /**
-   * Seats the models the way a single model is seated after a rotation: lowest point at the lift
-   * distance with Auto on, on the plate with it off, and left alone with auto-snap disabled. A
-   * group scale needs it too, since it spreads the models along Z from their centre.
-   */
-  const seatSelectionOnPlate = React.useCallback((
-    entries: Array<{ id: string; transform: ModelTransform }>,
-  ) => {
-    if (!transformMgr.autoSnapEnabled) return entries;
-    const targetZ = transformMgr.autoLift ? transformMgr.liftDistance : 0;
-    const geometryById = new Map(scene.models.map((model) => [model.id, model.geometry]));
-    const seatable = entries.flatMap((entry) => {
-      const geometry = geometryById.get(entry.id);
-      return geometry ? [{ ...entry, geometry }] : [];
-    });
-    return buildLiftDropUpdates(seatable, seatable.map((entry) => entry.id), targetZ);
-  }, [scene.models, transformMgr.autoLift, transformMgr.autoSnapEnabled, transformMgr.liftDistance]);
 
   const handleRotateSelectedModels = React.useCallback((x: number, y: number, z: number) => {
     const activeModel = scene.activeModel;
@@ -9608,13 +9611,21 @@ export default function Home() {
       supportDragResetSecondRafRef.current = null;
     }
 
+    // The gizmo moves the whole selection, so it asks about every selected model's supports.
+    const destructiveTargetIds = scene.selectedModelIds.length > 1
+      ? resolveModelActionTargetIds({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        })
+      : undefined;
     if (operation === 'rotate' && (details?.axis === 'x' || details?.axis === 'y')) {
-      const proceed = requestDestructiveTransformSupportDeletion('Rotate X/Y');
+      const proceed = requestDestructiveTransformSupportDeletion('Rotate X/Y', destructiveTargetIds);
       if (!proceed) return false;
     }
 
     if (operation === 'scale') {
-      const proceed = requestDestructiveTransformSupportDeletion('Scale XYZ');
+      const proceed = requestDestructiveTransformSupportDeletion('Scale XYZ', destructiveTargetIds);
       if (!proceed) return false;
     }
 
@@ -9643,7 +9654,7 @@ export default function Home() {
     }
 
     return true;
-  }, [captureTransformSupportSnapshot, disableAutoLiftForManualZMove, requestDestructiveTransformSupportDeletion, scene.activeModel, scene.activeModelId]);
+  }, [captureTransformSupportSnapshot, disableAutoLiftForManualZMove, requestDestructiveTransformSupportDeletion, scene.activeModel, scene.activeModelId, scene.models, scene.selectedModelIds]);
 
   const ensurePendingTransformHistoryForActiveModel = React.useCallback((operation: 'move' | 'rotate' | 'scale') => {
     if (!scene.activeModelId || !scene.activeModel) return;
@@ -11226,6 +11237,7 @@ export default function Home() {
             transform={transformMgr.transform}
             uniformScaling={uniformScaling}
             localTransformSpace={localTransformSpace}
+            selectionRotationMode={selectionRotationMode}
             autoLift={transformMgr.autoLift}
             liftDistance={transformMgr.liftDistance}
             autoSnapEnabled={transformMgr.autoSnapEnabled}
