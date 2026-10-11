@@ -128,6 +128,17 @@ test('scene edits from the model list land in undo history', async (t) => {
       assert.equal(getUndoCount(), 1);
       await assertUndoRedo(() => model()?.color, original, '#ff0000');
     });
+
+    await t.test('repairing a model in place', async () => {
+      clearHistory();
+      const original = model()!.geometry.geometry;
+      assert.equal(await scene().repairModelInPlace(cube.id), true);
+      await settle(20);
+      const repaired = model()!.geometry.geometry;
+      assert.notEqual(repaired, original);
+      assert.equal(getUndoCount(), 1);
+      await assertUndoRedo(() => model()?.geometry.geometry, original, repaired);
+    });
   } finally {
     await tree.unmount();
   }

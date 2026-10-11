@@ -6790,9 +6790,15 @@ export function useSceneCollectionManager(options?: {
       const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
       const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
 
-      setModels(prev => prev.map(m =>
+      // The repair awaited, so the scene it lands in is the current one, not the one it started from.
+      const currentModels = modelsRef.current;
+      const nextModels = currentModels.map(m =>
         m.id === modelId ? { ...m, geometry: processed, polygonCount } : m
-      ));
+      );
+      const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+      setModels(nextModels);
+      const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+      pushSceneSnapshotHistory(before, after, `Repair ${model.name}`, modelId);
 
       if (repairReport) {
         const reportEntry: MeshRepairReportEntry = {
@@ -6817,7 +6823,7 @@ export function useSceneCollectionManager(options?: {
       emitSceneImportReport(`Repair failed: ${message}`, 'error', { durationMs: 6_000 });
       return false;
     }
-  }, [clearSceneImportReport, emitSceneImportReport]);
+  }, [clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
 
   // Cleanup on unmount
   useEffect(() => {
