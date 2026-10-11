@@ -10113,7 +10113,7 @@ export default function Home() {
         openFace: next.openFace,
         openFaceSelected: next.mode === 'shell_open_face' ? false : true,
       },
-    });
+    }, { historyDescription: 'Hollowing Settings' });
   }, [defaultHollowingState, hollowingState, pendingBlockerResetState, persistActiveModelModifiers, scene.activeModel]);
 
 

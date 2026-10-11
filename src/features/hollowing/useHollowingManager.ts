@@ -611,7 +611,7 @@ export function useHollowingManager({
         openFace: next.openFace,
         openFaceSelected: nextShellOpenFaceSelected,
       },
-    });
+    }, { historyDescription: 'Hollowing Settings', merge: true });
   }, [blockedHollowVoxelIndices, hollowingState.mode, hollowingState.openFace, hollowingState.voxelSizeMm, isShellOpenFaceSelected, deps.current.persistActiveModelModifiers, rememberBakedHollowing, scene.activeModel]);
 
   const isHollowingApplied = React.useMemo(() => {
