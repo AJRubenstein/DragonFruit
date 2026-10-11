@@ -49,6 +49,21 @@ either writes `useTransformManager`'s `autoLift`.
 - Switch units between **%** and **mm**.
 - Use **Reset Scale** to restore scale defaults.
 
+## Several models at once
+
+With more than one model selected, the panel and the gizmo act on the whole
+selection, each change as a single undo step:
+
+- **Rotate** turns every model by the same amount. The **Group** toggle in the
+  Rotate header picks how: on, the selection turns as one block about its
+  centre; off, each model turns in place.
+- **Scale** applies the same factor to every model and spreads them out (or
+  pulls them in) about the selection's centre, as the gizmo does.
+- **Reset Rotation** and **Reset Scale** reset every selected model where it
+  stands.
+- With auto-snap on, rotated or scaled models are set back on the plate (or at
+  the lift distance) afterwards.
+
 ## Practical checks
 
 - Ensure model is clear of plate unless intentionally dropped.
