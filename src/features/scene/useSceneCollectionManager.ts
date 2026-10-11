@@ -3923,10 +3923,18 @@ export function useSceneCollectionManager(options?: {
   }, []);
 
   const renameModel = useCallback((id: string, name: string) => {
-    setModels(prev => prev.map(m =>
-      m.id === id ? { ...m, name } : m
+    const currentModels = modelsRef.current;
+    const target = currentModels.find((model) => model.id === id);
+    if (!target || target.name === name) return;
+
+    const nextModels = currentModels.map((model) => (
+      model.id === id ? { ...model, name } : model
     ));
-  }, []);
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `Rename ${target.name}`);
+  }, [pushSceneSnapshotHistory]);
 
   const groupModels = useCallback((modelIds: string[], groupName?: string) => {
     const currentModels = modelsRef.current;
@@ -4452,12 +4460,20 @@ export function useSceneCollectionManager(options?: {
     const trimmed = nextName.trim();
     if (!trimmed) return;
 
-    setModels((prev) => prev.map((model) => (
+    const currentModels = modelsRef.current;
+    const members = currentModels.filter((model) => model.groupId === groupId);
+    if (members.length === 0 || members.every((model) => model.groupName === trimmed)) return;
+
+    const nextModels = currentModels.map((model) => (
       model.groupId === groupId
         ? { ...model, groupName: trimmed }
         : model
-    )));
-  }, []);
+    ));
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `Rename ${members[0].groupName ?? trimmed}`);
+  }, [pushSceneSnapshotHistory]);
 
   const selectGroup = useCallback((groupId: string, mode: 'single' | 'add' = 'single') => {
     const groupIds = models.filter((model) => model.groupId === groupId).map((model) => model.id);
