@@ -117,6 +117,17 @@ test('scene edits from the model list land in undo history', async (t) => {
       assert.equal(getUndoCount(), 1);
       await assertUndoRedo(() => model()?.visible, true, false);
     });
+
+    await t.test('colouring the active model', async () => {
+      clearHistory();
+      scene().setActiveModelId(cube.id);
+      await settle(20);
+      const original = model()!.color;
+      scene().setMeshColor('#ff0000');
+      await settle(20);
+      assert.equal(getUndoCount(), 1);
+      await assertUndoRedo(() => model()?.color, original, '#ff0000');
+    });
   } finally {
     await tree.unmount();
   }

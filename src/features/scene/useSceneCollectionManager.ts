@@ -377,6 +377,16 @@ function captureSceneSnapshot(
   };
 }
 
+/** Repaints a model's vertex colours, when it has any, to a flat `color`. */
+function paintModelBaseColor(model: LoadedModel, color: string): void {
+  if (!model.geometry.geometry.getAttribute('color')) return;
+  try {
+    clearPaintToBase(model.geometry.geometry, new THREE.Color(color));
+  } catch (err) {
+    console.error('[SceneCollection] Failed to apply mesh color to geometry:', err);
+  }
+}
+
 /** Whether any support entity of any type belongs to this model. */
 function hasSupportsForModel(modelId: string, supportState: SupportState): boolean {
   const supportIds = getSupportsForModel(supportState, modelId);
@@ -2140,6 +2150,13 @@ export function useSceneCollectionManager(options?: {
       storeModelMeshModifiers(snapshot.modifierRecord.modelId, cloneMeshModifiersForHistory(snapshot.modifierRecord.modifiers));
       clearPreparedGeometryCacheForModel(snapshot.modifierRecord.modelId);
     }
+    // A colour change also repaints the vertex colours, and the geometry is shared with the
+    // snapshot rather than copied, so the colour being restored has to be painted back.
+    const currentColorById = new Map(modelsRef.current.map((model) => [model.id, model.color]));
+    snapshot.models.forEach((model) => {
+      const currentColor = currentColorById.get(model.id);
+      if (currentColor !== undefined && currentColor !== model.color) paintModelBaseColor(model, model.color);
+    });
     setModels(snapshot.models.map(cloneLoadedModel));
     setActiveModelId(snapshot.activeModelId);
     setSelectedModelIds([...snapshot.selectedModelIds]);
@@ -6639,23 +6656,19 @@ export function useSceneCollectionManager(options?: {
     const normalizedColor = clampHexColor(color, DEFAULT_MESH_COLOR);
     setPreferredMeshColor(normalizedColor);
 
-    if (activeModelId) {
-      setModels(prev => prev.map(m => {
-        if (m.id !== activeModelId) return m;
+    const currentModels = modelsRef.current;
+    const target = currentModels.find((model) => model.id === activeModelId);
+    if (!target || target.color === normalizedColor) return;
 
-        const hasColorAttribute = !!m.geometry.geometry.getAttribute('color');
-        if (hasColorAttribute) {
-          try {
-            clearPaintToBase(m.geometry.geometry, new THREE.Color(normalizedColor));
-          } catch (err) {
-            console.error('[SceneCollection] Failed to apply mesh color to geometry:', err);
-          }
-        }
-
-        return { ...m, color: normalizedColor };
-      }));
-    }
-  }, [activeModelId]);
+    paintModelBaseColor(target, normalizedColor);
+    const nextModels = currentModels.map((model) => (
+      model.id === target.id ? { ...model, color: normalizedColor } : model
+    ));
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `Color ${target.name}`);
+  }, [activeModelId, pushSceneSnapshotHistory]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
     if (activeModelId) {
