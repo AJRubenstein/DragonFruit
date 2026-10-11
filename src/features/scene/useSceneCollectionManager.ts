@@ -4048,17 +4048,24 @@ export function useSceneCollectionManager(options?: {
         ?? bodyGeom.geometry.getAttribute('position').count / 3,
     }));
 
+    const currentModels = modelsRef.current;
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+
     // Remove the merged source, add individual models
-    setModels((prev) => [
-      ...prev.filter((m) => m.id !== modelId),
+    const nextModels = [
+      ...currentModels.filter((m) => m.id !== modelId),
       ...newModels,
-    ]);
+    ];
+    setModels(nextModels);
 
     // Select all new bodies
     const newIds = newModels.map((m) => m.id);
     setActiveModelId(newIds[0]);
     setSelectedModelIds(newIds);
-  }, []);
+
+    const after = captureSceneSnapshot(nextModels, newIds[0], newIds);
+    pushSceneSnapshotHistory(before, after, `Split ${source.name}`);
+  }, [pushSceneSnapshotHistory]);
 
   /** Splits a model that has a classified model/support triangle split
    *  (from the native repair engine) into two independent models:
