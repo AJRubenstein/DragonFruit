@@ -243,6 +243,12 @@ is for the same model, is less than a second old and is still on top of the
 undo stack (`peekUndo()`); the stored pair's after-state is updated in place.
 Discrete actions — adding, moving or deleting a hole — never merge.
 
+An edit that also swaps the geometry (applying, removing or resetting holes)
+passes the modifiers to `replaceModelGeometry` as `meshModifiersAfter` instead,
+so the mesh and the modifiers that describe it go back as one step. Writing
+the modifiers separately afterwards would leave two steps, the first of which
+undoes the mesh but not the drafts.
+
 ## Keyboard wiring
 
 `src/hotkeys/useUndoRedoHotkeys.ts` is the only keyboard entry point. Keydown

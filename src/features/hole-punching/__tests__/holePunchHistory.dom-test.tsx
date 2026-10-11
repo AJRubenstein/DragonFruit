@@ -3,6 +3,7 @@ import { resolveObjectURL } from 'node:buffer';
 import test from 'node:test';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { clearMocks, mockIPC } from '@tauri-apps/api/mocks';
 import type { HollowingPanelState } from '@/features/hollowing';
 import type { HollowPreviewCacheEntry, HollowingSourceEntry } from '@/features/hollowing/hollowingPreviewTypes';
 import type { HolePunchPanelState } from '@/features/hole-punching/HolePunchPanel';
@@ -186,6 +187,37 @@ test('hole punch edits land in undo history', async (t) => {
       await settle(20);
       assert.equal(holes().length, 3);
       assert.equal(getUndoCount(), 2);
+    });
+
+    await t.test('applying the holes is one step that restores geometry and drafts together', async () => {
+      const punched = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0]);
+      const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: unknown };
+      tauriWindow.__TAURI_INTERNALS__ ??= {};
+      mockIPC((cmd) => {
+        if (cmd === 'mesh_punch_from_captured_source') {
+          return JSON.stringify({ sourceTriangleCount: 12, outputTriangleCount: 2, removedTriangleCount: 10, punchCount: 3 });
+        }
+        if (cmd === 'mesh_punch_read_positions') return new Uint8Array(punched.buffer);
+        return null;
+      });
+      try {
+        clearHistory();
+        const geometryBefore = current().scene.models[0].geometry.geometry;
+        current().holePunch.handleApplyHolePunch();
+        await waitFor(() => current().scene.models[0].geometry.geometry !== geometryBefore, 'the punched geometry');
+        await settle(20);
+        assert.equal(current().scene.getModelMeshModifiers(modelId)?.holePunchesBakedIntoGeometry, true);
+        assert.equal(getUndoCount(), 1);
+
+        undo();
+        await settle(20);
+        assert.equal(current().scene.models[0].geometry.geometry, geometryBefore, 'undo restores the geometry');
+        assert.equal(current().scene.getModelMeshModifiers(modelId)?.holePunchesBakedIntoGeometry, false);
+        assert.equal(holes().length, 3, 'the holes are drafts again');
+      } finally {
+        clearMocks();
+        delete tauriWindow.__TAURI_INTERNALS__;
+      }
     });
   } finally {
     await tree.unmount();
