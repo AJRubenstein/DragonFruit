@@ -109,6 +109,14 @@ test('scene edits from the model list land in undo history', async (t) => {
       assert.equal(getUndoCount(), 1);
       await assertUndoRedo(() => model()?.groupName, 'first', 'second');
     });
+
+    await t.test('hiding a model', async () => {
+      clearHistory();
+      scene().setModelVisibility(cube.id, false);
+      await settle(20);
+      assert.equal(getUndoCount(), 1);
+      await assertUndoRedo(() => model()?.visible, true, false);
+    });
   } finally {
     await tree.unmount();
   }

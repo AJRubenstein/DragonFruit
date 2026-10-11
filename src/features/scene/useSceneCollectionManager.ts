@@ -3893,10 +3893,18 @@ export function useSceneCollectionManager(options?: {
   }, [deferAccelerateGeometry]);
 
   const setModelVisibility = useCallback((id: string, visible: boolean) => {
-    setModels(prev => prev.map(m =>
-      m.id === id ? { ...m, visible } : m
+    const currentModels = modelsRef.current;
+    const target = currentModels.find((model) => model.id === id);
+    if (!target || target.visible === visible) return;
+
+    const nextModels = currentModels.map((model) => (
+      model.id === id ? { ...model, visible } : model
     ));
-  }, []);
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `${visible ? 'Show' : 'Hide'} ${target.name}`);
+  }, [pushSceneSnapshotHistory]);
 
   const setModelMeshModifiers = useCallback((id: string, meshModifiers: ModelMeshModifiers | undefined) => {
     // Store externally — model objects never carry meshModifiers directly.
