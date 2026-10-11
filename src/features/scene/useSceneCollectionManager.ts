@@ -16,6 +16,7 @@ import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBin
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
+import { peekUndo } from '@/history/historyStore';
 import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import type { DragonfruitImportFormat, SupportMode, SupportState } from '@/supports/types';
@@ -94,9 +95,9 @@ import {
   toVoxlPrinterBundle,
 } from '@/features/profiles/voxlPrinterBundle';
 import type { VoxlPrinterBundle } from '@/features/scene/voxl/types';
-import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
 import { base64ToBytes } from '@/utils/base64';
 import { snapshotGeometryPositions } from '@/utils/geometrySnapshot';
+import type { ModelMeshModifiers, ModelMeshModifiersHistoryOptions } from '@/features/mesh-modifiers/types';
 import {
   deleteStoredMeshModifiers,
   getStoredMeshModifiers,
@@ -192,6 +193,9 @@ const SCENE_HISTORY_MAX_SNAPSHOTS = 200;
 // can retain far more memory per snapshot than typical small edits, so the
 // flat count cap alone can leave a lot of stale geometry pinned alive.
 const SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES = 300 * 1024 * 1024;
+// Modifier edits of the same kind on the same model this close together are one
+// step: the panels' number fields report every keystroke and every wheel notch.
+const MODIFIER_HISTORY_MERGE_WINDOW_MS = 1000;
 
 type SceneSnapshotPayload = { key: string; modelId?: string };
 
@@ -3923,9 +3927,55 @@ export function useSceneCollectionManager(options?: {
     pushSceneSnapshotHistory(before, after, `${visible ? 'Show' : 'Hide'} ${target.name}`);
   }, [pushSceneSnapshotHistory]);
 
-  const setModelMeshModifiers = useCallback((id: string, meshModifiers: ModelMeshModifiers | undefined) => {
+  const lastModifierHistoryRef = useRef<{ key: string; modelId: string; description: string; at: number } | null>(null);
+
+  /**
+   * Stores a model's mesh modifiers. With `historyDescription` the change is an undo step: the
+   * modifiers ride on a scene snapshot's `modifierRecord`, and the hollowing and hole-punch
+   * panels resync from them on undo. With `merge` as well, a run of edits with the same
+   * description on the same model, each within the merge window of the last and with nothing
+   * pushed in between, stays one step whose after-state follows the latest edit.
+   */
+  const setModelMeshModifiers = useCallback((
+    id: string,
+    meshModifiers: ModelMeshModifiers | undefined,
+    options?: ModelMeshModifiersHistoryOptions,
+  ) => {
+    const description = options?.historyDescription;
+    const modifiersBefore = description ? cloneMeshModifiersForHistory(getStoredMeshModifiers(id)) : undefined;
     // Store externally — model objects never carry meshModifiers directly.
     storeModelMeshModifiers(id, meshModifiers);
+
+    if (description) {
+      const now = Date.now();
+      const last = lastModifierHistoryRef.current;
+      const top = peekUndo();
+      const mergeInto = options?.merge
+        && last
+        && last.modelId === id
+        && last.description === description
+        && now - last.at <= MODIFIER_HISTORY_MERGE_WINDOW_MS
+        && top?.type === SCENE_MODELS_SNAPSHOT_APPLY
+        && (top.payload as SceneSnapshotPayload | undefined)?.key === last.key
+        ? sceneSnapshotRegistry.get(last.key)
+        : undefined;
+      if (mergeInto && last) {
+        mergeInto.after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(meshModifiers) };
+        last.at = now;
+      } else {
+        const currentModels = modelsRef.current;
+        const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+        before.modifierRecord = { modelId: id, modifiers: modifiersBefore };
+        const after = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+        after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(meshModifiers) };
+        const key = storeSceneSnapshotPair({ before, after });
+        // No `modelId` on the payload: that is the geometry-swap marker the hollowing manager
+        // drops its caches on, and a draft edit leaves the geometry alone.
+        sceneHistory.push({ type: SCENE_MODELS_SNAPSHOT_APPLY, description, payload: { key } });
+        lastModifierHistoryRef.current = { key, modelId: id, description, at: now };
+      }
+    }
+
     // Still trigger a shallow React update so consumers that derive from
     // the store can re-render.
     setModels(prev => prev.map((model) => (

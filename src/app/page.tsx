@@ -417,6 +417,7 @@ import {
 } from '@/utils/meshPunching';
 import type {
   ModelMeshModifiers,
+  ModelMeshModifiersHistoryOptions,
   ModelHolePunchPlacement,
   ModelHollowingModifier,
   MeshModifierOpenFace,
@@ -9817,10 +9818,13 @@ export default function Home() {
     transformMgr.setIsTransforming(true);
   }, [ensurePendingTransformHistoryForActiveModel, scene, transformMgr]);
 
-  const persistActiveModelModifiers = React.useCallback((next: ModelMeshModifiers | undefined) => {
+  const persistActiveModelModifiers = React.useCallback((
+    next: ModelMeshModifiers | undefined,
+    options?: ModelMeshModifiersHistoryOptions,
+  ) => {
     const activeModelId = scene.activeModel?.id;
     if (!activeModelId) return;
-    scene.setModelMeshModifiers(activeModelId, next);
+    scene.setModelMeshModifiers(activeModelId, next, options);
   }, [scene]);
 
   const holePunch = useHolePunchManager({

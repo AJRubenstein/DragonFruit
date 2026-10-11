@@ -75,7 +75,9 @@ pushDomainHistory({ type: DO_THING, description: 'Do thing', payload: { before, 
 
 The `createTypedHistory` API is exactly `push` and `register`. Clearing and
 subscribing go directly on the store: `clearHistory()`, `subscribeHistory`,
-`subscribeHistoryOperations`, `subscribeHistoryDebug`.
+`subscribeHistoryOperations`, `subscribeHistoryDebug`. `peekUndo()` returns the
+entry the next undo would pop, for code that has to know whether its own last
+push is still on top.
 
 Payloads are `structuredClone`d on every push and every stack hop, so typed
 arrays (`Float32Array`, `Uint32Array`) survive and callers may mutate after
@@ -214,6 +216,32 @@ scene.replaceModelGeometry(modelId, hollowedGeometry, 'Apply Hollowing', {
 ```
 
 The scene history handler restores the modifier store before the corresponding model snapshot. A first Apply records no hollowing modifier as its before-state, and Remove Hollowing deletes the hollowing field while retaining unrelated modifiers. Later panel edits can create a new unbaked hollowing draft; Apply commits that draft as baked geometry. Snapshot geometry remains available for redo; `useHollowingManager` and `prepareModelGeometry` discard only derived source, cavity, preview, and slice-preparation caches on reversal.
+
+### Mesh modifier edits
+
+Hollowing and hole-punch drafts — the panel settings, the placed holes, the open
+face — live in the model's mesh modifiers, and the panels resync from them
+whenever the active model changes (the sync effect in `src/app/page.tsx`). So an
+edit to a draft becomes undoable by recording the modifiers, and nothing else:
+
+```ts
+scene.setModelMeshModifiers(modelId, nextModifiers, {
+  historyDescription: 'Edit Hole',
+  merge: true,
+});
+```
+
+With `historyDescription`, `setModelMeshModifiers` in
+`src/features/scene/useSceneCollectionManager.ts` pushes a scene snapshot pair
+whose `modifierRecord` holds the modifiers before and after. Without it, the
+write is not a step: use that for writes the app makes on its own (adopting a
+rotation stamp, resyncing to what Rust accepted), never for a user's edit.
+
+`merge` is for fields that report every keystroke and wheel notch. A write with
+`merge` folds into the previous step when that step has the same description,
+is for the same model, is less than a second old and is still on top of the
+undo stack (`peekUndo()`); the stored pair's after-state is updated in place.
+Discrete actions — adding, moving or deleting a hole — never merge.
 
 ## Keyboard wiring
 

@@ -5,7 +5,7 @@ import { SCENE_MODELS_SNAPSHOT_APPLY, type useSceneCollectionManager } from '@/f
 import { subscribeHistoryOperations } from '@/history/historyStore';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
 import type { HollowingPanelState } from '@/features/hollowing';
-import type { ModelMeshModifiers, ModelHollowingModifier } from '@/features/mesh-modifiers/types';
+import type { ModelMeshModifiers, ModelMeshModifiersHistoryOptions, ModelHollowingModifier } from '@/features/mesh-modifiers/types';
 import type { HolePunchPanelState } from '@/features/hole-punching/HolePunchPanel';
 import type { HolePunchPlacementState } from '@/features/hole-punching/holePunchGeometry';
 import { snapshotGeometryPositions, geometryFromSnapshot } from '@/utils/geometrySnapshot';
@@ -75,7 +75,7 @@ export type HollowingManagerDeps = {
   beginFinalizing: (kind: 'hollowing' | 'holePunch') => void;
   clearFinalizing: () => void;
   nextPaint: () => Promise<void>;
-  persistActiveModelModifiers: (next: ModelMeshModifiers | undefined) => void;
+  persistActiveModelModifiers: (next: ModelMeshModifiers | undefined, options?: ModelMeshModifiersHistoryOptions) => void;
   setPendingModifierResetAction: React.Dispatch<React.SetStateAction<'hollowing' | 'hole_punch' | 'clear_hollowing' | null>>;
   setInteriorView: React.Dispatch<React.SetStateAction<boolean>>;
   computeAutoHolePunchDepthMmForGeometry: (
