@@ -249,14 +249,26 @@ so the mesh and the modifiers that describe it go back as one step. Writing
 the modifiers separately afterwards would leave two steps, the first of which
 undoes the mesh but not the drafts.
 
+### Hollowing blockers
+
+Blocker edits are their own domain, `src/features/hollowing/history/`, with one
+action, `hollowing:blockers-edit`, whose payload is the model's sorted
+blocked-voxel indices before and after a click, a lasso or Clear. While the
+blocker edit mode is open on that model, the handler moves the blockers being
+edited; once Done has committed them, it moves the committed ones in the
+modifiers. Done itself pushes nothing: the edits already are the steps. A step
+whose expected indices no longer match — from an edit session that ended
+without Done — is declined and discarded.
+
 ## Keyboard wiring
 
 `src/hotkeys/useUndoRedoHotkeys.ts` is the only keyboard entry point. Keydown
 (capture) → `HotkeyRegistryManager` pushes the key into `hotkeyStore` → the
 subscription notices the rising edge of `GLOBAL.UNDO` / `GLOBAL.REDO` and calls
 `undo()` / `redo()`. Redo is checked first because it is a strict superset
-(Ctrl+Shift+Z suppresses Ctrl+Z while held). It is disabled only while hollowing
-voxel-edit mode is active.
+(Ctrl+Shift+Z suppresses Ctrl+Z while held). No tool switches it off: the
+blocker edit mode pushes to the app's history like every other tool (see
+**Hollowing blockers**).
 
 ## Related pages
 

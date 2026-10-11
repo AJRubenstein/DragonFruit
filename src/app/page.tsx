@@ -851,8 +851,6 @@ export default function Home() {
     isApplyingHollowing,
     setIsApplyingHollowing,
     editingBlockedHollowVoxelIndicesRef,
-    hollowVoxelEditUndoStackRef,
-    hollowVoxelEditRedoStackRef,
     hollowingEditModeRef,
     hollowPreviewDebounceTimerRef,
     hollowPreviewRequestSeqRef,
@@ -877,8 +875,6 @@ export default function Home() {
     handleResetHollowingSettings,
     handleHollowingStateChange,
     applyEditingBlockedHollowVoxelIndices,
-    undoHollowVoxelEdit,
-    redoHollowVoxelEdit,
     commitBlockedHollowVoxelIndices,
     toggleBlockedHollowVoxelIndex,
     requestResetHollowing,
@@ -10376,7 +10372,7 @@ export default function Home() {
   // inside the feature hook; page.tsx only supplies the active geometry and
   // renders the two mounts below. See src/features/organicCut/.
   const organicCutToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'organicCut';
-  useUndoRedoHotkeys({ disabled: hollowingEditMode });
+  useUndoRedoHotkeys();
   const organicCut = useOrganicCutSession({
     toolActive: organicCutToolActive,
     activeGeometry: scene.activeModel?.geometry.geometry ?? null,

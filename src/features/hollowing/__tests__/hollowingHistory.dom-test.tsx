@@ -111,6 +111,53 @@ test('hollowing edits land in undo history', async (t) => {
       await settle(20);
       assert.equal(hollowingModifier()?.shellThicknessMm, 2.6);
     });
+
+    await t.test('blocker edits are global steps, inside the edit mode and after Done', async () => {
+      clearHistory();
+      current().hollowing.handleStartHollowVoxelEditing();
+      await settle(20);
+      current().hollowing.handleBlockedHollowVoxelMarqueeSelection(['4', '7']);
+      await settle(20);
+      current().hollowing.handleBlockedHollowVoxelMarqueeSelection(['9']);
+      await settle(20);
+      assert.deepEqual(current().hollowing.editingBlockedHollowVoxelIndices, [4, 7, 9]);
+      assert.equal(getUndoCount(), 2);
+
+      undo();
+      await settle(20);
+      assert.deepEqual(current().hollowing.editingBlockedHollowVoxelIndices, [4, 7], 'undo inside the edit mode');
+      redo();
+      await settle(20);
+      assert.deepEqual(current().hollowing.editingBlockedHollowVoxelIndices, [4, 7, 9]);
+
+      current().hollowing.handleDoneHollowVoxelEditing();
+      await settle(20);
+      assert.equal(current().hollowing.hollowingEditMode, false);
+      assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7, 9]);
+      assert.equal(getUndoCount(), 2, 'Done adds no step of its own');
+
+      undo();
+      await settle(20);
+      assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7], 'undo after Done moves the committed blockers');
+      redo();
+      await settle(20);
+      assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7, 9]);
+    });
+
+    await t.test('a step from an edit session left without Done is dropped', async () => {
+      clearHistory();
+      current().hollowing.handleStartHollowVoxelEditing();
+      await settle(20);
+      current().hollowing.handleBlockedHollowVoxelMarqueeSelection(['12']);
+      await settle(20);
+      current().hollowing.setHollowingEditMode(false);
+      await settle(20);
+
+      undo();
+      await settle(20);
+      assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7, 9], 'the committed blockers are untouched');
+      assert.equal(getUndoCount(), 0);
+    });
   } finally {
     await tree.unmount();
   }

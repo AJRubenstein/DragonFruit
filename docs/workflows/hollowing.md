@@ -59,7 +59,7 @@ Blockers mark voxels that should stay solid during hollowing. Use them to:
 1. Click **Blockers** in the hollowing panel to enter edit mode.
 2. Click individual voxel spheres to toggle them blocked (blue).
 3. Drag a lasso / marquee to block/unblock many voxels at once.
-4. Use **Undo** (Ctrl+Z) / **Redo** (Ctrl+Y) while editing.
+4. Use **Undo** (Ctrl+Z) / **Redo** (Ctrl+Shift+Z) to step through your edits, while editing or after **Done**.
 5. Press **Done** to commit blockers and update the preview.
 6. Clear all blockers with the **Clear** button.
 

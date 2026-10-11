@@ -1,5 +1,4 @@
 import React from 'react';
-import { hotkeyStore } from '@/hotkeys/hotkeyStore';
 import * as THREE from 'three';
 import { SCENE_MODELS_SNAPSHOT_APPLY, type useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import { subscribeHistoryOperations } from '@/history/historyStore';
@@ -30,6 +29,8 @@ import { getRotationQuatTuple, resolveBlockedVoxelValidity } from '@/features/me
 import { toPersistedHolePunchPlacements } from '@/features/hole-punching/holePunchPersistence';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { serializeHollowingModifier } from '@/features/hollowing/hollowingSerialize';
+import { HOLLOWING_BLOCKERS_EDIT } from '@/features/hollowing/history/actionTypes';
+import { pushHollowingHistory, registerHollowingHistoryHandler } from '@/features/hollowing/history/history';
 import { accelerateGeometry } from '@/utils/bvh';
 import {
   buildGeometryVersionKey,
@@ -127,8 +128,6 @@ export function useHollowingManager({
   const [isApplyingHollowing, setIsApplyingHollowing] = React.useState(false);
 
   const editingBlockedHollowVoxelIndicesRef = React.useRef<number[]>([]);
-  const hollowVoxelEditUndoStackRef = React.useRef<number[][]>([]);
-  const hollowVoxelEditRedoStackRef = React.useRef<number[][]>([]);
   const hollowingEditModeRef = React.useRef(false);
   const hollowPreviewDebounceTimerRef = React.useRef<number | ReturnType<typeof setTimeout> | null>(null);
   const hollowPreviewRequestSeqRef = React.useRef(0);
@@ -683,16 +682,12 @@ export function useHollowingManager({
     hollowingEditModeRef.current = hollowingEditMode;
   }, [hollowingEditMode]);
 
-  React.useEffect(() => {
-    if (hollowingEditMode) return;
-    hollowVoxelEditUndoStackRef.current = [];
-    hollowVoxelEditRedoStackRef.current = [];
-  }, [hollowingEditMode]);
-
-  const applyEditingBlockedHollowVoxelIndices = React.useCallback((
-    nextIndicesInput: Iterable<number>,
-    options?: { recordHistory?: boolean },
-  ) => {
+  /**
+   * Replaces the blockers being edited. Each change is an undo step on the app's history, so
+   * Ctrl+Z steps back through blocker edits like through any other — inside the edit mode, and
+   * after Done, where the step applies to the committed blockers instead.
+   */
+  const applyEditingBlockedHollowVoxelIndices = React.useCallback((nextIndicesInput: Iterable<number>) => {
     const nextIndices = [...new Set(nextIndicesInput)]
       .filter((value) => Number.isFinite(value))
       .sort((a, b) => a - b);
@@ -701,72 +696,58 @@ export function useHollowingManager({
       return false;
     }
 
-    if (options?.recordHistory ?? true) {
-      hollowVoxelEditUndoStackRef.current.push([...previousIndices]);
-      if (hollowVoxelEditUndoStackRef.current.length > 100) {
-        hollowVoxelEditUndoStackRef.current.shift();
-      }
-      hollowVoxelEditRedoStackRef.current = [];
+    const modelId = scene.activeModelId;
+    if (modelId) {
+      pushHollowingHistory({
+        type: HOLLOWING_BLOCKERS_EDIT,
+        description: 'Edit Hollowing Blockers',
+        payload: { modelId, before: [...previousIndices], after: nextIndices },
+      });
     }
 
     editingBlockedHollowVoxelIndicesRef.current = nextIndices;
     setEditingBlockedHollowVoxelIndices(nextIndices);
     return true;
-  }, []);
+  }, [scene.activeModelId]);
 
-  const undoHollowVoxelEdit = React.useCallback(() => {
-    const previousIndices = hollowVoxelEditUndoStackRef.current.pop();
-    if (!previousIndices) return false;
+  // Read by the history handler, which outlives any one render.
+  const sceneRef = React.useRef(scene);
+  sceneRef.current = scene;
 
-    hollowVoxelEditRedoStackRef.current.push([...editingBlockedHollowVoxelIndicesRef.current]);
-    editingBlockedHollowVoxelIndicesRef.current = previousIndices;
-    setEditingBlockedHollowVoxelIndices(previousIndices);
-    return true;
-  }, []);
+  React.useEffect(() => registerHollowingHistoryHandler(HOLLOWING_BLOCKERS_EDIT, (payload, direction) => {
+    if (!payload?.modelId) return false;
+    const target = direction === 'undo' ? payload.before : payload.after;
+    const expected = direction === 'undo' ? payload.after : payload.before;
+    const currentScene = sceneRef.current;
 
-  const redoHollowVoxelEdit = React.useCallback(() => {
-    const nextIndices = hollowVoxelEditRedoStackRef.current.pop();
-    if (!nextIndices) return false;
-
-    hollowVoxelEditUndoStackRef.current.push([...editingBlockedHollowVoxelIndicesRef.current]);
-    editingBlockedHollowVoxelIndicesRef.current = nextIndices;
-    setEditingBlockedHollowVoxelIndices(nextIndices);
-    return true;
-  }, []);
-
-  React.useEffect(() => {
-    if ((scene.mode !== 'prepare' && scene.mode !== 'support') || transformMgr.transformMode !== 'hollowing' || !hollowingEditMode) {
-      return;
+    // Still editing this model: the step moves the blockers being edited.
+    if (hollowingEditModeRef.current && currentScene.activeModelId === payload.modelId) {
+      if (!areSortedNumberArraysEqual(editingBlockedHollowVoxelIndicesRef.current, expected)) return false;
+      editingBlockedHollowVoxelIndicesRef.current = [...target];
+      setEditingBlockedHollowVoxelIndices([...target]);
+      return true;
     }
 
-    let wasZPressed = false;
-    let wasYPressed = false;
-
-    const unsubscribe = hotkeyStore.subscribe((state) => {
-      const active = state.activeKeys;
-      const isCtrlOrMeta = active.has('ctrl') || active.has('meta') || active.has('control');
-      const isZPressed = active.has('z') && isCtrlOrMeta;
-      const isYPressed = active.has('y') && isCtrlOrMeta;
-
-      const isZJustPressed = isZPressed && !wasZPressed;
-      const isYJustPressed = isYPressed && !wasYPressed;
-
-      if (isZJustPressed) {
-        if (active.has('shift')) {
-          redoHollowVoxelEdit();
-        } else {
-          undoHollowVoxelEdit();
-        }
-      } else if (isYJustPressed) {
-        redoHollowVoxelEdit();
-      }
-
-      wasZPressed = isZPressed;
-      wasYPressed = isYPressed;
+    // Otherwise it moves the committed blockers, which the panel resyncs from. A step from an
+    // edit session that ended without Done no longer matches them, and is dropped.
+    const model = currentScene.models.find((candidate) => candidate.id === payload.modelId);
+    const modifiers = currentScene.getModelMeshModifiers(payload.modelId);
+    const hollowing = modifiers?.hollowing;
+    if (!model || !hollowing) return false;
+    const committed = [...(hollowing.blockedVoxelIndices ?? [])].sort((a, b) => a - b);
+    if (!areSortedNumberArraysEqual(committed, expected)) return false;
+    currentScene.setModelMeshModifiers(payload.modelId, {
+      ...modifiers,
+      hollowing: {
+        ...hollowing,
+        blockedVoxelIndices: [...target],
+        blockedVoxelRotationQuat: target.length > 0
+          ? (hollowing.blockedVoxelRotationQuat ?? getRotationQuatTuple(model.transform.rotation))
+          : undefined,
+      },
     });
-
-    return unsubscribe;
-  }, [hollowingEditMode, redoHollowVoxelEdit, scene.mode, transformMgr.transformMode, undoHollowVoxelEdit]);
+    return true;
+  }), []);
 
   const blockedPreviewVoxelInstanceIdSet = React.useMemo(() => {
     const preview = hollowPreview;
@@ -1587,8 +1568,6 @@ export function useHollowingManager({
 
   const handleStartHollowVoxelEditing = React.useCallback(() => {
     editingBlockedHollowVoxelIndicesRef.current = blockedHollowVoxelIndices;
-    hollowVoxelEditUndoStackRef.current = [];
-    hollowVoxelEditRedoStackRef.current = [];
     setEditingBlockedHollowVoxelIndices(blockedHollowVoxelIndices);
     setHollowingEditMode(true);
   }, [blockedHollowVoxelIndices]);
@@ -1675,8 +1654,6 @@ export function useHollowingManager({
     isApplyingHollowing,
     setIsApplyingHollowing,
     editingBlockedHollowVoxelIndicesRef,
-    hollowVoxelEditUndoStackRef,
-    hollowVoxelEditRedoStackRef,
     hollowingEditModeRef,
     hollowPreviewDebounceTimerRef,
     hollowPreviewRequestSeqRef,
@@ -1701,8 +1678,6 @@ export function useHollowingManager({
     handleResetHollowingSettings,
     handleHollowingStateChange,
     applyEditingBlockedHollowVoxelIndices,
-    undoHollowVoxelEdit,
-    redoHollowVoxelEdit,
     commitBlockedHollowVoxelIndices,
     toggleBlockedHollowVoxelIndex,
     requestResetHollowing,
