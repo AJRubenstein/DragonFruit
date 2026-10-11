@@ -98,6 +98,7 @@ import {
 import type { VoxlPrinterBundle } from '@/features/scene/voxl/types';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
 import { base64ToBytes } from '@/utils/base64';
+import { snapshotGeometryPositions } from '@/utils/geometrySnapshot';
 import {
   deleteStoredMeshModifiers,
   getStoredMeshModifiers,
@@ -5530,6 +5531,12 @@ export function useSceneCollectionManager(options?: {
         normalized: PluginSceneImportPayload;
         processed: GeometryWithBounds;
       }> = [];
+      // Each baked model's shell as it was before the cavity joined it, read
+      // back below when the modifiers are stored.
+      const shellSnapshotByPayload = new Map<
+        PluginSceneImportPayload,
+        { sourcePositionsBase64: string; sourcePositionCount: number }
+      >();
       for (const normalized of normalizedPayloads) {
         // The plugin built this geometry in the renderer, so it has not been
         // through the native loaders that refine coarse faces. Refine it here, and
@@ -5542,6 +5549,13 @@ export function useSceneCollectionManager(options?: {
           const cavity = readPayloadCavity(normalized);
           if (cavity) {
             const shellTris = (geometry.getAttribute('position')?.count ?? 0) / 3;
+            // The shell before the cavity joins it is what Remove Hollowing
+            // restores, and this is the last point it exists on its own.
+            try {
+              shellSnapshotByPayload.set(normalized, snapshotGeometryPositions(geometry));
+            } catch (error) {
+              console.warn('[SceneCollection] Could not snapshot the pre-hollow shell', error);
+            }
             geometry = mergeCavityIntoShell(geometry, cavity);
             console.log(
               `[SceneCollection] Baked cavity into model: ${shellTris.toLocaleString()} + `
@@ -5763,9 +5777,13 @@ export function useSceneCollectionManager(options?: {
             // follow the choice rather than the file's own claim. Declining
             // keeps the cavity for Interior View and leaves the panel able to
             // bake it later.
+            // The shell snapshot rides along when the cavity was baked, so
+            // Remove Hollowing has a solid to put back.
+            const shellSnapshot = shellSnapshotByPayload.get(normalized);
             (stored as ModelMeshModifiers).hollowing = {
               ...hollowing,
               bakedIntoGeometry: bakeImportedHollowing,
+              ...(shellSnapshot ?? {}),
             };
           }
           storeModelMeshModifiers(model.id, stored);
