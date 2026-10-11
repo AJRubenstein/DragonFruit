@@ -148,7 +148,7 @@ export function ModifierModals({
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
             {pendingModifierResetAction === 'hollowing'
               ? 'Your model will return to its solid version.'
-              : 'All holes on this model will be removed.'}
+              : 'All cavities and holes on this model will be removed.'}
           </p>
         </div>
       </StructuredDialogModal>
