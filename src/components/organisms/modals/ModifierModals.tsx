@@ -60,6 +60,11 @@ export function ModifierModals({
   // A blocking progress overlay: swallow Escape rather than let it through.
   useEscapeToClose(showModifierApplyBlockingOverlay, undefined);
 
+  // Two of the three reset actions undo hollowing; only `hole_punch` is about
+  // holes alone, so the confirmation reads off that rather than one action.
+  const isHollowingReset = pendingModifierResetAction === 'hollowing'
+    || pendingModifierResetAction === 'clear_hollowing';
+
   return (
     <>
       <StructuredDialogModal
@@ -114,7 +119,7 @@ export function ModifierModals({
       <StructuredDialogModal
         open={pendingModifierResetAction !== null}
         ariaLabel="Confirm modifier reset"
-        title={pendingModifierResetAction === 'hollowing' ? 'Remove Hollowing?' : 'Remove All Holes?'}
+        title={isHollowingReset ? 'Remove Hollowing?' : 'Remove All Holes?'}
         subtitle="This action can't be undone"
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
@@ -134,21 +139,23 @@ export function ModifierModals({
               onClick={handleConfirmModifierReset}
             >
               <Trash2 className="w-3.5 h-3.5" />
-              {pendingModifierResetAction === 'hollowing' ? 'Remove Hollowing' : 'Remove All Holes'}
+              {isHollowingReset ? 'Remove Hollowing' : 'Remove All Holes'}
             </Button>
           </>
         )}
       >
         <div className="space-y-2">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            {pendingModifierResetAction === 'hollowing'
+            {isHollowingReset
               ? 'Are you sure you want to remove hollowing from this model?'
               : 'Are you sure you want to remove all hole punches from this model?'}
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            {pendingModifierResetAction === 'hollowing'
-              ? 'Your model will return to its solid version.'
-              : 'All holes on this model will be removed.'}
+            {pendingModifierResetAction === 'clear_hollowing'
+              ? 'The cavity and all holes will be removed.'
+              : pendingModifierResetAction === 'hollowing'
+                ? 'Your model will return to its solid version.'
+                : 'All holes on this model will be removed.'}
           </p>
         </div>
       </StructuredDialogModal>
