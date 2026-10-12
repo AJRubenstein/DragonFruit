@@ -3391,7 +3391,19 @@ export function useSceneCollectionManager(options?: {
     id: string,
     nextBufferGeometry: THREE.BufferGeometry,
     historyDescription: string,
-    options?: { includeSupportState?: boolean; deferPostProcessing?: boolean; meshModifiersAfter?: ModelMeshModifiers | null; meshModifiersBefore?: ModelMeshModifiers | null },
+    options?: {
+      includeSupportState?: boolean;
+      deferPostProcessing?: boolean;
+      meshModifiersAfter?: ModelMeshModifiers | null;
+      meshModifiersBefore?: ModelMeshModifiers | null;
+      /** Lands with the geometry, in the same update and history step. */
+      transformAfter?: ModelTransform;
+      /**
+       * Records a history step whose before-state differs from the live scene: a tool
+       * that previewed its change on the model (Mirror) passes the state from before it.
+       */
+      historyBefore?: { transform?: ModelTransform; supportState?: SupportState };
+    },
   ) => {
     const currentModels = modelsRef.current;
     const currentActiveModelId = activeModelIdRef.current;
@@ -3456,13 +3468,21 @@ export function useSceneCollectionManager(options?: {
     })();
 
     const modifierAfter = options?.meshModifiersAfter;
-    const includeSupportHistory = modifierAfter !== undefined
+    const historyBefore = options?.historyBefore;
+    const recordHistory = modifierAfter !== undefined || historyBefore !== undefined;
+    const includeSupportHistory = recordHistory
       ? (options?.includeSupportState ?? hasSupportsForModel(id, getSnapshot()))
       : false;
-    const before = modifierAfter !== undefined
-      ? captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, { includeSupportState: includeSupportHistory })
+    const modelsBefore = historyBefore?.transform
+      ? currentModels.map((m) => (m.id === id ? { ...m, transform: historyBefore.transform as ModelTransform } : m))
+      : currentModels;
+    const before = recordHistory
+      ? captureSceneSnapshot(modelsBefore, currentActiveModelId, currentSelectedModelIds, {
+          includeSupportState: includeSupportHistory,
+          supportStateOverride: historyBefore?.supportState,
+        })
       : null;
-    if (before) {
+    if (before && modifierAfter !== undefined) {
       before.modifierRecord = {
         modelId: id,
         modifiers: cloneMeshModifiersForHistory(options?.meshModifiersBefore !== undefined ? options.meshModifiersBefore : getStoredMeshModifiers(id)),
@@ -3475,6 +3495,7 @@ export function useSceneCollectionManager(options?: {
             ...m,
             geometry: nextGeometry,
             polygonCount,
+            ...(options?.transformAfter ? { transform: cloneTransform(options.transformAfter) } : {}),
             isSupportGeometry: target.isSupportGeometry,
             linkGroupId: target.linkGroupId,
           }
@@ -3490,7 +3511,9 @@ export function useSceneCollectionManager(options?: {
       const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
         includeSupportState: includeSupportHistory,
       });
-      after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(modifierAfter) };
+      if (modifierAfter !== undefined) {
+        after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(modifierAfter) };
+      }
       pushSceneSnapshotHistory(before, after, historyDescription, id);
     }
     // COW chunk-store bake (Ph0.1 sub-phase C3). This is the VERIFIED sole
