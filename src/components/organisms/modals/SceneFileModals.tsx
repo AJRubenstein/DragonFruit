@@ -1,5 +1,8 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, LayoutGrid, Trash2, X } from 'lucide-react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Plural, Trans } from '@lingui/react/macro';
+import { AlertTriangle, CheckCircle2, CircleDashed, LayoutGrid, Trash2, X } from 'lucide-react';
 import { BlockingOverlay, Button, IconButton, IconChip } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
@@ -162,9 +165,11 @@ export function SceneFileModals({
   zipPickerResolveRef,
   zipPickerState,
 }: SceneFileModalsProps) {
+  const { _ } = useLingui();
   // Escape mirrors each dialog's backdrop click; the arrange overlay is a
   // blocking progress state, so it swallows the key instead.
   useEscapeToClose(Boolean(scene.sceneImportPlacementPrompt), () => scene.resolveSceneImportPlacementPrompt('load_as_is'));
+  useEscapeToClose(Boolean(scene.sceneImportHollowingPrompt), () => scene.resolveSceneImportHollowingPrompt('bake'));
   useEscapeToClose(showPluginImportWarningModal, handleCancelPluginImportWarning);
   useEscapeToClose(showSceneSaveChoiceModal, () => resolveSceneSaveChoice('cancel'));
   useEscapeToClose(showArrangeBlockingOverlay, undefined);
@@ -316,6 +321,108 @@ export function SceneFileModals({
           onSwitch={() => scene.resolvePrinterMismatch('switch')}
           onKeep={() => scene.resolvePrinterMismatch('keep')}
         />
+      )}
+
+      {scene.sceneImportHollowingPrompt && (
+        <div
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/55 backdrop-blur-sm px-3"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              scene.resolveSceneImportHollowingPrompt('bake');
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-lg overflow-hidden rounded-xl border shadow-2xl"
+            style={{
+              background: 'var(--surface-0)',
+              borderColor: 'var(--border-subtle)',
+              boxShadow: '0 24px 46px rgba(0,0,0,0.42)',
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={_(msg`Scene import hollowing decision`)}
+          >
+            <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
+              <div className="flex min-w-0 items-center gap-3">
+                <IconChip
+                  size="lg"
+                  icon={CircleDashed}
+                  style={{
+                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 45%)',
+                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
+                    color: 'var(--accent)',
+                  }}
+                />
+
+                <div className="min-w-0 pr-2">
+                  <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
+                    <Trans>Scene was hollowed before export</Trans>
+                  </h2>
+                  <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                    <Trans>Choose whether to keep the hollow.</Trans>
+                  </p>
+                </div>
+              </div>
+
+              <IconButton
+                variant="surface"
+                size="md"
+                aria-label={_(msg`Close scene import hollowing prompt`)}
+                onClick={() => scene.resolveSceneImportHollowingPrompt('bake')}
+              >
+                <X className="w-4 h-4" />
+              </IconButton>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+                <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Imported scene</Trans></div>
+                <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-strong)' }} title={scene.sceneImportHollowingPrompt.fileName}>
+                  {scene.sceneImportHollowingPrompt.fileName}
+                </div>
+                <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  <Trans>
+                    {scene.sceneImportHollowingPrompt.hollowedModelCount} of{' '}
+                    <Plural
+                      value={scene.sceneImportHollowingPrompt.modelCount}
+                      one="# model carries an interior cavity."
+                      other="# models carry an interior cavity."
+                    />
+                  </Trans>
+                </div>
+              </div>
+
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                <Trans>
+                  <strong style={{ color: 'var(--text-strong)' }}>Keep Hollow</strong> builds the stored cavity into each model, so it prints hollow exactly as authored.
+                </Trans>
+                <span className="mt-1 block">
+                  <Trans>
+                    <strong style={{ color: 'var(--text-strong)' }}>Import Solid</strong> loads the outer shape only. The cavity is kept, so you can apply it later from the Hollowing panel.
+                  </Trans>
+                </span>
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => scene.resolveSceneImportHollowingPrompt('keep_solid')}
+                >
+                  <Trans>Import Solid</Trans>
+                </Button>
+                <Button
+                  variant="tinted-accent"
+                  className="w-full inline-flex items-center justify-center gap-1.5"
+                  onClick={() => scene.resolveSceneImportHollowingPrompt('bake')}
+                >
+                  <Trans>Keep Hollow</Trans>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {autosaveRecovery && (
