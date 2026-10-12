@@ -1,4 +1,7 @@
 import { AlertTriangle, Wrench, X } from 'lucide-react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { Button, IconButton, IconChip, Spinner } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
@@ -26,6 +29,7 @@ export function MeshRepairModals({
   setShowDamagedModelDialog,
   showDamagedModelDialog,
 }: MeshRepairModalsProps) {
+  const { _ } = useLingui();
   // Escape mirrors the backdrop click: it cannot leave mid-repair.
   useEscapeToClose(
     manualRepairModelId !== null,
@@ -36,9 +40,9 @@ export function MeshRepairModals({
     <>
       <StructuredDialogModal
         open={showDamagedModelDialog}
-        ariaLabel="Mesh boolean operation failed"
-        title="Mesh quality too low"
-        subtitle="Boolean operation requires a manifold mesh"
+        ariaLabel={_(msg`Mesh boolean operation failed`)}
+        title={_(msg`Mesh quality too low`)}
+        subtitle={_(msg`Boolean operation requires a manifold mesh`)}
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="danger"
         closeDisabled
@@ -49,21 +53,25 @@ export function MeshRepairModals({
             className="inline-flex items-center justify-center gap-1.5"
             onClick={() => setShowDamagedModelDialog(false)}
           >
-            Got it
+            <Trans>Got it</Trans>
           </Button>
         )}
       >
         <div className="space-y-2">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            This mesh contains too many self-intersecting triangles and
-            non-manifold edges for boolean operations to succeed.
-            The import repair pass reduced but could not fully resolve
-            all issues in the geometry.
+            <Trans>
+              This mesh contains too many self-intersecting triangles and
+              non-manifold edges for boolean operations to succeed.
+              The import repair pass reduced but could not fully resolve
+              all issues in the geometry.
+            </Trans>
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            We recommend repairing the mesh in a dedicated 3D modeling
-            program such as <strong>Blender</strong> or{' '}
-            <strong>Netfabb</strong> before importing it into DragonFruit.
+            <Trans>
+              We recommend repairing the mesh in a dedicated 3D modeling
+              program such as <strong>Blender</strong> or{' '}
+              <strong>Netfabb</strong> before importing it into DragonFruit.
+            </Trans>
           </p>
         </div>
       </StructuredDialogModal>
@@ -98,7 +106,7 @@ export function MeshRepairModals({
               }}
               role="dialog"
               aria-modal="true"
-              aria-label="Repair mesh"
+              aria-label={_(msg`Repair mesh`)}
             >
               <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div className="flex min-w-0 items-center gap-3">
@@ -114,10 +122,10 @@ export function MeshRepairModals({
 
                   <div className="min-w-0 pr-2">
                     <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                      Repair this mesh?
+                      <Trans>Repair this mesh?</Trans>
                     </h2>
                     <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                      DragonFruit will try to fix common geometry issues before you keep working.
+                      <Trans>DragonFruit will try to fix common geometry issues before you keep working.</Trans>
                     </p>
                   </div>
                 </div>
@@ -125,7 +133,7 @@ export function MeshRepairModals({
                 <IconButton
                   variant="surface"
                   size="md"
-                  aria-label="Close repair mesh dialog"
+                  aria-label={_(msg`Close repair mesh dialog`)}
                   disabled={isManualRepairing}
                   onClick={() => setManualRepairModelId(null)}
                 >
@@ -135,14 +143,14 @@ export function MeshRepairModals({
 
               <div className="space-y-4 p-5">
                 <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                  <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Model</div>
+                  <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{_(msg({ message: 'Model', context: 'Mesh repair dialog field' }))}</div>
                   <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-strong)' }} title={repairModel.name}>
                     {repairModel.name}
                   </div>
                 </div>
 
                 <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  Repair can help with holes, broken surfaces, and other mesh problems that may lead to slicing or print issues.
+                  <Trans>Repair can help with holes, broken surfaces, and other mesh problems that may lead to slicing or print issues.</Trans>
                 </p>
 
                 <div
@@ -155,7 +163,7 @@ export function MeshRepairModals({
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: '#d97706' }} />
                     <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                      <strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.
+                      <Trans><strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>
                     </p>
                   </div>
                 </div>
@@ -167,7 +175,7 @@ export function MeshRepairModals({
                     disabled={isManualRepairing}
                     onClick={() => setManualRepairModelId(null)}
                   >
-                    Keep Original
+                    <Trans>Keep Original</Trans>
                   </Button>
                   <Button
                     variant="tinted-accent"
@@ -183,8 +191,8 @@ export function MeshRepairModals({
                     }}
                   >
                     {isManualRepairing
-                      ? <><Spinner size="sm" />Repairing…</>
-                      : <><Wrench className="h-3.5 w-3.5" />Repair</>
+                      ? <><Spinner size="sm" /><Trans>Repairing…</Trans></>
+                      : <><Wrench className="h-3.5 w-3.5" /><Trans>Repair</Trans></>
                     }
                   </Button>
                 </div>

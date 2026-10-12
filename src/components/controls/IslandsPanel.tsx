@@ -12,6 +12,7 @@ import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { ISLAND_LAYER_COLORS, markerIdFor } from '@/volumeAnalysis/Islands/islandPuckMarkers';
+import { Trans } from '@lingui/react/macro';
 
 const SECTION_CARD: React.CSSProperties = {
   borderColor: 'var(--border-subtle)',
@@ -178,7 +179,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                 color: 'var(--accent)',
               }}
             >
-              {scanning ? 'Scanning…' : 'Scan Islands'}
+              {scanning ? <Trans>Scanning…</Trans> : <Trans>Scan Islands</Trans>}
             </Button>
 
 
@@ -456,7 +457,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                       max={10.0}
                       showStepper={false}
                     />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>mm²</span>
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>{/* i18n-ignore: unit */}mm²</span>
                   </div>
                 )}
               </div>
@@ -478,7 +479,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                       max={2.0}
                       showStepper={false}
                     />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>mm²</span>
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>{/* i18n-ignore: unit */}mm²</span>
                   </div>
                 )}
               </div>
