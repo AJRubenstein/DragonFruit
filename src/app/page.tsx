@@ -605,6 +605,7 @@ function createModelTransformKey(modelId: string, transform: ModelTransform): st
 const HISTORY_APP_MODES: readonly SupportMode[] = ['prepare', 'analysis', 'support', 'export', 'printing'];
 const HISTORY_TRANSFORM_MODES: readonly TransformMode[] = [
   'select', 'transform', 'smoothing', 'arrange', 'duplicate', 'placeOnFace', 'mirror', 'hollowing', 'organicCut',
+  'supportBlockers',
 ];
 
 /**
@@ -8143,9 +8144,15 @@ export default function Home() {
     historyOriginRef.current = { appMode: scene.mode, transformMode: transformMgr.transformMode };
   }, [scene.mode, transformMgr.transformMode]);
 
+  const historyOriginToolPendingRef = React.useRef(false);
+
   React.useEffect(() => {
     restoreHistoryOriginRef.current = (origin: HistoryOrigin) => {
-      if (isAppMode(origin.appMode) && origin.appMode !== scene.mode) scene.setMode(origin.appMode);
+      if (isAppMode(origin.appMode) && origin.appMode !== scene.mode) {
+        // The workspace switch must not put back the workspace's remembered tool over this one.
+        historyOriginToolPendingRef.current = isTransformMode(origin.transformMode);
+        scene.setMode(origin.appMode);
+      }
       if (isTransformMode(origin.transformMode) && origin.transformMode !== transformMgr.transformMode) {
         setTransformModeWithMirrorFinalize(origin.transformMode);
       }
@@ -8165,6 +8172,10 @@ export default function Home() {
   React.useEffect(() => {
     if (lastWorkspaceModeRef.current === scene.mode) return;
     lastWorkspaceModeRef.current = scene.mode;
+    if (historyOriginToolPendingRef.current) {
+      historyOriginToolPendingRef.current = false;
+      return;
+    }
 
     if (scene.mode === 'prepare') {
       if (transformMgr.transformMode !== prepareToolMemoryRef.current) {

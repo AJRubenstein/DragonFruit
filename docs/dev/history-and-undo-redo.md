@@ -37,7 +37,13 @@ export type HistoryHandler = (action: HistoryAction, direction: HistoryDirection
 ```
 
 `origin` (`{ appMode, transformMode }`) is stamped centrally from an app-installed
-provider so an undo can restore the tool the edit was made in.
+provider so an undo can restore the tool the edit was made in. `page.tsx` only
+restores the tools in `HISTORY_TRANSFORM_MODES`; a tool missing from that list
+leaves the user where they are. When the entry belongs to another workspace,
+the switch skips that workspace's remembered tool, which would otherwise
+replace the restored one. Anything inside a tool (the hollowing solid-area edit
+mode, the Support panel) is not part of the origin; a domain that needs it
+restores it in its own handler.
 
 ## Using the typed façade (per domain)
 
