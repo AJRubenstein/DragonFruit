@@ -104,6 +104,7 @@ import {
   writeCornerOnlyWireframePositions,
 } from './SceneCanvasGeometry';
 import { ModelAttachedSupportLayer } from './ModelAttachedSupportLayer';
+import { FollowModelMove } from './FollowModelMove';
 import {
   CameraModeEntryFramingController,
   CameraProjectionController,
@@ -2611,6 +2612,11 @@ export function SceneCanvas({
     return null;
   }, [activeActualMeshRef, clipLower, clipUpper]);
 
+  // A drag that only moves models: the gizmo's move arrows, or a Select-mode drag, which
+  // has no gizmo descriptor. Footprint outlines follow these instead of hiding.
+  const isMoveDrag = isGizmoDragging && (
+    activeGizmoDragDescriptor ? activeGizmoDragDescriptor.operation === 'move' : selectDragPressed
+  );
   const isActiveGizmoZMove = activeGizmoDragDescriptor?.operation === 'move'
     && activeGizmoDragDescriptor.axis === 'z';
 
@@ -7029,20 +7035,26 @@ export function SceneCanvas({
 
               {!hideRaftPrimitives
                 && !thumbnailCaptureActive
-                && !isGizmoDragging
+                && (!isGizmoDragging || isMoveDrag)
                 && !isGizmoRetargeting
                 && !hideFootprintOutlineForPreview
                 && !(transformMode === 'placeOnFace' && disableRaycast)
                 && (
                 <>
                   {footprintOutlineTargets.map((entry) => (
-                    <FootprintBorderRenderer
+                    <FollowModelMove
                       key={`footprint-border-${entry.id}`}
-                      modelGeometry={entry.geometry}
-                      modelTransform={entry.transform}
                       modelId={entry.id}
-                      color={supportHoverTintColor}
-                    />
+                      baseTransform={entry.transform}
+                      liveTransformsRef={crossSectionLiveTransformsRef}
+                    >
+                      <FootprintBorderRenderer
+                        modelGeometry={entry.geometry}
+                        modelTransform={entry.transform}
+                        modelId={entry.id}
+                        color={supportHoverTintColor}
+                      />
+                    </FollowModelMove>
                   ))}
                 </>
               )}
