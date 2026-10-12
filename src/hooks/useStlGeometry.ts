@@ -1196,6 +1196,9 @@ async function tryLoadFast3mf(fileUrl: string): Promise<THREE.Group | null> {
   try {
     const response = await fetch(fileUrl);
     const buffer = await response.arrayBuffer();
+    // Its unzip worker swallows any error and never answers, so a file it cannot
+    // open hangs the import instead of failing it. An empty one is the case seen.
+    if (buffer.byteLength === 0) throw new Error('3MF file is empty.');
 
     const loader = new Fast3MFLoader();
     const data3mf = await loader.parse(buffer);

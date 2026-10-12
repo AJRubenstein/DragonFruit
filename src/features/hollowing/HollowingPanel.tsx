@@ -1,7 +1,7 @@
 import React from 'react';
 import { Droplets } from 'lucide-react';
 import type { HollowMode, InfillMode, OpenFace } from '@/utils/meshHollowing';
-import { Button, Card, CardHeader, Select } from '@/components/atoms';
+import { Button, Card, CardHeader, Select, Spinner } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 
@@ -306,27 +306,7 @@ export function HollowingPanel({
               >
                 {isApplyingBlockers ? (
                   <span className="inline-flex items-center justify-center gap-1.5">
-                    <svg
-                      className="h-3 w-3 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle
-                        cx="12"
-                        cy="12"
-                        r="9"
-                        stroke="currentColor"
-                        strokeOpacity="0.25"
-                        strokeWidth="3"
-                      />
-                      <path
-                        d="M21 12a9 9 0 0 0-9-9"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                      />
-                    </svg>
+                    <Spinner size="xs" />
                     <span>Applying Solid Areas</span>
                   </span>
                 ) : 'Done'}
@@ -381,27 +361,7 @@ export function HollowingPanel({
                   >
                     {isApplying ? 'Applying...' : isPreviewing ? (
                       <span className="inline-flex items-center justify-center gap-1.5">
-                        <svg
-                          className="h-3 w-3 animate-spin"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <circle
-                            cx="12"
-                            cy="12"
-                            r="9"
-                            stroke="currentColor"
-                            strokeOpacity="0.25"
-                            strokeWidth="3"
-                          />
-                          <path
-                            d="M21 12a9 9 0 0 0-9-9"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                          />
-                        </svg>
+                        <Spinner size="xs" />
                         <span>Updating</span>
                       </span>
                     ) : 'Apply'}

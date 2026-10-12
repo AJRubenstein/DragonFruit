@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useLingui } from '@lingui/react';
 import * as THREE from 'three';
-import { refineCoarseFaces } from '@/utils/tauriMeshBridge';
+import { loadTauriCore, refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
@@ -100,6 +100,7 @@ import type { VoxlPrinterBundle } from '@/features/scene/voxl/types';
 import { base64ToBytes } from '@/utils/base64';
 import { snapshotGeometryPositions } from '@/utils/geometrySnapshot';
 import type { ModelMeshModifiers, ModelMeshModifiersHistoryOptions } from '@/features/mesh-modifiers/types';
+import { countTriangles } from '@/utils/geometry';
 import {
   deleteStoredMeshModifiers,
   getStoredMeshModifiers,
@@ -2792,7 +2793,7 @@ export function useSceneCollectionManager(options?: {
               visible: true,
               color,
               polygonCount: merged.nativePreview?.originalTriangleCount
-                ?? merged.geometry.getAttribute('position').count / 3,
+                ?? countTriangles(merged.geometry),
             };
 
             const assignedCenter = findFreeSpotCentersForModels([...stagedNewModels, model], 5).at(-1);
@@ -2835,7 +2836,7 @@ export function useSceneCollectionManager(options?: {
               visible: true,
               color,
               polygonCount: geom.nativePreview?.originalTriangleCount
-                ?? geom.geometry.getAttribute('position').count / 3,
+                ?? countTriangles(geom.geometry),
             };
 
             const assignedCenter = findFreeSpotCentersForModels([...stagedNewModels, model], 5).at(-1);
@@ -3465,12 +3466,9 @@ export function useSceneCollectionManager(options?: {
       });
     }
 
-    const polygonCount = (() => {
-      const idx = nextBufferGeometry.getIndex();
-      if (idx) return Math.floor(idx.count / 3);
-      const pos = nextBufferGeometry.getAttribute('position');
-      return pos ? Math.floor(pos.count / 3) : target.polygonCount;
-    })();
+    const polygonCount = nextBufferGeometry.getAttribute('position')
+      ? countTriangles(nextBufferGeometry)
+      : target.polygonCount;
 
     const modifierAfter = options?.meshModifiersAfter;
     const historyBefore = options?.historyBefore;
@@ -3565,12 +3563,7 @@ export function useSceneCollectionManager(options?: {
       flatteningPlanes: [],
     };
 
-    const polygonCount = (() => {
-      const idx = bufferGeometry.getIndex();
-      if (idx) return Math.floor(idx.count / 3);
-      const pos = bufferGeometry.getAttribute('position');
-      return pos ? Math.floor(pos.count / 3) : 0;
-    })();
+    const polygonCount = countTriangles(bufferGeometry);
 
     const id = uuidv4();
     const newModel: LoadedModel = {
@@ -3681,12 +3674,6 @@ export function useSceneCollectionManager(options?: {
       return { geometry: g, bbox, center, size, flatteningPlanes: [] };
     };
 
-    const polyCount = (g: THREE.BufferGeometry): number => {
-      const idx = g.getIndex();
-      if (idx) return Math.floor(idx.count / 3);
-      const pos = g.getAttribute('position');
-      return pos ? Math.floor(pos.count / 3) : 0;
-    };
 
     // The source becomes the FIRST part; every other part is appended as a new
     // model. (A multi-loop cut can free several pieces, so there may be >2 parts.)
@@ -3715,7 +3702,7 @@ export function useSceneCollectionManager(options?: {
       },
       visible: true,
       color: source.color,
-      polygonCount: polyCount(pg.geometry),
+      polygonCount: countTriangles(pg.geometry),
       meshModifiers: source.meshModifiers ? clonePlainData(source.meshModifiers) : undefined,
     }));
 
@@ -3727,7 +3714,7 @@ export function useSceneCollectionManager(options?: {
           ? {
               ...m,
               geometry: part0,
-              polygonCount: polyCount(part0.geometry),
+              polygonCount: countTriangles(part0.geometry),
               transform: {
                 position: part0Position,
                 rotation: m.transform.rotation.clone(),
@@ -4123,7 +4110,7 @@ export function useSceneCollectionManager(options?: {
       visible: source.visible,
       color: source.color,
       polygonCount: bodyGeom.nativePreview?.originalTriangleCount
-        ?? bodyGeom.geometry.getAttribute('position').count / 3,
+        ?? countTriangles(bodyGeom.geometry),
     }));
 
     const currentModels = modelsRef.current;
@@ -4531,8 +4518,9 @@ export function useSceneCollectionManager(options?: {
         assumeSupportGeometry: undefined,
         _nativeModelTriangleCount: model.geometry.meshDefects?.nativeRepairReport?.model_triangle_count ?? undefined,
       });
-      const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
-      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      const polygonCount = processed.geometry.getAttribute('position')
+        ? countTriangles(processed.geometry)
+        : model.polygonCount;
       const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
 
       setModels(prev => prev.map(m =>
@@ -5853,7 +5841,7 @@ export function useSceneCollectionManager(options?: {
           },
           visible: true,
           color: '#a3a3a3',
-          polygonCount: processed.geometry.getAttribute('position').count / 3,
+          polygonCount: countTriangles(processed.geometry),
           ignoreAutoLift: true,
           meshModifiers: undefined,
           manualZMoveOverride: true,
@@ -6398,7 +6386,7 @@ export function useSceneCollectionManager(options?: {
             }
           }
 
-          const polygonCount = geometry.geometry.getAttribute('position').count / 3;
+          const polygonCount = countTriangles(geometry.geometry);
           const color = clampHexColor(model.color, DEFAULT_MESH_COLOR);
           const importedPlateId = plateIdForImport(model.plateId);
 
@@ -6758,8 +6746,17 @@ export function useSceneCollectionManager(options?: {
     // create a path-backed file so the Rust sideload reads from disk directly.
     // IndexedDB blobs for these files were stored empty (0 bytes) because
     // createPathBackedStlFile builds the File object with an empty blob.
+    //
+    // Only an STL goes without its bytes, as from the native picker: an OBJ or 3MF
+    // the native loader cannot read falls back to the renderer's loaders, which
+    // parse the File itself. Given an empty one, the 3MF unzip worker failed
+    // without answering and the import hung.
     if (entry.kind === 'mesh' && entry.sourcePath) {
-      const pathFile = new File([], entry.name, {
+      const core = entry.name.toLowerCase().endsWith('.stl') ? null : await loadTauriCore();
+      const bytes = core
+        ? await core.invoke<ArrayBuffer>('read_print_file_bytes', { sourcePath: entry.sourcePath })
+        : null;
+      const pathFile = new File(bytes ? [new Uint8Array(bytes)] : [], entry.name, {
         type: 'application/octet-stream',
         lastModified: Date.now(),
       });
@@ -6999,8 +6996,9 @@ export function useSceneCollectionManager(options?: {
         nativeProcessingMode: 'repair',
         assumeSupportGeometry: model.isSupportGeometry,
       });
-      const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
-      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      const polygonCount = processed.geometry.getAttribute('position')
+        ? countTriangles(processed.geometry)
+        : model.polygonCount;
       const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
 
       // The repair awaited, so the scene it lands in is the current one, not the one it started from.

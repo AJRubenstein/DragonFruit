@@ -43,6 +43,7 @@ import {
 import type { DragonfruitImportFormat } from '@/supports/types';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
 import { base64ToBytes, bytesToBase64 } from '@/utils/base64';
+import { loadTauriCore } from '@/utils/tauriMeshBridge';
 import { sha256Hex } from './meshChunkStore';
 import type { VoxlChunkCache, CachedChunkPayload } from './voxlChunkCache';
 
@@ -1322,10 +1323,10 @@ export async function readSidecarFileBytes(filePath: string): Promise<Uint8Array
       }
     }
 
-    if (typeof window !== 'undefined' && '__TAURI_IPC__' in window) {
+    const core = await loadTauriCore();
+    if (core) {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const ab = await invoke<ArrayBuffer>('read_print_file_bytes', { path: filePath });
+        const ab = await core.invoke<ArrayBuffer>('read_print_file_bytes', { sourcePath: filePath });
         if (ab) return new Uint8Array(ab);
       } catch {
         // Fall through
