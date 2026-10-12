@@ -54,7 +54,6 @@ import {
   parseAaLevelSteps,
   resolveSliceAntiAliasing,
 } from '@/features/slicing/sliceAntiAliasing';
-import { AaSupportWarningModal } from '@/components/modals/AaSupportWarningModal';
 import {
   DEFAULT_CUSTOM_CURVE,
   DEFAULT_SAVED_CURVES,
@@ -837,9 +836,6 @@ export function SlicingPanel({
   const [slicingModalStage, setSlicingModalStage] = useState<'running' | 'finished' | 'failed' | 'cancelled'>('running');
   const [displayProgressPercent, setDisplayProgressPercent] = useState(0);
   const [aaMode, setAaMode] = useState<'Off' | 'Blur' | '3DAA'>(resolveInitialAaMode);
-  const [showAaWarningModal, setShowAaWarningModal] = useState(false);
-  const [pendingAaTarget, setPendingAaTarget] = useState<'Off' | 'Blur' | '3DAA' | null>(null);
-  const [aaWarningModelName] = useState('');
   const [showOutOfBoundsWarningModal, setShowOutOfBoundsWarningModal] = useState(false);
   /** How many of a batch's files are already on disk, so the user can be asked before writing. */
   const [overwriteCollisionCount, setOverwriteCollisionCount] = useState(0);
@@ -1226,19 +1222,6 @@ export function SlicingPanel({
     && (phaseKind === 'preparing' || phaseKind === 'staging' || phaseKind === 'slicing');
 
   const slicingElapsedLabel = useMemo(() => formatElapsedClock(currentElapsedMs), [currentElapsedMs]);
-
-  const handleAaWarningProceed = useCallback(() => {
-    if (pendingAaTarget) {
-      setAaMode(pendingAaTarget);
-    }
-    setShowAaWarningModal(false);
-    setPendingAaTarget(null);
-  }, [pendingAaTarget]);
-
-  const handleAaWarningCancel = useCallback(() => {
-    setShowAaWarningModal(false);
-    setPendingAaTarget(null);
-  }, []);
 
   const excludedModelIdSet = useMemo(() => new Set(excludedModelIds), [excludedModelIds]);
   /** The plate the plain Slice action covers. */
@@ -3265,13 +3248,6 @@ export function SlicingPanel({
           )}
         </p>
       </StructuredDialogModal>
-
-      <AaSupportWarningModal
-        isOpen={showAaWarningModal}
-        modelName={aaWarningModelName}
-        onCancel={handleAaWarningCancel}
-        onProceed={handleAaWarningProceed}
-      />
     </Card>
   );
 }
