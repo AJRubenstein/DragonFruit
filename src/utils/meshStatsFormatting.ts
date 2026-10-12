@@ -2,22 +2,22 @@
  * Utility functions for formatting mesh statistics and geometry display
  */
 
-import { formatFixed } from './localeNumber';
+import type { LocaleFormat } from './localeNumber';
 
 /**
  * Formats a polygon count to a compact display format
  * Examples (en): 1376686 -> "1.38M", 50000 -> "50K", 999 -> "999"
  */
-export function formatPolygonCountCompact(count: number, locale: string): string {
+export function formatPolygonCountCompact(count: number, fmt: LocaleFormat): string {
   if (count >= 1_000_000) {
     const millions = count / 1_000_000;
-    return `${formatFixed(millions, millions >= 10 ? 0 : 2, locale)}M`;
+    return `${fmt.fixed(millions, millions >= 10 ? 0 : 2)}M`;
   }
   if (count >= 1_000) {
     const thousands = count / 1_000;
-    return `${formatFixed(thousands, thousands >= 10 ? 0 : 1, locale)}K`;
+    return `${fmt.fixed(thousands, thousands >= 10 ? 0 : 1)}K`;
   }
-  return formatFixed(count, 0, locale);
+  return fmt.fixed(count, 0);
 }
 
 /**
@@ -28,7 +28,7 @@ export function formatPolygonCountCompact(count: number, locale: string): string
  * Lifted from the model stats card, which had the only copy while two other
  * components kept their own — this is the one to call.
  */
-export function formatFileSize(bytes: number | null | undefined, locale: string): string | null {
+export function formatFileSize(bytes: number | null | undefined, fmt: LocaleFormat): string | null {
   // Zero means "not known" rather than "empty": a path-backed import used to
   // report 0 for its size, and printing "0 B" for a mesh that plainly has bytes
   // is worse than printing nothing.
@@ -38,8 +38,8 @@ export function formatFileSize(bytes: number | null | undefined, locale: string)
   const MB = KB * 1024;
   const GB = MB * 1024;
 
-  if (abs >= GB) return `${formatFixed(abs / GB, 2, locale)} GB`;
-  if (abs >= MB) return `${formatFixed(abs / MB, 2, locale)} MB`;
-  if (abs >= KB) return `${formatFixed(abs / KB, 1, locale)} KB`;
-  return `${formatFixed(abs, 0, locale)} B`;
+  if (abs >= GB) return `${fmt.fixed(abs / GB, 2)} GB`;
+  if (abs >= MB) return `${fmt.fixed(abs / MB, 2)} MB`;
+  if (abs >= KB) return `${fmt.fixed(abs / KB, 1)} KB`;
+  return `${fmt.fixed(abs, 0)} B`;
 }

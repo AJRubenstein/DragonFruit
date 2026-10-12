@@ -6,7 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { useIsLinux } from '@/hooks/usePlatform';
 import { formatFileSize, formatPolygonCountCompact } from '@/utils/meshStatsFormatting';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 import {
   getActiveMaterialProfile,
@@ -54,7 +54,8 @@ export function ModelStatsCard({
   estimatedLayerCountLabelOverride,
   estimatedResinTotalLabel,
 }: ModelStatsCardProps) {
-  const { _, i18n } = useLingui();
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [isFlipped, setIsFlipped] = React.useState(false);
   // The app forces WebKitGTK's SHM software renderer on Linux
   // (WEBKIT_DISABLE_DMABUF_RENDERER=1 in main.rs, issue #83), and that path
@@ -432,8 +433,8 @@ export function ModelStatsCard({
     const price = Math.max(0, activeMaterialProfile.bottlePrice || 0);
     const currency = (activeMaterialProfile.currencyCode || 'USD').toUpperCase();
     const cost = (estimatedResinMl / bottleMl) * price;
-    return `${currency} ${formatFixed(cost, 2, i18n.locale)}`;
-  }, [activeMaterialProfile, estimatedResinMl, i18n.locale]);
+    return `${currency} ${fmt.fixed(cost, 2)}`;
+  }, [activeMaterialProfile, estimatedResinMl, fmt]);
 
   const frontHeader = connectedHostName || activePrinterProfile?.name || _(msg`No printer connected`);
   const frontHeaderColor = isNetworkPrinterOffline
@@ -532,7 +533,7 @@ export function ModelStatsCard({
               <span><Trans>Exposure:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>
                 {effectiveNormalExposureSec != null
-                  ? `${formatFixed(effectiveNormalExposureSec, 1, i18n.locale)}s • ${formatFixed(effectiveBottomExposureSec ?? effectiveNormalExposureSec, 1, i18n.locale)}s`
+                  ? `${fmt.fixed(effectiveNormalExposureSec, 1)}s • ${fmt.fixed(effectiveBottomExposureSec ?? effectiveNormalExposureSec, 1)}s`
                   : '-'}
               </span>
 
@@ -550,7 +551,7 @@ export function ModelStatsCard({
               <span><Trans comment='Row label on the printer card: estimated resin volume. Keep it terse — the label column is narrow.'>Est. resin:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>
                 {estimatedResinLabelOverride ?? (estimatedResinMl != null
-                  ? `${formatFixed(estimatedResinMl, 2, i18n.locale)} ml${estimatedResinCost ? ` (${estimatedResinCost})` : ''}`
+                  ? `${fmt.fixed(estimatedResinMl, 2)} ml${estimatedResinCost ? ` (${estimatedResinCost})` : ''}`
                   : '-')}
               </span>
 
@@ -584,16 +585,16 @@ export function ModelStatsCard({
 
             <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
               <span><Trans>STL size:</Trans></span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.fileSizeBytes != null ? formatFileSize(model.fileSizeBytes, i18n.locale) : '-'}</span>
+              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.fileSizeBytes != null ? formatFileSize(model.fileSizeBytes, fmt) : '-'}</span>
 
               <span><Trans>Triangles:</Trans></span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? formatPolygonCountCompact(model.polygonCount, i18n.locale) : '-'}</span>
+              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? formatPolygonCountCompact(model.polygonCount, fmt) : '-'}</span>
 
               <span><Trans comment='Row label on the model details card: number of separate connected surfaces ("shells"/bodies) in the mesh.'>Shells:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.geometry.meshDefects?.nativeRepairReport?.post.component_count ?? '-'}</span>
 
               <span><Trans>Height:</Trans></span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? `${formatFixed(heightMm, 2, i18n.locale)} mm` : '-'}</span>
+              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? `${fmt.fixed(heightMm, 2)} mm` : '-'}</span>
             </div>
 
             {model?.geometry.meshDefects?.hasDefects && (

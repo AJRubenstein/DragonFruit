@@ -11,7 +11,7 @@ import { MeshShaderPreviewSlot } from '@/components/settings/meshSettings/MeshSh
 import { MeshShaderPreviewCanvas } from '@/components/settings/meshSettings/MeshShaderPreviewCanvas';
 import { Button, ColorSwatchInput, Input, SegmentedControl, Select, SettingRow } from '@/components/atoms';
 import { Layers, MousePointer2, RotateCcw, SlidersHorizontal } from 'lucide-react';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type PreviewModelConfig = {
   label: string;
@@ -113,7 +113,8 @@ export function MeshSettingsTab({
   defaultMeshSelectionColor,
   defaultMeshHoverColor,
 }: MeshSettingsTabProps) {
-  const { _, i18n } = useLingui();
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [previewModel, setPreviewModel] = React.useState<string>('knot');
   const [stlPreviewModels, setStlPreviewModels] = React.useState<PreviewModelConfig[]>([]);
   const [activeColorIndex, setActiveColorIndex] = React.useState<number>(0);
@@ -374,7 +375,7 @@ export function MeshSettingsTab({
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Roughness</Trans></span>
-                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatFixed(materialRoughness, 2, i18n.locale)}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(materialRoughness, 2)}</span>
                 </div>
                 <input
                   type="range" min="0.0" max="1.0" step="0.05"
@@ -390,7 +391,7 @@ export function MeshSettingsTab({
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Lightness</Trans></span>
-                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatFixed(lightness, 2, i18n.locale)}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(lightness, 2)}</span>
                 </div>
                 <input
                   type="range" min="0.2" max="3.0" step="0.05"
@@ -405,7 +406,7 @@ export function MeshSettingsTab({
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Contrast</Trans></span>
-                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatFixed(contrast, 2, i18n.locale)}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(contrast, 2)}</span>
                 </div>
                 <input
                   type="range" min="0.05" max="0.95" step="0.01"
@@ -420,7 +421,7 @@ export function MeshSettingsTab({
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Ambient Occlusion</Trans></span>
-                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatFixed(bakedAoIntensity, 2, i18n.locale)}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(bakedAoIntensity, 2)}</span>
                 </div>
                 <input
                   type="range" min="0.0" max="2.0" step="0.05"
@@ -435,7 +436,7 @@ export function MeshSettingsTab({
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>X-Ray Opacity</Trans></span>
-                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatFixed(xrayOpacity, 2, i18n.locale)}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(xrayOpacity, 2)}</span>
                 </div>
                 <input
                   type="range" min="0.02" max="0.85" step="0.01"
@@ -564,7 +565,7 @@ export function MeshSettingsTab({
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span style={{ color: 'var(--text-muted)' }}><Trans context="Tint intensity">Hover</Trans></span>
-                    <span className="tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatFixed(hoverTintStrength, 2, i18n.locale)}</span>
+                    <span className="tabular-nums" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(hoverTintStrength, 2)}</span>
                   </div>
                   <input
                     type="range" min="0" max="1" step="0.01"
@@ -576,7 +577,7 @@ export function MeshSettingsTab({
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span style={{ color: 'var(--text-muted)' }}><Trans context="Tint intensity">Selected</Trans></span>
-                    <span className="tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatFixed(selectedTintStrength, 2, i18n.locale)}</span>
+                    <span className="tabular-nums" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(selectedTintStrength, 2)}</span>
                   </div>
                   <input
                     type="range" min="0" max="1" step="0.01"

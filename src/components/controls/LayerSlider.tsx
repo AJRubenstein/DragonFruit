@@ -5,7 +5,7 @@ import { useLingui } from '@lingui/react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useOutsideDismiss } from '@/hooks/useOutsideDismiss';
 import { clampToViewport } from '@/utils/math';
-import { formatNumber } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 /** min-width 136px + 10px offset + margin. */
 const THUMB_EDIT_POPOVER_WIDTH = 156;
@@ -37,7 +37,7 @@ type LayerSliderProps = {
 };
 
 export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onScrubEnd, currentHeightMm, maxHeightMm, className, showValue = false, docked = false, embedded = false, expandToContainer = false, dragBatchMode = 'raf', lowerValue, onLowerChange, lowerCurrentHeightMm, crossSectionEnabled = true, onToggleCrossSection, layerHeightMm, compactMinimalRail = false, allowTrackClickJump = false }: LayerSliderProps) {
-  const { i18n } = useLingui();
+  const fmt = useLocaleFormat();
   const isMinimalRail = embedded && docked;
   const isCompactMinimalRail = isMinimalRail && compactMinimalRail;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -65,8 +65,8 @@ export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onS
 
   const formatMm = React.useCallback((mm: number) => {
     if (!Number.isFinite(mm)) return '0';
-    return formatNumber(mm, i18n.locale, { maximumFractionDigits: 2 });
-  }, [i18n.locale]);
+    return fmt.number(mm, { maximumFractionDigits: 2 });
+  }, [fmt]);
 
   // Update input value when slider value changes externally
   React.useEffect(() => {

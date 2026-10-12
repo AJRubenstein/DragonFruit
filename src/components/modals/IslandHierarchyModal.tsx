@@ -1,12 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useLingui } from '@lingui/react';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import type { Island } from '@/volumeAnalysis/IslandScan/types';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { IconButton } from '@/components/atoms';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type IslandHierarchyModalProps = {
   islands: Island[];
@@ -111,14 +110,14 @@ type TreeNodeComponentProps = {
 };
 
 function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeComponentProps) {
-  const { i18n } = useLingui();
+  const fmt = useLocaleFormat();
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
 
   const layerRange = `L${node.island.firstLayer}-${node.island.lastLayer}`;
-  const volume = formatFixed(node.island.volumeMm3 ?? 0, 2, i18n.locale);
+  const volume = fmt.fixed(node.island.volumeMm3 ?? 0, 2);
   const layerCount = node.island.lastLayer - node.island.firstLayer + 1;
-  const maxArea = formatFixed(node.island.maxAreaMm2 ?? 0, 2, i18n.locale);
+  const maxArea = fmt.fixed(node.island.maxAreaMm2 ?? 0, 2);
   const maxAreaLayer = node.island.maxAreaLayer ?? 0;
   const worldMaxAreaLayer = Math.round(maxAreaLayer + (zOffsetMm / layerHeightMm));
 

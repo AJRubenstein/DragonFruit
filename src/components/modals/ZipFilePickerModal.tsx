@@ -1,13 +1,13 @@
 'use client';
 
 import React from 'react';
-import { useLingui } from '@lingui/react';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { ArchiveRestore, FileArchive, X } from 'lucide-react';
 import { Button, IconButton } from '@/components/atoms';
 import { getFileExtensionLower } from '@/utils/zipImport';
 import { SCENE_FILE_EXTENSIONS } from '@/features/plugins/pluginFileTypeExtensions';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { LocaleFormat } from '@/utils/localeNumber';
 
 const MESH_EXTS = new Set(['.stl', '.obj', '.3mf']);
 const SCENE_EXTS = new Set(SCENE_FILE_EXTENSIONS.map((ext) => `.${ext}`));
@@ -39,7 +39,7 @@ const EXT_COLORS_LIGHT: Record<string, string> = {
 
 const FILE_SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
-function formatFileSize(bytes: number, locale: string): string {
+function formatFileSize(bytes: number, fmt: LocaleFormat): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
 
   let value = bytes;
@@ -50,11 +50,11 @@ function formatFileSize(bytes: number, locale: string): string {
   }
 
   if (unitIndex === 0) {
-    return `${formatFixed(value, 0, locale)} ${FILE_SIZE_UNITS[unitIndex]}`;
+    return `${fmt.fixed(value, 0)} ${FILE_SIZE_UNITS[unitIndex]}`;
   }
 
   const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${formatFixed(value, decimals, locale)} ${FILE_SIZE_UNITS[unitIndex]}`;
+  return `${fmt.fixed(value, decimals)} ${FILE_SIZE_UNITS[unitIndex]}`;
 }
 
 function getDefaultSelectedIndices(
@@ -85,7 +85,7 @@ export function ZipFilePickerModal({
   onConfirm,
   onCancel,
 }: ZipFilePickerModalProps) {
-  const { i18n } = useLingui();
+  const fmt = useLocaleFormat();
   const defaultSelectedIndices = React.useMemo(
     () => getDefaultSelectedIndices(files, category, defaultSelectionCategory),
     [category, defaultSelectionCategory, files],
@@ -339,7 +339,7 @@ export function ZipFilePickerModal({
               const ext = getFileExtensionLower(file.name);
               const extColor = (isLightTheme ? EXT_COLORS_LIGHT[ext] : EXT_COLORS[ext]) ?? 'var(--accent)';
               const isChecked = selectedIndices.has(index);
-              const sizeLabel = formatFileSize(file.size, i18n.locale);
+              const sizeLabel = formatFileSize(file.size, fmt);
 
               return (
                 <label

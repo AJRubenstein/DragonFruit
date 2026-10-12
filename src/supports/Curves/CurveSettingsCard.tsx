@@ -7,7 +7,7 @@ import { updateSupportEntity } from '../supportTypeRegistry';
 import { updateCurveTension, removeCurveAtJoint, updateSegmentTension, removeSegmentCurve, updateSegmentBias } from './curveUtils';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../history/supportEditHistory';
 import { Button } from '@/components/atoms';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type CurveSelectionState = {
     selectedId: string;
@@ -76,7 +76,8 @@ export function getCurveSettingsSelection(state: SupportState): CurveSelectionSt
 }
 
 export function CurveSettingsCard({ embedded = false }: { embedded?: boolean }) {
-    const { _, i18n } = useLingui();
+    const { _ } = useLingui();
+    const fmt = useLocaleFormat();
     const state = useSyncExternalStore(subscribe, getSnapshot);
     const selection = getCurveSettingsSelection(state);
 
@@ -183,7 +184,7 @@ export function CurveSettingsCard({ embedded = false }: { embedded?: boolean }) 
                             onChange={handleTensionChange}
                             className="flex-1 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
                         />
-                        <div className="w-11 text-right text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{formatFixed(currentTension, 2, i18n.locale)}</div>
+                        <div className="w-11 text-right text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{fmt.fixed(currentTension, 2)}</div>
                     </div>
                 </div>
 
@@ -199,7 +200,7 @@ export function CurveSettingsCard({ embedded = false }: { embedded?: boolean }) 
                             onChange={handleBiasChange}
                             className="flex-1 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
-                        <div className="w-11 text-right text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{formatFixed(currentBias, 2, i18n.locale)}</div>
+                        <div className="w-11 text-right text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{fmt.fixed(currentBias, 2)}</div>
                     </div>
                 </div>
 

@@ -134,7 +134,7 @@ import {
 } from '@/components/layout/floatingLayoutPreferences';
 
 import { initializeBVH } from '@/utils/bvh';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 import {
   computeApproxModelWorldBounds,
   computePreciseModelWorldBounds,
@@ -712,6 +712,7 @@ const PRINTING_PREVIEW_CACHE_LIMIT = 24;
 
 export default function Home() {
   const { _, i18n } = useLingui();
+  const fmt = useLocaleFormat();
   const { stage, sproutParentingLockHeld } = useLeafPlacementState();
   // Supports undo/redo handlers register for the lifetime of the app root, not
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
@@ -3176,10 +3177,10 @@ export default function Home() {
   const printingOutputSizeLabel = React.useMemo(() => {
     if (!printingArtifact) return '—';
     const bytes = Math.max(0, printingArtifact.byteSize);
-    if (bytes < 1024) return `${formatFixed(bytes, 0, i18n.locale)} B`;
-    if (bytes < 1024 * 1024) return `${formatFixed(bytes / 1024, 1, i18n.locale)} KB`;
-    return `${formatFixed(bytes / (1024 * 1024), 2, i18n.locale)} MB`;
-  }, [printingArtifact, i18n.locale]);
+    if (bytes < 1024) return `${fmt.fixed(bytes, 0)} B`;
+    if (bytes < 1024 * 1024) return `${fmt.fixed(bytes / 1024, 1)} KB`;
+    return `${fmt.fixed(bytes / (1024 * 1024), 2)} MB`;
+  }, [printingArtifact, fmt]);
 
   const yieldResinEstimateToMainThread = React.useCallback(async () => {
     await new Promise<void>((resolve) => {
@@ -3794,11 +3795,11 @@ export default function Home() {
     if (visible.length === 0) return '—';
     // An empty plate is a real answer, not an unknown: it holds no resin. The
     // scene-wide row beside it still carries the whole figure.
-    if (visibleResinModels.length === 0) return `${formatFixed(0, 2, i18n.locale)} ml`;
+    if (visibleResinModels.length === 0) return `${fmt.fixed(0, 2)} ml`;
     if (isPrintingEstimatedResinBusy && printingEstimatedResinMl == null) return 'Calculating…';
     if (printingEstimatedResinMl == null) return '—';
-    return `${formatFixed(printingEstimatedResinMl, 2, i18n.locale)} ml`;
-  }, [isPrintingEstimatedResinBusy, printingEstimatedResinMl, scene.models, visibleResinModels.length, i18n.locale]);
+    return `${fmt.fixed(printingEstimatedResinMl, 2)} ml`;
+  }, [isPrintingEstimatedResinBusy, printingEstimatedResinMl, scene.models, visibleResinModels.length, fmt]);
 
 
 
@@ -3806,8 +3807,8 @@ export default function Home() {
   const estimatedResinTotalLabel = React.useMemo(() => {
     if (sceneResinModels.length === 0) return null;
     if (printingEstimatedResinTotalMl == null) return null;
-    return `${formatFixed(printingEstimatedResinTotalMl, 2, i18n.locale)} ml`;
-  }, [printingEstimatedResinTotalMl, sceneResinModels.length, i18n.locale]);
+    return `${fmt.fixed(printingEstimatedResinTotalMl, 2)} ml`;
+  }, [printingEstimatedResinTotalMl, sceneResinModels.length, fmt]);
 
   const estimatedPrintTimeLabel = React.useMemo(() => {
     if (!activeMaterialProfile || printingPreviewTotalLayers <= 0) return '—';

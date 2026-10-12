@@ -26,15 +26,16 @@ import {
   formatUpdateVersionChip,
   formatUpdateVersionReady,
 } from '@/features/updater/updaterMessages';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { LocaleFormat } from '@/utils/localeNumber';
 
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatBytes(bytes: number, locale: string): string {
-  if (bytes < 1024) return `${formatFixed(bytes, 0, locale)} B`;
-  if (bytes < 1024 * 1024) return `${formatFixed(bytes / 1024, 1, locale)} KB`;
-  return `${formatFixed(bytes / (1024 * 1024), 1, locale)} MB`;
+function formatBytes(bytes: number, fmt: LocaleFormat): string {
+  if (bytes < 1024) return `${fmt.fixed(bytes, 0)} B`;
+  if (bytes < 1024 * 1024) return `${fmt.fixed(bytes / 1024, 1)} KB`;
+  return `${fmt.fixed(bytes / (1024 * 1024), 1)} MB`;
 }
 
 async function openExternal(url: string): Promise<void> {
@@ -286,10 +287,11 @@ function DownloadingState({
 }: {
   state: UpdateState & { status: 'downloading' };
 }) {
-  const { _, i18n } = useLingui();
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const { contentLength, downloaded } = s.progress;
   const pctValue = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
-  const pct = formatFixed(pctValue, 1, i18n.locale);
+  const pct = fmt.fixed(pctValue, 1);
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16">
@@ -309,7 +311,7 @@ function DownloadingState({
             <Trans>Downloading Update</Trans>
           </span>
           <span className="block text-sm mt-1.5 font-medium" style={{ color: 'var(--text-muted)' }}>
-            {formatUpdateDownloadedBytes(formatBytes(downloaded, i18n.locale), formatBytes(contentLength, i18n.locale), pct, _)}
+            {formatUpdateDownloadedBytes(formatBytes(downloaded, fmt), formatBytes(contentLength, fmt), pct, _)}
           </span>
         </span>
       </div>

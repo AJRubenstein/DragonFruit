@@ -8,19 +8,16 @@ import { SegmentedControl, Select, SettingRow } from '@/components/atoms';
 import type { SpaceMouseSettings } from '@/components/settings/spacemousePreferences';
 import { getCandidateGamepads, NAMED_3D_MOUSE } from '@/components/scene/camera/SpaceMouseController';
 import { getNativeSpaceMouseActive, subscribeNativeSpaceMouseActive } from '@/components/scene/camera/nativeSpaceMouseBridge';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type SpaceMouseSettingsTabProps = {
   settings: SpaceMouseSettings;
   onChange: (partial: Partial<SpaceMouseSettings>) => void;
 };
 
-function formatNumber(value: number, locale: string) {
-  return formatFixed(value, 2, locale);
-}
-
 export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettingsTabProps) {
-  const { _, i18n } = useLingui();
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [candidatePads, setCandidatePads] = React.useState<Gamepad[]>([]);
 
   // When the native 3DxWare/navlib bridge is driving the camera, the 3Dconnexion
@@ -219,7 +216,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Translation</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.translationSensitivity, i18n.locale)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.translationSensitivity, 2)}</span>
             </label>
             <input
               type="range"
@@ -235,7 +232,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Rotation</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.rotationSensitivity, i18n.locale)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.rotationSensitivity, 2)}</span>
             </label>
             <input
               type="range"
@@ -251,7 +248,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Zoom</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.zoomSensitivity, i18n.locale)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.zoomSensitivity, 2)}</span>
             </label>
             <input
               type="range"
@@ -267,7 +264,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Deadzone</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.deadzone, i18n.locale)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.deadzone, 2)}</span>
             </label>
             <input
               type="range"

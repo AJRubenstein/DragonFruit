@@ -42,7 +42,7 @@ import type {
 import type { ProfileNetworkUiAdapter } from '@/features/plugins/pluginRegistry';
 import type { SupportMode } from '@/supports/types';
 import type { SliceExportArtifact } from '@/features/slicing/sliceExportOrchestrator';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 export type PrintingModalsProps = {
   DEFAULT_RELAY_AUTORETRY_DELAY_MS: number;
@@ -420,7 +420,8 @@ export function PrintingModals({
   triggerPrintingMonitorWebcamRetry,
   uvToolsLaunchingPath,
 }: PrintingModalsProps) {
-  const { _, i18n } = useLingui();
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
 
   const cancelPreSlicePrintConfirm = React.useCallback(() => {
     setPreSlicePrintConfirmOpen(false);
@@ -712,7 +713,7 @@ export function PrintingModals({
               </div>
               {requiresRemoteMaterialSelectionForUpload && !isPreSliceTargetPicker && (
                 <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  <Trans>Target layer height: <span style={{ color: 'var(--text-strong)' }}>{formatFixed(slicedLayerHeightMm, 3, i18n.locale)} mm</span></Trans>
+                  <Trans>Target layer height: <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(slicedLayerHeightMm, 3)} mm</span></Trans>
                 </div>
               )}
 
@@ -849,7 +850,7 @@ export function PrintingModals({
                                     </div>
                                     {material.layerHeightMm != null && (
                                       <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                        {formatFixed(material.layerHeightMm, 3, i18n.locale)} mm
+                                        {fmt.fixed(material.layerHeightMm, 3)} mm
                                       </div>
                                     )}
                                     {isSelectedMaterial && (
@@ -1077,7 +1078,7 @@ export function PrintingModals({
                     : _(msg`Transfer progress`)}
                 </span>
                 <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {printingDialogIsIndeterminate ? '—' : `${formatFixed(printingDialogProgressPercent, 0, i18n.locale)}%`}
+                  {printingDialogIsIndeterminate ? '—' : `${fmt.fixed(printingDialogProgressPercent, 0)}%`}
                 </span>
               </div>
 
@@ -1560,7 +1561,7 @@ export function PrintingModals({
                               <div className="text-[10px] flex justify-between" style={{ color: 'var(--text-muted)' }}>
                                 <span>{formatLayerProgress(_, displayLayerText)}</span>
                                 <span className="font-semibold" style={{ color: hasActivePrint ? progressTextColor : 'var(--text-muted)' }}>
-                                  {hasActivePrint && displayProgressPct != null ? `${formatFixed(displayProgressPct, 0, i18n.locale)}%` : '-'}
+                                  {hasActivePrint && displayProgressPct != null ? `${fmt.fixed(displayProgressPct, 0)}%` : '-'}
                                 </span>
                               </div>
                             </div>
@@ -1788,15 +1789,15 @@ export function PrintingModals({
                                           <div className="mt-0.5 block w-full max-w-full truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
                                             {(() => {
                                               const estimatedTimeLabel = formatPrintingMonitorEstimatedTime(plate.printTimeSec, _);
-                                              const usedMaterialLabel = formatPrintingMonitorUsedMaterial(plate.usedMaterialMl, i18n.locale);
+                                              const usedMaterialLabel = formatPrintingMonitorUsedMaterial(plate.usedMaterialMl, fmt);
                                               return formatPlateEstimate(_, estimatedTimeLabel, usedMaterialLabel);
                                             })()}
                                           </div>
                                           <div className="mt-0.5 block w-full max-w-full truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
                                             {(() => {
-                                              const totalAreaLabel = formatPrintingMonitorAreaMm2(plate.totalSolidAreaMm2, i18n.locale);
-                                              const minAreaLabel = formatPrintingMonitorAreaMm2(plate.smallestAreaMm2, i18n.locale);
-                                              const maxAreaLabel = formatPrintingMonitorAreaMm2(plate.largestAreaMm2, i18n.locale);
+                                              const totalAreaLabel = formatPrintingMonitorAreaMm2(plate.totalSolidAreaMm2, fmt);
+                                              const minAreaLabel = formatPrintingMonitorAreaMm2(plate.smallestAreaMm2, fmt);
+                                              const maxAreaLabel = formatPrintingMonitorAreaMm2(plate.largestAreaMm2, fmt);
                                               return formatPlateAreaStats(_, totalAreaLabel, minAreaLabel, maxAreaLabel);
                                             })()}
                                           </div>
@@ -1901,7 +1902,7 @@ export function PrintingModals({
                         />
                       </div>
                       <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        Progress {printingMonitorDisplayProgressPct != null ? `${formatFixed(printingMonitorDisplayProgressPct, 1, i18n.locale)}%` : '—'}
+                        Progress {printingMonitorDisplayProgressPct != null ? `${fmt.fixed(printingMonitorDisplayProgressPct, 1)}%` : '—'}
                       </div>
                     </>
                   ) : (

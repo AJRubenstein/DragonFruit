@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatFixed, formatNumber } from '../localeNumber';
+import { formatFixed, formatNumber, localeFormat } from '../localeNumber';
 import { formatFileSize, formatPolygonCountCompact } from '../meshStatsFormatting';
 
 test('formatFixed uses the locale decimal separator', () => {
@@ -27,17 +27,17 @@ test('formatNumber passes Intl options through and caches per locale', () => {
 
 test('formatFileSize follows the locale and keeps its units', () => {
   const size = 28.03 * 1024 * 1024;
-  assert.equal(formatFileSize(size, 'en'), '28.03 MB');
-  assert.equal(formatFileSize(size, 'es'), '28,03 MB');
-  assert.equal(formatFileSize(1536, 'es'), '1,5 KB');
-  assert.equal(formatFileSize(512, 'es'), '512 B');
-  assert.equal(formatFileSize(0, 'es'), null);
+  assert.equal(formatFileSize(size, localeFormat('en')), '28.03 MB');
+  assert.equal(formatFileSize(size, localeFormat('es')), '28,03 MB');
+  assert.equal(formatFileSize(1536, localeFormat('es')), '1,5 KB');
+  assert.equal(formatFileSize(512, localeFormat('es')), '512 B');
+  assert.equal(formatFileSize(0, localeFormat('es')), null);
 });
 
 test('formatPolygonCountCompact follows the locale and keeps its suffixes', () => {
-  assert.equal(formatPolygonCountCompact(1_376_686, 'en'), '1.38M');
-  assert.equal(formatPolygonCountCompact(1_376_686, 'es'), '1,38M');
-  assert.equal(formatPolygonCountCompact(5_500, 'es'), '5,5K');
-  assert.equal(formatPolygonCountCompact(50_000, 'es'), '50K');
-  assert.equal(formatPolygonCountCompact(999, 'es'), '999');
+  assert.equal(formatPolygonCountCompact(1_376_686, localeFormat('en')), '1.38M');
+  assert.equal(formatPolygonCountCompact(1_376_686, localeFormat('es')), '1,38M');
+  assert.equal(formatPolygonCountCompact(5_500, localeFormat('es')), '5,5K');
+  assert.equal(formatPolygonCountCompact(50_000, localeFormat('es')), '50K');
+  assert.equal(formatPolygonCountCompact(999, localeFormat('es')), '999');
 });

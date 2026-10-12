@@ -7,7 +7,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { Button } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
-import { formatFixed } from '@/utils/localeNumber';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type SliceCompletedModalProps = {
   isOpen: boolean;
@@ -25,7 +25,8 @@ export function SliceCompletedModal({
   slicingTimeMs,
   onOpenInUvTools,
 }: SliceCompletedModalProps) {
-  const { _, i18n } = useLingui();
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [openDirectoryError, setOpenDirectoryError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -49,8 +50,8 @@ export function SliceCompletedModal({
 
   const formatTime = (ms: number | null): string => {
     if (ms === null || ms === undefined) return '—';
-    if (ms < 1000) return `${formatFixed(ms, 0, i18n.locale)} ms`;
-    return `${formatFixed(ms / 1000, 2, i18n.locale)} s`;
+    if (ms < 1000) return `${fmt.fixed(ms, 0)} ms`;
+    return `${fmt.fixed(ms / 1000, 2)} s`;
   };
 
   return (

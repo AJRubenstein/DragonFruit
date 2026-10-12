@@ -5,10 +5,12 @@
  * "28.03 MB" next to a Lingui plural that prints "560.464 polígonos". These
  * helpers go through Intl.NumberFormat with the active Lingui locale instead.
  *
- * The locale is a required argument rather than a read of `i18n.locale` in here:
- * React Compiler memoizes a call on the arguments it can see, so a locale read
- * inside the helper would leave the old language cached after a switch. Callers
- * pass `i18n.locale` from `useLingui()`.
+ * Components use `useLocaleFormat()` and call `fmt.fixed(x, 2)`. The locale is
+ * carried by the `fmt` object rather than read from `i18n.locale` in here:
+ * React Compiler memoizes a call on the values it can see, so a hidden locale
+ * read would leave the old language cached after a switch. `fmt` changes
+ * identity with the locale, so the compiler recomputes. Helpers outside
+ * components take `fmt` as an argument.
  *
  * Only for display. Input values, serialization, file names and logs keep
  * `toFixed`/`String`, which stay parseable.
@@ -33,4 +35,30 @@ export function formatFixed(value: number, fractionDigits: number, locale: strin
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   });
+}
+
+/** Number formatting bound to one locale; see `localeFormat`. */
+export interface LocaleFormat {
+  readonly locale: string;
+  number(value: number, options?: Intl.NumberFormatOptions): string;
+  fixed(value: number, fractionDigits: number): string;
+}
+
+const localeFormats = new Map<string, LocaleFormat>();
+
+/**
+ * The formatters for `locale`, cached so the object keeps its identity until
+ * the locale changes. Components get it from `useLocaleFormat()`.
+ */
+export function localeFormat(locale: string): LocaleFormat {
+  let format = localeFormats.get(locale);
+  if (!format) {
+    format = {
+      locale,
+      number: (value, options) => formatNumber(value, locale, options),
+      fixed: (value, fractionDigits) => formatFixed(value, fractionDigits, locale),
+    };
+    localeFormats.set(locale, format);
+  }
+  return format;
 }
