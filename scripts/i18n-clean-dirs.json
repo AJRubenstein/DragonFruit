@@ -1,7 +1,10 @@
 {
       "_comment": "Paths under i18n control for scripts/check-i18n-literals.mjs: directories or single .tsx files where every user-visible literal goes through Lingui. CI refuses any unwrapped literal inside them. Add a path only when `node scripts/check-i18n-literals.mjs <path>` already passes (`--suggest` lists clean directories); never remove one to make a build go green.",
       "paths": [
+            "src/app/__tests__",
+            "src/app/page.tsx",
             "src/components/atoms",
+            "src/components/controls/ArrangePanel.tsx",
             "src/components/controls/AutoRotationPanel.tsx",
             "src/components/controls/autoSupport",
             "src/components/debug",
@@ -11,6 +14,8 @@
             "src/components/modals/ScenePrinterMismatchModal.tsx",
             "src/components/monitoring",
             "src/components/organisms/NotificationStack.tsx",
+            "src/components/organisms/modals/PrintingModals.tsx",
+            "src/components/organisms/panels",
             "src/components/organisms/scene",
             "src/components/printers",
             "src/components/scene/SceneAutosaveRecoveryModal.tsx",
@@ -19,10 +24,13 @@
             "src/components/settings/meshSettings",
             "src/components/templates",
             "src/features/experiments",
+            "src/features/export",
+            "src/features/hollowing",
             "src/features/mirror",
             "src/features/organicCut",
             "src/features/placeOnFace",
             "src/features/shaders",
+            "src/features/slicing/components/LutCurveEditor.tsx",
             "src/features/support-blockers",
             "src/hotkeys",
             "src/supports/Curves",
@@ -35,6 +43,7 @@
             "src/supports/SupportTypes",
             "src/supports/autoBracing",
             "src/supports/rendering",
+            "src/utils",
             "src/volumeAnalysis"
       ]
 }
