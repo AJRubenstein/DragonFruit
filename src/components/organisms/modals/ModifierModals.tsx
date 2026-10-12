@@ -162,12 +162,12 @@ export function ModifierModals({
 
       <StructuredDialogModal
         open={pendingBlockerResetState !== null}
-        ariaLabel="Confirm blocker reset"
-        title="Reset Blockers?"
-        subtitle="Blockers will be lost"
+        ariaLabel="Confirm solid area reset"
+        title="Reset Solid Areas?"
+        subtitle="Solid areas will be lost"
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
-        closeAriaLabel="Close blocker reset confirmation"
+        closeAriaLabel="Close solid area reset confirmation"
         onClose={() => setPendingBlockerResetState(null)}
         actions={(
           <>
@@ -183,17 +183,17 @@ export function ModifierModals({
               onClick={handleConfirmBlockerReset}
             >
               <Trash2 className="w-3.5 h-3.5" />
-              Reset Blockers
+              Reset Solid Areas
             </Button>
           </>
         )}
       >
         <div className="space-y-2">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            Changing the voxel resolution or shell thickness will clear all applied blockers.
+            Changing the voxel resolution or shell thickness will clear all solid areas.
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            You will need to re-select blocked regions after the change.
+            You will need to mark them again after the change.
           </p>
         </div>
       </StructuredDialogModal>

@@ -1,6 +1,6 @@
 # Hollowing and Hole Punch Workflow
 
-Hollowing removes interior volume from a model, reducing material and print time. Drain holes and blocker regions let you control where cavities open to the outside.
+Hollowing removes interior volume from a model, reducing material and print time. Drain holes and solid areas let you control where cavities open to the outside.
 
 ## Recommended sequence
 
@@ -46,26 +46,26 @@ The minimum wall thickness of the hollow shell in mm.
 
 ---
 
-## Blockers (Protected Regions)
+## Solid Areas
 
-Blockers mark voxels that should stay solid during hollowing. Use them to:
+Solid areas mark voxels that should stay solid during hollowing. Use them to:
 
 - Preserve screw bosses, mounting points, or other critical features.
 - Keep solid columns inside the cavity for structural support.
 - Prevent hollowing from carving into thin walls.
 
-### To place blockers:
+### To mark solid areas:
 
-1. Click **Blockers** in the hollowing panel to enter edit mode.
-2. Click individual voxel spheres to toggle them blocked (blue).
-3. Drag a lasso / marquee to block/unblock many voxels at once.
-4. Use **Undo** (Ctrl+Z) / **Redo** (Ctrl+Y) while editing.
-5. Press **Done** to commit blockers and update the preview.
-6. Clear all blockers with the **Clear** button.
+1. Click **Solid Areas** in the hollowing panel to enter edit mode.
+2. Click individual voxel spheres to toggle them solid (blue).
+3. Drag a lasso to mark many voxels at once; **Alt**+lasso releases them.
+4. Use **Undo** (Ctrl+Z) / **Redo** (Ctrl+Shift+Z) to step through your edits, while editing or after **Done**; undoing a step after **Done** reopens the edit mode.
+5. Press **Done** to commit them and update the preview.
+6. Clear them all with the **Clear** button.
 
-Blocked voxels appear as **blue spheres**; unblocked cavity voxels appear as **yellow spheres**.
+Solid voxels appear as **blue spheres**; hollow cavity voxels appear as **yellow spheres**.
 
-> **Note:** Changing shell thickness or voxel size while blockers are applied will show a warning — blockers are cleared when the voxel grid changes.
+> **Note:** Changing shell thickness or voxel size while solid areas are marked will show a warning — they are cleared when the voxel grid changes.
 
 ---
 

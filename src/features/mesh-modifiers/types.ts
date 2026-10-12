@@ -56,3 +56,12 @@ export type ModelMeshModifiers = {
   /** VOXL 3.1 dedup pointer for the PSRC chunk (see `ModelHollowingModifier.sourceChunkIndex`). */
   holePunchSourceChunkIndex?: number;
 };
+
+/**
+ * Makes a modifier write an undo step. `merge` folds a quick run of writes with the same
+ * description on the same model into one step, for fields that report every keystroke.
+ */
+export type ModelMeshModifiersHistoryOptions = {
+  historyDescription: string;
+  merge?: boolean;
+};

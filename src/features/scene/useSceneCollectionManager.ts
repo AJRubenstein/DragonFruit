@@ -16,6 +16,7 @@ import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBin
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
+import { peekUndo } from '@/history/historyStore';
 import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import type { DragonfruitImportFormat, SupportMode, SupportState } from '@/supports/types';
@@ -94,9 +95,9 @@ import {
   toVoxlPrinterBundle,
 } from '@/features/profiles/voxlPrinterBundle';
 import type { VoxlPrinterBundle } from '@/features/scene/voxl/types';
-import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
 import { base64ToBytes } from '@/utils/base64';
 import { snapshotGeometryPositions } from '@/utils/geometrySnapshot';
+import type { ModelMeshModifiers, ModelMeshModifiersHistoryOptions } from '@/features/mesh-modifiers/types';
 import {
   deleteStoredMeshModifiers,
   getStoredMeshModifiers,
@@ -192,6 +193,9 @@ const SCENE_HISTORY_MAX_SNAPSHOTS = 200;
 // can retain far more memory per snapshot than typical small edits, so the
 // flat count cap alone can leave a lot of stale geometry pinned alive.
 const SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES = 300 * 1024 * 1024;
+// Modifier edits of the same kind on the same model this close together are one
+// step: the panels' number fields report every keystroke and every wheel notch.
+const MODIFIER_HISTORY_MERGE_WINDOW_MS = 1000;
 
 type SceneSnapshotPayload = { key: string; modelId?: string };
 
@@ -375,6 +379,16 @@ function captureSceneSnapshot(
         }
       : {}),
   };
+}
+
+/** Repaints a model's vertex colours, when it has any, to a flat `color`. */
+function paintModelBaseColor(model: LoadedModel, color: string): void {
+  if (!model.geometry.geometry.getAttribute('color')) return;
+  try {
+    clearPaintToBase(model.geometry.geometry, new THREE.Color(color));
+  } catch (err) {
+    console.error('[SceneCollection] Failed to apply mesh color to geometry:', err);
+  }
 }
 
 /** Whether any support entity of any type belongs to this model. */
@@ -2140,6 +2154,13 @@ export function useSceneCollectionManager(options?: {
       storeModelMeshModifiers(snapshot.modifierRecord.modelId, cloneMeshModifiersForHistory(snapshot.modifierRecord.modifiers));
       clearPreparedGeometryCacheForModel(snapshot.modifierRecord.modelId);
     }
+    // A colour change also repaints the vertex colours, and the geometry is shared with the
+    // snapshot rather than copied, so the colour being restored has to be painted back.
+    const currentColorById = new Map(modelsRef.current.map((model) => [model.id, model.color]));
+    snapshot.models.forEach((model) => {
+      const currentColor = currentColorById.get(model.id);
+      if (currentColor !== undefined && currentColor !== model.color) paintModelBaseColor(model, model.color);
+    });
     setModels(snapshot.models.map(cloneLoadedModel));
     setActiveModelId(snapshot.activeModelId);
     setSelectedModelIds([...snapshot.selectedModelIds]);
@@ -3370,7 +3391,19 @@ export function useSceneCollectionManager(options?: {
     id: string,
     nextBufferGeometry: THREE.BufferGeometry,
     historyDescription: string,
-    options?: { includeSupportState?: boolean; deferPostProcessing?: boolean; meshModifiersAfter?: ModelMeshModifiers | null; meshModifiersBefore?: ModelMeshModifiers | null },
+    options?: {
+      includeSupportState?: boolean;
+      deferPostProcessing?: boolean;
+      meshModifiersAfter?: ModelMeshModifiers | null;
+      meshModifiersBefore?: ModelMeshModifiers | null;
+      /** Lands with the geometry, in the same update and history step. */
+      transformAfter?: ModelTransform;
+      /**
+       * Records a history step whose before-state differs from the live scene: a tool
+       * that previewed its change on the model (Mirror) passes the state from before it.
+       */
+      historyBefore?: { transform?: ModelTransform; supportState?: SupportState };
+    },
   ) => {
     const currentModels = modelsRef.current;
     const currentActiveModelId = activeModelIdRef.current;
@@ -3435,13 +3468,21 @@ export function useSceneCollectionManager(options?: {
     })();
 
     const modifierAfter = options?.meshModifiersAfter;
-    const includeSupportHistory = modifierAfter !== undefined
+    const historyBefore = options?.historyBefore;
+    const recordHistory = modifierAfter !== undefined || historyBefore !== undefined;
+    const includeSupportHistory = recordHistory
       ? (options?.includeSupportState ?? hasSupportsForModel(id, getSnapshot()))
       : false;
-    const before = modifierAfter !== undefined
-      ? captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, { includeSupportState: includeSupportHistory })
+    const modelsBefore = historyBefore?.transform
+      ? currentModels.map((m) => (m.id === id ? { ...m, transform: historyBefore.transform as ModelTransform } : m))
+      : currentModels;
+    const before = recordHistory
+      ? captureSceneSnapshot(modelsBefore, currentActiveModelId, currentSelectedModelIds, {
+          includeSupportState: includeSupportHistory,
+          supportStateOverride: historyBefore?.supportState,
+        })
       : null;
-    if (before) {
+    if (before && modifierAfter !== undefined) {
       before.modifierRecord = {
         modelId: id,
         modifiers: cloneMeshModifiersForHistory(options?.meshModifiersBefore !== undefined ? options.meshModifiersBefore : getStoredMeshModifiers(id)),
@@ -3454,6 +3495,7 @@ export function useSceneCollectionManager(options?: {
             ...m,
             geometry: nextGeometry,
             polygonCount,
+            ...(options?.transformAfter ? { transform: cloneTransform(options.transformAfter) } : {}),
             isSupportGeometry: target.isSupportGeometry,
             linkGroupId: target.linkGroupId,
           }
@@ -3469,7 +3511,9 @@ export function useSceneCollectionManager(options?: {
       const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds, {
         includeSupportState: includeSupportHistory,
       });
-      after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(modifierAfter) };
+      if (modifierAfter !== undefined) {
+        after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(modifierAfter) };
+      }
       pushSceneSnapshotHistory(before, after, historyDescription, id);
     }
     // COW chunk-store bake (Ph0.1 sub-phase C3). This is the VERIFIED sole
@@ -3893,14 +3937,68 @@ export function useSceneCollectionManager(options?: {
   }, [deferAccelerateGeometry]);
 
   const setModelVisibility = useCallback((id: string, visible: boolean) => {
-    setModels(prev => prev.map(m =>
-      m.id === id ? { ...m, visible } : m
-    ));
-  }, []);
+    const currentModels = modelsRef.current;
+    const target = currentModels.find((model) => model.id === id);
+    if (!target || target.visible === visible) return;
 
-  const setModelMeshModifiers = useCallback((id: string, meshModifiers: ModelMeshModifiers | undefined) => {
+    const nextModels = currentModels.map((model) => (
+      model.id === id ? { ...model, visible } : model
+    ));
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `${visible ? 'Show' : 'Hide'} ${target.name}`);
+  }, [pushSceneSnapshotHistory]);
+
+  const lastModifierHistoryRef = useRef<{ key: string; modelId: string; description: string; at: number } | null>(null);
+
+  /**
+   * Stores a model's mesh modifiers. With `historyDescription` the change is an undo step: the
+   * modifiers ride on a scene snapshot's `modifierRecord`, and the hollowing and hole-punch
+   * panels resync from them on undo. With `merge` as well, a run of edits with the same
+   * description on the same model, each within the merge window of the last and with nothing
+   * pushed in between, stays one step whose after-state follows the latest edit.
+   */
+  const setModelMeshModifiers = useCallback((
+    id: string,
+    meshModifiers: ModelMeshModifiers | undefined,
+    options?: ModelMeshModifiersHistoryOptions,
+  ) => {
+    const description = options?.historyDescription;
+    const modifiersBefore = description ? cloneMeshModifiersForHistory(getStoredMeshModifiers(id)) : undefined;
     // Store externally — model objects never carry meshModifiers directly.
     storeModelMeshModifiers(id, meshModifiers);
+
+    if (description) {
+      const now = Date.now();
+      const last = lastModifierHistoryRef.current;
+      const top = peekUndo();
+      const mergeInto = options?.merge
+        && last
+        && last.modelId === id
+        && last.description === description
+        && now - last.at <= MODIFIER_HISTORY_MERGE_WINDOW_MS
+        && top?.type === SCENE_MODELS_SNAPSHOT_APPLY
+        && (top.payload as SceneSnapshotPayload | undefined)?.key === last.key
+        ? sceneSnapshotRegistry.get(last.key)
+        : undefined;
+      if (mergeInto && last) {
+        mergeInto.after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(meshModifiers) };
+        last.at = now;
+      } else {
+        const currentModels = modelsRef.current;
+        const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+        before.modifierRecord = { modelId: id, modifiers: modifiersBefore };
+        const after = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+        after.modifierRecord = { modelId: id, modifiers: cloneMeshModifiersForHistory(meshModifiers) };
+        const key = storeSceneSnapshotPair({ before, after });
+        // No `modelId` on the payload: that is the geometry-swap marker the hollowing manager
+        // drops its caches on, and a draft edit leaves the geometry alone.
+        sceneHistory.push({ type: SCENE_MODELS_SNAPSHOT_APPLY, description, payload: { key } });
+        lastModifierHistoryRef.current = { key, modelId: id, description, at: now };
+      }
+    }
+
     // Still trigger a shallow React update so consumers that derive from
     // the store can re-render.
     setModels(prev => prev.map((model) => (
@@ -3923,10 +4021,18 @@ export function useSceneCollectionManager(options?: {
   }, []);
 
   const renameModel = useCallback((id: string, name: string) => {
-    setModels(prev => prev.map(m =>
-      m.id === id ? { ...m, name } : m
+    const currentModels = modelsRef.current;
+    const target = currentModels.find((model) => model.id === id);
+    if (!target || target.name === name) return;
+
+    const nextModels = currentModels.map((model) => (
+      model.id === id ? { ...model, name } : model
     ));
-  }, []);
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `Rename ${target.name}`);
+  }, [pushSceneSnapshotHistory]);
 
   const groupModels = useCallback((modelIds: string[], groupName?: string) => {
     const currentModels = modelsRef.current;
@@ -4015,17 +4121,24 @@ export function useSceneCollectionManager(options?: {
         ?? bodyGeom.geometry.getAttribute('position').count / 3,
     }));
 
+    const currentModels = modelsRef.current;
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+
     // Remove the merged source, add individual models
-    setModels((prev) => [
-      ...prev.filter((m) => m.id !== modelId),
+    const nextModels = [
+      ...currentModels.filter((m) => m.id !== modelId),
       ...newModels,
-    ]);
+    ];
+    setModels(nextModels);
 
     // Select all new bodies
     const newIds = newModels.map((m) => m.id);
     setActiveModelId(newIds[0]);
     setSelectedModelIds(newIds);
-  }, []);
+
+    const after = captureSceneSnapshot(nextModels, newIds[0], newIds);
+    pushSceneSnapshotHistory(before, after, `Split ${source.name}`);
+  }, [pushSceneSnapshotHistory]);
 
   /** Splits a model that has a classified model/support triangle split
    *  (from the native repair engine) into two independent models:
@@ -4452,12 +4565,20 @@ export function useSceneCollectionManager(options?: {
     const trimmed = nextName.trim();
     if (!trimmed) return;
 
-    setModels((prev) => prev.map((model) => (
+    const currentModels = modelsRef.current;
+    const members = currentModels.filter((model) => model.groupId === groupId);
+    if (members.length === 0 || members.every((model) => model.groupName === trimmed)) return;
+
+    const nextModels = currentModels.map((model) => (
       model.groupId === groupId
         ? { ...model, groupName: trimmed }
         : model
-    )));
-  }, []);
+    ));
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `Rename ${members[0].groupName ?? trimmed}`);
+  }, [pushSceneSnapshotHistory]);
 
   const selectGroup = useCallback((groupId: string, mode: 'single' | 'add' = 'single') => {
     const groupIds = models.filter((model) => model.groupId === groupId).map((model) => model.id);
@@ -6615,23 +6736,19 @@ export function useSceneCollectionManager(options?: {
     const normalizedColor = clampHexColor(color, DEFAULT_MESH_COLOR);
     setPreferredMeshColor(normalizedColor);
 
-    if (activeModelId) {
-      setModels(prev => prev.map(m => {
-        if (m.id !== activeModelId) return m;
+    const currentModels = modelsRef.current;
+    const target = currentModels.find((model) => model.id === activeModelId);
+    if (!target || target.color === normalizedColor) return;
 
-        const hasColorAttribute = !!m.geometry.geometry.getAttribute('color');
-        if (hasColorAttribute) {
-          try {
-            clearPaintToBase(m.geometry.geometry, new THREE.Color(normalizedColor));
-          } catch (err) {
-            console.error('[SceneCollection] Failed to apply mesh color to geometry:', err);
-          }
-        }
-
-        return { ...m, color: normalizedColor };
-      }));
-    }
-  }, [activeModelId]);
+    paintModelBaseColor(target, normalizedColor);
+    const nextModels = currentModels.map((model) => (
+      model.id === target.id ? { ...model, color: normalizedColor } : model
+    ));
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    pushSceneSnapshotHistory(before, after, `Color ${target.name}`);
+  }, [activeModelId, pushSceneSnapshotHistory]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
     if (activeModelId) {
@@ -6746,9 +6863,15 @@ export function useSceneCollectionManager(options?: {
       const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
       const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
 
-      setModels(prev => prev.map(m =>
+      // The repair awaited, so the scene it lands in is the current one, not the one it started from.
+      const currentModels = modelsRef.current;
+      const nextModels = currentModels.map(m =>
         m.id === modelId ? { ...m, geometry: processed, polygonCount } : m
-      ));
+      );
+      const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+      setModels(nextModels);
+      const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+      pushSceneSnapshotHistory(before, after, `Repair ${model.name}`, modelId);
 
       if (repairReport) {
         const reportEntry: MeshRepairReportEntry = {
@@ -6773,7 +6896,7 @@ export function useSceneCollectionManager(options?: {
       emitSceneImportReport(`Repair failed: ${message}`, 'error', { durationMs: 6_000 });
       return false;
     }
-  }, [clearSceneImportReport, emitSceneImportReport]);
+  }, [clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
 
   // Cleanup on unmount
   useEffect(() => {

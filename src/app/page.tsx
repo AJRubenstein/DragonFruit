@@ -417,6 +417,7 @@ import {
 } from '@/utils/meshPunching';
 import type {
   ModelMeshModifiers,
+  ModelMeshModifiersHistoryOptions,
   ModelHolePunchPlacement,
   ModelHollowingModifier,
   MeshModifierOpenFace,
@@ -604,6 +605,7 @@ function createModelTransformKey(modelId: string, transform: ModelTransform): st
 const HISTORY_APP_MODES: readonly SupportMode[] = ['prepare', 'analysis', 'support', 'export', 'printing'];
 const HISTORY_TRANSFORM_MODES: readonly TransformMode[] = [
   'select', 'transform', 'smoothing', 'arrange', 'duplicate', 'placeOnFace', 'mirror', 'hollowing', 'organicCut',
+  'supportBlockers',
 ];
 
 /**
@@ -850,8 +852,6 @@ export default function Home() {
     isApplyingHollowing,
     setIsApplyingHollowing,
     editingBlockedHollowVoxelIndicesRef,
-    hollowVoxelEditUndoStackRef,
-    hollowVoxelEditRedoStackRef,
     hollowingEditModeRef,
     hollowPreviewDebounceTimerRef,
     hollowPreviewRequestSeqRef,
@@ -876,8 +876,6 @@ export default function Home() {
     handleResetHollowingSettings,
     handleHollowingStateChange,
     applyEditingBlockedHollowVoxelIndices,
-    undoHollowVoxelEdit,
-    redoHollowVoxelEdit,
     commitBlockedHollowVoxelIndices,
     toggleBlockedHollowVoxelIndex,
     requestResetHollowing,
@@ -1791,9 +1789,9 @@ export default function Home() {
 
     if (isApplyingBlockersHollowing) {
       return {
-        title: 'Applying Blockers...',
+        title: 'Applying Solid Areas...',
         detailLines: [
-          'Updating the hollowing preview with your blocker changes.',
+          'Updating the hollowing preview with your solid areas.',
           'Please wait a moment.',
         ],
       };
@@ -8146,9 +8144,15 @@ export default function Home() {
     historyOriginRef.current = { appMode: scene.mode, transformMode: transformMgr.transformMode };
   }, [scene.mode, transformMgr.transformMode]);
 
+  const historyOriginToolPendingRef = React.useRef(false);
+
   React.useEffect(() => {
     restoreHistoryOriginRef.current = (origin: HistoryOrigin) => {
-      if (isAppMode(origin.appMode) && origin.appMode !== scene.mode) scene.setMode(origin.appMode);
+      if (isAppMode(origin.appMode) && origin.appMode !== scene.mode) {
+        // The workspace switch must not put back the workspace's remembered tool over this one.
+        historyOriginToolPendingRef.current = isTransformMode(origin.transformMode);
+        scene.setMode(origin.appMode);
+      }
       if (isTransformMode(origin.transformMode) && origin.transformMode !== transformMgr.transformMode) {
         setTransformModeWithMirrorFinalize(origin.transformMode);
       }
@@ -8168,6 +8172,10 @@ export default function Home() {
   React.useEffect(() => {
     if (lastWorkspaceModeRef.current === scene.mode) return;
     lastWorkspaceModeRef.current = scene.mode;
+    if (historyOriginToolPendingRef.current) {
+      historyOriginToolPendingRef.current = false;
+      return;
+    }
 
     if (scene.mode === 'prepare') {
       if (transformMgr.transformMode !== prepareToolMemoryRef.current) {
@@ -9817,10 +9825,13 @@ export default function Home() {
     transformMgr.setIsTransforming(true);
   }, [ensurePendingTransformHistoryForActiveModel, scene, transformMgr]);
 
-  const persistActiveModelModifiers = React.useCallback((next: ModelMeshModifiers | undefined) => {
+  const persistActiveModelModifiers = React.useCallback((
+    next: ModelMeshModifiers | undefined,
+    options?: ModelMeshModifiersHistoryOptions,
+  ) => {
     const activeModelId = scene.activeModel?.id;
     if (!activeModelId) return;
-    scene.setModelMeshModifiers(activeModelId, next);
+    scene.setModelMeshModifiers(activeModelId, next, options);
   }, [scene]);
 
   const holePunch = useHolePunchManager({
@@ -10109,7 +10120,7 @@ export default function Home() {
         openFace: next.openFace,
         openFaceSelected: next.mode === 'shell_open_face' ? false : true,
       },
-    });
+    }, { historyDescription: 'Hollowing Settings' });
   }, [defaultHollowingState, hollowingState, pendingBlockerResetState, persistActiveModelModifiers, scene.activeModel]);
 
 
@@ -10372,7 +10383,7 @@ export default function Home() {
   // inside the feature hook; page.tsx only supplies the active geometry and
   // renders the two mounts below. See src/features/organicCut/.
   const organicCutToolActive = scene.mode === 'prepare' && transformMgr.transformMode === 'organicCut';
-  useUndoRedoHotkeys({ disabled: hollowingEditMode });
+  useUndoRedoHotkeys();
   const organicCut = useOrganicCutSession({
     toolActive: organicCutToolActive,
     activeGeometry: scene.activeModel?.geometry.geometry ?? null,
