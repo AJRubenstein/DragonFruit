@@ -53,7 +53,7 @@ export function ModelStatsCard({
   estimatedLayerCountLabelOverride,
   estimatedResinTotalLabel,
 }: ModelStatsCardProps) {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   const [isFlipped, setIsFlipped] = React.useState(false);
   // The app forces WebKitGTK's SHM software renderer on Linux
   // (WEBKIT_DISABLE_DMABUF_RENDERER=1 in main.rs, issue #83), and that path
@@ -583,10 +583,10 @@ export function ModelStatsCard({
 
             <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
               <span><Trans>STL size:</Trans></span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.fileSizeBytes != null ? formatFileSize(model.fileSizeBytes) : '-'}</span>
+              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.fileSizeBytes != null ? formatFileSize(model.fileSizeBytes, i18n.locale) : '-'}</span>
 
               <span><Trans>Triangles:</Trans></span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? formatPolygonCountCompact(model.polygonCount) : '-'}</span>
+              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? formatPolygonCountCompact(model.polygonCount, i18n.locale) : '-'}</span>
 
               <span><Trans comment='Row label on the model details card: number of separate connected surfaces ("shells"/bodies) in the mesh.'>Shells:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.geometry.meshDefects?.nativeRepairReport?.post.component_count ?? '-'}</span>
