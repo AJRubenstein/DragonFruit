@@ -14,7 +14,8 @@
  * data arrays. Text inside `<Trans>` and template literals is skipped. It is a
  * heuristic: when a literal is deliberately not translatable (a unit, a brand,
  * a file extension), put `i18n-ignore` in a comment on that line or the line
- * above it.
+ * above it. A developer-only section goes between `i18n-ignore-start` and
+ * `i18n-ignore-end` comments.
  *
  * Usage:
  *   node scripts/check-i18n-literals.mjs              # check every listed path
@@ -84,7 +85,19 @@ function lineOf(text, index) {
 
 function scanFile(raw, known) {
       const rawLines = raw.split('\n');
-      const ignored = (line) => /i18n-ignore/.test(rawLines[line - 1] ?? '') || /i18n-ignore/.test(rawLines[line - 2] ?? '');
+      // Developer-only panels stay in English: everything between `i18n-ignore-start` and
+      // `i18n-ignore-end` is skipped, so a debug section needs two comments, not one per line.
+      const ignoredBlockLines = new Set();
+      let blockStart = null;
+      rawLines.forEach((text, index) => {
+            if (/i18n-ignore-start/.test(text)) blockStart = index + 1;
+            else if (/i18n-ignore-end/.test(text) && blockStart !== null) {
+                  for (let line = blockStart; line <= index + 1; line += 1) ignoredBlockLines.add(line);
+                  blockStart = null;
+            }
+      });
+      const ignored = (line) => ignoredBlockLines.has(line)
+            || /i18n-ignore/.test(rawLines[line - 1] ?? '') || /i18n-ignore/.test(rawLines[line - 2] ?? '');
       const source = raw
             .replace(/<Trans[\s>][\s\S]*?<\/Trans>/g, blank)
             .replace(/`[^`]*`/g, blank);

@@ -187,7 +187,8 @@ and fails on any unwrapped literal there. Coverage grows one path at a time —
 the list, and `--report <path>` shows what is left to wrap in one. Never take a path
 off the list to turn a build green, and follow renames in it. Text that is genuinely
 not translatable (a unit, a brand) takes an `i18n-ignore` comment on its line or the
-line above.
+line above; a developer-only section (a debug overlay, raw protocol commands) sits
+between `i18n-ignore-start` and `i18n-ignore-end` comments and stays in English.
 
 ## i18n / Lingui — interpolation gotcha
 
