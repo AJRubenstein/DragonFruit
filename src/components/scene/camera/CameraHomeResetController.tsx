@@ -182,6 +182,10 @@ export function CameraHomeResetController({
     rafRef.current = requestAnimationFrame(animate);
 
     return () => {
+      // A finished run already handed the controls back. Its snapshot was taken
+      // after the render that disabled orbit for the reset, so replaying it here
+      // would switch the camera off for good once the app has turned it back on.
+      if (completedRunIdRef.current === runId) return;
       animatingRef.current = false;
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);

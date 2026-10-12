@@ -1945,6 +1945,13 @@ export function useSceneCollectionManager(options?: {
         maxY: y + placement.maxYOffset,
       });
 
+      // Larger than a bed, it fits on none of them, and the column beside the plates sits
+      // metres out of view. Centred on the bed being worked on, it is on screen, flagged as
+      // out of bounds, and one scale away from fitting.
+      if (placement.width > maxX - minX || placement.depth > maxY - minY) {
+        return { x: centerX, y: centerY };
+      }
+
       for (const candidate of candidateCenters) {
         const rect = makeRectAt(candidate.x, candidate.y);
         if (!isRectInsidePlate(rect)) continue;
