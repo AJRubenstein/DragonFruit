@@ -680,8 +680,14 @@ export function useHollowingManager({
     editingBlockedHollowVoxelIndicesRef.current = editingBlockedHollowVoxelIndices;
   }, [editingBlockedHollowVoxelIndices]);
 
+  // Set while the edit mode was reopened by undoing a step Done had committed: the steps
+  // walked through from there are committed ones, so they move the committed blockers too.
+  // A new stroke ends that; its steps wait for Done like any other.
+  const reopenedByHistoryRef = React.useRef(false);
+
   React.useEffect(() => {
     hollowingEditModeRef.current = hollowingEditMode;
+    if (!hollowingEditMode) reopenedByHistoryRef.current = false;
   }, [hollowingEditMode]);
 
   /**
@@ -702,11 +708,12 @@ export function useHollowingManager({
     if (modelId) {
       pushHollowingHistory({
         type: HOLLOWING_BLOCKERS_EDIT,
-        description: 'Edit Hollowing Blockers',
+        description: 'Edit Solid Areas',
         payload: { modelId, before: [...previousIndices], after: nextIndices },
       });
     }
 
+    reopenedByHistoryRef.current = false;
     editingBlockedHollowVoxelIndicesRef.current = nextIndices;
     setEditingBlockedHollowVoxelIndices(nextIndices);
     return true;
@@ -722,32 +729,51 @@ export function useHollowingManager({
     const expected = direction === 'undo' ? payload.after : payload.before;
     const currentScene = sceneRef.current;
 
-    // Still editing this model: the step moves the blockers being edited.
-    if (hollowingEditModeRef.current && currentScene.activeModelId === payload.modelId) {
-      if (!areSortedNumberArraysEqual(editingBlockedHollowVoxelIndicesRef.current, expected)) return false;
-      editingBlockedHollowVoxelIndicesRef.current = [...target];
-      setEditingBlockedHollowVoxelIndices([...target]);
-      return true;
-    }
-
-    // Otherwise it moves the committed blockers, which the panel resyncs from. A step from an
-    // edit session that ended without Done no longer matches them, and is dropped.
     const model = currentScene.models.find((candidate) => candidate.id === payload.modelId);
     const modifiers = currentScene.getModelMeshModifiers(payload.modelId);
     const hollowing = modifiers?.hollowing;
-    if (!model || !hollowing) return false;
-    const committed = [...(hollowing.blockedVoxelIndices ?? [])].sort((a, b) => a - b);
-    if (!areSortedNumberArraysEqual(committed, expected)) return false;
-    currentScene.setModelMeshModifiers(payload.modelId, {
-      ...modifiers,
-      hollowing: {
-        ...hollowing,
-        blockedVoxelIndices: [...target],
-        blockedVoxelRotationQuat: target.length > 0
-          ? (hollowing.blockedVoxelRotationQuat ?? getRotationQuatTuple(model.transform.rotation))
-          : undefined,
-      },
-    });
+    const committedMatches = Boolean(model && hollowing) && areSortedNumberArraysEqual(
+      [...(hollowing?.blockedVoxelIndices ?? [])].sort((a, b) => a - b),
+      expected,
+    );
+    const commit = () => {
+      if (!model || !hollowing) return;
+      currentScene.setModelMeshModifiers(payload.modelId, {
+        ...modifiers,
+        hollowing: {
+          ...hollowing,
+          blockedVoxelIndices: [...target],
+          blockedVoxelRotationQuat: target.length > 0
+            ? (hollowing.blockedVoxelRotationQuat ?? getRotationQuatTuple(model.transform.rotation))
+            : undefined,
+        },
+      });
+    };
+    const edit = () => {
+      editingBlockedHollowVoxelIndicesRef.current = [...target];
+      setEditingBlockedHollowVoxelIndices([...target]);
+    };
+    const isActiveModel = currentScene.activeModelId === payload.modelId;
+
+    // Still editing this model: the step moves the blockers being edited.
+    if (hollowingEditModeRef.current && isActiveModel) {
+      if (!areSortedNumberArraysEqual(editingBlockedHollowVoxelIndicesRef.current, expected)) return false;
+      edit();
+      if (reopenedByHistoryRef.current && committedMatches) commit();
+      return true;
+    }
+
+    // Otherwise it moves the committed blockers, which the panel resyncs from, and takes the
+    // user back into the edit mode the step was made in. A step from an edit session that
+    // ended without Done no longer matches them, and is dropped.
+    if (!committedMatches) return false;
+    commit();
+    if (isActiveModel) {
+      edit();
+      reopenedByHistoryRef.current = true;
+      hollowingEditModeRef.current = true;
+      setHollowingEditMode(true);
+    }
     return true;
   }), []);
 

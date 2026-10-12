@@ -251,14 +251,17 @@ so the mesh and the modifiers that describe it go back as one step. Writing
 the modifiers separately afterwards would leave two steps, the first of which
 undoes the mesh but not the drafts.
 
-### Hollowing blockers
+### Hollowing solid areas
 
-Blocker edits are their own domain, `src/features/hollowing/history/`, with one
+Solid areas ("blockers" in the code) are their own domain, `src/features/hollowing/history/`, with one
 action, `hollowing:blockers-edit`, whose payload is the model's sorted
 blocked-voxel indices before and after a click, a lasso or Clear. While the
 blocker edit mode is open on that model, the handler moves the blockers being
 edited; once Done has committed them, it moves the committed ones in the
-modifiers. Done itself pushes nothing: the edits already are the steps. A step
+modifiers and reopens the edit mode on that model, so undo goes back to where
+the step was made. Steps walked through from there are still committed ones
+and keep moving both sets until a new stroke starts an edit of its own. Done
+itself pushes nothing: the edits already are the steps. A step
 whose expected indices no longer match — from an edit session that ended
 without Done — is declined and discarded.
 
@@ -269,8 +272,8 @@ without Done — is declined and discarded.
 subscription notices the rising edge of `GLOBAL.UNDO` / `GLOBAL.REDO` and calls
 `undo()` / `redo()`. Redo is checked first because it is a strict superset
 (Ctrl+Shift+Z suppresses Ctrl+Z while held). No tool switches it off: the
-blocker edit mode pushes to the app's history like every other tool (see
-**Hollowing blockers**).
+solid-area edit mode pushes to the app's history like every other tool (see
+**Hollowing solid areas**).
 
 ## Related pages
 

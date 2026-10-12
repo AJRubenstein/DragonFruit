@@ -140,9 +140,15 @@ test('hollowing edits land in undo history', async (t) => {
       undo();
       await settle(20);
       assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7], 'undo after Done moves the committed blockers');
+      assert.equal(current().hollowing.hollowingEditMode, true, 'and goes back into the edit mode');
+      assert.deepEqual(current().hollowing.editingBlockedHollowVoxelIndices, [4, 7]);
       redo();
       await settle(20);
-      assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7, 9]);
+      assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7, 9], 'redo there still moves the committed blockers');
+      assert.deepEqual(current().hollowing.editingBlockedHollowVoxelIndices, [4, 7, 9]);
+      current().hollowing.handleDoneHollowVoxelEditing();
+      await settle(20);
+      assert.equal(getUndoCount(), 2, 'walking the steps adds none');
     });
 
     await t.test('a step from an edit session left without Done is dropped', async () => {
