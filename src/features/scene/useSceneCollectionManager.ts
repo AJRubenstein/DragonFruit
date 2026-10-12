@@ -27,6 +27,7 @@ import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
 import { runWithConcurrency } from '@/utils/runWithConcurrency';
 import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, bumpBakedOcclusionVersion, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
 import { computeProjectedFootprintSize } from '@/utils/modelFootprint';
+import { shelfPack, type ShelfItem } from '@/features/scene/arrange/shelfPack';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -157,6 +158,13 @@ const VOXL_BUILD_CONCURRENCY = 2;
  * guard against a copy larger than a bed rather than a real limit.
  */
 const MAX_PASTE_PLATES = 32;
+
+/** The same guard for an import: a bed per spill, never an unbounded run of them. */
+const MAX_IMPORT_PLATES = 32;
+
+/** Gap between imported models, wider than arrange's own so a rough plate is
+ *  easier to pick apart by hand. */
+const IMPORT_ARRANGE_SPACING_MM = 10;
 
 const MESH_APPEARANCE_STORAGE_KEY = 'mesh-appearance-settings';
 
@@ -993,6 +1001,7 @@ import { contactEndpointsFor, MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS,
 import { beginSupportStateBatch, endSupportStateBatch } from '@/supports/state';
 import {
   captureModelSupportsToClipboard,
+  estimateRaftBoundsForModel,
   estimateSupportBoundsForModel,
   pasteModelSupports,
   pasteModelSupportsFromClipboard,
@@ -5660,15 +5669,9 @@ export function useSceneCollectionManager(options?: {
           scale: normalized.transform.scale.clone(),
         },
       }));
-      const offPlateIndices = sourceCandidates
-        .map((candidate, index) => (
-          isModelFootprintInsidePlate({ geometry: candidate.geometry, transform: candidate.transform })
-            ? -1
-            : index
-        ))
-        .filter((index) => index >= 0);
-      const offPlateIndexSet = new Set(offPlateIndices);
-      const offPlateCount = offPlateIndices.length;
+      const offPlateCount = sourceCandidates.filter(
+        (c) => !isModelFootprintInsidePlate({ geometry: c.geometry, transform: c.transform }),
+      ).length;
 
       // Preserve authored placement by default. Only auto-arrange if models are off-plate
       // and the user explicitly chooses auto-arrange in the prompt.
@@ -5683,62 +5686,8 @@ export function useSceneCollectionManager(options?: {
         shouldAutoArrangeOnImport = choice === 'auto_arrange';
       }
 
-      // Place what would otherwise land outside every bed, the way a paste places its copies: the
-      // scene's beds are filled first, then a bed is added for what none of them can take. A model
-      // that already stands on a bed keeps the place the file gave it, which is why the search runs
-      // over all of them and only the off-plate results are used: the ones that keep their place
-      // still hold their seats in the plan.
-      const assignedCenters = (shouldAutoArrangeOnImport || offPlateCount > 0)
-        ? findFreeSpotCentersForModels(sourceCandidates, 5).map((center, index) => (
-          shouldAutoArrangeOnImport || offPlateIndexSet.has(index) ? center : null
-        ))
-        : [];
-
-      if (assignedCenters.length > 0) {
-        // What the search could not seat on a bed, but which would fit an empty one, gets a bed of
-        // its own: the beds are added once, together, and the model placed at its centre. A model
-        // larger than a bed has nowhere to go and keeps the search's own fallback.
-        const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5;
-        const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5;
-        const bedFrames = platesRef.current.map((plate) => {
-          const { dxMm, dyMm } = plateOffsetForRef.current(plate.id);
-          return {
-            minX: localMinX + dxMm,
-            maxX: localMinX + dxMm + view3dSettings.widthMm,
-            minY: localMinY + dyMm,
-            maxY: localMinY + dyMm + view3dSettings.depthMm,
-          };
-        });
-
-        const unseatedIndices = assignedCenters
-          .map((center, index) => ({ center, index }))
-          .filter(({ center }) => !!center && !bedFrames.some((frame) => (
-            center.x >= frame.minX && center.x <= frame.maxX
-            && center.y >= frame.minY && center.y <= frame.maxY
-          )))
-          .filter(({ index }) => {
-            const candidate = sourceCandidates[index];
-            if (!candidate) return false;
-            const placement = buildMeshPlacementOffsets(
-              { x: candidate.transform.position.x, y: candidate.transform.position.y },
-              candidate.geometry,
-              candidate.transform,
-            );
-            return placement.width <= view3dSettings.widthMm && placement.depth <= view3dSettings.depthMm;
-          });
-
-        if (unseatedIndices.length > 0) {
-          const reserved = addPlatesRef.current(unseatedIndices.length);
-          unseatedIndices.forEach(({ index }, order) => {
-            const plate = reserved.added[order];
-            if (!plate) return;
-            const { dxMm, dyMm } = reserved.offsets.get(plate.id) ?? { dxMm: 0, dyMm: 0 };
-            const localCenterX = view3dSettings.originMode === 'front_left' ? view3dSettings.widthMm * 0.5 : 0;
-            const localCenterY = view3dSettings.originMode === 'front_left' ? view3dSettings.depthMm * 0.5 : 0;
-            assignedCenters[index] = { x: localCenterX + dxMm, y: localCenterY + dyMm };
-          });
-        }
-      }
+      // Arranging waits for the supports: the raft is what stands on the plate, and
+      // only the store can measure it. Models land where the file put them first.
 
       const newModels: LoadedModel[] = [];
       const supportEntries: Array<{
@@ -5758,15 +5707,9 @@ export function useSceneCollectionManager(options?: {
           scale: importedTransform.scale.clone(),
         };
 
-        const assignedCenter = assignedCenters[i] ?? null;
-        // The search seats every model; a model keeps its authored place unless the run is placing
-        // all of them, or this one would have landed outside every bed.
-        const isPlacedBySearch = shouldAutoArrangeOnImport || offPlateIndexSet.has(i);
-        const finalPosition = new THREE.Vector3(
-          isPlacedBySearch ? (assignedCenter?.x ?? originalPosition.x) : originalPosition.x,
-          isPlacedBySearch ? (assignedCenter?.y ?? originalPosition.y) : originalPosition.y,
-          originalPosition.z,
-        );
+        // The file's own place, which the arrange pass revises once supports exist.
+        const finalPosition = originalPosition.clone();
+        const finalRotation = importedTransform.rotation;
 
         // Prefer the source file's own object name; fall back to the imported
         // filename (with an index when the container held several models).
@@ -5784,7 +5727,7 @@ export function useSceneCollectionManager(options?: {
           geometry: processed,
           transform: {
             position: finalPosition,
-            rotation: importedTransform.rotation,
+            rotation: finalRotation,
             scale: importedTransform.scale,
           },
           visible: true,
@@ -5829,26 +5772,227 @@ export function useSceneCollectionManager(options?: {
       setActiveModelId(newModels[newModels.length - 1].id);
       setSelectedModelIds(newModels.map((m) => m.id));
 
+      // A rough arrangement on the raft each model stands on, now that the supports
+      // are in the store. The Arrange tool is where a careful nesting is asked for.
+      const arrangeImportedModels = () => {
+        if (!shouldAutoArrangeOnImport || newModels.length === 0) return;
+
+        const bedWidth = view3dSettings.widthMm;
+        const bedDepth = view3dSettings.depthMm;
+        const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -bedWidth * 0.5;
+        const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -bedDepth * 0.5;
+
+        /** A model's footprint at a given Z, grown to the raft standing beside it. */
+        const footprintAt = (model: LoadedModel, rotationZ: number, reach: { x: number; y: number }) => {
+          const mesh = computeProjectedFootprintSize(
+            model.geometry,
+            new THREE.Euler(
+              model.transform.rotation.x,
+              model.transform.rotation.y,
+              rotationZ,
+              model.transform.rotation.order,
+            ),
+            model.transform.scale,
+          );
+          return { width: mesh.width + reach.x, depth: mesh.depth + reach.y };
+        };
+
+        const byId = new Map(newModels.map((model) => [model.id, model]));
+        const turnOf = new Map<string, number>();
+        const items: ShelfItem[] = newModels.map((model) => {
+          const currentZ = model.transform.rotation.z;
+          const turnedZ = currentZ + (Math.PI / 2);
+          turnOf.set(model.id, turnedZ);
+          const bare = computeProjectedFootprintSize(
+            model.geometry, model.transform.rotation, model.transform.scale,
+          );
+          // Only what stands on the plate: the raft around the model's roots.
+          const raft = estimateRaftBoundsForModel(model.id);
+          const reach = raft
+            ? {
+              x: Math.max(0, (raft.maxX - raft.minX) - bare.width),
+              y: Math.max(0, (raft.maxY - raft.minY) - bare.depth),
+            }
+            : { x: 0, y: 0 };
+          const asIs = footprintAt(model, currentZ, reach);
+          // The raft turns with the model, so its reach swaps axes with it.
+          const turned = footprintAt(model, turnedZ, { x: reach.y, y: reach.x });
+          return {
+            id: model.id,
+            width: asIs.width,
+            depth: asIs.depth,
+            turnedWidth: turned.width,
+            turnedDepth: turned.depth,
+          };
+        });
+
+        // Planned in each bed's own millimetres, then resolved: dynamic ordering
+        // re-lays the grid as beds are added, so an offset read early goes stale.
+        type PlannedSeat = { id: string; x: number; y: number; rotationZ: number };
+        const plateLocalSeats: PlannedSeat[][] = [];
+
+        const planSeats = (placements: ReturnType<typeof shelfPack>['placed']): PlannedSeat[] => (
+          placements.flatMap((placement) => {
+            const model = byId.get(placement.id);
+            if (!model) return [];
+            return [{
+              id: placement.id,
+              x: placement.x,
+              y: placement.y,
+              rotationZ: placement.turned
+                ? turnOf.get(placement.id) ?? model.transform.rotation.z
+                : model.transform.rotation.z,
+            }];
+          })
+        );
+
+        const packBed = (pending: ShelfItem[]) => shelfPack(pending, {
+          widthMm: bedWidth,
+          depthMm: bedDepth,
+          spacingMm: IMPORT_ARRANGE_SPACING_MM,
+        });
+
+        let pending = items;
+        const existingPlateIds = platesRef.current.map((plate) => plate.id);
+
+        // The beds the scene already has, in order.
+        for (let i = 0; i < existingPlateIds.length; i += 1) {
+          if (pending.length === 0) break;
+          const result = packBed(pending);
+          plateLocalSeats[i] = planSeats(result.placed);
+          const spilled = new Set(result.spilled);
+          pending = pending.filter((entry) => spilled.has(entry.id));
+        }
+
+        // Then a bed for each spill, still only planned.
+        const newBedSeats: PlannedSeat[][] = [];
+        let guard = 0;
+        while (pending.length > 0 && guard < MAX_IMPORT_PLATES) {
+          guard += 1;
+          const result = packBed(pending);
+
+          if (result.placed.length === 0) {
+            // Too large for an empty bed in either pose: it takes one on its own,
+            // overhanging, rather than being left adrift off every plate.
+            const stranded = pending[0];
+            const model = byId.get(stranded.id);
+            newBedSeats.push([{
+              id: stranded.id,
+              x: bedWidth * 0.5,
+              y: bedDepth * 0.5,
+              rotationZ: model?.transform.rotation.z ?? 0,
+            }]);
+            pending = pending.slice(1);
+            continue;
+          }
+
+          newBedSeats.push(planSeats(result.placed));
+          const spilled = new Set(result.spilled);
+          pending = pending.filter((entry) => spilled.has(entry.id));
+        }
+
+        // Every bed at once, so the grid settles before any offset is read.
+        const reserved = newBedSeats.length > 0
+          ? addPlatesRef.current(newBedSeats.length)
+          : null;
+
+        const seats = new Map<string, { x: number; y: number; rotationZ: number }>();
+        const placeOnBed = (plateId: string, planned: PlannedSeat[] | undefined) => {
+          if (!planned || planned.length === 0) return;
+          const { dxMm, dyMm } = reserved
+            ? reserved.offsets.get(plateId) ?? plateOffsetForRef.current(plateId)
+            : plateOffsetForRef.current(plateId);
+          for (const seat of planned) {
+            seats.set(seat.id, {
+              x: localMinX + dxMm + seat.x,
+              y: localMinY + dyMm + seat.y,
+              rotationZ: seat.rotationZ,
+            });
+          }
+        };
+
+        existingPlateIds.forEach((plateId, index) => placeOnBed(plateId, plateLocalSeats[index]));
+        newBedSeats.forEach((planned, index) => {
+          const plate = reserved?.added[index];
+          if (plate) placeOnBed(plate.id, planned);
+        });
+
+        const moved = newModels.filter((model) => {
+          const seat = seats.get(model.id);
+          if (!seat) return false;
+          return Math.abs(seat.x - model.transform.position.x) > 1e-6
+            || Math.abs(seat.y - model.transform.position.y) > 1e-6
+            || Math.abs(seat.rotationZ - model.transform.rotation.z) > 1e-6;
+        });
+        if (moved.length === 0) return;
+
+        const afterById = new Map(moved.map((model) => {
+          const seat = seats.get(model.id)!;
+          return [model.id, {
+            position: new THREE.Vector3(seat.x, seat.y, model.transform.position.z),
+            rotation: new THREE.Euler(
+              model.transform.rotation.x,
+              model.transform.rotation.y,
+              seat.rotationZ,
+              model.transform.rotation.order,
+            ),
+            scale: model.transform.scale.clone(),
+          }];
+        }));
+
+        setModels((prev) => prev.map((model) => {
+          const after = afterById.get(model.id);
+          return after ? { ...model, transform: after } : model;
+        }));
+
+        // The supports follow their model, in one notify for the whole run.
+        beginSupportStateBatch();
+        try {
+          for (const model of moved) {
+            const after = afterById.get(model.id);
+            if (!after) continue;
+            const before = {
+              position: model.transform.position.clone(),
+              rotation: model.transform.rotation.clone(),
+              scale: model.transform.scale.clone(),
+            };
+            // The model object is the one `newModels` holds, so later reads see the move.
+            model.transform = after;
+            transformSupportsForModel(model.id, before, after);
+          }
+        } finally {
+          endSupportStateBatch();
+        }
+      };
+
       // Load supports for all models in a single animation frame batch
       const pendingSupports = supportEntries.filter((e) => !!e.supportData);
       if (pendingSupports.length > 0) {
         const applySupports = () => {
-          for (const { model, sourceTransform, supportData } of pendingSupports) {
-            applyImportDefaultsToRaftState();
-            // Bind these supports to THIS model. The plugin already stamps a
-            // modelId, but nothing verified it matched the id the host assigned
-            // the model -- so pass the host id and let the store reconcile.
-            mergeFromImportFormat(supportData!, model.id);
-            if (!transformsEqual(sourceTransform, model.transform)) {
-              transformSupportsForModel(model.id, sourceTransform, model.transform);
+          beginSupportStateBatch();
+          try {
+            for (const { model, sourceTransform, supportData } of pendingSupports) {
+              applyImportDefaultsToRaftState();
+              // Bind these supports to THIS model. The plugin already stamps a
+              // modelId, but nothing verified it matched the id the host assigned
+              // the model -- so pass the host id and let the store reconcile.
+              mergeFromImportFormat(supportData!, model.id);
+              if (!transformsEqual(sourceTransform, model.transform)) {
+                transformSupportsForModel(model.id, sourceTransform, model.transform);
+              }
             }
+          } finally {
+            endSupportStateBatch();
           }
+          arrangeImportedModels();
         };
         if (typeof window !== 'undefined') {
           requestAnimationFrame(applySupports);
         } else {
           applySupports();
         }
+      } else {
+        arrangeImportedModels();
       }
 
       const totalSupportCount = supportEntries.reduce(
