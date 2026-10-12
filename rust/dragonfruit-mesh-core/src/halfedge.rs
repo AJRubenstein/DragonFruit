@@ -2,7 +2,23 @@
 //! loops, non-manifold edge classification, and per-vertex face rings.
 
 use crate::mesh::IndexedMesh;
-use ahash::AHashMap;
+use ahash::{AHashMap, RandomState};
+
+/// Fixed seeds, rather than `RandomState`'s per-process ones.
+///
+/// Every pass in the repair pipeline that walks `edges` — stitching, winding propagation, the greedy
+/// face flips, the pinch split, and `vertex_faces`, which is built from the same walk — then runs in
+/// a different order in each process. The results are not wrong, but they are not the same twice:
+/// one binary repaired the V3 Cones to `boundary 0, winding 0` and, on another run, to `boundary 12,
+/// winding 1`, and the app disagreed with the CLI for the same reason.
+fn edge_hasher() -> RandomState {
+    RandomState::with_seeds(
+        0x9e37_79b9_7f4a_7c15,
+        0xbf58_476d_1ce4_e5b9,
+        0x94d0_49bb_1331_11eb,
+        0x2545_f491_4f6c_dd1d,
+    )
+}
 
 /// Canonical undirected edge key (sorted endpoints).
 pub type EdgeKey = (u32, u32);
@@ -36,7 +52,7 @@ pub struct Topology {
 impl Topology {
     pub fn build(mesh: &IndexedMesh) -> Self {
         let mut edges: AHashMap<EdgeKey, EdgeInfo> =
-            AHashMap::with_capacity(mesh.triangles.len() * 2);
+            AHashMap::with_capacity_and_hasher(mesh.triangles.len() * 2, edge_hasher());
         let mut vertex_faces = vec![smallvec::SmallVec::<[u32; 8]>::new(); mesh.positions.len()];
 
         for (fi, tri) in mesh.triangles.iter().enumerate() {

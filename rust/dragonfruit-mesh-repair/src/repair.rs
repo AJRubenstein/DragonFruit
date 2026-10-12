@@ -26,12 +26,11 @@ use crate::report::{MeshHealthReport, RepairStepReport};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepairOptions {
-    /// Relative to bbox diagonal. Vertices within this distance are welded.
-    pub weld_epsilon: f32,
-    /// Maximum boundary loop length (in vertices) that will be auto-filled.
-    /// Loops larger than this are left alone — they usually indicate intentional
-    /// open shells rather than holes.
-    pub fill_holes_max_edges: usize,
+    /// Relative to the bbox diagonal. `None` derives it from the mesh.
+    pub weld_epsilon: Option<f32>,
+    /// Longest boundary loop, in vertices, that will be auto-filled. `None` derives it from the
+    /// mesh.
+    pub fill_holes_max_edges: Option<usize>,
     /// Keep the top-N components ranked by |signed volume|. `None` = keep all.
     pub keep_largest_n_components: Option<usize>,
     /// Attempt orientation repair (per-component outward vote).
@@ -50,12 +49,98 @@ pub struct RepairOptions {
 impl Default for RepairOptions {
     fn default() -> Self {
         Self {
-            weld_epsilon: 1e-5,
-            fill_holes_max_edges: 64,
+            // Both left to the mesh. A caller that sets one is overriding a decision the engine
+            // is better placed to make: neither number means anything without knowing the model.
+            weld_epsilon: None,
+            fill_holes_max_edges: None,
             keep_largest_n_components: None,
             repair_orientation: true,
             resolve_self_intersections: false,
             assume_support_geometry: None,
+        }
+    }
+}
+
+/// The options the pipeline actually runs with: whatever the caller set, and a value derived from
+/// the mesh for each tolerance they left alone.
+struct ResolvedOptions {
+    weld_epsilon: f32,
+    fill_holes_max_edges: usize,
+    /// The cap for the fill that runs last, after every other pass. Unlimited unless the caller set
+    /// a cap of their own — see the settle stage for why.
+    residual_fill_max_edges: usize,
+    keep_largest_n_components: Option<usize>,
+    repair_orientation: bool,
+    resolve_self_intersections: bool,
+    assume_support_geometry: Option<bool>,
+}
+
+/// Weld tolerance as a fraction of the bbox diagonal, derived from the mesh.
+///
+/// The mesh's own shortest edge is the only defensible scale: vertices closer together than the
+/// finest edge the mesh already carries are the same vertex, and anything coarser welds detail that
+/// was put there on purpose. Bounded at both ends so a degenerate input can neither collapse the
+/// model nor leave the weld doing nothing.
+fn derive_weld_epsilon(mesh: &IndexedMesh) -> f32 {
+    let diag = mesh.bbox().diag().max(1e-6);
+    let mut shortest = f32::INFINITY;
+    for t in &mesh.triangles {
+        for k in 0..3 {
+            let a = mesh.positions[t[k] as usize];
+            let b = mesh.positions[t[(k + 1) % 3] as usize];
+            let d = a.sub(b).length();
+            if d > 0.0 && d < shortest {
+                shortest = d;
+            }
+        }
+    }
+    if !shortest.is_finite() {
+        return 1e-5;
+    }
+    (shortest / diag).clamp(1e-7, 1e-4)
+}
+
+/// The longest boundary loop that will be auto-filled, in vertices, derived from the mesh.
+///
+/// A vertex count is not a size — it measures how finely a rim happens to be tessellated, so the
+/// same constant means a different hole on every model. What "small" means is a length relative to
+/// the model, so this converts a fraction of the bbox diagonal into edges at the mesh's own median
+/// edge length.
+fn derive_fill_cap(mesh: &IndexedMesh) -> usize {
+    let diag = mesh.bbox().diag().max(1e-6);
+    let mut lengths: Vec<f32> = Vec::with_capacity(mesh.triangles.len() * 3);
+    for t in &mesh.triangles {
+        for k in 0..3 {
+            let a = mesh.positions[t[k] as usize];
+            let b = mesh.positions[t[(k + 1) % 3] as usize];
+            lengths.push(a.sub(b).length());
+        }
+    }
+    if lengths.is_empty() {
+        return 64;
+    }
+    lengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = lengths[lengths.len() / 2].max(1e-9);
+    // A twentieth of the model across. The fixed 64 this replaces was about a fifth on the
+    // reference files, which filled openings that were not holes.
+    let target = diag / 20.0;
+    ((target / median).ceil() as usize).clamp(16, 4096)
+}
+
+impl RepairOptions {
+    fn resolved(&self, mesh: &IndexedMesh) -> ResolvedOptions {
+        ResolvedOptions {
+            weld_epsilon: self
+                .weld_epsilon
+                .unwrap_or_else(|| derive_weld_epsilon(mesh)),
+            fill_holes_max_edges: self
+                .fill_holes_max_edges
+                .unwrap_or_else(|| derive_fill_cap(mesh)),
+            residual_fill_max_edges: self.fill_holes_max_edges.unwrap_or(usize::MAX),
+            keep_largest_n_components: self.keep_largest_n_components,
+            repair_orientation: self.repair_orientation,
+            resolve_self_intersections: self.resolve_self_intersections,
+            assume_support_geometry: self.assume_support_geometry,
         }
     }
 }
@@ -89,6 +174,11 @@ pub fn repair_with_progress(
     mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
 ) -> RepairOutcome {
     let t_start = std::time::Instant::now();
+
+    // From here the pipeline reads concrete tolerances: anything the caller left to the engine is
+    // derived from the mesh before the first pass runs.
+    let resolved = options.resolved(&mesh);
+    let options = &resolved;
 
     let pre = analyze(&mesh);
     let mut report = MeshHealthReport::new(pre);
@@ -430,6 +520,16 @@ pub fn repair_with_progress(
         let _ = collapsed;
         filled += crate::holes::holes_all(&mut candidate, rim_cap);
 
+        // The rims a split exposes meet at pinches, and a pinched loop is not a simple cycle, so the
+        // hole pass skips it by design however long the cap is: measured on the corbu model, six
+        // loops holding 1,332 boundary edges survived a fill with no cap at all. Splitting the pinch
+        // makes those loops simple and the fill takes them.
+        let pinches = crate::topology_passes::split_pinched_vertices(&mut candidate);
+        if pinches > 0 {
+            filled += crate::holes::holes_all(&mut candidate, rim_cap);
+            let _ = unify_winding(&mut candidate);
+        }
+
         let mut after = crate::evaluate::evaluate(&candidate);
         for _ in 0..3 {
             // No cap on how tangled the mesh is. There was one, at 64 non-manifold edges, and it
@@ -504,7 +604,16 @@ pub fn repair_with_progress(
             structure_before.signed_volume
         };
         let volume = baseline_volume.abs().max(1e-9);
-        let volume_moved = (structure_after.signed_volume - baseline_volume).abs() > volume * 0.01;
+        // A split separates surfaces that shared edges, and the rims it exposes are filled. Those
+        // fills enclose the gap between the separated sheets, so the volume *sum* grows: the overlap
+        // that used to be counted once is now inside two closed shells. It is the same effect the
+        // union has in the other direction, and it makes one percent too tight a bound here — the
+        // corbu model comes out 5.28% up against a sealed baseline while every class it has improves
+        // (non-manifold 1364 to 0, winding 113 to 0, loops 50 to 6). Ten percent still refuses a
+        // split that inflates the model rather than separating it.
+        const SPLIT_VOLUME_TOLERANCE: f64 = 0.10;
+        let volume_moved =
+            (structure_after.signed_volume - baseline_volume).abs() > volume * SPLIT_VOLUME_TOLERANCE;
         // The split's cost is a fixed number of separated surfaces, not a fraction of the part
         // count, so the allowance cannot be purely proportional: with 37 parts after the union, a
         // twentieth is one, and the split adds six. Eight or a twentieth, whichever is larger.
@@ -566,13 +675,45 @@ pub fn repair_with_progress(
     let t = std::time::Instant::now();
     let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
     let noise = crate::shells::remove_noise_shells(&mut mesh);
-    let filled = crate::holes::holes_all(&mut mesh, options.fill_holes_max_edges);
+    // Orientation before the fill, not after. The cut lives in `repair_orientation`, and a cut whose
+    // seam nothing closes leaves the model with boundary edges: through the app's path, which runs
+    // the union and so re-welds the mesh, the V3 Cones came out with 8 boundary edges, 2 loops and 1
+    // winding edge for exactly that reason.
     let flipped = repair_orientation(&mut mesh);
+    // The settle fill closes whatever every other pass left open, and the derived cap is not applied
+    // to it. The cap's job is to stop the earlier fills closing openings that are not holes, while
+    // the mesh still carries the structure that distinguishes them. By this stage the mesh has been
+    // through orientation, welding, the split and the union, so what is left is the repair's own
+    // leftover: corbu's six loops of 78 to 653 edges covering all 1,359 of its boundary edges were
+    // every one refused by the derived cap of 48.
+    let filled = crate::holes::holes_all(&mut mesh, options.residual_fill_max_edges);
+    // The last-resort cut, after every other pass has had its turn. The side-split cut inside
+    // `repair_orientation` above handles a mesh whose disagreements are spread over the surface; this
+    // is for the residue it cannot, and it refuses when there is more than a handful. It caps its own
+    // seam, so only the winding has to follow — and then a fill, for any boundary the cut did not own.
+    let mut cut = 0usize;
+    for _ in 0..8 {
+        let n = cut_unsatisfiable_edges(&mut mesh);
+        if n == 0 {
+            break;
+        }
+        cut += n;
+    }
+    let settled = if cut > 0 {
+        repair_orientation(&mut mesh)
+    } else {
+        0
+    };
+    let refilled = if cut > 0 {
+        crate::holes::holes_all(&mut mesh, options.residual_fill_max_edges)
+    } else {
+        0
+    };
     stage!(
         "settle",
-        welded + collapsed + noise + filled + flipped,
+        welded + collapsed + noise + filled + flipped + cut + settled + refilled,
         Some(format!(
-            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {filled} hole face(s), {flipped} face(s) flipped"
+            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s), {cut} vertex/vertices cut, {settled} face(s) flipped after the cut, {refilled} hole face(s) after it"
         )),
         t
     );
@@ -620,11 +761,28 @@ pub fn repair_with_progress(
             defects.holes, report.post.boundary_edges
         ));
     }
-    if defects.inconsistent_edges > 0 {
+    // A mesh that arrives open has no signed volume to compare against: the number depends on how
+    // its openings happen to be bounded, and closing them is part of the repair. The panel shows a
+    // before/after volume, so say when that comparison is not like for like — measured on corbu, it
+    // reads +19.8% where the repair's own cost against a sealed baseline is -0.28%.
+    if report.pre.boundary_loops > 0 {
         notes.push(format!(
-            "{} inconsistently wound edge(s) remain",
-            defects.inconsistent_edges
+            "the input is open ({} boundary loop(s)), so its signed volume is not a like-for-like comparison with the result's",
+            report.pre.boundary_loops
         ));
+    }
+    if defects.inconsistent_edges > 0 {
+        notes.push(if winding_is_unsatisfiable(&mesh) {
+            format!(
+                "{} inconsistently wound edge(s) remain on a surface that cannot be wound consistently: its topology has cycles that demand an odd flip, so no assignment removes them all",
+                defects.inconsistent_edges
+            )
+        } else {
+            format!(
+                "{} inconsistently wound edge(s) remain",
+                defects.inconsistent_edges
+            )
+        });
     }
     if defects.noise_shells > 0 {
         notes.push(format!("{} noise shell(s) remain", defects.noise_shells));
@@ -1771,7 +1929,7 @@ fn nesting_depth_is_odd(
 /// It cannot construct a component that is not already manifold, and keeps those verbatim. That is
 /// why the split has to run before it: the split is what makes each surface constructible.
 #[cfg(feature = "manifold")]
-fn union_groups(mesh: &IndexedMesh, options: &RepairOptions) -> (usize, IndexedMesh) {
+fn union_groups(mesh: &IndexedMesh, options: &ResolvedOptions) -> (usize, IndexedMesh) {
     let mut candidate = mesh.clone();
     let classification = classify_and_reorder_model_support_triangles(
         &mut candidate,
@@ -1850,6 +2008,18 @@ fn winding_flip_net(mesh: &IndexedMesh, topo: &Topology, face: usize) -> isize {
         }
     }
     net
+}
+
+/// Whether any assignment of face sides can satisfy every two-face edge.
+///
+/// Faces joined across two-face edges form a graph whose edges demand a parity: an agreeing edge
+/// wants the same side, a disagreeing one wants opposite sides. A cycle whose parities sum to an odd
+/// number is satisfied by no assignment — the surface is not orientable — so the residual there is a
+/// property of the topology rather than of the solver. Measured on the V3 Cones: 12 such cycles, with
+/// the pipeline leaving 4 inconsistent edges out of 1,382,764 faces. The floor is at least one, so no
+/// solver reaches zero on a mesh like that.
+fn winding_is_unsatisfiable(mesh: &IndexedMesh) -> bool {
+    !frustrated_edges(mesh).is_empty()
 }
 
  /// Fixes the winding edges that propagation leaves behind.
@@ -2499,7 +2669,7 @@ fn solve_winding_cut(mesh: &mut IndexedMesh) -> usize {
         }
         x
     }
-    for (key, info) in topo.edges.iter() {
+    for info in topo.edges.values() {
         if info.directed.len() != 2 || info.directed[0].2 == info.directed[1].2 {
             continue;
         }
@@ -2517,15 +2687,13 @@ fn solve_winding_cut(mesh: &mut IndexedMesh) -> usize {
     // in the same region cannot be fixed by turning a region over, and is counted, not used.
     let mut node_of: ahash::AHashMap<u32, u32> = ahash::AHashMap::new();
     let mut edges: Vec<(u32, u32)> = Vec::new();
-    let mut unfixable = 0usize;
-    for (key, info) in topo.edges.iter() {
+    for info in topo.edges.values() {
         if !winding_disagrees(info) {
             continue;
         }
         let (a, b) = (info.directed[0].2, info.directed[1].2);
         let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
         if ra == rb {
-            unfixable += 1;
             continue;
         }
         let next = node_of.len() as u32;
@@ -2617,6 +2785,334 @@ fn solve_winding_cut(mesh: &mut IndexedMesh) -> usize {
     flipped
 }
 
+/// The edges no assignment can satisfy: a parity walk over the two-face edges, keeping the edges
+/// where a face's required side contradicts the side already fixed for its neighbour.
+fn frustrated_edges(mesh: &IndexedMesh) -> Vec<EdgeKey> {
+    let topo = Topology::build(mesh);
+    let mut adj: AHashMap<u32, Vec<(u32, u8, EdgeKey)>> = AHashMap::new();
+    for (key, info) in topo.edges.iter() {
+        if info.directed.len() != 2 || info.directed[0].2 == info.directed[1].2 {
+            continue;
+        }
+        let (a, b) = (info.directed[0].2, info.directed[1].2);
+        let parity = u8::from(winding_disagrees(info));
+        adj.entry(a).or_default().push((b, parity, *key));
+        adj.entry(b).or_default().push((a, parity, *key));
+    }
+    let mut side: AHashMap<u32, u8> = AHashMap::new();
+    let mut out: Vec<EdgeKey> = Vec::new();
+    // Sorted roots: which edges end up flagged depends on where the walk starts, so this has to be
+    // the same order in every process.
+    let mut roots: Vec<u32> = adj.keys().copied().collect();
+    roots.sort_unstable();
+    for k in roots {
+        if side.contains_key(&k) {
+            continue;
+        }
+        side.insert(k, 0);
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(k);
+        while let Some(f) = queue.pop_front() {
+            let c = side[&f];
+            for &(g, p, e) in adj.get(&f).map(|v| v.as_slice()).unwrap_or(&[]) {
+                let want = c ^ p;
+                match side.get(&g) {
+                    None => {
+                        side.insert(g, want);
+                        queue.push_back(g);
+                    }
+                    Some(&cg) if cg != want => out.push(e),
+                    _ => {}
+                }
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// The side each face must take for every satisfiable two-face edge to hold: a parity walk over the
+/// face graph. Faces with no two-face edge are side 0.
+fn winding_sides(mesh: &IndexedMesh) -> AHashMap<u32, u8> {
+    let topo = Topology::build(mesh);
+    let mut adj: AHashMap<u32, Vec<(u32, u8)>> = AHashMap::new();
+    for info in topo.edges.values() {
+        if info.directed.len() != 2 || info.directed[0].2 == info.directed[1].2 {
+            continue;
+        }
+        let (a, b) = (info.directed[0].2, info.directed[1].2);
+        let parity = u8::from(winding_disagrees(info));
+        adj.entry(a).or_default().push((b, parity));
+        adj.entry(b).or_default().push((a, parity));
+    }
+    let mut side: AHashMap<u32, u8> = AHashMap::new();
+    let mut roots: Vec<u32> = adj.keys().copied().collect();
+    roots.sort_unstable();
+    for k in roots {
+        if side.contains_key(&k) {
+            continue;
+        }
+        side.insert(k, 0);
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(k);
+        while let Some(f) = queue.pop_front() {
+            let c = side[&f];
+            for &(g, p) in adj.get(&f).map(|v| v.as_slice()).unwrap_or(&[]) {
+                if let std::collections::hash_map::Entry::Vacant(e) = side.entry(g) {
+                    e.insert(c ^ p);
+                    queue.push_back(g);
+                }
+            }
+        }
+    }
+    side
+}
+
+/// Cut the vertices the unsatisfiable edges run through, so each side of the surface there can be
+/// wound on its own.
+///
+/// No assignment satisfies those edges, so no amount of flipping clears them — but a cut does. Each
+/// such vertex is duplicated once per side its incident faces were assigned, and every face keeps
+/// the copy for its own side, which removes the constraint across the cut. Nothing moves: the copies
+/// sit exactly where the original was, so the surface is unchanged, and the settle fill closes the
+/// seam the cut opens. Measured on the V3 Cones, every unsatisfiable edge lies in a box 0.00 x 0.02 x
+/// 0.11 on a model 49 units across, so this touches ten vertices and the seam with them.
+///
+/// Detaching the whole region instead does not work: the unsatisfiable cycles are *inside* it, so
+/// removing the constraints across its border leaves every one of them intact.
+fn detach_frustrated_region(mesh: &mut IndexedMesh) -> usize {
+    let conflicts = frustrated_edges(mesh);
+    if conflicts.is_empty() {
+        return 0;
+    }
+    let side = winding_sides(mesh);
+    let mut touched: AHashSet<u32> = AHashSet::new();
+    for &(u, v) in &conflicts {
+        touched.insert(u);
+        touched.insert(v);
+    }
+    let mut at: AHashMap<u32, Vec<u32>> = AHashMap::new();
+    for (fi, t) in mesh.triangles.iter().enumerate() {
+        for &w in t {
+            if touched.contains(&w) {
+                at.entry(w).or_default().push(fi as u32);
+            }
+        }
+    }
+    let mut split = 0usize;
+    // Sorted, so the copies are numbered the same way in every process.
+    let mut vertices: Vec<u32> = at.keys().copied().collect();
+    vertices.sort_unstable();
+    for w in vertices {
+        let faces = &at[&w];
+        let mut sides: Vec<u8> = faces.iter().map(|f| *side.get(f).unwrap_or(&0)).collect();
+        sides.sort_unstable();
+        sides.dedup();
+        if sides.len() < 2 {
+            continue;
+        }
+        let mut copy: AHashMap<u8, u32> = AHashMap::new();
+        for &s in &sides {
+            let p = mesh.positions[w as usize];
+            mesh.positions.push(p);
+            copy.insert(s, (mesh.positions.len() - 1) as u32);
+        }
+        for &f in faces {
+            let c = copy[&*side.get(&f).unwrap_or(&0)];
+            for k in 0..3 {
+                if mesh.triangles[f as usize][k] == w {
+                    mesh.triangles[f as usize][k] = c;
+                }
+            }
+        }
+        split += 1;
+    }
+    split
+}
+
+/// Close the seam a cut opened, one side at a time.
+///
+/// The seam's edges belong to known sides — each is the single face of either the region or the rest
+/// of the surface — so each side's edges form their own cycle and can be walked directly, with the
+/// direction taken from the face that owns the edge. That is the point of closing it here: the general
+/// fill cannot, because its walk pairs boundary edges by vertex alone and joins the two fans at a
+/// pinched vertex, so a cap built from its loops bridges the two sides and the non-orientability comes
+/// straight back.
+///
+/// Each cap is a fan from a new centre vertex, so it reuses no edge of the mesh and cannot bridge
+/// anything.
+fn cap_seam(mesh: &mut IndexedMesh, topo: &Topology, seam: &[EdgeKey], region: &AHashSet<u32>) {
+    for in_region in [true, false] {
+        let mut side: Vec<EdgeKey> = seam
+            .iter()
+            .copied()
+            .filter(|k| {
+                topo.edges
+                    .get(k)
+                    .and_then(|info| info.faces.first().copied())
+                    .map(|f| region.contains(&f) == in_region)
+                    .unwrap_or(false)
+            })
+            .collect();
+        if side.len() < 3 {
+            continue;
+        }
+        side.sort_unstable();
+        let mut owner: AHashMap<EdgeKey, u32> = AHashMap::new();
+        let mut arrives: AHashMap<u32, EdgeKey> = AHashMap::new();
+        for &key in &side {
+            let Some(info) = topo.edges.get(&key) else {
+                continue;
+            };
+            let Some(&(_, head, _)) = info
+                .directed
+                .iter()
+                .find(|d| region.contains(&d.2) == in_region)
+            else {
+                continue;
+            };
+            owner.insert(key, head);
+            arrives.insert(head, key);
+        }
+        let mut next: AHashMap<EdgeKey, EdgeKey> = AHashMap::new();
+        for &key in &side {
+            let Some(info) = topo.edges.get(&key) else {
+                continue;
+            };
+            let Some(&(tail, _, _)) = info
+                .directed
+                .iter()
+                .find(|d| region.contains(&d.2) == in_region)
+            else {
+                continue;
+            };
+            if let Some(&prev) = arrives.get(&tail) {
+                next.insert(key, prev);
+            }
+        }
+        let mut used: AHashSet<EdgeKey> = AHashSet::new();
+        for &start in &side {
+            if used.contains(&start) {
+                continue;
+            }
+            let mut lp: Vec<u32> = Vec::new();
+            let mut cur = start;
+            let mut closed = false;
+            loop {
+                if used.contains(&cur) {
+                    closed = cur == start;
+                    break;
+                }
+                used.insert(cur);
+                if let Some(&head) = owner.get(&cur) {
+                    lp.push(head);
+                }
+                match next.get(&cur) {
+                    Some(&n) => cur = n,
+                    None => break,
+                }
+            }
+            if closed && lp.len() >= 3 {
+                let c = lp.iter().fold([0.0f64; 3], |s, &v| {
+                    let p = mesh.positions[v as usize];
+                    [s[0] + p.x as f64, s[1] + p.y as f64, s[2] + p.z as f64]
+                });
+                let n = lp.len() as f64;
+                mesh.positions
+                    .push(Vec3::new((c[0] / n) as f32, (c[1] / n) as f32, (c[2] / n) as f32));
+                let centre = (mesh.positions.len() - 1) as u32;
+                for i in 0..lp.len() {
+                    mesh.triangles.push([lp[i], lp[(i + 1) % lp.len()], centre]);
+                }
+            }
+        }
+    }
+}
+
+/// Cut the edges no assignment can satisfy, as a last resort after everything else has run.
+///
+/// Every odd cycle contains at least one unsatisfiable edge — an odd cycle is exactly one no
+/// assignment satisfies — so removing those edges from the parity graph breaks all of them. The region
+/// is one face from each such edge, and the vertices it shares with the rest of the surface are
+/// duplicated, which removes the constraint across every one of them.
+///
+/// This runs at the end, not inside `repair_orientation`, and only when those edges are few. The
+/// side-split cut there resolves a mesh whose disagreements are spread over the surface — corbu's 113
+/// winding edges go to zero — and this is for the residue it cannot: the cones' two to seven, in a box
+/// 0.00 x 0.02 x 0.11 on a model 49 units across. Cutting a surface that is frustrated throughout
+/// detaches dozens of faces instead: corbu came out of that with 919 inconsistent edges and a volume
+/// of -12.9.
+fn cut_unsatisfiable_edges(mesh: &mut IndexedMesh) -> usize {
+    const MAX_CUT_EDGES: usize = 16;
+    let conflicts = frustrated_edges(mesh);
+    if conflicts.is_empty() || conflicts.len() > MAX_CUT_EDGES {
+        return 0;
+    }
+    let before: AHashSet<EdgeKey> = Topology::build(mesh)
+        .edges
+        .iter()
+        .filter(|(_, info)| info.faces.len() == 1)
+        .map(|(k, _)| *k)
+        .collect();
+    let topo = Topology::build(mesh);
+    let mut region: AHashSet<u32> = AHashSet::new();
+    for &key in &conflicts {
+        if let Some(info) = topo.edges.get(&key) {
+            if let Some(&f) = info.faces.first() {
+                region.insert(f);
+            }
+        }
+    }
+    if region.is_empty() {
+        return 0;
+    }
+    let mut inside: AHashSet<u32> = AHashSet::new();
+    for &f in &region {
+        for &w in &mesh.triangles[f as usize] {
+            inside.insert(w);
+        }
+    }
+    let mut outside: AHashSet<u32> = AHashSet::new();
+    for (fi, t) in mesh.triangles.iter().enumerate() {
+        if region.contains(&(fi as u32)) {
+            continue;
+        }
+        for &w in t {
+            outside.insert(w);
+        }
+    }
+    // Sorted, so the copies are numbered the same way in every process.
+    let mut shared: Vec<u32> = inside.intersection(&outside).copied().collect();
+    shared.sort_unstable();
+    if shared.is_empty() {
+        return 0;
+    }
+    let mut copy: AHashMap<u32, u32> = AHashMap::new();
+    for &w in &shared {
+        let p = mesh.positions[w as usize];
+        mesh.positions.push(p);
+        copy.insert(w, (mesh.positions.len() - 1) as u32);
+    }
+    for &f in &region {
+        for k in 0..3 {
+            let w = mesh.triangles[f as usize][k];
+            if let Some(&c) = copy.get(&w) {
+                mesh.triangles[f as usize][k] = c;
+            }
+        }
+    }
+    let after = Topology::build(mesh);
+    let seam: Vec<EdgeKey> = after
+        .edges
+        .iter()
+        .filter(|(k, info)| info.faces.len() == 1 && !before.contains(k))
+        .map(|(k, _)| *k)
+        .collect();
+    cap_seam(mesh, &after, &seam, &region);
+    shared.len()
+}
+
 pub(crate) fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     if mesh.triangles.is_empty() {
         return 0;
@@ -2624,7 +3120,27 @@ pub(crate) fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     // Consistency first: the component vote below can only turn a whole component, so a
     // component whose faces disagree with each other has to be settled before it runs.
     let mut flipped_faces = unify_winding(mesh);
+    // The edges no assignment satisfies, if any: cut the vertices they run through so each side can
+    // be wound on its own, then let the flips below resolve what the cut unblocked. The cut has to
+    // come before them — on its own it only removes a constraint, and the faces still have to turn.
+    for _ in 0..8 {
+        if detach_frustrated_region(mesh) == 0 {
+            break;
+        }
+    }
     flipped_faces += reduce_winding_edges(mesh);
+    // The greedy flips above can stall on a graph that is satisfiable — the Möbius band, after the
+    // cut removed its unsatisfiable edge, still came back with one inconsistent edge. The parity walk
+    // already has the assignment: flipping every face on side 1 satisfies every satisfiable edge
+    // exactly, and leaves only the edges no assignment can satisfy. Applied unconditionally, because
+    // a face's side is a free choice and only its consistency matters.
+    let sides = winding_sides(mesh);
+    for (f, tri) in mesh.triangles.iter_mut().enumerate() {
+        if sides.get(&(f as u32)).copied().unwrap_or(0) == 1 {
+            tri.swap(1, 2);
+            flipped_faces += 1;
+        }
+    }
     let components = triangle_components(mesh);
     let n_components = components.iter().max().copied().unwrap_or(0) + 1;
 
@@ -3370,6 +3886,277 @@ mod winding_cut_tests {
         let triangles = mesh.triangles.clone();
         assert_eq!(solve_winding_cut(&mut mesh), 0);
         assert_eq!(mesh.triangles, triangles);
+    }
+}
+
+#[cfg(test)]
+mod cones_shell_analysis {
+    use super::*;
+
+    /// Where the cones' non-orientability actually is: which edges break the parity, where they sit,
+    /// how big the region is, and what the geometry at them looks like.
+    #[test]
+    fn frustrated_region() {
+        let path =
+            "C:/Users/Paul/Downloads/V3_Cones_of_Calibration/V3 Cones of Calibration 3.32.stl";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let mesh = crate::io::load_mesh_from_path(std::path::Path::new(path)).unwrap();
+        let comps = triangle_components(&mesh);
+        let n = comps.iter().max().copied().unwrap_or(0) + 1;
+        let mut target = None;
+        for c in 0..n {
+            let tris: Vec<[u32; 3]> = mesh
+                .triangles
+                .iter()
+                .zip(&comps)
+                .filter(|(_, &k)| k == c)
+                .map(|(t, _)| *t)
+                .collect();
+            if tris.len() < 4 {
+                continue;
+            }
+            let sub = IndexedMesh {
+                positions: mesh.positions.clone(),
+                triangles: tris,
+            };
+            if winding_is_unsatisfiable(&sub) {
+                target = Some(sub);
+                break;
+            }
+        }
+        let Some(sub) = target else {
+            println!("no unsatisfiable shell");
+            return;
+        };
+        println!(
+            "shell triangles {} of {}, model diag {:.2}",
+            sub.triangles.len(),
+            mesh.triangles.len(),
+            sub.bbox().diag()
+        );
+        let topo = Topology::build(&sub);
+        let mut adj: ahash::AHashMap<u32, Vec<(u32, u8, EdgeKey)>> = ahash::AHashMap::new();
+        for (key, info) in topo.edges.iter() {
+            if info.directed.len() != 2 || info.directed[0].2 == info.directed[1].2 {
+                continue;
+            }
+            let (a, b) = (info.directed[0].2, info.directed[1].2);
+            let parity = u8::from(winding_disagrees(info));
+            adj.entry(a).or_default().push((b, parity, *key));
+            adj.entry(b).or_default().push((a, parity, *key));
+        }
+        let mut side: ahash::AHashMap<u32, u8> = ahash::AHashMap::new();
+        let mut conflicts: Vec<EdgeKey> = Vec::new();
+        for k in adj.keys().copied().collect::<Vec<_>>() {
+            if side.contains_key(&k) {
+                continue;
+            }
+            side.insert(k, 0);
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(k);
+            while let Some(f) = queue.pop_front() {
+                let c = side[&f];
+                for &(g, p, e) in adj.get(&f).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    let want = c ^ p;
+                    match side.get(&g) {
+                        None => {
+                            side.insert(g, want);
+                            queue.push_back(g);
+                        }
+                        Some(&cg) if cg != want => conflicts.push(e),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        conflicts.sort_unstable();
+        conflicts.dedup();
+        let mut involved: ahash::AHashSet<u32> = ahash::AHashSet::new();
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        for &(u, v) in &conflicts {
+            for w in [u, v] {
+                let p = sub.positions[w as usize];
+                involved.insert(w);
+                lo = [lo[0].min(p.x), lo[1].min(p.y), lo[2].min(p.z)];
+                hi = [hi[0].max(p.x), hi[1].max(p.y), hi[2].max(p.z)];
+            }
+        }
+        println!(
+            "conflicting edges {} over {} vertices; region {:?} .. {:?} (extent {:.2} x {:.2} x {:.2})",
+            conflicts.len(),
+            involved.len(),
+            lo,
+            hi,
+            hi[0] - lo[0],
+            hi[1] - lo[1],
+            hi[2] - lo[2]
+        );
+        for &(u, v) in conflicts.iter().take(6) {
+            let Some(info) = topo.edges.get(&(u, v)) else {
+                continue;
+            };
+            let fs: Vec<u32> = info.faces.iter().copied().collect();
+            let detail: Vec<String> = fs
+                .iter()
+                .map(|&f| {
+                    let t = sub.triangles[f as usize];
+                    let p: Vec<Vec3> = t.iter().map(|&i| sub.positions[i as usize]).collect();
+                    let (ax, ay, az) = (p[1].x - p[0].x, p[1].y - p[0].y, p[1].z - p[0].z);
+                    let (bx, by, bz) = (p[2].x - p[0].x, p[2].y - p[0].y, p[2].z - p[0].z);
+                    let (nx, ny, nz) = (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx);
+                    let area = 0.5 * ((nx * nx + ny * ny + nz * nz) as f64).sqrt();
+                    let mut longest = 0.0f64;
+                    for (i, j) in [(0, 1), (1, 2), (2, 0)] {
+                        let d = ((p[i].x - p[j].x).powi(2)
+                            + (p[i].y - p[j].y).powi(2)
+                            + (p[i].z - p[j].z).powi(2)) as f64;
+                        longest = longest.max(d.sqrt());
+                    }
+                    format!(
+                        "face {f} area {area:.3e} longest {longest:.3e} height {:.3e}",
+                        2.0 * area / longest.max(1e-12)
+                    )
+                })
+                .collect();
+            println!("  edge ({u},{v}) at {:?}: {detail:?}", sub.positions[u as usize]);
+        }
+        // Scale: what the pipeline's own tolerances say, and where these faces sit in the mesh.
+        let mut areas: Vec<f64> = sub
+            .triangles
+            .iter()
+            .map(|t| {
+                let p: Vec<Vec3> = t.iter().map(|&i| sub.positions[i as usize]).collect();
+                let (ax, ay, az) = (p[1].x - p[0].x, p[1].y - p[0].y, p[1].z - p[0].z);
+                let (bx, by, bz) = (p[2].x - p[0].x, p[2].y - p[0].y, p[2].z - p[0].z);
+                let (nx, ny, nz) = (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx);
+                0.5 * ((nx * nx + ny * ny + nz * nz) as f64).sqrt()
+            })
+            .collect();
+        areas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let q = |p: f64| areas[((areas.len() - 1) as f64 * p) as usize];
+        println!(
+            "weld epsilon {:.3e}, area p1 {:.3e} p10 {:.3e} p50 {:.3e} p99 {:.3e}",
+            derive_weld_epsilon(&sub),
+            q(0.01),
+            q(0.10),
+            q(0.50),
+            q(0.99)
+        );
+    }
+}
+
+#[cfg(test)]
+mod orientability_tests {
+    use super::*;
+    use crate::test_fixtures::unit_cube;
+
+    /// A band with a half twist: non-orientable, and open along its two rims.
+    fn mobius_band() -> IndexedMesh {
+        let n = 6usize;
+        let mut positions = Vec::new();
+        let mut triangles = Vec::new();
+        for i in 0..n {
+            let a = i as f32 / n as f32 * std::f32::consts::TAU;
+            positions.push(Vec3::new(a.cos(), 0.0, a.sin()));
+            positions.push(Vec3::new(a.cos(), 1.0, a.sin()));
+        }
+        for i in 0..n {
+            let (b0, t0) = (2 * i as u32, 2 * i as u32 + 1);
+            // The half twist: the band closes onto itself with top meeting bottom.
+            let (b1, t1) = if i + 1 == n {
+                (1u32, 0u32)
+            } else {
+                (2 * (i + 1) as u32, 2 * (i + 1) as u32 + 1)
+            };
+            triangles.push([b0, b1, t1]);
+            triangles.push([b0, t1, t0]);
+        }
+        IndexedMesh { positions, triangles }
+    }
+
+    /// A closed box can be wound consistently.
+    #[test]
+    fn a_closed_box_is_orientable() {
+        assert!(!winding_is_unsatisfiable(&unit_cube()));
+    }
+
+    /// A Möbius band cannot, and that is a property of its topology rather than of any solver. The V3
+    /// Cones and Harbinger are the same shape of problem, at 12 edges over 10 vertices and at 64
+    /// edges respectively.
+    #[test]
+    fn a_mobius_band_is_not_orientable() {
+        assert!(winding_is_unsatisfiable(&mobius_band()));
+    }
+
+    /// The cut makes it orientable, and the fill closes the rims the band was left with.
+    #[test]
+    fn a_mobius_band_repairs_to_consistent_winding() {
+        let out = repair(mobius_band(), &RepairOptions::default());
+        assert_eq!(
+            out.report.post.inconsistent_winding_edges,
+            0,
+            "{}",
+            out.report.residual_issues.join("; ")
+        );
+        assert_eq!(out.report.post.boundary_loops, 0);
+    }
+}
+
+#[cfg(test)]
+mod residual_fill_tests {
+    use super::*;
+
+    /// A tub whose rim is longer than the derived fill cap, so only the settle fill can close it.
+    ///
+    /// The cap is `diag / 20` divided by the median edge, so a 24-edge rim on a model a couple of
+    /// units across is refused by it. While the settle fill applied that cap this stayed open;
+    /// corbu's residual boundary is the same shape of problem at 78 to 653 edges.
+    #[test]
+    fn the_settle_fill_closes_a_rim_the_cap_refuses() {
+        let n = 24usize;
+        let (r, h) = (1.0f32, 1.5f32);
+        let mut positions = vec![Vec3::new(0.0, -h / 2.0, 0.0)];
+        let mut triangles = Vec::new();
+        for i in 0..n {
+            let a = i as f32 / n as f32 * std::f32::consts::TAU;
+            positions.push(Vec3::new(r * a.cos(), -h / 2.0, r * a.sin()));
+        }
+        for i in 0..n {
+            let a = 1 + i as u32;
+            let b = 1 + ((i + 1) % n) as u32;
+            triangles.push([0, b, a]);
+        }
+        let top = positions.len() as u32;
+        for i in 0..n {
+            let a = i as f32 / n as f32 * std::f32::consts::TAU;
+            positions.push(Vec3::new(r * a.cos(), h / 2.0, r * a.sin()));
+        }
+        for i in 0..n {
+            let bl = 1 + i as u32;
+            let br = 1 + ((i + 1) % n) as u32;
+            let tl = top + i as u32;
+            let tr = top + ((i + 1) % n) as u32;
+            triangles.push([bl, br, tr]);
+            triangles.push([bl, tr, tl]);
+        }
+        let mesh = IndexedMesh { positions, triangles };
+        let cap = derive_fill_cap(&mesh);
+        assert!(
+            cap < n,
+            "the derived cap of {cap} must refuse the {n}-edge rim or this test proves nothing"
+        );
+        let out = repair(mesh, &RepairOptions::default());
+        assert_eq!(
+            out.report.post.boundary_loops,
+            0,
+            "{}",
+            out.report.residual_issues.join("; ")
+        );
+        assert_eq!(out.report.post.boundary_edges, 0);
+        assert!(out.report.post.is_watertight);
     }
 }
 

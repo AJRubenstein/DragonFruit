@@ -198,10 +198,11 @@ impl From<RepairOptionsDto> for RepairOptions {
     fn from(dto: RepairOptionsDto) -> Self {
         let defaults = RepairOptions::default();
         RepairOptions {
-            weld_epsilon: dto.weld_epsilon.unwrap_or(defaults.weld_epsilon),
-            fill_holes_max_edges: dto
-                .fill_holes_max_edges
-                .unwrap_or(defaults.fill_holes_max_edges),
+            // Passed through as they arrive, `None` and all: the engine derives a tolerance the
+            // caller did not name. The frontend is not better placed to pick these than the crate
+            // is — it has no mesh in hand when it builds them.
+            weld_epsilon: dto.weld_epsilon,
+            fill_holes_max_edges: dto.fill_holes_max_edges,
             keep_largest_n_components: dto
                 .keep_largest_n_components
                 .or(defaults.keep_largest_n_components),

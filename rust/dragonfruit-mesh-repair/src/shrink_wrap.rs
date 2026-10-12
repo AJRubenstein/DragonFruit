@@ -478,98 +478,6 @@ fn taubin(mesh: &mut IndexedMesh, iterations: usize) {
     }
 }
 
-/// Split vertices whose incident triangles form more than one fan.
-///
-/// Marching tetrahedra pinches the surface where a crease in the field makes two sheets meet at a
-/// single lattice point — at every edge and corner of a cube, for instance. Every edge is still
-/// shared by exactly two faces, so none of the defect counters see anything, but the surface is not
-/// a manifold *at that vertex*, and a pinch can leave it combinatorially non-orientable: measured on
-/// a cube, 2,400 edges had no winding assignment that satisfies them all, on a surface that is
-/// geometrically a cube. One copy of the vertex per fan removes the pinch and the orientation
-/// settles.
-fn split_pinched_vertices(mesh: &mut IndexedMesh) -> usize {
-    let nv = mesh.positions.len();
-    let mut incident: Vec<Vec<u32>> = vec![Vec::new(); nv];
-    for (f, t) in mesh.triangles.iter().enumerate() {
-        for &v in t.iter() {
-            incident[v as usize].push(f as u32);
-        }
-    }
-    let mut splits = 0usize;
-    for v in 0..nv {
-        if incident[v].len() < 2 {
-            continue;
-        }
-        // Which faces meet at each of this vertex's two edges within a face. Two faces in the same
-        // fan share one of those edges; two in different fans share nothing.
-        let mut edge_faces: ahash::AHashMap<(u32, u32), Vec<u32>> = ahash::AHashMap::new();
-        for &f in &incident[v] {
-            let t = mesh.triangles[f as usize];
-            let Some(k) = t.iter().position(|&x| x == v as u32) else {
-                continue;
-            };
-            for other in [t[(k + 1) % 3], t[(k + 2) % 3]] {
-                let key = if (v as u32) < other {
-                    (v as u32, other)
-                } else {
-                    (other, v as u32)
-                };
-                edge_faces.entry(key).or_default().push(f);
-            }
-        }
-        let mut fan_of: ahash::AHashMap<u32, u32> = ahash::AHashMap::new();
-        let mut fans: Vec<Vec<u32>> = Vec::new();
-        for &seed in &incident[v] {
-            if fan_of.contains_key(&seed) {
-                continue;
-            }
-            let id = fans.len() as u32;
-            let mut stack = vec![seed];
-            let mut fan = Vec::new();
-            while let Some(f) = stack.pop() {
-                if fan_of.insert(f, id).is_some() {
-                    continue;
-                }
-                fan.push(f);
-                let t = mesh.triangles[f as usize];
-                let Some(k) = t.iter().position(|&x| x == v as u32) else {
-                    continue;
-                };
-                for other in [t[(k + 1) % 3], t[(k + 2) % 3]] {
-                    let key = if (v as u32) < other {
-                        (v as u32, other)
-                    } else {
-                        (other, v as u32)
-                    };
-                    if let Some(neighbours) = edge_faces.get(&key) {
-                        for &g in neighbours {
-                            if !fan_of.contains_key(&g) {
-                                stack.push(g);
-                            }
-                        }
-                    }
-                }
-            }
-            fans.push(fan);
-        }
-        // The first fan keeps the vertex; every other fan gets a copy of it.
-        for fan in fans.iter().skip(1) {
-            let copy = mesh.positions.len() as u32;
-            mesh.positions.push(mesh.positions[v]);
-            splits += 1;
-            for &f in fan {
-                let t = &mut mesh.triangles[f as usize];
-                for slot in t.iter_mut() {
-                    if *slot == v as u32 {
-                        *slot = copy;
-                    }
-                }
-            }
-        }
-    }
-    splits
-}
-
 /// Orient a closed isosurface by propagating winding across its edges, then turn the whole thing
 /// outward if the field came out inward.
 ///
@@ -648,7 +556,7 @@ pub fn shrink_wrap(mesh: &IndexedMesh, options: &ShrinkWrapOptions) -> ShrinkWra
     let isosurface_triangles = soup.len();
     let mut out = weld(soup, voxel);
     taubin(&mut out, 3);
-    split_pinched_vertices(&mut out);
+    crate::topology_passes::split_pinched_vertices(&mut out);
     orient_by_propagation(&mut out);
     // Close what is left. The isosurface is closed where the band contains it, but where the model
     // is thinner than the offset the two offset surfaces meet and leave small openings — 1,810

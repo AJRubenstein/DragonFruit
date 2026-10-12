@@ -41,10 +41,14 @@ enum Command {
         out_report: Option<PathBuf>,
         #[arg(long)]
         pretty: bool,
-        #[arg(long, default_value_t = 1e-5)]
-        weld_epsilon: f32,
-        #[arg(long, default_value_t = 64)]
-        fill_holes_max_edges: usize,
+        /// Weld tolerance, relative to the bbox diagonal. Omitted, the engine derives it from the
+        /// mesh's own shortest edge.
+        #[arg(long)]
+        weld_epsilon: Option<f32>,
+        /// Longest boundary loop that will be auto-filled, in vertices. Omitted, the engine
+        /// derives it from the model's size and its own edge lengths.
+        #[arg(long)]
+        fill_holes_max_edges: Option<usize>,
         #[arg(long)]
         keep_largest_n: Option<usize>,
         #[arg(long, default_value_t = true)]

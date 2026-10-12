@@ -255,7 +255,7 @@ refusal in the stage report.
 
 ### The boolean engine cannot be the wrap for damaged input
 
-The recipe OrcaSlicer and Tango both end their hard cases with is a self-union boolean, and
+The established recipe for a hard case is a self-union boolean, and
 ours would have to run on `manifold-csg`. It cannot. `Manifold::from_mesh_f32` requires input
 that is already edge-manifold *and* consistently oriented, so it refuses exactly the meshes a
 wrap is for: measured, it refuses the V3 Cones (0 non-manifold edges, watertight, 4
