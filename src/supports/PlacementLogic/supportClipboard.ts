@@ -358,6 +358,59 @@ export function captureModelSupportsToClipboard(modelId: string): SupportClipboa
   return extractSupportClipboardPayload(modelId);
 }
 
+/**
+ * The ground a model's supports stand on: its roots and the raft around them.
+ * `estimateSupportBoundsForModel` spans everything it carries, most of it in the air.
+ */
+export function estimateRaftBoundsForModel(modelId: string): SupportModelBounds2D | null {
+    if (!modelId) return null;
+
+    const state = getSnapshot();
+    const roots = Object.values(state.roots).filter((root) => root.modelId === modelId);
+    if (roots.length === 0) return null;
+
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+
+    const expand = (x: number, y: number, radius = 0) => {
+        const r = Math.max(0, radius);
+        minX = Math.min(minX, x - r);
+        maxX = Math.max(maxX, x + r);
+        minY = Math.min(minY, y - r);
+        maxY = Math.max(maxY, y + r);
+    };
+
+    for (const root of roots) {
+        expand(root.transform.pos.x, root.transform.pos.y, Math.max(0.001, root.diameter / 2));
+    }
+
+    const raftSettings = getRaftSettings();
+    if (raftSettings.bottomMode !== 'off') {
+        const circles: SupportBaseCircle[] = roots.map((root) => ({
+            x: root.transform.pos.x,
+            y: root.transform.pos.y,
+            r: root.diameter / 2,
+        }));
+
+        const thickness = raftSettings.bottomMode === 'line' ? raftSettings.lineHeightMm : raftSettings.thickness;
+        const chamferInset = Math.max(0, thickness) * Math.tan((Math.PI / 180) * (90 - Math.min(90, Math.max(45, raftSettings.chamferAngle))));
+        const wallInset = raftSettings.wallEnabled ? Math.max(0, raftSettings.wallThickness) : 0;
+        const dynamicMargin = 0.2 + Math.max(chamferInset, wallInset);
+
+        const baseProfile = computeFootprint(circles, { marginMm: dynamicMargin, samplesPerCircle: 24 });
+        if (baseProfile && baseProfile.length >= 3) {
+            const outerProfile = raftSettings.wallEnabled
+                ? computeRaftOuterBoundary(baseProfile, raftSettings)
+                : baseProfile;
+            for (const point of outerProfile) expand(point.x, point.y);
+        }
+    }
+
+    return Number.isFinite(minX) ? { minX, maxX, minY, maxY } : null;
+}
+
 export function estimateSupportBoundsForModel(modelId: string): SupportModelBounds2D | null {
   if (!modelId) return null;
 
