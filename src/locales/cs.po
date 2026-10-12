@@ -348,7 +348,7 @@ msgstr ""
 msgid "Add to existing"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:84
+#: src/components/ui/EditorContextMenu.tsx:90
 msgid "Add waypoint here"
 msgstr ""
 
@@ -435,7 +435,7 @@ msgstr ""
 msgid "Apply this preset to the auto-support settings"
 msgstr ""
 
-#: src/app/page.tsx:11606
+#: src/app/page.tsx:11648
 msgid "Are you sure you want to remove every model from the plate?"
 msgstr ""
 
@@ -542,8 +542,10 @@ msgstr ""
 msgid "Auto-Lift ON"
 msgstr ""
 
+#: src/app/page.tsx:2479
 #: src/components/settings/GeneralSettingsTab.tsx:498
 #: src/components/settings/GeneralSettingsTab.tsx:502
+#: src/components/ui/EditorContextMenu.tsx:118
 msgid "Auto-Repair"
 msgstr ""
 
@@ -921,7 +923,7 @@ msgstr ""
 msgid "Can't open this scene"
 msgstr ""
 
-#: src/app/page.tsx:11567
+#: src/app/page.tsx:11609
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 #: src/components/controls/AutoSupportPanel.tsx:652
@@ -1098,12 +1100,12 @@ msgstr ""
 
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
-#: src/app/page.tsx:10859
+#: src/app/page.tsx:10901
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1773
 msgid "Clear build plate"
 msgstr ""
 
-#: src/app/page.tsx:11556
+#: src/app/page.tsx:11598
 msgid "Clear Build Plate?"
 msgstr ""
 
@@ -1111,7 +1113,7 @@ msgstr ""
 msgid "Clear Override"
 msgstr ""
 
-#: src/app/page.tsx:11597
+#: src/app/page.tsx:11639
 msgid "Clear Plate"
 msgstr ""
 
@@ -1146,7 +1148,7 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: src/app/page.tsx:11562
+#: src/app/page.tsx:11604
 msgid "Close clear-plate confirmation"
 msgstr ""
 
@@ -1307,7 +1309,7 @@ msgstr ""
 msgid "Configure Networking Later"
 msgstr ""
 
-#: src/app/page.tsx:11555
+#: src/app/page.tsx:11597
 msgid "Confirm clearing the build plate"
 msgstr ""
 
@@ -1315,7 +1317,7 @@ msgstr ""
 msgid "Confirm delete snapshot"
 msgstr ""
 
-#: src/app/page.tsx:11554
+#: src/app/page.tsx:11596
 msgid "Confirm deleting the plate"
 msgstr ""
 
@@ -1413,7 +1415,7 @@ msgstr ""
 msgid "Contoured regions"
 msgstr ""
 
-#: src/app/page.tsx:8624
+#: src/app/page.tsx:8666
 msgid "Converting support data and model metadata"
 msgstr ""
 
@@ -1423,7 +1425,7 @@ msgid "Cool"
 msgstr ""
 
 #: src/components/controls/AutoSupportPanel.tsx:497
-#: src/components/ui/EditorContextMenu.tsx:101
+#: src/components/ui/EditorContextMenu.tsx:107
 msgid "Copy"
 msgstr ""
 
@@ -1551,7 +1553,7 @@ msgstr ""
 msgid "Custom — not a preset"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:100
+#: src/components/ui/EditorContextMenu.tsx:106
 msgid "Cut"
 msgstr ""
 
@@ -1636,7 +1638,7 @@ msgstr ""
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:610
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
 #: src/components/settings/LocalBackupsSettingsTab.tsx:999
-#: src/components/ui/EditorContextMenu.tsx:99
+#: src/components/ui/EditorContextMenu.tsx:105
 #: src/supports/Settings/components/PresetSelector.tsx:654
 #: src/supports/Settings/components/PresetSelector.tsx:888
 #: src/supports/Settings/components/PresetSelector.tsx:979
@@ -1665,7 +1667,7 @@ msgstr ""
 msgid "Delete model"
 msgstr ""
 
-#: src/app/page.tsx:11597
+#: src/app/page.tsx:11639
 #: src/components/controls/ModelManagerPanel.tsx:476
 #: src/components/controls/ModelManagerPanel.tsx:758
 #: src/components/controls/ModelManagerPanel.tsx:779
@@ -1703,16 +1705,16 @@ msgid "Delete this model's existing supports and place the new ones"
 msgstr ""
 
 #. Tooltip on the bin beside the build plate when the plate can go: it removes the bed and the models standing on it. Undo brings them back.
-#: src/app/page.tsx:10858
+#: src/app/page.tsx:10900
 msgid "Delete this plate"
 msgstr ""
 
-#: src/app/page.tsx:11556
+#: src/app/page.tsx:11598
 #: src/components/controls/ModelManagerPanel.tsx:759
 msgid "Delete this plate?"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:91
+#: src/components/ui/EditorContextMenu.tsx:97
 msgid "Delete waypoint"
 msgstr ""
 
@@ -1918,7 +1920,7 @@ msgstr ""
 msgid "Drop supported files"
 msgstr ""
 
-#: src/app/page.tsx:10804
+#: src/app/page.tsx:10846
 msgid "Drop supported files to import"
 msgstr ""
 
@@ -1964,7 +1966,7 @@ msgstr ""
 msgid "Editor"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:163
+#: src/components/ui/EditorContextMenu.tsx:181
 msgid "Editor context menu"
 msgstr ""
 
@@ -2333,7 +2335,7 @@ msgctxt "Plate ordering mode: a fixed number of beds per row."
 msgid "Fixed"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:208
+#: src/components/organisms/modals/MeshRepairModals.tsx:210
 msgid "Fixes geometry issues before you keep working."
 msgstr ""
 
@@ -2447,7 +2449,7 @@ msgstr ""
 msgid "Generate supports automatically on scan"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:120
+#: src/components/ui/EditorContextMenu.tsx:137
 msgid "Geometry"
 msgstr ""
 
@@ -2996,7 +2998,7 @@ msgstr ""
 msgid "Length"
 msgstr ""
 
-#: src/app/page.tsx:8664
+#: src/app/page.tsx:8706
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr ""
 
@@ -3078,7 +3080,7 @@ msgstr ""
 msgid "Loading Mesh Files…"
 msgstr ""
 
-#: src/app/page.tsx:8614
+#: src/app/page.tsx:8656
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr ""
@@ -3087,9 +3089,9 @@ msgstr ""
 msgid "Loading remote material…"
 msgstr ""
 
-#: src/app/page.tsx:4826
-#: src/app/page.tsx:8614
-#: src/app/page.tsx:8623
+#: src/app/page.tsx:4859
+#: src/app/page.tsx:8656
+#: src/app/page.tsx:8665
 msgid "Loading Scene…"
 msgstr ""
 
@@ -3206,11 +3208,11 @@ msgstr ""
 msgid "Manual IP Entry"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:124
+#: src/components/ui/EditorContextMenu.tsx:141
 msgid "Mark as Model"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:123
+#: src/components/ui/EditorContextMenu.tsx:140
 msgid "Mark as Support"
 msgstr ""
 
@@ -3303,7 +3305,7 @@ msgid "Merge Radius"
 msgstr ""
 
 #. Context-menu command that re-attaches the support scaffolding back to the model.
-#: src/components/ui/EditorContextMenu.tsx:114
+#: src/components/ui/EditorContextMenu.tsx:131
 msgid "Merge supports"
 msgstr ""
 
@@ -3962,7 +3964,7 @@ msgstr ""
 msgid "Opening"
 msgstr ""
 
-#: src/app/page.tsx:8661
+#: src/app/page.tsx:8703
 msgid "Opening scene…"
 msgstr ""
 
@@ -4052,7 +4054,7 @@ msgstr ""
 msgid "Passes that run after placement — how much one trunk may carry, and the coverage the gap-filler must reach"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:102
+#: src/components/ui/EditorContextMenu.tsx:108
 msgid "Paste"
 msgstr ""
 
@@ -4374,7 +4376,7 @@ msgstr ""
 msgid "Re-slice required after profile change"
 msgstr ""
 
-#: src/app/page.tsx:4827
+#: src/app/page.tsx:4860
 msgid "Reading autosaved scene…"
 msgstr ""
 
@@ -4461,6 +4463,11 @@ msgstr ""
 #: src/components/settings/GeneralSettingsTab.tsx:324
 #: src/components/settings/GeneralSettingsTab.tsx:328
 msgid "Remember window positions"
+msgstr ""
+
+#: src/app/page.tsx:2480
+#: src/components/ui/EditorContextMenu.tsx:119
+msgid "Remesh"
 msgstr ""
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:207
@@ -4568,12 +4575,16 @@ msgstr ""
 msgid "Reopen {0}"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:104
+#: src/components/ui/EditorContextMenu.tsx:114
 msgid "Repair"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:189
-#: src/components/organisms/modals/MeshRepairModals.tsx:205
+#: src/app/page.tsx:2479
+msgid "Repair Again"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:191
+#: src/components/organisms/modals/MeshRepairModals.tsx:207
 msgid "Repair Mesh"
 msgstr ""
 
@@ -4581,11 +4592,11 @@ msgstr ""
 msgid "Repair mesh…"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:73
+#: src/components/organisms/modals/MeshRepairModals.tsx:75
 msgid "Repair progress"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:240
+#: src/components/organisms/modals/MeshRepairModals.tsx:242
 msgid "Repairs holes, broken surfaces, and other mesh problems."
 msgstr ""
 
@@ -4672,8 +4683,8 @@ msgstr ""
 msgid "Restore Factory Defaults?"
 msgstr ""
 
-#: src/app/page.tsx:4858
-#: src/app/page.tsx:4869
+#: src/app/page.tsx:4891
+#: src/app/page.tsx:4902
 msgid "Restore Failed"
 msgstr ""
 
@@ -4864,7 +4875,7 @@ msgstr ""
 msgid "Scan for islands if needed, then place automatic supports on this model"
 msgstr ""
 
-#: src/components/ui/EditorContextMenu.tsx:115
+#: src/components/ui/EditorContextMenu.tsx:132
 msgid "Scan for Supports"
 msgstr ""
 
@@ -5217,6 +5228,10 @@ msgstr ""
 msgid "Show plate-contact islands"
 msgstr ""
 
+#: src/app/page.tsx:2485
+msgid "Show Report"
+msgstr ""
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:276
 msgid "Show restore/discard prompt if a dirty autosave is detected at startup."
 msgstr ""
@@ -5389,7 +5404,7 @@ msgid "Split along a curved seam that follows your drawn loop (zero-thickness ma
 msgstr ""
 
 #. Context-menu command that detaches the generated support scaffolding at the clicked point. "Supports" = the temporary print scaffolding structures, not customer support.
-#: src/components/ui/EditorContextMenu.tsx:113
+#: src/components/ui/EditorContextMenu.tsx:130
 msgid "Split supports"
 msgstr ""
 
@@ -5542,7 +5557,7 @@ msgid "Supported: {extensions}"
 msgstr ""
 
 #: src/app/page.tsx:2465
-#: src/components/ui/EditorContextMenu.tsx:109
+#: src/components/ui/EditorContextMenu.tsx:126
 msgid "Supports"
 msgstr ""
 
@@ -5636,12 +5651,12 @@ msgstr ""
 msgid "Tension"
 msgstr ""
 
-#: src/app/page.tsx:4871
+#: src/app/page.tsx:4904
 msgid "The autosave recovery file could not be found."
 msgstr ""
 
-#: src/app/page.tsx:4859
-#: src/app/page.tsx:4872
+#: src/app/page.tsx:4892
+#: src/app/page.tsx:4905
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr ""
 
@@ -5685,7 +5700,7 @@ msgstr ""
 msgid "The inputs and factors the last run sized the supports with"
 msgstr ""
 
-#: src/app/page.tsx:11605
+#: src/app/page.tsx:11647
 msgid "The models on this plate are deleted with it."
 msgstr ""
 
@@ -5755,7 +5770,7 @@ msgstr ""
 msgid "The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you save."
 msgstr ""
 
-#: src/app/page.tsx:4860
+#: src/app/page.tsx:4893
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr ""
 
@@ -5988,8 +6003,12 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
-#: src/app/page.tsx:11559
+#: src/app/page.tsx:11601
 msgid "Undo brings the models back"
+msgstr ""
+
+#: src/app/page.tsx:2484
+msgid "Undo Repairs"
 msgstr ""
 
 #: src/components/controls/ModelManagerPanel.tsx:487
@@ -6030,7 +6049,7 @@ msgstr ""
 msgid "Unlock build plate"
 msgstr ""
 
-#: src/app/page.tsx:11628
+#: src/app/page.tsx:11670
 msgid "Unlock it to add or move models."
 msgstr ""
 
@@ -6056,7 +6075,7 @@ msgstr ""
 msgid "Unsaved Scene Found"
 msgstr ""
 
-#: src/app/page.tsx:10804
+#: src/app/page.tsx:10846
 msgid "Unsupported file format"
 msgstr ""
 

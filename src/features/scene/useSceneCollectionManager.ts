@@ -1400,6 +1400,10 @@ export function useSceneCollectionManager(options?: {
   const [printerMismatch, setPrinterMismatch] = useState<PrinterMismatchPrompt | null>(null);
   const [meshRepairConfirmPrompt, setMeshRepairConfirmPrompt] = useState<MeshRepairConfirmPrompt | null>(null);
   const [meshRepairReports, setMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
+  // Which models the user repaired here, as opposed to the import pass repairing them at load.
+  // Every imported model carries a `nativeRepairReport`, so that field alone cannot say whether the
+  // repair menu should offer "Auto-Repair Again" and the report.
+  const [manuallyRepairedModelIds, setManuallyRepairedModelIds] = useState<string[]>([]);
   const [meshRepairReportPresentation, setMeshRepairReportPresentation] = useState<MeshRepairReportPresentation>('default');
   const [pendingMeshRepairReports, setPendingMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
   const sceneImportReportTimeoutRef = useRef<number | null>(null);
@@ -1494,6 +1498,21 @@ export function useSceneCollectionManager(options?: {
     }
     setPrinterMismatch(null);
   }, [printerMismatch]);
+
+  /**
+   * Show the report a model already carries, from its recorded repair.
+   *
+   * The record lives on the model (`meshDefects.nativeRepairReport`) and survives everything the
+   * scene does to it, so a model repaired earlier in the session can still say what was done.
+   */
+  const openMeshRepairReportForModel = useCallback((modelId: string) => {
+    const model = models.find((entry) => entry.id === modelId);
+    const report = model?.geometry.meshDefects?.nativeRepairReport;
+    if (!model || !report) return;
+    // The same dialog a repair just showed: the wins, the follow-up notes and the technical details.
+    setMeshRepairReportPresentation('optimistic');
+    setMeshRepairReports([{ id: `model-${modelId}`, modelName: model.name, report }]);
+  }, [models]);
 
   const openPendingMeshRepairReports = useCallback(() => {
     if (pendingMeshRepairReports.length === 0) {
@@ -6576,6 +6595,7 @@ export function useSceneCollectionManager(options?: {
       setModels(prev => prev.map(m =>
         m.id === modelId ? { ...m, geometry: processed, polygonCount } : m
       ));
+      setManuallyRepairedModelIds(prev => (prev.includes(modelId) ? prev : [...prev, modelId]));
 
       if (repairReport) {
         const reportEntry: MeshRepairReportEntry = {
@@ -7305,6 +7325,8 @@ export function useSceneCollectionManager(options?: {
     meshRepairReports,
     meshRepairReportPresentation,
     openPendingMeshRepairReports,
+    openMeshRepairReportForModel,
+    manuallyRepairedModelIds,
     dismissMeshRepairReports,
     sceneImportPlacementPrompt,
     resolveSceneImportPlacementPrompt,

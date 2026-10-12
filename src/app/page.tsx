@@ -9,7 +9,7 @@ import { detectIsIOS } from '@/hooks/usePlatform';
 import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
-import { AlertTriangle, CheckCircle2, ChevronDown, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
 import { SceneCanvas } from '@/components/scene/SceneCanvas';
 import { SceneOverlays } from '@/components/organisms/scene/SceneOverlays';
 import { FloatingPanelStack } from '@/components/layout/FloatingPanelStack';
@@ -112,7 +112,7 @@ import type { MirrorAxis } from '@/features/mirror/types';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPlayer';
 import { BlockingOverlay, Button, IconButton, Toast, ToastViewport } from '@/components/atoms';
-import { EditorContextMenu, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { EditorContextMenu, MENU_ITEMS, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
@@ -2463,7 +2463,33 @@ export default function Home() {
   }, []);
 
   const editorContextMenuTitle = scene.mode === 'support' ? _(msg`Supports`) : _(msg`Editor`);
-  const editorContextMenuItems = scene.mode === 'support' ? supportContextMenuItems : undefined;
+  // Only a repair run from this menu offers "Auto-Repair Again" and the report: the import pass
+  // repairs every model at load, so the report it leaves behind cannot be the signal.
+  const editorContextMenuItems = React.useMemo(() => {
+    if (scene.mode === 'support') {
+      return supportContextMenuItems;
+    }
+    const repaired = !!scene.activeModelId
+      && scene.manuallyRepairedModelIds.includes(scene.activeModelId);
+    return MENU_ITEMS.map((item) =>
+      item.id === 'repair-menu' && 'children' in item
+        ? {
+            ...item,
+            children: [
+              { id: 'repair' as const, label: repaired ? msg`Repair Again` : msg`Auto-Repair`, icon: Wrench },
+              { id: 'remesh' as const, label: msg`Remesh`, icon: RefreshCw },
+              // The second group only exists once there is a repair to undo or report on.
+              ...(repaired
+                ? [
+                    { id: 'undo-repairs' as const, label: msg`Undo Repairs`, icon: Undo2, startsGroup: true },
+                    { id: 'show-repair-report' as const, label: msg`Show Report`, icon: ClipboardList },
+                  ]
+                : []),
+            ],
+          }
+        : item,
+    );
+  }, [scene.mode, scene.activeModelId, scene.manuallyRepairedModelIds, supportContextMenuItems]);
   const editorContextMenuDisabledActions = React.useMemo(() => {
     if (scene.mode === 'support') {
       return [
@@ -2498,6 +2524,13 @@ export default function Home() {
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
       ...(!canMergeSupports ? (['merge-supports'] as const) : []),
+      // Remesh is not wired yet. It sits in the flyout greyed out so the shape of the repair menu is
+      // settled before the pass behind it exists.
+      'remesh' as const,
+      // Undo Repairs needs the file read back, and the webview cannot read a filesystem path — a
+      // `file://` fetch is refused at the security boundary. It needs a native command that loads a
+      // path and stages it, the way `mesh_repair_from_path` loads before it repairs.
+      'undo-repairs' as const,
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
@@ -6494,6 +6527,15 @@ export default function Home() {
               setPrintingEstimatedResinMl(nextTotal);
             }
           }
+        }
+        break;
+      }
+      case 'show-repair-report': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          closeEditorContextMenu();
+          scene.openMeshRepairReportForModel(targetId);
+          return;
         }
         break;
       }
