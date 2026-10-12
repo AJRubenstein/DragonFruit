@@ -101,6 +101,7 @@ export function MeshRepairModals({
   setShowDamagedModelDialog,
   showDamagedModelDialog,
 }: MeshRepairModalsProps) {
+  const { _ } = useLingui();
   const [manualRepair, setManualRepair] = React.useState<ManualRepairState | null>(null);
   const [repairToken, setRepairToken] = React.useState<string | null>(null);
   const [cancelling, setCancelling] = React.useState(false);
@@ -185,7 +186,7 @@ export function MeshRepairModals({
               }}
               role="dialog"
               aria-modal="true"
-              aria-label="Repair mesh"
+              aria-label={_(msg`Repair Mesh`)}
             >
               <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div className="flex min-w-0 items-center gap-3">
@@ -201,10 +202,10 @@ export function MeshRepairModals({
 
                   <div className="min-w-0 pr-2">
                     <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                      Repair this mesh?
+                      {_(msg`Repair Mesh`)}
                     </h2>
                     <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                      DragonFruit will try to fix common geometry issues before you keep working.
+                      {_(msg`Fixes geometry issues before you keep working.`)}
                     </p>
                   </div>
                 </div>
@@ -236,7 +237,7 @@ export function MeshRepairModals({
                   />
                 ) : (
                   <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                    Repair can help with holes, broken surfaces, and other mesh problems that may lead to slicing or print issues.
+                    {_(msg`Repairs holes, broken surfaces, and other mesh problems.`)}
                   </p>
                 )}
 

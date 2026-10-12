@@ -2333,6 +2333,10 @@ msgctxt "Plate ordering mode: a fixed number of beds per row."
 msgid "Fixed"
 msgstr "Fija"
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:208
+msgid "Fixes geometry issues before you keep working."
+msgstr "Corrige problemas de geometría antes de continuar."
+
 #: src/features/organicCut/OrganicCutPanel.tsx:448
 msgid "Flat"
 msgstr "Plano"
@@ -4569,6 +4573,11 @@ msgstr "Reabrir {0}"
 msgid "Repair"
 msgstr "Reparar"
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:189
+#: src/components/organisms/modals/MeshRepairModals.tsx:205
+msgid "Repair Mesh"
+msgstr "Reparar malla"
+
 #: src/components/controls/ModelManagerPanel.tsx:495
 msgid "Repair mesh…"
 msgstr "Reparar la malla…"
@@ -4576,6 +4585,10 @@ msgstr "Reparar la malla…"
 #: src/components/organisms/modals/MeshRepairModals.tsx:73
 msgid "Repair progress"
 msgstr "Progreso de la reparación"
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:240
+msgid "Repairs holes, broken surfaces, and other mesh problems."
+msgstr "Repara agujeros, superficies rotas y otros problemas de malla."
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:162
 msgid "Repeat Interval"
