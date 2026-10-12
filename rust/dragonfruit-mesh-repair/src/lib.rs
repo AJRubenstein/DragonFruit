@@ -12,7 +12,12 @@ pub mod arrangement;
 /// users) without rewriting every import.
 pub use dragonfruit_mesh_core as core;
 pub mod decimation_config;
+pub mod evaluate;
 pub mod hollowing;
+pub mod holes;
+pub mod shells;
+#[cfg(test)]
+mod test_fixtures;
 pub mod io;
 pub mod repair;
 pub mod report;
@@ -26,8 +31,8 @@ pub use crate::hollowing::{
     HollowSession, OpenFace,
 };
 pub use crate::repair::{
-    classify_support_split, decimate_sections_to_budget, repair, ClassificationOutcome, RepairOptions,
-    RepairOutcome, SectionDecimationOutcome,
+    classify_support_split, decimate_sections_to_budget, repair, repair_with_progress,
+    ClassificationOutcome, RepairOptions, RepairOutcome, SectionDecimationOutcome,
 };
 pub use crate::report::MeshHealthReport;
 pub use crate::stl_budget::{compute_triangle_budget, TriangleBudget};

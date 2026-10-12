@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { AlertTriangle, Wrench, X } from 'lucide-react';
 import { Button, IconButton, IconChip, Spinner } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
@@ -5,6 +6,115 @@ import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
 import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
+import { cancelMeshRepair } from '@/utils/meshRepair';
+import type { MeshRepairProgress } from '@/utils/meshRepair';
+
+/** A manual repair in flight: when it started, and what it has reported. */
+type ManualRepairState = {
+  startedAt: number;
+  stage: MeshRepairProgress | null;
+  stages: MeshRepairProgress[];
+};
+
+/**
+ * How full the progress bar is, 0..1.
+ *
+ * The stage count is not known in advance: the pipeline branches on what it finds in
+ * the mesh, so a percentage of the stages would be invented. A saturating function of
+ * the count always moves and never claims the work is nearly done, which is the honest
+ * thing to show when the total is unknown.
+ */
+function repairProgressFraction(state: ManualRepairState): number {
+  if (!state.stage) return 0.06;
+  return 0.1 + 0.8 * (1 - Math.exp(-state.stages.length / 6));
+}
+
+/** `0:04.2`, which is a duration a person reads at a glance. */
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, ms) / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${minutes}:${seconds.toFixed(1).padStart(4, '0')}`;
+}
+
+/**
+ * How many stages the checklist shows.
+ *
+ * Capped rather than scrolled: a scrollbar inside a dialog that is already moving is
+ * one thing too many, and the stages that matter are the current one and the few
+ * before it. The report modal has the full list.
+ */
+const VISIBLE_REPAIR_STAGES = 6;
+
+/** The bar, the stage it is on, and how long it has been going. */
+function RepairProgressPanel({
+  state,
+  elapsedMs,
+  cancelling,
+}: {
+  state: ManualRepairState;
+  elapsedMs: number;
+  cancelling: boolean;
+}) {
+  const current = state.stage;
+  const seen = React.useMemo(() => {
+    // Keyed by name so a stage the order revisits updates its entry rather than
+    // appending a duplicate.
+    const byName = new Map<string, MeshRepairProgress>();
+    for (const stage of state.stages) byName.set(stage.name, stage);
+    return [...byName.values()];
+  }, [state.stages]);
+  const visible = seen.slice(-VISIBLE_REPAIR_STAGES);
+  const hidden = seen.length - visible.length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0 truncate font-mono text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>
+          {cancelling ? 'Stopping at the end of this step…' : current?.name ?? 'starting'}
+        </div>
+        <div className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+          {formatElapsed(elapsedMs)}
+        </div>
+      </div>
+
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full"
+        style={{ background: 'var(--surface-2)' }}
+        role="progressbar"
+        aria-label="Repair progress"
+      >
+        <div
+          className="h-full rounded-full transition-[width] duration-300 ease-out"
+          style={{ width: `${Math.round(repairProgressFraction(state) * 100)}%`, background: '#d97706' }}
+        />
+      </div>
+
+      {visible.length > 0 && (
+        <ol className="space-y-1">
+          {hidden > 0 && (
+            <li className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {hidden} earlier step{hidden === 1 ? '' : 's'}
+            </li>
+          )}
+          {visible.map((stage) => {
+            const isCurrent = stage.name === current?.name;
+            return (
+              <li
+                key={stage.name}
+                className="flex items-center gap-2 font-mono text-[11px]"
+                style={{ color: isCurrent ? 'var(--text-strong)' : 'var(--text-muted)' }}
+              >
+                <span className="w-3 shrink-0">{isCurrent ? '>' : ' '}</span>
+                <span className="truncate">{stage.name}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+}
 
 export type MeshRepairModalsProps = {
   isManualRepairing: boolean;
@@ -26,6 +136,18 @@ export function MeshRepairModals({
   setShowDamagedModelDialog,
   showDamagedModelDialog,
 }: MeshRepairModalsProps) {
+  const [manualRepair, setManualRepair] = React.useState<ManualRepairState | null>(null);
+  const [repairToken, setRepairToken] = React.useState<string | null>(null);
+  const [cancelling, setCancelling] = React.useState(false);
+  const [tick, setTick] = React.useState(0);
+
+  // The elapsed clock only runs while a repair does.
+  React.useEffect(() => {
+    if (!isManualRepairing) return undefined;
+    const timer = window.setInterval(() => setTick(performance.now()), 100);
+    return () => window.clearInterval(timer);
+  }, [isManualRepairing]);
+
   // Escape mirrors the backdrop click: it cannot leave mid-repair.
   useEscapeToClose(
     manualRepairModelId !== null,
@@ -141,9 +263,17 @@ export function MeshRepairModals({
                   </div>
                 </div>
 
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  Repair can help with holes, broken surfaces, and other mesh problems that may lead to slicing or print issues.
-                </p>
+                {manualRepair ? (
+                  <RepairProgressPanel
+                    state={manualRepair}
+                    elapsedMs={Math.max(0, tick - manualRepair.startedAt)}
+                    cancelling={cancelling}
+                  />
+                ) : (
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    Repair can help with holes, broken surfaces, and other mesh problems that may lead to slicing or print issues.
+                  </p>
+                )}
 
                 <div
                   className="rounded-md border px-3 py-2"
@@ -165,9 +295,18 @@ export function MeshRepairModals({
                     variant="secondary"
                     className="w-full"
                     disabled={isManualRepairing}
-                    onClick={() => setManualRepairModelId(null)}
+                    onClick={() => {
+                      if (isManualRepairing && repairToken) {
+                        // Stops at the next stage boundary, so the mesh it leaves is
+                        // one the pipeline finished a pass on.
+                        setCancelling(true);
+                        void cancelMeshRepair(repairToken);
+                        return;
+                      }
+                      setManualRepairModelId(null);
+                    }}
                   >
-                    Keep Original
+                    {isManualRepairing ? 'Stop' : 'Keep Original'}
                   </Button>
                   <Button
                     variant="tinted-accent"
@@ -176,9 +315,21 @@ export function MeshRepairModals({
                     onClick={() => {
                       const id = manualRepairModelId;
                       setIsManualRepairing(true);
-                      void scene.repairModelInPlace(id).finally(() => {
+                      setCancelling(false);
+                      setManualRepair({ startedAt: performance.now(), stage: null, stages: [] });
+                      void scene.repairModelInPlace(id, {
+                        onToken: setRepairToken,
+                        onProgress: (progress) => setManualRepair((previous) => (
+                          previous
+                            ? { ...previous, stage: progress, stages: [...previous.stages, progress] }
+                            : previous
+                        )),
+                      }).finally(() => {
                         setIsManualRepairing(false);
                         setManualRepairModelId(null);
+                        setManualRepair(null);
+                        setRepairToken(null);
+                        setCancelling(false);
                       });
                     }}
                   >

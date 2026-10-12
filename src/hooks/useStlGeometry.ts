@@ -20,6 +20,7 @@ import {
   repairFromGeometry,
   type MeshAnalysisJson,
   type MeshHealthReport,
+  type MeshRepairProgressSink,
 } from '@/utils/meshRepair';
 
 export type MeshDefects = {
@@ -130,6 +131,12 @@ export interface ProcessGeometryOptions {
    * @internal
    */
   assumeSupportGeometry?: boolean;
+  /**
+   * Hears each repair stage as it starts, and receives the run's token so the
+   * caller can cancel it. Ignored when the geometry does not go through the
+   * native repair.
+   */
+  repairProgressSink?: MeshRepairProgressSink;
   /** Skip nonessential analysis for a native reduced-detail preview. @internal */
   _isNativePreview?: boolean;
   /** Model section boundary offset extracted directly from the DFMX binary IPC header. @internal */
@@ -414,7 +421,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
       const runRepair = options._repairFromGeometry ?? repairFromGeometry;
       const result = classifyOnly
         ? await runClassify(geometry, repairOpts)
-        : await runRepair(geometry, repairOpts);
+        : await runRepair(geometry, repairOpts, options.repairProgressSink);
       if (result) {
         let effectiveResult = result;
         let usedFallbackClassification = false;

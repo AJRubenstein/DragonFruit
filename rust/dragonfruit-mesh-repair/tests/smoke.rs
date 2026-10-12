@@ -1,7 +1,7 @@
 //! Smoke tests for the repair pipeline on synthetic fixtures.
 
 use dragonfruit_mesh_repair::core::mesh::{IndexedMesh, Vec3};
-use dragonfruit_mesh_repair::{analyze, repair, RepairOptions};
+use dragonfruit_mesh_repair::{analyze, repair, repair_with_progress, RepairOptions};
 
 /// Build a unit cube with outward-facing winding.
 fn unit_cube() -> IndexedMesh {
@@ -78,7 +78,7 @@ fn duplicated_vertices_are_welded() {
         .report
         .steps
         .iter()
-        .any(|s| s.name == "weld" && s.changed > 0));
+        .any(|s| s.name == "stitch" && s.changed > 0));
 }
 
 #[test]
@@ -133,81 +133,69 @@ fn degenerate_triangles_are_culled() {
     assert_eq!(outcome.mesh.triangles.len(), 12);
 }
 
+
+/// The stage order is the design, not an accident.
+///
+/// Orientation, stitch, holes and double faces each disturb what the one before it
+/// settled, so they come round more than once. A refactor that "simplifies" this list
+/// has changed what the repair does, and this is where that shows up.
 #[test]
-fn defaults_enable_fragmented_auto_solidify_with_guards() {
-    let defaults = RepairOptions::default();
-    assert!(
-        defaults.solidify_fragmented_components,
-        "fragmented auto-solidify should be enabled by default"
+fn the_pipeline_runs_the_stage_order_it_says_it_does() {
+    let outcome = repair(unit_cube(), &RepairOptions::default());
+    let names: Vec<&str> = outcome
+        .report
+        .steps
+        .iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "orient_components",
+            "stitch",
+            "holes_trivial",
+            "double_faces",
+            "orient_holes_stitch",
+            "orient_holes_all_stitch",
+            "double_faces_after_split",
+            "remove_inner_faces",
+            "noise_shells",
+            "settle",
+            "prune_and_classify",
+        ]
     );
-    assert_eq!(defaults.solidify_component_threshold, 256);
-    assert_eq!(defaults.solidify_self_intersection_threshold, 128);
 }
 
+/// The sink hears about each stage before it runs, and stopping it stops the run.
 #[test]
-fn fragmented_auto_solidify_triggers_without_explicit_resolve_flag() {
-    // Two disconnected triangles crossing each other.
-    let mesh = IndexedMesh {
-        positions: vec![
-            Vec3::new(-1.0, -1.0, 0.0),
-            Vec3::new(2.0, -1.0, 0.0),
-            Vec3::new(-1.0, 2.0, 0.0),
-            Vec3::new(-1.0, 0.0, -1.0),
-            Vec3::new(1.0, 0.0, -1.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        ],
-        triangles: vec![[0, 1, 2], [3, 4, 5]],
-    };
-
-    let options = RepairOptions {
-        resolve_self_intersections: false,
-        solidify_fragmented_components: true,
-        solidify_component_threshold: 2,
-        solidify_self_intersection_threshold: 1,
-        ..RepairOptions::default()
-    };
-
-    let outcome = repair(mesh.clone(), &options);
-    assert!(
-        outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "auto_enable_solidify"),
-        "auto solidify step should be recorded"
+fn the_progress_sink_sees_each_stage_and_can_stop_the_run() {
+    let mut seen: Vec<String> = Vec::new();
+    let outcome = repair_with_progress(
+        unit_cube(),
+        &RepairOptions::default(),
+        Some(&mut |name, index| {
+            seen.push(format!("{index}:{name}"));
+            true
+        }),
     );
-    assert!(
-        outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "corefine_self_intersections"),
-        "co-refinement should run when auto solidify triggers"
-    );
-    assert!(
-        outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "extract_union_boundary_faces"),
-        "union boundary extraction should run after corefine"
-    );
+    assert_eq!(seen.len(), outcome.report.steps.len());
+    assert_eq!(seen[0], "1:orient_components");
+    assert!(!outcome.report.cancelled);
 
-    // Control check: same thresholds but auto mode disabled should not run corefine.
-    let control = RepairOptions {
-        resolve_self_intersections: false,
-        solidify_fragmented_components: false,
-        solidify_component_threshold: 2,
-        solidify_self_intersection_threshold: 1,
-        ..RepairOptions::default()
-    };
-    let control_outcome = repair(mesh, &control);
+    // Say no to the third stage and the run stops at the boundary before it.
+    let mut asked = 0;
+    let stopped = repair_with_progress(
+        unit_cube(),
+        &RepairOptions::default(),
+        Some(&mut |_, _| {
+            asked += 1;
+            asked < 3
+        }),
+    );
+    assert!(stopped.report.cancelled);
+    assert_eq!(stopped.report.steps.len(), 2, "the third stage never ran");
     assert!(
-        !control_outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "corefine_self_intersections"),
-        "corefine should remain off when both resolve and auto-solidify are disabled"
+        !stopped.report.fully_repaired || stopped.report.post.is_watertight,
+        "a cancelled run still reports the mesh it has"
     );
 }

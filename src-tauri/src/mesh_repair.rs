@@ -15,12 +15,15 @@
 //!   build item for 3MF, a decimated single body for an oversized STL) in the
 //!   `DFMX` wire format.
 
+use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
-    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair, HolePunchOptions,
+    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair,
+    repair_with_progress, HolePunchOptions,
     HollowOptions, HollowSession, IndexedMesh, RepairOptions, Vec3,
 };
 // The organic cut feature now lives in its own crate.
@@ -28,6 +31,7 @@ use dragonfruit_organic_cut::{organic_cut, GeodesicSolver, OrganicCutOptions};
 use rayon::prelude::*;
 use serde::Deserialize;
 use tauri::ipc::Response;
+use tauri::Emitter;
 
 use crate::{
     staged_mesh, staged_mesh_file_appender, staged_mesh_file_path, staged_mesh_stats,
@@ -186,9 +190,6 @@ struct RepairOptionsDto {
     keep_largest_n_components: Option<usize>,
     repair_orientation: Option<bool>,
     resolve_self_intersections: Option<bool>,
-    solidify_fragmented_components: Option<bool>,
-    solidify_component_threshold: Option<usize>,
-    solidify_self_intersection_threshold: Option<usize>,
     #[serde(alias = "assume_support_geometry")]
     assume_support_geometry: Option<bool>,
 }
@@ -210,15 +211,6 @@ impl From<RepairOptionsDto> for RepairOptions {
             resolve_self_intersections: dto
                 .resolve_self_intersections
                 .unwrap_or(defaults.resolve_self_intersections),
-            solidify_fragmented_components: dto
-                .solidify_fragmented_components
-                .unwrap_or(defaults.solidify_fragmented_components),
-            solidify_component_threshold: dto
-                .solidify_component_threshold
-                .unwrap_or(defaults.solidify_component_threshold),
-            solidify_self_intersection_threshold: dto
-                .solidify_self_intersection_threshold
-                .unwrap_or(defaults.solidify_self_intersection_threshold),
             assume_support_geometry: dto
                 .assume_support_geometry
                 .or(defaults.assume_support_geometry),
@@ -430,17 +422,75 @@ pub async fn mesh_repair_from_path(
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
 }
 
+/// Repairs in flight, by progress token.
+///
+/// A cancel flips the flag and the repair reads it at its next stage boundary, so a
+/// cancel never lands halfway through a pass.
+fn cancels() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static CANCELS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    CANCELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Asks the repair carrying this token to stop at its next stage boundary.
+///
+/// Returns whether a repair was actually carrying that token: a cancel that arrives
+/// after the repair finished is not an error, it is a no-op.
 #[tauri::command]
-pub async fn mesh_repair_staged(options_json: String) -> Result<String, String> {
+pub async fn mesh_repair_cancel(progress_token: String) -> Result<bool, String> {
+    let registry = cancels().lock().map_err(|e| e.to_string())?;
+    Ok(registry
+        .get(&progress_token)
+        .map(|flag| {
+            flag.store(true, Ordering::SeqCst);
+            true
+        })
+        .unwrap_or(false))
+}
+
+#[tauri::command]
+pub async fn mesh_repair_staged(
+    options_json: String,
+    progress_token: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
     let options = parse_options(&options_json)?;
     let bytes = read_staging_bytes()?;
+
+    let cancel = progress_token.as_ref().map(|token| {
+        let flag = Arc::new(AtomicBool::new(false));
+        if let Ok(mut registry) = cancels().lock() {
+            registry.insert(token.clone(), flag.clone());
+        }
+        flag
+    });
+    let token = progress_token.clone();
+
     let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let outcome = repair(mesh, &options);
+        let mut sink = |name: &str, index: usize| -> bool {
+            if let Some(token) = token.as_deref() {
+                let _ = app.emit(
+                    "mesh-repair-progress",
+                    serde_json::json!({ "token": token, "name": name, "index": index }),
+                );
+            }
+            cancel
+                .as_ref()
+                .map(|flag| !flag.load(Ordering::SeqCst))
+                .unwrap_or(true)
+        };
+        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
     .map_err(|e| format!("repair task panicked: {e}"))??;
+
+    if let Some(token) = progress_token {
+        if let Ok(mut registry) = cancels().lock() {
+            registry.remove(&token);
+        }
+    }
+
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
 }

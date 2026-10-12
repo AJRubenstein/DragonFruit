@@ -3,7 +3,7 @@ import { useLingui } from '@lingui/react';
 import * as THREE from 'three';
 import { refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
-import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
+import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import {
   DYNAMIC_PLATE_ORDERING,
@@ -3979,6 +3979,7 @@ export function useSceneCollectionManager(options?: {
         likely_support_geometry: true,
         residual_issues: [],
         fully_repaired: true,
+        cancelled: false,
         total_ms: 0,
       },
     };
@@ -4203,6 +4204,7 @@ export function useSceneCollectionManager(options?: {
           model_triangle_count: modelTriangleCount,
           residual_issues: [],
           fully_repaired: true,
+          cancelled: false,
           total_ms: 0,
         },
       };
@@ -6542,7 +6544,10 @@ export function useSceneCollectionManager(options?: {
    * geometry and swaps the result back in-place.  Intended for the manual
    * "Repair Mesh" context-menu action.
    */
-  const repairModelInPlace = useCallback(async (modelId: string): Promise<boolean> => {
+  const repairModelInPlace = useCallback(async (
+    modelId: string,
+    repairProgressSink?: MeshRepairProgressSink,
+  ): Promise<boolean> => {
     const model = modelsRef.current.find(m => m.id === modelId);
     if (!model) return false;
     try {
@@ -6550,7 +6555,17 @@ export function useSceneCollectionManager(options?: {
         center: false,
         nativeProcessingMode: 'repair',
         assumeSupportGeometry: model.isSupportGeometry,
+        repairProgressSink,
       });
+
+      // A cancelled repair stopped where it was asked to, and the mesh it hands back
+      // is a partly repaired one. Applying it would replace the model with something
+      // the caller did not ask for, so the model is left alone and the report says so.
+      if (processed.meshDefects?.nativeRepairReport?.cancelled) {
+        emitSceneImportReport('Repair cancelled. The model is unchanged.', 'warning');
+        return false;
+      }
+
       const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
       const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
       const repairReport = processed.meshDefects?.nativeRepairReport ?? null;

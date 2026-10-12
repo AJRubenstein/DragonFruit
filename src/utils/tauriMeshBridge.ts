@@ -7,18 +7,36 @@ export type TauriInvoke = <T>(
   opts?: { headers?: Record<string, string> },
 ) => Promise<T>;
 
+/** Subscribe to a backend event. Returns the unsubscribe function. */
+export type TauriListen = <T>(
+  event: string,
+  handler: (event: { payload: T }) => void,
+) => Promise<() => void>;
+
 export interface TauriCoreModule {
   invoke: TauriInvoke;
+  listen: TauriListen;
 }
 
 let tauriCorePromise: Promise<TauriCoreModule | null> | null = null;
 
-/** Resolve the Tauri `invoke` binding, or null in the browser. Cached. */
+/**
+ * Resolve the Tauri bindings this bridge needs, or null in the browser. Cached.
+ *
+ * Both modules are loaded together so a caller cannot end up with an `invoke` and no
+ * way to hear back from the command it invoked.
+ */
 export async function loadTauriCore(): Promise<TauriCoreModule | null> {
   if (!isTauriRuntime()) return null;
   if (!tauriCorePromise) {
-    tauriCorePromise = import('@tauri-apps/api/core')
-      .then((mod) => ({ invoke: mod.invoke as TauriInvoke }))
+    tauriCorePromise = Promise.all([
+      import('@tauri-apps/api/core'),
+      import('@tauri-apps/api/event'),
+    ])
+      .then(([core, event]) => ({
+        invoke: core.invoke as TauriInvoke,
+        listen: event.listen as TauriListen,
+      }))
       .catch(() => null);
   }
   return tauriCorePromise;

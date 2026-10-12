@@ -155,6 +155,7 @@ nav:
           - Data Storage: dev/data-storage.md
           - Formats: dev/formats.md
           - Mesh Wire Formats: dev/mesh-wire-formats.md
+          - Mesh Repair Passes: dev/mesh-repair-passes.md
           - VOXL Format Spec: dev/voxl-format-spec.md
           - LYS Mesh Extraction Spec: dev/lys-mesh-extraction-spec.md
       - Decision Records:

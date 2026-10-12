@@ -41,6 +41,10 @@ pub struct MeshHealthReport {
     /// human-readable strings so the UI can surface them.
     pub residual_issues: Vec<String>,
     pub fully_repaired: bool,
+    /// True when the caller asked the repair to stop and it stopped at a stage
+    /// boundary. The mesh is then partly repaired, and `fully_repaired` describes
+    /// what is actually in it rather than what the run intended.
+    pub cancelled: bool,
     pub total_ms: f64,
 }
 
@@ -68,6 +72,7 @@ impl MeshHealthReport {
             model_manifold_status: None,
             residual_issues: Vec::new(),
             fully_repaired: false,
+            cancelled: false,
             total_ms: 0.0,
         }
     }
