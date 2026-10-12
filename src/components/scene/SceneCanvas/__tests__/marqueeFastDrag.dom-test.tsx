@@ -14,12 +14,16 @@ const CONTAINER_H = 1200;
 let recordedBox: MarqueeBox | null = null;
 let recordedIds: string[] = [];
 
+/** What the overlay would draw, i.e. the state a render can see. */
+let renderedBox: MarqueeBox | null = null;
+
 /** The hook on a container, driven by pointer events the way the canvas drives it. */
 function Harness() {
     const containerRef = React.useRef<HTMLDivElement | null>(null);
     const suppressNextCanvasClickRef = React.useRef(false);
 
     const {
+        marqueeSelection,
         handleMarqueePointerDownCapture,
         handleMarqueePointerMoveCapture,
         endMarqueeSelection,
@@ -44,6 +48,8 @@ function Harness() {
         resolveMarqueeSelectedSupportIds: () => [],
         suppressNextCanvasClickRef,
     });
+
+    renderedBox = marqueeSelection;
 
     return (
         <div
@@ -119,6 +125,63 @@ test('a drag whose moves outrun React still commits the box it ended on', async 
             'and ends where it came up, not at the last point React had rendered',
         );
         assert.deepEqual(recordedIds, ['model-a'], 'what the box caught is published');
+    } finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+test('the box is on screen while the drag is still running', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    recordedBox = null;
+    recordedIds = [];
+    renderedBox = null;
+
+    try {
+        await act(async () => {
+            root.render(<Harness />);
+        });
+
+        const host = container.firstElementChild as HTMLDivElement;
+        host.getBoundingClientRect = () => ({
+            x: 0, y: 0, top: 0, left: 0, right: CONTAINER_W, bottom: CONTAINER_H,
+            width: CONTAINER_W, height: CONTAINER_H, toJSON: () => ({}),
+        }) as DOMRect;
+        host.setPointerCapture = () => {};
+        host.releasePointerCapture = () => {};
+
+        // Each step committed, as an unhurried drag is: the overlay reads state,
+        // so a render has to see the box grow rather than only the commit.
+        await act(async () => {
+            host.dispatchEvent(pointerEvent('pointerdown', 1700, 200));
+        });
+        await act(async () => {
+            host.dispatchEvent(pointerEvent('pointermove', 1600, 400));
+        });
+
+        const afterFirstMove = renderedBox as MarqueeBox | null;
+        assert.ok(afterFirstMove, 'the drag put a box on screen');
+        assert.deepEqual(afterFirstMove.current, { x: 1600, y: 400 });
+
+        await act(async () => {
+            host.dispatchEvent(pointerEvent('pointermove', 900, 900));
+        });
+
+        const afterSecondMove = renderedBox as MarqueeBox | null;
+        assert.ok(afterSecondMove, 'the box is still on screen');
+        assert.deepEqual(
+            afterSecondMove.current,
+            { x: 900, y: 900 },
+            'and it followed the pointer rather than staying where it started',
+        );
+
+        await act(async () => {
+            host.dispatchEvent(pointerEvent('pointerup', 900, 900, { buttons: 0 }));
+        });
+
+        assert.equal(renderedBox, null, 'and it is gone once the drag ends');
     } finally {
         await act(async () => root.unmount());
         container.remove();

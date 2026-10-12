@@ -343,6 +343,7 @@ function resolveTrackpadGestureAction(
 }
 
 const EMPTY_MODEL_ID_LIST: readonly string[] = Object.freeze([]);
+const EMPTY_MODEL_ID_SET: ReadonlySet<string> = new Set<string>();
 
 /**
  * How much darker a model standing on a bed that is not the one being worked on is
@@ -3313,15 +3314,29 @@ export function SceneCanvas({
       comment: 'Shown while dragging a selection rectangle left to right, which takes only the objects the rectangle fully encloses. Mirrors the CAD convention; keep it on one short line.',
     }));
 
-  const marqueeCandidateIdSet = React.useMemo(() => {
-    if (!marqueeSelection || mode !== 'prepare') return new Set<string>();
+  // Which models the drag would take, for the tint that previews it. Resolving it
+  // walks every model's projected mesh and all of its supports, which on a heavy
+  // plate costs longer than a frame -- so it runs after the paint rather than
+  // before it, and the rectangle follows the pointer while the tint catches up.
+  const [marqueeCandidateIdSet, setMarqueeCandidateIdSet] = React.useState<ReadonlySet<string>>(EMPTY_MODEL_ID_SET);
+  React.useEffect(() => {
+    if (!marqueeSelection || mode !== 'prepare') {
+      setMarqueeCandidateIdSet((prev) => (prev.size === 0 ? prev : EMPTY_MODEL_ID_SET));
+      return;
+    }
 
     const dragDx = marqueeSelection.current.x - marqueeSelection.start.x;
     const dragDy = marqueeSelection.current.y - marqueeSelection.start.y;
     const dragDistanceSq = (dragDx * dragDx) + (dragDy * dragDy);
-    if (dragDistanceSq < 16) return new Set<string>();
+    if (dragDistanceSq < 16) {
+      setMarqueeCandidateIdSet((prev) => (prev.size === 0 ? prev : EMPTY_MODEL_ID_SET));
+      return;
+    }
 
-    return new Set(resolveMarqueeSelectedIds(marqueeSelection));
+    const handle = window.requestAnimationFrame(() => {
+      setMarqueeCandidateIdSet(new Set(resolveMarqueeSelectedIds(marqueeSelection)));
+    });
+    return () => window.cancelAnimationFrame(handle);
   }, [marqueeSelection, mode, resolveMarqueeSelectedIds]);
 
   // Models the marquee would take if the drag ended now, so their supports can
