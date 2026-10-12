@@ -177,7 +177,8 @@ module scope for data. Build a sentence as one message with placeholders and
 `<0>…</0>` tags, never by concatenating fragments — word order differs per
 language. When the same English word means two things (the "Light" theme vs the
 "Light" preset), give the messages a `context`. After adding strings, run
-`npm run i18n:extract` and translate the new Spanish entries in `src/locales/es.po`.
+`npm run i18n:extract` and leave the new entries untranslated in every catalog:
+translations go through Crowdin, not through code changes.
 
 CI enforces this with `npm run check:i18n-literals`, which works like `check:lint`:
 it covers only the directories and files listed in `scripts/i18n-clean-dirs.json`
