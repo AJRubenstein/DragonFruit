@@ -6556,6 +6556,9 @@ export function useSceneCollectionManager(options?: {
         nativeProcessingMode: 'repair',
         assumeSupportGeometry: model.isSupportGeometry,
         repairProgressSink,
+        // The file it came from, so the repair reads it through the same loader the
+        // import did instead of uploading a triangle soup and re-deriving every vertex.
+        sourcePath: model.sourcePath ?? undefined,
       });
 
       // A cancelled repair stopped where it was asked to, and the mesh it hands back

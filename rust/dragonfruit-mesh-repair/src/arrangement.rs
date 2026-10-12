@@ -877,7 +877,9 @@ mod tests {
             positions: vec![a0, a1, a2, b0, b1, b2],
             triangles: vec![[0, 1, 2], [3, 4, 5]],
         };
-        assert_eq!(count_self_intersections(&mesh), 1);
+        // Both triangles cross, so both are counted. This read 1 while the counter
+        // carried an `other < fi` guard that scored a crossing pair as one triangle.
+        assert_eq!(count_self_intersections(&mesh), 2);
         let before = mesh.triangles.len();
 
         let stats = corefine_self_intersections(&mut mesh);

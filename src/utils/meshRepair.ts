@@ -231,6 +231,7 @@ function normalizeMeshHealthReport(input: unknown): MeshHealthReport {
 export async function repairFromPath(
   filePath: string,
   options: MeshRepairOptions = {},
+  sink?: MeshRepairProgressSink,
 ): Promise<MeshRepairResult | null> {
   const core = await loadTauriCore();
   if (!core) return null;
@@ -239,13 +240,30 @@ export async function repairFromPath(
     assume_support_geometry: options.assumeSupportGeometry,
   };
   const optionsJson = JSON.stringify(optionsPayload);
-  const reportJson = await core.invoke<string>('mesh_repair_from_path', {
-    filePath,
-    optionsJson,
-  });
-  const report = normalizeMeshHealthReport(JSON.parse(reportJson));
-  const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
-  return { report, positions };
+
+  const wantsProgress = Boolean(sink?.onProgress || sink?.onToken);
+  const token = wantsProgress ? crypto.randomUUID() : null;
+  let unlisten: (() => void) | null = null;
+  if (token && sink) {
+    sink.onToken?.(token);
+    unlisten = await core.listen<MeshRepairProgress>('mesh-repair-progress', (event) => {
+      const progress = event.payload;
+      if (progress && progress.token === token) sink.onProgress?.(progress);
+    });
+  }
+
+  try {
+    const reportJson = await core.invoke<string>('mesh_repair_from_path', {
+      filePath,
+      optionsJson,
+      progressToken: token,
+    });
+    const report = normalizeMeshHealthReport(JSON.parse(reportJson));
+    const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+    return { report, positions };
+  } finally {
+    unlisten?.();
+  }
 }
 
 /**

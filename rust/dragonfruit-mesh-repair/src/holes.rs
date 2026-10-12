@@ -105,7 +105,10 @@ mod tests {
         for step in 1..9 {
             triangles.push([0, step, step + 1]);
         }
-        let mut mesh = IndexedMesh { positions, triangles };
+        let mut mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
         let before = evaluate(&mesh);
         assert!(before.holes > 0, "{before:?}");
 

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analysis::{analyze, minimal_analysis};
 use crate::core::bvh::Bvh;
-use crate::core::halfedge::{edge_key, Topology};
+use crate::core::halfedge::{edge_key, EdgeInfo, EdgeKey, Topology};
 use crate::core::mesh::{IndexedMesh, Vec3};
 use crate::report::{MeshHealthReport, RepairStepReport};
 
@@ -136,16 +136,27 @@ pub fn repair_with_progress(
     stage!("orient_components", flipped, None, t);
 
     // 2. Stitch: a vertex weld, then collapse whatever the weld created.
+    //
+    // A weld is a heuristic and it can leave a mesh worse than it found it. Joining two
+    // surfaces a hair apart is the point, and where three of them meet the junction is
+    // non-manifold; the reference resolves that with a boolean union and there is no
+    // union here. So the stitch answers for its own work: it is kept only when it did
+    // not make any of the five classes worse, and a refused stitch is reported rather
+    // than passed off as a repair.
     begin!("stitch");
     let t = std::time::Instant::now();
-    let welded = weld_vertices(&mut mesh, options.weld_epsilon);
-    let collapsed = cull_degenerate_and_duplicate(&mut mesh);
+    let (welded, collapsed, refused) = stitch_vertices(&mut mesh, options.weld_epsilon);
     stage!(
         "stitch",
-        welded,
-        Some(format!(
-            "{welded} vertex/vertices welded, {collapsed} degenerate or duplicate face(s) collapsed"
-        )),
+        welded + collapsed,
+        Some(if refused {
+            "refused: the weld would have left a non-manifold junction this pipeline cannot resolve"
+                .to_string()
+        } else {
+            format!(
+                "{welded} vertex/vertices welded, {collapsed} degenerate or duplicate face(s) collapsed"
+            )
+        }),
         t
     );
 
@@ -153,15 +164,22 @@ pub fn repair_with_progress(
     //    nobody designed, and leaving one means the mesh reads as open for the rest
     //    of the pipeline.
     begin!("holes_trivial");
-    begin!("double_faces");
     let t = std::time::Instant::now();
     let trivial = crate::holes::holes_trivial(&mut mesh);
     stage!("holes_trivial", trivial, None, t);
 
     // 4. Double faces.
+    begin!("double_faces");
     let t = std::time::Instant::now();
-    let doubles = cull_degenerate_and_duplicate(&mut mesh);
-    stage!("double_faces", doubles, None, t);
+    let (doubles, refused) = cull_faces(&mut mesh);
+    stage!(
+        "double_faces",
+        doubles,
+        refused.then(
+            || "refused: removing the duplicate faces would have opened the mesh".to_string()
+        ),
+        t
+    );
 
     // 5. Orientation, trivial holes, stitch: each of the three disturbed what the
     //    others settled, so they come round again.
@@ -169,8 +187,7 @@ pub fn repair_with_progress(
     let t = std::time::Instant::now();
     let flipped = repair_orientation(&mut mesh);
     let trivial = crate::holes::holes_trivial(&mut mesh);
-    let welded = weld_vertices(&mut mesh, options.weld_epsilon);
-    let collapsed = cull_degenerate_and_duplicate(&mut mesh);
+    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
     stage!(
         "orient_holes_stitch",
         flipped + trivial + welded + collapsed,
@@ -182,12 +199,10 @@ pub fn repair_with_progress(
 
     // 6. Orientation, every hole the caller's cap allows, stitch.
     begin!("orient_holes_all_stitch");
-    begin!("split_self_intersections");
     let t = std::time::Instant::now();
     let flipped = repair_orientation(&mut mesh);
     let filled = crate::holes::holes_all(&mut mesh, options.fill_holes_max_edges);
-    let welded = weld_vertices(&mut mesh, options.weld_epsilon);
-    let collapsed = cull_degenerate_and_duplicate(&mut mesh);
+    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
     stage!(
         "orient_holes_all_stitch",
         flipped + filled + welded + collapsed,
@@ -200,48 +215,326 @@ pub fn repair_with_progress(
     // 7. Split the self-crossings, when the caller asked. This is the one stage
     //    that rewrites the surface, so it runs after the local passes have
     //    converged rather than among them.
+    //
+    //    Guarded like everything else, and it needs it more than any of them, because it is the
+    //    only pass that rebuilds the surface rather than editing it and it had no acceptance test
+    //    at all. On the V3 Cones it took the non-manifold edges 0 to 5,557, the boundary 0 to 344
+    //    and the volume up 132%. On the corbu model it took bad edges 822 to 16,704 and the volume
+    //    up 852%. Both were kept. Asked for on a mesh it cannot handle, it now comes out as it
+    //    went in and says so.
     if options.resolve_self_intersections {
-        begin!("double_faces_after_split");
-    let t = std::time::Instant::now();
+        begin!("split_self_intersections");
+        let t = std::time::Instant::now();
+        let before = mesh.clone();
+        let health = crate::evaluate::evaluate(&before);
+        let volume_before = before.signed_volume();
         let stats = crate::arrangement::corefine_self_intersections(&mut mesh);
+        let volume_moved = (mesh.signed_volume() - volume_before).abs()
+            > volume_before.abs().max(1e-9) * 0.01;
+        let refused =
+            stats.refined_faces > 0 && (crate::evaluate::evaluate(&mesh).worse_than(&health) || volume_moved);
+        if refused {
+            mesh = before;
+        }
         stage!(
             "split_self_intersections",
-            stats.refined_faces,
+            if refused { 0 } else { stats.refined_faces },
             Some(format!(
-                "pairs={} refined_faces={} skipped_faces={} new_vertices={} tris:{}->{}",
+                "pairs={} refined_faces={} skipped_faces={} new_vertices={} tris:{}->{}{}",
                 stats.intersecting_pairs,
                 stats.refined_faces,
                 stats.skipped_faces,
                 stats.new_vertices,
                 stats.tri_count_before,
-                stats.tri_count_after
+                stats.tri_count_after,
+                if refused {
+                    ", refused: the refined surface is worse than the one it replaced"
+                } else {
+                    ""
+                }
             )),
             t
         );
     }
 
     // 8. Double faces again: the split produces them.
-    begin!("remove_inner_faces");
+    begin!("double_faces_after_split");
     let t = std::time::Instant::now();
-    let doubles = cull_degenerate_and_duplicate(&mut mesh);
-    stage!("double_faces_after_split", doubles, None, t);
+    let (doubles, refused) = cull_faces(&mut mesh);
+    stage!(
+        "double_faces_after_split",
+        doubles,
+        refused.then(
+            || "refused: removing the duplicate faces would have opened the mesh".to_string()
+        ),
+        t
+    );
 
     // 9. Remove the faces that are inside. This is the stage that resolves
     //    self-intersections and non-manifoldness together: a face inside the solid
     //    is not carrying the surface, so removing it cannot open anything, and a
     //    non-manifold edge is usually a buried sheet crossing the outer one.
-    begin!("noise_shells");
+    begin!("remove_inner_faces");
     let t = std::time::Instant::now();
+    let before_inner = mesh.clone();
     let (removed, _) = cull_interior_components(&mut mesh);
+    // A component inside another is a cavity, and a cavity is part of the model: removing it
+    // fills the void and moves the volume, which is a different object. A buried *sheet* is
+    // open, so it carries no volume and removing it leaves the volume where it was. That is
+    // the discriminator, and it is measurable.
+    //
+    // Without a boolean union we cannot tell the two apart any other way, and the reference
+    // has one. Where it is not sure, this stage leaves the geometry alone.
+    let volume = before_inner.signed_volume().abs();
+    let moved = (mesh.signed_volume() - before_inner.signed_volume()).abs() > volume * 1e-6;
+    let refused = removed > 0 && moved;
+    if refused {
+        mesh = before_inner;
+    }
+    let removed = if refused { 0 } else { removed };
     stage!(
         "remove_inner_faces",
         removed,
-        Some(format!("{removed} face(s) inside another component")),
+        Some(if refused {
+            "refused: the faces inside enclose a cavity, and removing them would fill it"
+                .to_string()
+        } else {
+            format!("{removed} face(s) inside another component")
+        }),
         t
     );
 
+    // 9a. The parts that overlap are unioned first.
+    //
+    //     Before the split, not after it. The union merges overlapping parts and skips any
+    //     component that is not already manifold, and the split offsets the surfaces it
+    //     separates so nothing can merge them afterwards. Running the split first therefore
+    //     separates surfaces and then leaves the union unable to merge anything: 240 parts
+    //     where the union-first order gives about 43.
+    //
+    //      Everything above works on parts that touch, and the split separates those. Parts
+    //      that overlap cannot be separated by any local rule, and a union is the operation
+    //      for them. It runs last, and only when the mesh still has bad edges, because on a
+    //      mesh the passes above already settled it would merge parts that were fine:
+    //      measured on COOKIE_b4, a model with supports, they take it to zero non-manifold
+    //      edges with all 234 of its shells kept.
+    //
+    //      Per group. The model unions among itself and the supports among themselves, so the
+    //      two never merge. The reference engine can union everything because it re-detects
+    //      supports afterwards, and the model/support split is ours to keep.
+    #[cfg(feature = "manifold")]
+    if crate::evaluate::evaluate(&mesh).bad_edges > 0 {
+        begin!("union_overlapping_parts");
+        let t = std::time::Instant::now();
+        let before_union = crate::evaluate::evaluate(&mesh);
+        let (unioned, candidate) = union_groups(&mesh, options);
+
+        let after_union = crate::evaluate::evaluate(&candidate);
+        // Accepted on what a union is for: it merges solids. The test used to demand that bad
+        // edges strictly dropped, and on a supported model that is the wrong question. The
+        // harbinger file has 3,083 components, thousands of them support struts, and the union
+        // merged 5,414 solids and then threw the result away because the bad edges stayed at
+        // 8,237. Merging 5,414 solids is the work; whether the merged solid is manifold is a
+        // different operation, and the reference engine's own union is a full surface union that
+        // this one is not.
+        let structure_before_union = crate::analysis::analyze(&mesh);
+        let structure_after_union = crate::analysis::analyze(&candidate);
+        let union_volume = structure_before_union.signed_volume.abs().max(1e-9);
+        // One-sided. A union *drops* the volume when parts overlap, because the overlap is counted
+        // once instead of twice, and that drop is the union doing its job. An absolute test
+        // refused COOKIE_b4 merging 233 struts into 37 solids for exactly that reason.
+        let union_grew =
+            structure_after_union.signed_volume > structure_before_union.signed_volume + union_volume * 0.01;
+        // A union rebuilds the surface it merges, so it can buy a part count with a different
+        // mesh. These bounds are what that costs. Without them the harbinger file was accepted:
+        // 3,083 parts down to 646, paid for with 47% more triangles and 10,664 new degenerate
+        // faces on a model that started with 683 of them. COOKIE_b4's union, which is the one
+        // that makes that file repaired, adds 4.3% and 126, and stays.
+        let triangle_budget =
+            structure_before_union.triangle_count + structure_before_union.triangle_count / 10;
+        let degenerate_budget = (structure_before_union.triangle_count / 1000).max(64);
+        let union_inflated = structure_after_union.triangle_count > triangle_budget
+            || structure_after_union.degenerate_triangles
+                > structure_before_union.degenerate_triangles + degenerate_budget;
+        let accepted = unioned > 0
+            && structure_after_union.connected_components
+                < structure_before_union.connected_components
+            && after_union.bad_edges <= before_union.bad_edges
+            && after_union.holes <= before_union.holes
+            && after_union.inconsistent_edges <= before_union.inconsistent_edges
+            && !union_grew
+            && !union_inflated;
+        stage!(
+            "union_overlapping_parts",
+            if accepted { unioned } else { 0 },
+            Some(format!(
+                "solids unioned {unioned}, parts {} -> {}, bad edges {} -> {}, loops {} -> {}, triangles {} -> {}, degenerate {} -> {}",
+                structure_before_union.connected_components,
+                structure_after_union.connected_components,
+                before_union.bad_edges,
+                after_union.bad_edges,
+                before_union.holes,
+                after_union.holes,
+                structure_before_union.triangle_count,
+                structure_after_union.triangle_count,
+                structure_before_union.degenerate_triangles,
+                structure_after_union.degenerate_triangles
+            )),
+            t
+        );
+        if accepted {
+            mesh = candidate;
+        }
+    }
+
+    // 9b. Surfaces that share an edge are separated rather than trimmed, and the rims that
+    //     exposes are filled.
+    //
+    //     This is the watertight repair of overlapping parts. A non-manifold edge is two
+    //     surfaces meeting along it, and giving each surface its own copy of the edge's
+    //     vertices, moved into its own solid, separates them so a re-read cannot merge them
+    //     back. Faces left lying on a shared edge are sheets that would merge back into the
+    //     surface, and the coincident-face removal takes those.
+    //
+    //     The reference engine's pass, from the same pull request as the winding port, with
+    //     its acceptance test: a round is kept only when non-manifold edges strictly dropped
+    //     and the boundary did not grow. Without a boolean union this is the only way we have
+    //     to resolve an overlap, and a mesh it cannot settle keeps what it had.
+    const MAX_SPLIT_ROUNDS: usize = 6;
+    let mut before_split = crate::evaluate::evaluate(&mesh);
+    let mut before_split_mesh = mesh.clone();
+
+    for _ in 0..MAX_SPLIT_ROUNDS {
+        if before_split.non_manifold_edges == 0 {
+            break;
+        }
+        begin!("split_non_manifold_edges");
+        let t = std::time::Instant::now();
+        let mut candidate = mesh.clone();
+        let offset = 4.0 * (options.weld_epsilon * candidate.bbox().diag()).max(1e-7);
+        let walls = crate::topology_passes::remove_coincident_faces(&mut candidate);
+        let split = walls + crate::topology_passes::split_non_manifold_edges(&mut candidate, offset);
+        crate::topology_passes::remove_open_fragments(&mut candidate, 16);
+        // The rims a split exposes are artifacts of the separation, not openings somebody
+        // designed, so they are filled whatever their length. The caller's cap is for holes in
+        // the mesh as it arrived. Measured: with the cap at 64 the corbu model came out of the
+        // split with non-manifold edges at 0 and winding at 0, and 2,155 boundary edges it did
+        // not have, because the long rims stayed open.
+        let rim_cap = usize::MAX;
+        let mut filled = crate::holes::holes_all(&mut candidate, rim_cap);
+        let _ = unify_winding(&mut candidate);
+        let (collapsed, _) = cull_faces(&mut candidate);
+        let _ = collapsed;
+        filled += crate::holes::holes_all(&mut candidate, rim_cap);
+
+        let mut after = crate::evaluate::evaluate(&candidate);
+        for _ in 0..3 {
+            // No cap on how tangled the mesh is. There was one, at 64 non-manifold edges, and it
+            // is backwards for the file this exists for: the corbu model has 1,364, so the pass
+            // that cuts out what no pairing resolves never ran on it. The bound that matters is
+            // the acceptance test below, which keeps an excision only when it drops the count,
+            // and the three rounds.
+            if after.non_manifold_edges + after.holes == 0 {
+                break;
+            }
+            let mut excised = candidate.clone();
+            if crate::topology_passes::excise_tangles(&mut excised) == 0 {
+                break;
+            }
+            let refilled = crate::holes::holes_all(&mut excised, options.fill_holes_max_edges);
+            let check = crate::evaluate::evaluate(&excised);
+            if check.non_manifold_edges + check.holes >= after.non_manifold_edges + after.holes {
+                break;
+            }
+            candidate = excised;
+            filled += refilled;
+            after = check;
+        }
+
+        // Winding is part of it. The split adds faces, and a cap that disagrees with the loop it
+        // closes shows up as an inconsistent edge: on the corbu model the pass dropped boundary
+        // edges 822 to 538 while winding went 113 to 267, which is trading one class for another
+        // and calling it a repair.
+        // Loops, not boundary edges. Tried the edge count too and reverted it: the corbu split
+        // resolves non-manifold edges 1364 to 0 and takes the loops 30 to 6, and the edges rise
+        // because six long rims replace thirty short ones. Loops are the class the verdict is made
+        // of, and six beats thirty; refusing the pass over the edges would have kept 1364
+        // non-manifold edges to avoid a boundary that is smaller by the measure that matters.
+        // The defect classes are not enough, which is what I got wrong here. The corbu split
+        // resolved non-manifold edges 1364 to 0 and was accepted on that, and the model it left
+        // had 13 components instead of 8, 1,332 boundary edges instead of 822, and 19.61% more
+        // volume. COOKIE_b4 goes 234 to 240 the same way. Resolving a shared edge by pulling two
+        // surfaces apart is a change to the object, and a repair that does it has not repaired
+        // anything.
+        //
+        // So the structure is part of the test: the part count cannot grow and the volume cannot
+        // move. A pass that leaves a model in more pieces than it found is not a pass that
+        // finished.
+        // Tried running the union on the split's candidate so the pair could be judged together, and
+        // reverted it. The split *offsets* the separated surfaces apart, which is how it stops a
+        // re-read welding them back, and an offset surface can never overlap the one it came from
+        // again. So a union can never merge them, and the split's extra parts and moved volume are
+        // inherent to the operation rather than something a later pass undoes. It cost a CSG per
+        // split round and never turned a refusal into an acceptance.
+        // The part count is proportional, not absolute. An absolute test refused COOKIE_b4's split,
+        // which takes non-manifold 178 to 0, boundary 38 to 0 and the mesh to watertight, because
+        // it adds six parts to a model that already has 234. Six out of 234 is not a model coming
+        // apart, it is what separating surfaces that shared edges costs, and the union merges the
+        // ones that overlap.
+        //
+        // The volume is the test that tells a real change from a rounding one: that split moved it
+        // -0.96% and was refused, corbu's moved +19.6% and should be.
+        let structure_before = crate::analysis::analyze(&before_split_mesh);
+        let structure_after = crate::analysis::analyze(&candidate);
+        // The volume is measured against a *sealed* copy of what the split started from. A mesh
+        // that arrives with boundary edges has no signed volume to compare against: signing those
+        // loops the other way is the same mesh and a different number. On the corbu model, sealing
+        // alone moves it 97.7 to 117.4 before the split has done anything, so the +26% this pass
+        // was refused for was mostly the measurement changing rather than the model.
+        let baseline_volume = if before_split.holes > 0 {
+            let mut sealed = before_split_mesh.clone();
+            let _ = crate::holes::holes_all(&mut sealed, usize::MAX);
+            sealed.signed_volume()
+        } else {
+            structure_before.signed_volume
+        };
+        let volume = baseline_volume.abs().max(1e-9);
+        let volume_moved = (structure_after.signed_volume - baseline_volume).abs() > volume * 0.01;
+        // The split's cost is a fixed number of separated surfaces, not a fraction of the part
+        // count, so the allowance cannot be purely proportional: with 37 parts after the union, a
+        // twentieth is one, and the split adds six. Eight or a twentieth, whichever is larger.
+        let allowed_parts =
+            structure_before.connected_components + (structure_before.connected_components / 20).max(8);
+        let accepted = after.non_manifold_edges < before_split.non_manifold_edges
+            && after.holes <= before_split.holes
+            && after.inconsistent_edges <= before_split.inconsistent_edges
+            && structure_after.connected_components <= allowed_parts
+            && !volume_moved;
+        stage!(
+            "split_non_manifold_edges",
+            if accepted { split + filled } else { 0 },
+            Some(format!(
+                "vertices split {split}, holes filled {filled}, non-manifold {} -> {}, loops {} -> {}, parts {} -> {} (allowed {allowed_parts}), volume {:+.2}%",
+                before_split.non_manifold_edges,
+                after.non_manifold_edges,
+                before_split.holes,
+                after.holes,
+                structure_before.connected_components,
+                structure_after.connected_components,
+                100.0 * (structure_after.signed_volume - baseline_volume) / volume
+            )),
+            t
+        );
+        if !accepted {
+            break;
+        }
+        mesh = candidate;
+        before_split = after;
+        before_split_mesh = mesh.clone();
+    }
+
     // 10. Noise shells.
-    begin!("filter_components");
+    begin!("noise_shells");
     let t = std::time::Instant::now();
     let noise = crate::shells::remove_noise_shells(&mut mesh);
     stage!("noise_shells", noise, None, t);
@@ -250,8 +543,8 @@ pub fn repair_with_progress(
     // are pruned by ratio and need no parameter; this is the explicit request, kept
     // because a caller with a known-bad file may want a number they chose.
     if let Some(keep_n) = options.keep_largest_n_components {
-        begin!("settle");
-    let t = std::time::Instant::now();
+        begin!("filter_components");
+        let t = std::time::Instant::now();
         let dropped = keep_largest_components(&mut mesh, keep_n);
         stage!(
             "filter_components",
@@ -264,9 +557,9 @@ pub fn repair_with_progress(
     // 11. Stitch, noise shells, holes, orientation: the removal above leaves
     //     borders and loose scraps behind it, and this is the round that settles
     //     them.
+    begin!("settle");
     let t = std::time::Instant::now();
-    let welded = weld_vertices(&mut mesh, options.weld_epsilon);
-    let collapsed = cull_degenerate_and_duplicate(&mut mesh);
+    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
     let noise = crate::shells::remove_noise_shells(&mut mesh);
     let filled = crate::holes::holes_all(&mut mesh, options.fill_holes_max_edges);
     let flipped = repair_orientation(&mut mesh);
@@ -284,7 +577,8 @@ pub fn repair_with_progress(
     begin!("prune_and_classify");
     let t = std::time::Instant::now();
     let pruned = prune_unused_vertices(&mut mesh);
-    let class_res = classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry);
+    let class_res =
+        classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry);
     if let Some((model_tri_count, likely_support_geometry)) = class_res.split {
         report.model_triangle_count = Some(model_tri_count);
         if !report.likely_support_geometry {
@@ -354,12 +648,14 @@ pub fn repair_with_progress(
     RepairOutcome { mesh, report }
 }
 
-
 /// Extract the model section — the first `model_tri_count` triangles, or every
 /// triangle when there is no split — into a standalone [`IndexedMesh`] with
 /// compacted (zero-based) vertex indices so it can be fed to `manifold_csg`.
 #[cfg(feature = "manifold")]
-fn extract_model_section_submesh(mesh: &IndexedMesh, model_tri_count: Option<usize>) -> IndexedMesh {
+fn extract_model_section_submesh(
+    mesh: &IndexedMesh,
+    model_tri_count: Option<usize>,
+) -> IndexedMesh {
     let tri_end = model_tri_count
         .map(|n| n.min(mesh.triangles.len()))
         .unwrap_or(mesh.triangles.len());
@@ -404,7 +700,11 @@ fn model_section_manifold_status(
         return Err("empty model section".into());
     }
 
-    let positions: Vec<f32> = model.positions.iter().flat_map(|v| [v.x, v.y, v.z]).collect();
+    let positions: Vec<f32> = model
+        .positions
+        .iter()
+        .flat_map(|v| [v.x, v.y, v.z])
+        .collect();
     let indices: Vec<u32> = model.triangles.iter().flat_map(|t| *t).collect();
 
     // Any non-`NoError` CSG status surfaces here as `Err` and is treated as a
@@ -456,8 +756,10 @@ pub fn classify_support_split(
     }
 
     let t = std::time::Instant::now();
-    let class_res = classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry);
-    let component_count = if let Some((model_tri_count, likely_support_geometry)) = class_res.split {
+    let class_res =
+        classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry);
+    let component_count = if let Some((model_tri_count, likely_support_geometry)) = class_res.split
+    {
         report.model_triangle_count = Some(model_tri_count);
         report.likely_support_geometry = likely_support_geometry;
         if options.assume_support_geometry == Some(true) {
@@ -503,7 +805,6 @@ pub fn classify_support_split(
 
     RepairOutcome { mesh, report }
 }
-
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GeometryGroup {
@@ -697,6 +998,89 @@ fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
 }
 // --- individual passes ---------------------------------------------------
 
+/// A vertex weld and the collapse it creates, refused when it would leave the mesh worse.
+///
+/// A weld is a heuristic and it can leave a mesh worse than it found it. Joining two
+/// surfaces a hair apart is the point, and where three of them meet the junction is
+/// non-manifold; the reference resolves that with a boolean union and there is no union
+/// here. So the weld answers for its own work: it is kept only when it did not make any
+/// of the five classes worse, and the refusal is returned so a stage can say so rather
+/// than report a repair it did not make.
+///
+/// The guard is here rather than at the call sites because four stages stitch, and one
+/// of them forgetting to check is how a mesh came out of a repair with more non-manifold
+/// edges than it went in with.
+/// The face cull. Two classes of face live in here and they behave nothing alike, so they are
+/// judged separately.
+///
+/// Repeated-vertex faces are free to remove and removal is the repair: `(a, b, a)` has no area and
+/// no volume, but contributes both `(a, b)` and `(b, a)`, so an edge with one real face looks
+/// paired. That manufactured pairing is what the winding count sees. 3DBenchy reads 355
+/// inconsistent edges and watertight at the same time for exactly this reason, and removing its
+/// 2,006 of these clears all 355 with no other class moving.
+///
+/// Collinear faces with distinct indices are not free: 3DBenchy's 11 of them open 29 edges and 9
+/// holes when removed. They stay behind a guard.
+///
+/// Judging them together is the bug this split fixes. The guard on the second class refused and
+/// took the first class's removal down with it, so benchy kept every degenerate face and every
+/// winding edge it started with.
+fn cull_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
+    let (repeated, repeated_refused) = cull_repeated_vertex_faces(mesh);
+    let (removed, refused) = cull_duplicate_and_zero_area_faces(mesh);
+    (repeated + removed, repeated_refused || refused)
+}
+
+/// Faces that name the same vertex twice. Guarded on their own so a file where one of them masks
+/// a hole keeps it rather than trading a hidden hole for a visible one.
+fn cull_repeated_vertex_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
+    let before = mesh.clone();
+    let health = crate::evaluate::evaluate(&before);
+    let count = mesh.triangles.len();
+    mesh.triangles
+        .retain(|t| !(t[0] == t[1] || t[1] == t[2] || t[0] == t[2]));
+    let removed = count - mesh.triangles.len();
+    if removed > 0 && crate::evaluate::evaluate(mesh).worse_than(&health) {
+        *mesh = before;
+        return (0, true);
+    }
+    (removed, false)
+}
+
+/// Duplicate faces and collinear faces, refused when either would leave the mesh worse.
+///
+/// The same reasoning as the weld, because the cull does its own damage: removing a face can
+/// take the last face off an edge and open the mesh, and a mesh with a boundary is a
+/// different object from the one that went in. On the reported file the cull alone removed
+/// 995 faces and left seven boundary edges that were not there, with the weld refusing and
+/// reporting nothing.
+fn cull_duplicate_and_zero_area_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
+    let before = mesh.clone();
+    let health = crate::evaluate::evaluate(&before);
+    let removed = cull_degenerate_and_duplicate(mesh);
+    if removed > 0 && crate::evaluate::evaluate(mesh).worse_than(&health) {
+        *mesh = before;
+        return (0, true);
+    }
+    (removed, false)
+}
+
+fn stitch_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, usize, bool) {
+    let before = mesh.clone();
+    let health = crate::evaluate::evaluate(&before);
+    let welded = weld_vertices(mesh, epsilon);
+    let (collapsed, _) = cull_faces(mesh);
+    // Either half can do the damage: the weld joins surfaces, and the collapse that follows
+    // removes faces. Guarding on the weld alone let a run that welded nothing remove 996
+    // duplicate faces and leave the mesh with nine non-manifold edges and three boundary
+    // edges it did not have.
+    if (welded > 0 || collapsed > 0) && crate::evaluate::evaluate(mesh).worse_than(&health) {
+        *mesh = before;
+        return (0, 0, true);
+    }
+    (welded, collapsed, false)
+}
+
 fn weld_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> usize {
     let bbox = mesh.bbox();
     let diag = bbox.diag().max(1e-6);
@@ -733,13 +1117,14 @@ fn weld_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> usize {
     merged
 }
 
+/// Duplicate faces, and faces whose three positions are collinear.
+///
+/// Repeated-vertex faces are not here: `cull_repeated_vertex_faces` has already taken them, and it
+/// takes them without a guard, because for that class removal is the repair.
 fn cull_degenerate_and_duplicate(mesh: &mut IndexedMesh) -> usize {
     let before = mesh.triangles.len();
     let mut seen: ahash::AHashSet<(u32, u32, u32)> = ahash::AHashSet::with_capacity(before);
     mesh.triangles.retain(|tri| {
-        if tri[0] == tri[1] || tri[1] == tri[2] || tri[0] == tri[2] {
-            return false;
-        }
         let mut s = *tri;
         s.sort();
         let key = (s[0], s[1], s[2]);
@@ -795,7 +1180,21 @@ fn prune_unused_vertices(mesh: &mut IndexedMesh) -> usize {
 /// project loop vertices onto a best-fit plane (via normal averaging) and
 /// triangulate 2D. Convex-first greedy — does not handle self-intersecting
 /// polygons but handles the common case of small planar/near-planar holes.
+/// Closes every border loop up to `max_edges` long.
+///
+/// The reference engine's fill, from the same pull request as the rest of the port. It winds the
+/// cap from the loop's own half-edge order rather than from the average normal of the faces
+/// around it, which is why a cap cannot disagree with the mesh it closes.
+///
+/// The average-normal version this replaced could, and did: on the corbu model the split resolved
+/// non-manifold edges 1367 to 0 and had to be refused because winding went 113 to 267. The caps
+/// were the winding.
 pub(crate) fn fill_small_holes(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
+    crate::topology_passes::fill_holes_oriented(mesh, max_edges)
+}
+
+#[allow(dead_code)]
+fn fill_small_holes_by_normal(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
     let topo = Topology::build(mesh);
     let loops = topo.boundary_loops();
     let mut added = 0usize;
@@ -949,9 +1348,6 @@ fn point_in_tri(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> b
     !(has_neg && has_pos)
 }
 
-
-
-
 struct ClassificationResult {
     split: Option<(usize, bool)>,
     component_count: usize,
@@ -1038,8 +1434,7 @@ fn classify_and_reorder_model_support_triangles(
             comp_max_z[a]
                 .partial_cmp(&comp_max_z[b])
                 .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    {
+        }) {
         Some(seed) => seed,
         None => {
             return ClassificationResult {
@@ -1126,14 +1521,13 @@ fn classify_and_reorder_model_support_triangles(
 
     // Remaining guards: keep density_ok and support_input_triangles as-is.
     // Comment out overly aggressive component floor & bed-touch bounds.
-    if !density_ok
-        || support_input_triangles < 2_000
-        /*
-        || support_comp_count < model_comp_count.saturating_mul(2).max(4)
-        || n_comps < 12
-        || support_base_touch_components < support_comp_count.saturating_div(4).max(3)
-        || support_base_touch_triangles < 500
-        */
+    if !density_ok || support_input_triangles < 2_000
+    /*
+    || support_comp_count < model_comp_count.saturating_mul(2).max(4)
+    || n_comps < 12
+    || support_base_touch_components < support_comp_count.saturating_div(4).max(3)
+    || support_base_touch_triangles < 500
+    */
     {
         return ClassificationResult {
             split: None,
@@ -1186,13 +1580,627 @@ fn classify_and_reorder_model_support_triangles(
 /// random direction and count hits. If the count is even when the component
 /// is supposed to contain the origin, or if the signed volume disagrees with
 /// the majority-normal direction, flip every triangle's winding.
+/// Propagates winding across the two-face edges, and per patch flips the side with less
+/// area.
+///
+/// Two things this does that a per-component vote cannot. It *propagates*, so a component
+/// whose faces disagree with each other comes out consistent, which is the defect the
+/// orientation class is about. And it decides per patch by area, so a patch that already
+/// agrees has nothing on the minority side and is left alone, while a patch that is
+/// genuinely inverted is the smaller side and gets turned.
+///
+/// The reference engine's pass, and the reason its orientation is described as cavity-safe:
+/// a solid with an internal cavity has an inward-facing cavity wall, and turning everything
+/// outward turns the cavity inside out. Measured on a mesh with one: the volume moved 17%
+/// under a per-component outward vote.
+fn unify_winding(mesh: &mut IndexedMesh) -> usize {
+    let n = mesh.triangles.len();
+    if n == 0 {
+        return 0;
+    }
+    let before = mesh.clone();
+    let inconsistent_before = Topology::build(&before).inconsistent_edges();
+    let volume_before = mesh.signed_volume();
+    let flipped = unify_winding_once(mesh);
+    // Flipping a set of faces only changes the edges on its boundary, so on a mesh whose
+    // disagreements form a cycle no assignment satisfies, every call flips the same faces
+    // and the count never moves. That is an oscillation, not a repair: measured on
+    // 3DBenchy, 355 faces flipped on every call while the count stayed at 355. Keeping the
+    // work only when the count dropped makes the pass idempotent, and a mesh it cannot
+    // settle comes out as it went in.
+    if flipped > 0 && Topology::build(mesh).inconsistent_edges() >= inconsistent_before {
+        *mesh = before;
+        return 0;
+    }
+    // A patch is whatever the two-face edges connect, and on a mesh with parts that overlap or
+    // touch it can be a whole component: flipping the minority side then turns a solid inside
+    // out. Measured on the corbu model, where this moved the volume 245 on a 98-unit model and
+    // the component vote below had already refused to do the same thing. Consistency is worth
+    // having and the model is worth more.
+    if flipped > 0 && (mesh.signed_volume() - volume_before).abs() > volume_before.abs().max(1e-9) * 0.01
+    {
+        *mesh = before;
+        return 0;
+    }
+    flipped
+}
+
+fn unify_winding_once(mesh: &mut IndexedMesh) -> usize {
+    let n = mesh.triangles.len();
+    if n == 0 {
+        return 0;
+    }
+    let topo = Topology::build(mesh);
+    let mut adjacency: Vec<Vec<(u32, bool)>> = vec![Vec::new(); n];
+    for info in topo.edges.values() {
+        if info.directed.len() != 2 {
+            continue;
+        }
+        let (a0, _, f0) = info.directed[0];
+        let (a1, _, f1) = info.directed[1];
+        if f0 == f1 {
+            continue;
+        }
+        // Same direction along the edge means the two faces disagree about which side is
+        // solid, so one of them has to turn relative to the other.
+        let agree = a0 != a1;
+        adjacency[f0 as usize].push((f1, agree));
+        adjacency[f1 as usize].push((f0, agree));
+    }
+
+    let area: Vec<f64> = (0..n).map(|f| mesh.tri_area(f as u32) as f64).collect();
+    let mut side = vec![0u8; n];
+    let mut queue = std::collections::VecDeque::new();
+    let mut patch = Vec::new();
+    let mut flipped = 0usize;
+    for seed in 0..n {
+        if side[seed] != 0 {
+            continue;
+        }
+        patch.clear();
+        side[seed] = 1;
+        queue.push_back(seed);
+        let (mut keep_area, mut flip_area) = (0.0f64, 0.0f64);
+        while let Some(x) = queue.pop_front() {
+            patch.push(x);
+            if side[x] == 1 {
+                keep_area += area[x];
+            } else {
+                flip_area += area[x];
+            }
+            for &(y, agree) in &adjacency[x] {
+                let y = y as usize;
+                if side[y] == 0 {
+                    side[y] = if agree { side[x] } else { 3 - side[x] };
+                    queue.push_back(y);
+                }
+            }
+        }
+        // The smaller side goes. A patch that already agrees has nothing on side 2, and
+        // `0 > keep_area` is false, so the minority is 2 and nothing flips.
+        let minority = if flip_area > keep_area { 1 } else { 2 };
+        for &x in &patch {
+            if side[x] == minority {
+                mesh.triangles[x].swap(1, 2);
+                flipped += 1;
+            }
+        }
+    }
+    flipped
+}
+
+/// Five directions, none of them an axis. From the centre of a box the axes and the diagonals
+/// aim at a face or a corner, and a corner hit lands on an edge of the triangle fan and counts
+/// as zero, one or three faces depending on the arithmetic.
+const DEPTH_RAY_DIRS: [Vec3; 5] = [
+    Vec3::new(0.577_350_3, 0.577_350_3, 0.577_350_3),
+    Vec3::new(-0.436_1, 0.725_3, 0.532_7),
+    Vec3::new(0.267_2, -0.801_9, 0.534_6),
+    Vec3::new(-0.624_7, -0.312_2, -0.715_8),
+    Vec3::new(0.801_7, 0.267_1, -0.534_7),
+];
+
+/// Up to `max` points inside the component's solid: the centroids of its largest faces, moved
+/// inward along the face normal.
+///
+/// The centroid of the whole component is the obvious sample and it is the wrong one. An
+/// organic shape is not convex, and its centroid can sit outside it entirely, which makes the
+/// nesting test say "not nested" and the volume vote turn the component inside out. Measured on
+/// the corbu model: 83,733 faces flipped and the volume moved 17%.
+fn interior_sample_points(mesh: &IndexedMesh, faces: &[u32], eps: f32, max: usize) -> Vec<Vec3> {
+    let mut ranked: Vec<(f32, u32)> = faces.iter().map(|&f| (mesh.tri_area(f), f)).collect();
+    ranked.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.cmp(&b.1))
+    });
+    ranked
+        .into_iter()
+        .take(max)
+        .filter_map(|(_, fi)| {
+            let n = mesh.tri_normal(fi);
+            if n.length() < 1e-8 {
+                return None;
+            }
+            let [a, b, c] = mesh.tri_positions(fi);
+            Some(a.add(b).add(c).scale(1.0 / 3.0).sub(n.scale(eps)))
+        })
+        .collect()
+}
+
+/// Whether a component is a cavity boundary. One sample can land in a neighbouring part, so
+/// several of the component's largest faces vote, and each of those votes over five directions.
+fn nesting_depth_is_odd(
+    bvh: &Bvh,
+    mesh: &IndexedMesh,
+    components: &[u32],
+    comp_id: u32,
+    samples: &[Vec3],
+) -> bool {
+    let mut odd = 0usize;
+    for sample in samples {
+        let mut votes = 0usize;
+        for dir in DEPTH_RAY_DIRS {
+            let hits = bvh.ray_hit_count_with_filter(mesh, *sample, dir, &|f| {
+                components[f as usize] != comp_id
+            });
+            votes += (hits & 1) as usize;
+        }
+        odd += (votes * 2 > DEPTH_RAY_DIRS.len()) as usize;
+    }
+    !samples.is_empty() && odd * 2 > samples.len()
+}
+
+
+/// Unions the model's parts and the supports' parts, each group among itself.
+///
+/// Returns how many solids were unioned and the mesh that came out. The two groups never merge:
+/// the reference can union everything because it re-detects supports afterwards, and the
+/// model/support split is ours to keep.
+///
+/// Their `union_closed_components` does the work. `Manifold::from_mesh_f32` builds one manifold
+/// from one mesh and does not union disjoint shells, so a whole-group construction hands back the
+/// same part count it was given; building a manifold per component and batch-unioning them is what
+/// merges, 234 struts to 37 on COOKIE_b4.
+///
+/// It cannot construct a component that is not already manifold, and keeps those verbatim. That is
+/// why the split has to run before it: the split is what makes each surface constructible.
+#[cfg(feature = "manifold")]
+fn union_groups(mesh: &IndexedMesh, options: &RepairOptions) -> (usize, IndexedMesh) {
+    let mut candidate = mesh.clone();
+    let classification = classify_and_reorder_model_support_triangles(
+        &mut candidate,
+        options.assume_support_geometry,
+    );
+    let split = classification
+        .split
+        .map(|(model_count, _)| model_count)
+        .unwrap_or(candidate.triangles.len());
+    let groups = [
+        candidate.triangles[..split].to_vec(),
+        candidate.triangles[split..].to_vec(),
+    ];
+    let mut recombined: Vec<[u32; 3]> = Vec::with_capacity(candidate.triangles.len());
+    let mut unioned = 0usize;
+    for group in groups {
+        if group.is_empty() {
+            continue;
+        }
+        let mut part = IndexedMesh {
+            positions: candidate.positions.clone(),
+            triangles: group.clone(),
+        };
+        let components = triangle_components(&part);
+        match crate::topology_passes::union_closed_components(&mut part, &components) {
+            Some((count, _)) => {
+                unioned += count;
+                if part.positions.len() > candidate.positions.len() {
+                    let tail: Vec<Vec3> = part.positions[candidate.positions.len()..].to_vec();
+                    candidate.positions.extend_from_slice(&tail);
+                }
+                recombined.extend_from_slice(&part.triangles);
+            }
+            None => recombined.extend_from_slice(&group),
+        }
+    }
+    candidate.triangles = recombined;
+    (unioned, candidate)
+}
+
+/// Whether a two-face edge is a winding disagreement: both faces traverse it the same way.
+/// An edge with any other face count, or the same face twice, is not what this pass counts.
+fn winding_disagrees(info: &EdgeInfo) -> bool {
+    if info.directed.len() != 2 {
+        return false;
+    }
+    let (a0, b0, f0) = info.directed[0];
+    let (a1, b1, f1) = info.directed[1];
+    f0 != f1 && (a0, b0) == (a1, b1)
+}
+
+/// How many disagreements flipping `face` removes net. It resolves each disagreeing edge the
+/// face sits on and breaks each agreeing one, so only two-face edges count.
+fn winding_flip_net(mesh: &IndexedMesh, topo: &Topology, face: usize) -> isize {
+    let triangle = mesh.triangles[face];
+    let mut net = 0isize;
+    for k in 0..3 {
+        let (a, b) = (triangle[k], triangle[(k + 1) % 3]);
+        if a == b {
+            continue;
+        }
+        if let Some(info) = topo.edges.get(&edge_key(a, b)) {
+            if info.directed.len() != 2 {
+                continue;
+            }
+            let (a0, b0, f0) = info.directed[0];
+            let (a1, b1, f1) = info.directed[1];
+            if f0 == f1 {
+                continue;
+            }
+            if (a0, b0) == (a1, b1) {
+                net += 1;
+            } else {
+                net -= 1;
+            }
+        }
+    }
+    net
+}
+
+ /// Fixes the winding edges that propagation leaves behind.
+ ///
+ /// `unify_winding` decides per patch, so a mesh whose disagreements form a cycle no assignment
+ /// satisfies keeps every one of them: 4 edges on the V3 Cones and 355 on 3DBenchy, which is why
+ /// neither reads as repaired. A patch decision cannot fix those, but a face decision can: flipping
+ /// one face resolves the edge it sits on and toggles its other two, so the count can be driven down
+ /// one face at a time.
+ ///
+/// Greedy and strictly descending. One topology build up front; each flip toggles three directed
+/// entries and rescores only the faces incident to those edges, so the cost is proportional to
+/// the flips, not the mesh. Rebuilding the topology per flip hung 3DBenchy: 355 flips at a full
+/// build each. Stops when no single flip helps, and each accepted flip strictly drops the count,
+/// so it cannot loop. The volume guard is the same one everything else answers to.
+fn reduce_winding_edges(mesh: &mut IndexedMesh) -> usize {
+    if mesh.triangles.is_empty() {
+        return 0;
+    }
+    let volume_before = mesh.signed_volume();
+    let triangles_before = mesh.triangles.clone();
+    let mut fixed = greedy_flip_winding_edges(mesh);
+    fixed += solve_winding_regions(mesh);
+    fixed += walk_winding_edges(mesh);
+    if fixed > 0 {
+        let moved = (mesh.signed_volume() - volume_before).abs();
+        if moved > volume_before.abs().max(1e-9) * 0.01 {
+            // A winding fix is not worth the model moving.
+            mesh.triangles = triangles_before;
+            return 0;
+        }
+    }
+    fixed
+}
+
+/// Single-face flips, best-net first.
+fn greedy_flip_winding_edges(mesh: &mut IndexedMesh) -> usize {
+    let mut topo = Topology::build(mesh);
+    let mut inconsistent = topo.inconsistent_edges();
+    if inconsistent == 0 {
+        return 0;
+    }
+    let faces = mesh.triangles.len();
+    // Best-first by net gain. Versions retire entries a later flip invalidated: a face's net
+    // depends only on its three edges, and every toggle of those edges bumps its version.
+    let mut versions = vec![0u64; faces];
+    let mut heap: std::collections::BinaryHeap<(isize, usize, u64)> =
+        std::collections::BinaryHeap::new();
+    for face in 0..faces {
+        let net = winding_flip_net(mesh, &topo, face);
+        if net > 0 {
+            heap.push((net, face, 0));
+        }
+    }
+    let mut fixed = 0usize;
+    while inconsistent > 0 {
+        let Some((net, face, version)) = heap.pop() else {
+             break;
+         };
+        if version != versions[face] || net <= 0 {
+            continue;
+        }
+        // The heap entry predates a rescore only when its version moved, which is checked
+        // above, but a second pop of the same face after an unrelated bump would reuse a net
+        // computed against older edges. Rescore at pop time; the heap only orders candidates.
+        let net = winding_flip_net(mesh, &topo, face);
+        if net <= 0 {
+            continue;
+        }
+        let affected = apply_winding_flip(mesh, &mut topo, face, &mut inconsistent);
+        fixed += 1;
+        // Every face incident to a toggled edge may score differently now.
+        for key in affected {
+            if let Some(info) = topo.edges.get(&key) {
+                for &(_, _, other) in info.directed.iter() {
+                    let other = other as usize;
+                    versions[other] += 1;
+                    let rescore = winding_flip_net(mesh, &topo, other);
+                    if rescore > 0 {
+                        heap.push((rescore, other, versions[other]));
+                    }
+                }
+            }
+        }
+     }
+    fixed
+}
+
+/// The disagreements no single flip can reach.
+///
+/// A frustrated cycle is invisible to the greedy: on it, every flip breaks two agreeing edges to
+/// fix one, so the count rises and the flip is refused. Flipping a *set* of faces can still
+/// resolve it, because a flip only changes the edges on the set's boundary while the interior is
+/// untouched either way.
+///
+/// The V3 Cones keep 4 edges for exactly this reason. They form a closed loop
+/// 58357 -> 162679 -> 160762 -> 160761 -> 58357 around a sliver cluster whose faces measure 1e-5
+/// to 2.6e-4 square units, and every one of those faces scores -1, so no face on the loop can be
+/// turned on its own.
+///
+/// The region is small, so it is solved exactly rather than heuristically: expand out from the
+/// residual across two-face edges, then score every assignment of those faces by the
+/// disagreements left on the edges touching the region. Only a strictly better assignment is
+/// applied, so this cannot raise the count, and a region too large to enumerate exactly is
+/// truncated rather than skipped, which can only cost the optimum, never correctness.
+fn solve_winding_regions(mesh: &mut IndexedMesh) -> usize {
+    const MAX_REGION_FACES: usize = 20;
+    const MAX_ROUNDS: usize = 8;
+    let mut applied = 0usize;
+    for _ in 0..MAX_ROUNDS {
+        let topo = Topology::build(mesh);
+        let mut seeds: Vec<u32> = Vec::new();
+        for info in topo.edges.values() {
+            if winding_disagrees(info) {
+                seeds.push(info.directed[0].2);
+                seeds.push(info.directed[1].2);
+            }
+        }
+        if seeds.is_empty() {
+            break;
+        }
+        // The region is index_of's keyed set: the seeds, then everything reachable from them
+        // across a two-face edge, capped so the enumeration stays bounded.
+        let mut index_of = vec![usize::MAX; mesh.triangles.len()];
+        let mut region: Vec<u32> = Vec::new();
+        let mut queue: std::collections::VecDeque<u32> = std::collections::VecDeque::new();
+        for &s in &seeds {
+            if region.len() >= MAX_REGION_FACES {
+                break;
+            }
+            if index_of[s as usize] == usize::MAX {
+                index_of[s as usize] = region.len();
+                region.push(s);
+                queue.push_back(s);
+            }
+        }
+        while let Some(f) = queue.pop_front() {
+            if region.len() >= MAX_REGION_FACES {
+                break;
+            }
+            let t = mesh.triangles[f as usize];
+            for k in 0..3 {
+                let key = edge_key(t[k], t[(k + 1) % 3]);
+                let Some(info) = topo.edges.get(&key) else {
+                    continue;
+                };
+                if info.directed.len() != 2 {
+                    continue;
+                }
+                for d in info.directed.iter() {
+                    if region.len() >= MAX_REGION_FACES {
+                        break;
+                    }
+                    let g = d.2;
+                    if index_of[g as usize] == usize::MAX {
+                        index_of[g as usize] = region.len();
+                        region.push(g);
+                        queue.push_back(g);
+                    }
+                }
+            }
+        }
+        // Every two-face edge touching the region is an edge a flip can change.
+        let mut seen: std::collections::BTreeSet<EdgeKey> = std::collections::BTreeSet::new();
+        let mut candidates: Vec<((u32, u32, u32), (u32, u32, u32))> = Vec::new();
+        for &f in &region {
+            let t = mesh.triangles[f as usize];
+            for k in 0..3 {
+                let key = edge_key(t[k], t[(k + 1) % 3]);
+                if !seen.insert(key) {
+                    continue;
+                }
+                let Some(info) = topo.edges.get(&key) else {
+                    continue;
+                };
+                if info.directed.len() != 2 || info.directed[0].2 == info.directed[1].2 {
+                    continue;
+                }
+                candidates.push((info.directed[0], info.directed[1]));
+            }
+        }
+        let current = candidates
+            .iter()
+            .filter(|(a, b)| (a.0, a.1) == (b.0, b.1))
+            .count();
+        let mut best_mask = 0usize;
+        let mut best_cost = current;
+        for mask in 1usize..(1usize << region.len()) {
+            let mut cost = 0usize;
+            for &(d0, d1) in &candidates {
+                let (mut a0, mut b0) = (d0.0, d0.1);
+                let (mut a1, mut b1) = (d1.0, d1.1);
+                let i0 = index_of[d0.2 as usize];
+                if i0 != usize::MAX && mask & (1 << i0) != 0 {
+                    std::mem::swap(&mut a0, &mut b0);
+                }
+                let i1 = index_of[d1.2 as usize];
+                if i1 != usize::MAX && mask & (1 << i1) != 0 {
+                    std::mem::swap(&mut a1, &mut b1);
+                }
+                if (a0, b0) == (a1, b1) {
+                    cost += 1;
+                }
+            }
+            if cost < best_cost {
+                best_cost = cost;
+                best_mask = mask;
+            }
+        }
+        if best_mask == 0 {
+            break;
+        }
+        for (i, &f) in region.iter().enumerate() {
+            if best_mask & (1 << i) != 0 {
+                mesh.triangles[f as usize].swap(1, 2);
+            }
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Toggles one face, keeping the topology's directed entries and the running count in step.
+/// Returns the edges it touched, which are the only ones whose state changed.
+fn apply_winding_flip(
+    mesh: &mut IndexedMesh,
+    topo: &mut Topology,
+    face: usize,
+    inconsistent: &mut usize,
+) -> smallvec::SmallVec<[EdgeKey; 3]> {
+    let triangle = mesh.triangles[face];
+    let mut affected: smallvec::SmallVec<[EdgeKey; 3]> = smallvec::SmallVec::new();
+    for k in 0..3 {
+        let (a, b) = (triangle[k], triangle[(k + 1) % 3]);
+        if a == b {
+            continue;
+        }
+        let key = edge_key(a, b);
+        if let Some(info) = topo.edges.get_mut(&key) {
+            let before = winding_disagrees(info);
+            for entry in info.directed.iter_mut() {
+                if entry.2 as usize == face {
+                    std::mem::swap(&mut entry.0, &mut entry.1);
+                }
+            }
+            let after = winding_disagrees(info);
+            *inconsistent = *inconsistent + usize::from(after) - usize::from(before);
+            affected.push(key);
+        }
+    }
+    mesh.triangles[face].swap(1, 2);
+    affected
+}
+
+/// The disagreements no strictly-descending move can enter.
+///
+/// A frustrated cycle is a barrier, not a slope. Every face on it has a net of -1, so the greedy
+/// and the exact region search both refuse to move, and the count sits still forever: the V3 Cones
+/// keep exactly 4 edges this way. The only way in is to take a move that makes the count worse.
+///
+/// So this walks: it takes the steepest toggle available even when that toggle costs, never
+/// revisits a face, remembers the best count it saw, and undoes everything past that point. The
+/// walk is bounded, and because the applied state is the best one seen and only replaces the
+/// current state when it is strictly better, a mesh it cannot help comes out as it went in.
+fn walk_winding_edges(mesh: &mut IndexedMesh) -> usize {
+    const MAX_FLIPS: usize = 400;
+    let mut topo = Topology::build(mesh);
+    let mut inconsistent = topo.inconsistent_edges();
+    if inconsistent == 0 {
+        return 0;
+    }
+    // The disagreement edges, maintained as the walk goes. Scanning the topology for them on
+    // every step is O(edges) per step, which on a million-triangle mesh is the whole cost of
+    // the pass: 400 steps times four million edges.
+    let mut bad: ahash::AHashSet<EdgeKey> = topo
+        .edges
+        .iter()
+        .filter(|(_, info)| winding_disagrees(info))
+        .map(|(key, _)| *key)
+        .collect();
+    let mut flipped: Vec<u32> = Vec::new();
+    let mut flipped_set: ahash::AHashSet<u32> = ahash::AHashSet::new();
+    let mut best_cost = inconsistent;
+    let mut best_len = 0usize;
+    for _ in 0..MAX_FLIPS {
+        if inconsistent == 0 {
+            break;
+        }
+        // Candidates: the faces on the disagreement edges, plus the neighbours of everything
+        // already toggled. A face already toggled is excluded, so the walk cannot cycle.
+        let mut candidates: Vec<u32> = Vec::new();
+        for key in bad.iter() {
+            if let Some(info) = topo.edges.get(key) {
+                candidates.push(info.directed[0].2);
+                candidates.push(info.directed[1].2);
+            }
+        }
+        for &f in flipped.iter() {
+            let t = mesh.triangles[f as usize];
+            for k in 0..3 {
+                let key = edge_key(t[k], t[(k + 1) % 3]);
+                if let Some(info) = topo.edges.get(&key) {
+                    if info.directed.len() == 2 {
+                        candidates.push(info.directed[0].2);
+                        candidates.push(info.directed[1].2);
+                    }
+                }
+            }
+        }
+        candidates.retain(|f| !flipped_set.contains(f));
+        candidates.sort_unstable();
+        candidates.dedup();
+        if candidates.is_empty() {
+            break;
+        }
+        let mut best: Option<(isize, u32)> = None;
+        for &f in &candidates {
+            let net = winding_flip_net(mesh, &topo, f as usize);
+            if best.map(|(n, _)| net > n).unwrap_or(true) {
+                best = Some((net, f));
+            }
+        }
+        let Some((_, face)) = best else {
+            break;
+        };
+        let affected = apply_winding_flip(mesh, &mut topo, face as usize, &mut inconsistent);
+        for key in affected {
+            if topo.edges.get(&key).map(winding_disagrees).unwrap_or(false) {
+                bad.insert(key);
+            } else {
+                bad.remove(&key);
+            }
+        }
+        flipped.push(face);
+        flipped_set.insert(face);
+        if inconsistent < best_cost {
+            best_cost = inconsistent;
+            best_len = flipped.len();
+        }
+    }
+    for &f in flipped[best_len..].iter() {
+        mesh.triangles[f as usize].swap(1, 2);
+    }
+    best_len
+}
+
 fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     if mesh.triangles.is_empty() {
         return 0;
     }
+    // Consistency first: the component vote below can only turn a whole component, so a
+    // component whose faces disagree with each other has to be settled before it runs.
+    let mut flipped_faces = unify_winding(mesh);
+    flipped_faces += reduce_winding_edges(mesh);
     let components = triangle_components(mesh);
     let n_components = components.iter().max().copied().unwrap_or(0) + 1;
-    let mut flipped_faces = 0usize;
 
     // Per-component signed volume gives us the simplest orientation check —
     // if a component is watertight and signed volume is negative, flip it.
@@ -1225,7 +2233,19 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
 
         let flip_by_volume = vol < -1e-6;
 
-        let should_flip = if flip_by_volume {
+        // A component inside another one is a cavity wall, and a cavity wall faces inward by
+        // definition. Turning it outward makes the cavity a solid and moves the model's
+        // volume, which is what a per-component outward vote does to every multi-component
+        // mesh with an interior: measured on one, 83,745 faces flipped and the volume moved
+        // 17%. The reference engine guards this with a nesting depth and describes the
+        // result as cavity-safe.
+        let sample_eps = (mesh.bbox().diag() * 1e-4).max(1e-6);
+        let samples = interior_sample_points(mesh, &face_indices, sample_eps, 5);
+        let nested = nesting_depth_is_odd(&bvh, mesh, &components, comp_id, &samples);
+
+        let should_flip = if nested {
+            false
+        } else if flip_by_volume {
             true
         } else if vol.abs() < 1e-6 {
             // Likely not watertight — ray-cast vote using triangle centroids.
@@ -1254,10 +2274,23 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
         };
 
         if should_flip {
-            for fi in face_indices {
+            let volume_before = mesh.signed_volume();
+            for &fi in &face_indices {
                 let t = &mut mesh.triangles[fi as usize];
                 t.swap(1, 2);
-                flipped_faces += 1;
+            }
+            let moved = (mesh.signed_volume() - volume_before).abs();
+            // Only when there is more than one component. With one there is nothing for it to be
+            // nested in, so a negative volume means the model is inside out and turning it is
+            // the whole point: an inverted cube goes from -1 to +1, a 200% move, and refusing
+            // that would leave the model inverted.
+            if n_components > 1 && moved > volume_before.abs().max(1e-9) * 0.01 {
+                for &fi in &face_indices {
+                    let t = &mut mesh.triangles[fi as usize];
+                    t.swap(1, 2);
+                }
+            } else {
+                flipped_faces += face_indices.len();
             }
         }
     }
@@ -1454,16 +2487,31 @@ mod tests {
             .map(|i| {
                 let value = i as f32;
                 Vec3::new(
-                    if i % 7 == 0 { f32::NAN } else { (value * 0.37).sin() * value },
-                    if i % 11 == 0 { f32::INFINITY } else { (value * 0.53).cos() * value },
-                    if i % 13 == 0 { f32::NEG_INFINITY } else { value },
+                    if i % 7 == 0 {
+                        f32::NAN
+                    } else {
+                        (value * 0.37).sin() * value
+                    },
+                    if i % 11 == 0 {
+                        f32::INFINITY
+                    } else {
+                        (value * 0.53).cos() * value
+                    },
+                    if i % 13 == 0 {
+                        f32::NEG_INFINITY
+                    } else {
+                        value
+                    },
                 )
             })
             .collect();
         let triangles: Vec<[u32; 3]> = (0..positions.len() as u32 - 3)
             .map(|i| [i, i + 1, i + 2])
             .collect();
-        let mesh = IndexedMesh { positions, triangles };
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
 
         let outcome = classify_support_split(mesh, &RepairOptions::default());
 
@@ -1499,7 +2547,10 @@ pub struct DecimationOutcome {
 
 pub fn decimate_indexed_to_budget(mesh: IndexedMesh, budget: &TriangleBudget) -> DecimationOutcome {
     if !budget.is_decimated || mesh.triangles.len() <= budget.budget_tris {
-        return DecimationOutcome { mesh, achieved_error: 0.0 };
+        return DecimationOutcome {
+            mesh,
+            achieved_error: 0.0,
+        };
     }
 
     let indices: Vec<u32> = mesh
@@ -1509,11 +2560,9 @@ pub fn decimate_indexed_to_budget(mesh: IndexedMesh, budget: &TriangleBudget) ->
         .collect();
 
     let locks = vec![false; mesh.positions.len()];
-    let adapter = meshopt::VertexDataAdapter::new(
-        bytemuck::cast_slice::<_, u8>(&mesh.positions),
-        12,
-        0,
-    ).unwrap();
+    let adapter =
+        meshopt::VertexDataAdapter::new(bytemuck::cast_slice::<_, u8>(&mesh.positions), 12, 0)
+            .unwrap();
 
     let error_tiers = [
         (budget.target_error as f32).min(0.003),
@@ -1565,7 +2614,11 @@ pub struct SectionDecimationOutcome {
     pub achieved_error: f32,
 }
 
-pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, budget: &TriangleBudget) -> SectionDecimationOutcome {
+pub fn decimate_sections_to_budget(
+    mesh: IndexedMesh,
+    model_tri_count: usize,
+    budget: &TriangleBudget,
+) -> SectionDecimationOutcome {
     if !budget.enable_per_section_decimation {
         let out = decimate_indexed_to_budget(mesh, budget);
         let out_tris = out.mesh.triangles.len();
@@ -1577,7 +2630,11 @@ pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, bu
     }
 
     if !budget.is_decimated || mesh.triangles.len() <= budget.budget_tris {
-        return SectionDecimationOutcome { mesh, model_triangle_count: model_tri_count, achieved_error: 0.0 };
+        return SectionDecimationOutcome {
+            mesh,
+            model_triangle_count: model_tri_count,
+            achieved_error: 0.0,
+        };
     }
 
     if model_tri_count == 0 || model_tri_count >= mesh.triangles.len() {
@@ -1594,22 +2651,26 @@ pub fn decimate_sections_to_budget(mesh: IndexedMesh, model_tri_count: usize, bu
         .iter()
         .flat_map(|t| [t[0], t[1], t[2]])
         .collect();
-    
+
     let indices1: Vec<u32> = mesh.triangles[model_tri_count..]
         .iter()
         .flat_map(|t| [t[0], t[1], t[2]])
         .collect();
 
-    let adapter = meshopt::VertexDataAdapter::new(
-        bytemuck::cast_slice::<_, u8>(&mesh.positions),
-        12,
-        0,
-    ).unwrap();
+    let adapter =
+        meshopt::VertexDataAdapter::new(bytemuck::cast_slice::<_, u8>(&mesh.positions), 12, 0)
+            .unwrap();
     let locks = vec![false; mesh.positions.len()];
 
-    let mut error_tiers = Vec::with_capacity(1 + crate::decimation_config::DECIMATION_ERROR_TIERS.len());
-    error_tiers.push((budget.target_error as f32).min(crate::decimation_config::EPSILON_MIN_CLAMP as f32));
-    error_tiers.extend(crate::decimation_config::DECIMATION_ERROR_TIERS.iter().map(|&e| e as f32));
+    let mut error_tiers =
+        Vec::with_capacity(1 + crate::decimation_config::DECIMATION_ERROR_TIERS.len());
+    error_tiers
+        .push((budget.target_error as f32).min(crate::decimation_config::EPSILON_MIN_CLAMP as f32));
+    error_tiers.extend(
+        crate::decimation_config::DECIMATION_ERROR_TIERS
+            .iter()
+            .map(|&e| e as f32),
+    );
 
     let mut final_indices0 = vec![];
     let mut final_indices1 = vec![];
@@ -1680,7 +2741,10 @@ mod section_decimation_tests {
             let base = i * 3;
             triangles.push([base, base + 1, base + 2]);
         }
-        let mesh = IndexedMesh { positions, triangles };
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
         let mut budget = TriangleBudget {
             is_decimated: true,
             budget_tris: 50,
@@ -1689,7 +2753,7 @@ mod section_decimation_tests {
             bbox_diagonal_mm: 100.0,
             enable_per_section_decimation: true,
         };
-        
+
         // Test lockstep mode
         let out = decimate_sections_to_budget(mesh.clone(), 60, &budget);
         assert!(out.mesh.triangles.len() <= 100);
@@ -1718,14 +2782,20 @@ mod classify_hollowing_tests {
             offset.add(Vec3::new(size, size, size)),
             offset.add(Vec3::new(0.0, size, size)),
         ];
-        
+
         let mut t = vec![
-            [0, 2, 1], [0, 3, 2], // bottom
-            [4, 5, 6], [4, 6, 7], // top
-            [0, 1, 5], [0, 5, 4], // front
-            [1, 2, 6], [1, 6, 5], // right
-            [2, 3, 7], [2, 7, 6], // back
-            [3, 0, 4], [3, 4, 7], // left
+            [0, 2, 1],
+            [0, 3, 2], // bottom
+            [4, 5, 6],
+            [4, 6, 7], // top
+            [0, 1, 5],
+            [0, 5, 4], // front
+            [1, 2, 6],
+            [1, 6, 5], // right
+            [2, 3, 7],
+            [2, 7, 6], // back
+            [3, 0, 4],
+            [3, 4, 7], // left
         ];
         if flip {
             for tri in &mut t {
@@ -1739,20 +2809,67 @@ mod classify_hollowing_tests {
     fn test_classify_hollowing_shell_as_model() {
         let (mut v1, mut t1) = make_cube(Vec3::new(0.0, 0.0, 0.0), 10.0, false); // outer, normal winding
         let (v2, t2) = make_cube(Vec3::new(2.0, 2.0, 2.0), 6.0, true); // inner, flipped winding (cavity)
-        
+
         let base_idx = v1.len() as u32;
         v1.extend(v2);
         for tri in t2 {
             t1.push([tri[0] + base_idx, tri[1] + base_idx, tri[2] + base_idx]);
         }
-        
+
         let mut mesh = IndexedMesh {
             positions: v1,
             triangles: t1,
         };
-        
+
         let outcome = classify_and_reorder_model_support_triangles(&mut mesh, None);
         assert_eq!(outcome.split, None);
         assert_eq!(outcome.component_count, 2);
+    }
+}
+
+#[cfg(test)]
+mod orient_probe {
+    use super::*;
+
+    #[test]
+    fn probe() {
+        let path = "C:/Users/Paul/Downloads/corbu-chibi-corrboo45.stl";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let mesh = crate::io::load_mesh_from_path(std::path::Path::new(path)).unwrap();
+        let components = triangle_components(&mesh);
+        let n = components.iter().max().copied().unwrap_or(0) + 1;
+        let bvh = Bvh::build(&mesh);
+        println!("components={n} vol_total={:.2}", mesh.signed_volume());
+        for comp_id in 0..n {
+            let faces: Vec<u32> = components
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &c)| if c == comp_id { Some(i as u32) } else { None })
+                .collect();
+            if faces.is_empty() {
+                continue;
+            }
+            let mut vol = 0.0f64;
+            for &fi in &faces {
+                let t = mesh.triangles[fi as usize];
+                let a = mesh.positions[t[0] as usize];
+                let b = mesh.positions[t[1] as usize];
+                let c = mesh.positions[t[2] as usize];
+                vol += (a.x as f64) * ((b.y as f64) * (c.z as f64) - (b.z as f64) * (c.y as f64))
+                    - (a.y as f64) * ((b.x as f64) * (c.z as f64) - (b.z as f64) * (c.x as f64))
+                    + (a.z as f64) * ((b.x as f64) * (c.y as f64) - (b.y as f64) * (c.x as f64));
+            }
+            let eps = (mesh.bbox().diag() * 1e-4).max(1e-6);
+            let samples = interior_sample_points(&mesh, &faces, eps, 5);
+            let nested = nesting_depth_is_odd(&bvh, &mesh, &components, comp_id, &samples);
+            println!(
+                "  comp {comp_id}: faces={} vol={:.3} samples={} nested={nested}",
+                faces.len(),
+                vol / 6.0,
+                samples.len()
+            );
+        }
     }
 }

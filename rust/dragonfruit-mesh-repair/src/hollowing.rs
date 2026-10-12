@@ -1399,8 +1399,7 @@ fn point_in_polygon(polygon: &[[f32; 2]], x: f32, y: f32) -> bool {
         let xj = polygon[j][0];
         let yj = polygon[j][1];
         let denom = if (yj - yi) != 0.0 { yj - yi } else { 1e-6 };
-        let intersects =
-            ((yi > y) != (yj > y)) && (x < ((xj - xi) * (y - yi)) / denom + xi);
+        let intersects = ((yi > y) != (yj > y)) && (x < ((xj - xi) * (y - yi)) / denom + xi);
         if intersects {
             inside = !inside;
         }
@@ -1930,8 +1929,8 @@ fn build_cavity_inner_mesh(
         shell_voxels_f,
         smoothing_profile.scalar_field_blur_iterations,
     );
-    let (cavity_mesh, wall_defect_score) = drop_open_cavity_fragments(
-        stabilize_cavity_mesh_for_boolean(
+    let (cavity_mesh, wall_defect_score) =
+        drop_open_cavity_fragments(stabilize_cavity_mesh_for_boolean(
             smooth_cavity_mesh(
                 organic_boundary_mesh(grid, &cavity_positive, &cavity_negative, &cavity_scalar),
                 grid.voxel_mm,
@@ -1939,8 +1938,7 @@ fn build_cavity_inner_mesh(
                 smoothing_profile.taubin_max_step_scale,
             ),
             grid.voxel_mm,
-        ),
-    );
+        ));
 
     let infill_mesh = if matches!(options.mode, HollowMode::Infill) {
         build_smooth_infill_mesh(
@@ -2577,8 +2575,7 @@ fn drop_open_cavity_fragments(mesh: IndexedMesh) -> (IndexedMesh, usize) {
     compact_unreferenced_vertices(&mut cleaned);
 
     let cleaned_topo = crate::core::halfedge::Topology::build(&cleaned);
-    let score =
-        cleaned_topo.boundary_edges().len() + cleaned_topo.non_manifold_edges().len() * 4;
+    let score = cleaned_topo.boundary_edges().len() + cleaned_topo.non_manifold_edges().len() * 4;
     eprintln!(
         "[dragonfruit-mesh-repair] cavity fragment cleanup: dropped {dropped} shard triangles, residual defect score {score}"
     );
@@ -2615,9 +2612,7 @@ fn summarize_mesh_defects(mesh: &IndexedMesh) -> MeshDefectSummary {
 /// micrometers, five orders of magnitude below voxel-scale defects).
 #[cfg_attr(not(feature = "manifold"), allow(dead_code))]
 fn weld_retries_worthwhile(defects: &MeshDefectSummary) -> bool {
-    defects.non_manifold_edges == 0
-        && defects.inconsistent_edges == 0
-        && defects.boundary_edges > 0
+    defects.non_manifold_edges == 0 && defects.inconsistent_edges == 0 && defects.boundary_edges > 0
 }
 
 fn normalize_mesh_for_boolean(mesh: IndexedMesh) -> IndexedMesh {

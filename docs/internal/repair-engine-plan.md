@@ -38,6 +38,38 @@ stitch        noise shells   all holes       orient
 | removing the inner faces | Remove the triangles that are inside **another component**. |
 | the noise-shell pass | Delete a shell when it has fewer than four triangles, or its area is under a hundredth of the mesh's and its count under a twentieth. |
 
+### The weld answers for its own work
+
+A vertex weld is a heuristic, and on a mesh that is already nearly clean it can leave the
+mesh worse than it found it. Joining two surfaces a hair apart is the point, and where
+three or more of them meet the junction is non-manifold. The reference resolves that with
+a boolean union and there is no union here, so the weld checks itself against the five
+classes and refuses when any of them would go up.
+
+The guard is inside the helper rather than at the call sites because four stages stitch and
+two more run the cull on its own, and one of them forgetting to check is how a mesh came out
+of a repair with more non-manifold edges than it went in with. Both halves of the stitch do
+their own damage, so the condition is either of them having done something, not the weld
+alone: guarding on the weld let a run that welded nothing remove 996 duplicate faces and
+leave the mesh with nine non-manifold edges.
+
+The cull needs its own guard for the same reason, and on the app's path it is the whole of
+the damage. Repairing the reported file through the staging path, which expands the geometry
+to a triangle soup and re-derives every vertex, goes from 0 non-manifold edges and 0 boundary
+edges to 9 and 3 with the weld refusing and reporting nothing: the cull removed 995 faces on
+its own.
+
+Measured on `213277_438404_1039898_HF_Warlock_unified_mm.3mf`: the default tolerance of
+1e-5 welds 615 vertices, collapses 1,236 degenerate or duplicate faces, and takes
+non-manifold edges 11 to 19 and boundary edges 0 to 5. At 1e-6 and 5e-6 the same mesh
+welds 38 and 231 vertices with no damage at all, so the harm is not the tolerance being
+loose in absolute terms, it is what joining those surfaces does to the topology. With the
+guard the repair of that file is a byte-for-byte no-op, and the report says what is
+actually wrong with it: 11 non-manifold edges, 4 pinched vertices, and crossings as a note.
+
+A refusal is not a repair. The report says the weld was refused rather than counting a
+stitch that did not happen.
+
 ### The inner-face removal is component-level, and that is not a shortcut
 
 The reference resolves non-manifoldness and self-intersections by wrapping the outer

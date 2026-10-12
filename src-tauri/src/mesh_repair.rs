@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
-    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair,
-    repair_with_progress, HolePunchOptions,
+    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_with_progress,
+    HolePunchOptions,
     HollowOptions, HollowSession, IndexedMesh, RepairOptions, Vec3,
 };
 // The organic cut feature now lives in its own crate.
@@ -396,10 +396,56 @@ pub async fn mesh_analyze_from_path(file_path: String) -> Result<String, String>
     serde_json::to_string(&analysis).map_err(|e| format!("serialize analysis: {e}"))
 }
 
+/// Registers a cancel flag for this run, and returns it.
+///
+/// The frontend's token is what keeps two repairs from writing into each other's progress
+/// display, and what a cancel is addressed to.
+fn register_cancel(token: Option<&String>) -> Option<Arc<AtomicBool>> {
+    token.map(|token| {
+        let flag = Arc::new(AtomicBool::new(false));
+        if let Ok(mut registry) = cancels().lock() {
+            registry.insert(token.clone(), flag.clone());
+        }
+        flag
+    })
+}
+
+/// Forgets a finished run's cancel flag.
+fn release_cancel(token: Option<&String>) {
+    if let Some(token) = token {
+        if let Ok(mut registry) = cancels().lock() {
+            registry.remove(token);
+        }
+    }
+}
+
+/// The sink a repair runs with: it announces each stage to the frontend, and says no when
+/// this run has been asked to stop.
+fn progress_sink(
+    token: Option<String>,
+    cancel: Option<Arc<AtomicBool>>,
+    app: tauri::AppHandle,
+) -> impl FnMut(&str, usize) -> bool + Send + 'static {
+    move |name: &str, index: usize| {
+        if let Some(token) = token.as_deref() {
+            let _ = app.emit(
+                "mesh-repair-progress",
+                serde_json::json!({ "token": token, "name": name, "index": index }),
+            );
+        }
+        cancel
+            .as_ref()
+            .map(|flag| !flag.load(Ordering::SeqCst))
+            .unwrap_or(true)
+    }
+}
+
 #[tauri::command]
 pub async fn mesh_repair_from_path(
     file_path: String,
     options_json: String,
+    progress_token: Option<String>,
+    app: tauri::AppHandle,
 ) -> Result<String, String> {
     let path = PathBuf::from(&file_path);
     if !path.exists() {
@@ -410,13 +456,17 @@ pub async fn mesh_repair_from_path(
     }
     let options = parse_options(&options_json)?;
     let source_path = file_path.clone();
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
     let (mesh, mut report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::load_mesh_from_path(&path).map_err(|e| e.to_string())?;
-        let outcome = repair(mesh, &options);
+        let mut sink = progress_sink(token, cancel, app);
+        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
     .map_err(|e| format!("repair task panicked: {e}"))??;
+    release_cancel(progress_token.as_ref());
     report.source_path = Some(source_path);
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
@@ -456,40 +506,18 @@ pub async fn mesh_repair_staged(
     let options = parse_options(&options_json)?;
     let bytes = read_staging_bytes()?;
 
-    let cancel = progress_token.as_ref().map(|token| {
-        let flag = Arc::new(AtomicBool::new(false));
-        if let Ok(mut registry) = cancels().lock() {
-            registry.insert(token.clone(), flag.clone());
-        }
-        flag
-    });
+    let cancel = register_cancel(progress_token.as_ref());
     let token = progress_token.clone();
 
     let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let mut sink = |name: &str, index: usize| -> bool {
-            if let Some(token) = token.as_deref() {
-                let _ = app.emit(
-                    "mesh-repair-progress",
-                    serde_json::json!({ "token": token, "name": name, "index": index }),
-                );
-            }
-            cancel
-                .as_ref()
-                .map(|flag| !flag.load(Ordering::SeqCst))
-                .unwrap_or(true)
-        };
+        let mut sink = progress_sink(token, cancel, app);
         let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
     .map_err(|e| format!("repair task panicked: {e}"))??;
-
-    if let Some(token) = progress_token {
-        if let Ok(mut registry) = cancels().lock() {
-            registry.remove(&token);
-        }
-    }
+    release_cancel(progress_token.as_ref());
 
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))

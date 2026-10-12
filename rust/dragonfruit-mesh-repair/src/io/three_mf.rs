@@ -109,11 +109,17 @@ impl Affine {
 
     fn apply(&self, p: Vec3) -> Vec3 {
         Vec3::new(
-            self.linear[0][0] * p.x + self.linear[0][1] * p.y + self.linear[0][2] * p.z
+            self.linear[0][0] * p.x
+                + self.linear[0][1] * p.y
+                + self.linear[0][2] * p.z
                 + self.translation[0],
-            self.linear[1][0] * p.x + self.linear[1][1] * p.y + self.linear[1][2] * p.z
+            self.linear[1][0] * p.x
+                + self.linear[1][1] * p.y
+                + self.linear[1][2] * p.z
                 + self.translation[1],
-            self.linear[2][0] * p.x + self.linear[2][1] * p.y + self.linear[2][2] * p.z
+            self.linear[2][0] * p.x
+                + self.linear[2][1] * p.y
+                + self.linear[2][2] * p.z
                 + self.translation[2],
         )
     }
@@ -254,9 +260,8 @@ fn parse_objects(xml: &str) -> Result<ObjectTable, MeshRepairError> {
         let id = parse_attr_str(&xml[open..open_end], "id")
             .ok_or_else(|| MeshRepairError::Parse("3MF: <object> without id".into()))?
             .to_string();
-        let close = find_element(xml, open_end, "</object").ok_or_else(|| {
-            MeshRepairError::Parse(format!("3MF: unterminated object {id}"))
-        })?;
+        let close = find_element(xml, open_end, "</object")
+            .ok_or_else(|| MeshRepairError::Parse(format!("3MF: unterminated object {id}")))?;
         table.insert(id, parse_object_block(&xml[open_end..close])?);
         cursor = close;
     }
@@ -267,18 +272,16 @@ fn parse_object_block(block: &str) -> Result<Object, MeshRepairError> {
     let mut object = Object::default();
 
     if let Some(open) = find_element(block, 0, "<mesh") {
-        let close = find_element(block, open, "</mesh").ok_or_else(|| {
-            MeshRepairError::Parse("3MF: unterminated <mesh>".into())
-        })?;
+        let close = find_element(block, open, "</mesh")
+            .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <mesh>".into()))?;
         let open_end = tag_end(block, open)
             .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <mesh>".into()))?;
         object.mesh = parse_mesh_block(&block[open_end..close])?;
     }
 
     if let Some(open) = find_element(block, 0, "<components") {
-        let close = find_element(block, open, "</components").ok_or_else(|| {
-            MeshRepairError::Parse("3MF: unterminated <components>".into())
-        })?;
+        let close = find_element(block, open, "</components")
+            .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <components>".into()))?;
         let open_end = tag_end(block, open)
             .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <components>".into()))?;
         object.components = parse_components_block(&block[open_end..close])?;
@@ -309,9 +312,8 @@ fn parse_mesh_block(block: &str) -> Result<Option<IndexedMesh>, MeshRepairError>
             .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <triangle>".into()))?;
         let tag = &block[at..end];
         let index = |name: &str| -> Result<u32, MeshRepairError> {
-            parse_attr_u32(tag, name).ok_or_else(|| {
-                MeshRepairError::Parse(format!("3MF: <triangle> missing {name}"))
-            })
+            parse_attr_u32(tag, name)
+                .ok_or_else(|| MeshRepairError::Parse(format!("3MF: <triangle> missing {name}")))
         };
         triangles.push([index("v1")?, index("v2")?, index("v3")?]);
         cursor = end;
@@ -484,8 +486,8 @@ mod tests {
         ));
         let file = File::create(&path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        let options = zip::write::FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let options =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
         zip.start_file("3D/3dmodel.model", options).unwrap();
         zip.write_all(model_xml.as_bytes()).unwrap();
         zip.finish().unwrap();

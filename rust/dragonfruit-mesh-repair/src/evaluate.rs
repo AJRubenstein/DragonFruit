@@ -28,7 +28,7 @@ pub struct MeshDefects {
     pub bad_edges: usize,
     /// `the hole evaluator`: boundary loops.
     pub holes: usize,
-    /// `the non-manifold evaluator`: edges carrying more than two faces.
+    /// `the non-manifold evaluator`: edges whose faces cannot be paired by direction.
     pub non_manifold_edges: usize,
     /// The vertices a non-manifold edge passes through, which no winding can fix.
     pub non_manifold_vertices: usize,
@@ -45,6 +45,20 @@ impl MeshDefects {
             || self.non_manifold_edges > 0
             || self.non_manifold_vertices > 0
             || self.noise_shells > 0
+    }
+
+    /// Did this mesh come out worse than `before` on any class?
+    ///
+    /// A total is the wrong test. A pass that closes five holes and opens four
+    /// non-manifold edges has improved the sum and left the mesh worse, and damage is a
+    /// class going up whatever the other classes did.
+    pub fn worse_than(&self, before: &Self) -> bool {
+        self.inconsistent_edges > before.inconsistent_edges
+            || self.bad_edges > before.bad_edges
+            || self.holes > before.holes
+            || self.non_manifold_edges > before.non_manifold_edges
+            || self.non_manifold_vertices > before.non_manifold_vertices
+            || self.noise_shells > before.noise_shells
     }
 
     /// Every defect, added up, for comparing a mesh with itself across a pass.
@@ -72,62 +86,26 @@ pub fn evaluate(mesh: &IndexedMesh) -> MeshDefects {
         bad_edges: boundary_edges + non_manifold_edges,
         holes,
         non_manifold_edges,
-        non_manifold_vertices: count_non_manifold_vertices(mesh),
+        non_manifold_vertices: count_non_manifold_vertices(&topology),
         noise_shells: noise_shells(mesh).len(),
     }
 }
 
-/// Vertices whose faces form more than one umbrella, which is a pinch.
+/// The vertices a non-manifold edge passes through, which no winding can fix.
 ///
-/// The same rule the vertex split uses, so the count that reports whether it worked
-/// cannot drift from the count that drives it.
-fn count_non_manifold_vertices(mesh: &IndexedMesh) -> usize {
-    let topology = Topology::build(mesh);
-    let mut faces_at: Vec<Vec<u32>> = vec![Vec::new(); mesh.positions.len()];
-    for (index, triangle) in mesh.triangles.iter().enumerate() {
-        for &vertex in triangle {
-            faces_at[vertex as usize].push(index as u32);
-        }
+/// Derived from the non-manifold edges rather than tested independently. A vertex whose
+/// face fan is disconnected is a bowtie, and it is a real thing to find, but the reference
+/// engine has no class for it: its panel reports bad edges, holes, bad orientation and
+/// shells, and a bowtie with two faces on every edge shows up in none of them. A verdict
+/// that flags a file the reference calls clean is worse than one that misses a defect the
+/// reference also misses, because the file is the thing being judged.
+fn count_non_manifold_vertices(topology: &Topology) -> usize {
+    let mut vertices = ahash::AHashSet::new();
+    for edge in topology.non_manifold_edges() {
+        vertices.insert(edge.0);
+        vertices.insert(edge.1);
     }
-    let mut pinched = 0usize;
-    for (vertex, faces) in faces_at.iter().enumerate() {
-        if faces.len() < 2 {
-            continue;
-        }
-        // Walk the faces around the vertex through shared edges and count how many
-        // separate rings they make.
-        let mut unvisited: Vec<u32> = faces.clone();
-        let mut rings = 0usize;
-        while let Some(seed) = unvisited.pop() {
-            rings += 1;
-            let mut stack = vec![seed];
-            while let Some(face) = stack.pop() {
-                let triangle = mesh.triangles[face as usize];
-                for corner in 0..3 {
-                    let a = triangle[corner];
-                    let b = triangle[(corner + 1) % 3];
-                    if a != vertex as u32 && b != vertex as u32 {
-                        continue;
-                    }
-                    let other = if a == vertex as u32 { b } else { a };
-                    let edge = crate::core::halfedge::edge_key(vertex as u32, other);
-                    let Some(info) = topology.edges.get(&edge) else {
-                        continue;
-                    };
-                    for &neighbour in &info.faces {
-                        if let Some(position) = unvisited.iter().position(|f| *f == neighbour) {
-                            unvisited.remove(position);
-                            stack.push(neighbour);
-                        }
-                    }
-                }
-            }
-        }
-        if rings > 1 {
-            pinched += 1;
-        }
-    }
-    pinched
+    vertices.len()
 }
 
 #[cfg(test)]
@@ -170,9 +148,17 @@ mod tests {
         assert!(defects.bad_edges >= 1);
     }
 
-    /// A pinched vertex is counted, because no winding fixes it.
+    /// A bowtie vertex is not its own class.
+    ///
+    /// Two triangles meeting at one vertex and nowhere else is a pinch, and it is a real
+    /// thing to find. It is not counted as a non-manifold vertex, because the reference
+    /// engine has no class for it: its panel reports bad edges, holes, bad orientation and
+    /// shells, and a bowtie with two faces on every edge appears in none of them. A
+    /// verdict that flags a file the reference calls clean is worse than one that misses a
+    /// defect the reference also misses, because the file is the thing being judged. This
+    /// fixture is still broken, by its boundary.
     #[test]
-    fn a_pinched_vertex_is_counted() {
+    fn a_bowtie_vertex_is_not_its_own_class() {
         // Two triangles meeting at one vertex and nowhere else.
         let mesh = IndexedMesh {
             positions: vec![
@@ -185,7 +171,12 @@ mod tests {
             triangles: vec![[0, 1, 2], [0, 3, 4]],
         };
         let defects = evaluate(&mesh);
-        assert_eq!(defects.non_manifold_vertices, 1, "{defects:?}");
+        assert_eq!(defects.non_manifold_vertices, 0, "{defects:?}");
+        assert_eq!(defects.non_manifold_edges, 0, "{defects:?}");
+        assert!(
+            defects.bad_edges > 0,
+            "the boundary is what makes this fixture broken: {defects:?}"
+        );
         assert!(defects.is_broken());
     }
 }

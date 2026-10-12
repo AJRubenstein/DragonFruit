@@ -25,10 +25,17 @@ settle
 prune_and_classify
 ```
 
-Two of those are conditional. `split_self_intersections` runs between
+Four are conditional and so are not in that list. `split_self_intersections` runs between
 `double_faces_after_split` and `remove_inner_faces` when the caller sets
-`resolve_self_intersections`, and `filter_components` runs after `noise_shells` when they
-set `keep_largest_n_components`.
+`resolve_self_intersections`. `union_overlapping_parts` runs after `remove_inner_faces`
+when the mesh still has bad edges, and `split_non_manifold_edges` follows it; both need
+the `manifold` feature. `filter_components` runs after `noise_shells` when the caller
+sets `keep_largest_n_components`.
+
+The union running before the split is load-bearing. `tests/smoke.rs` pins it by asserting
+the union's position is before the split's, because the split is what makes each surface
+constructible and a union after it has nothing left to merge. Ordered the other way, the
+same file keeps about 200 more parts.
 
 `tests/smoke.rs` pins this list in `the_pipeline_runs_the_stage_order_it_says_it_does`.
 If a change to the order is deliberate, that test is where you say so.
@@ -78,6 +85,106 @@ the report says what is left and not just that something is.
 | `repair_orientation` | whether the orientation passes run |
 | `resolve_self_intersections` | whether the crossings are split and the buried faces removed |
 | `assume_support_geometry` | force the model/support classification for support STLs |
+
+### A non-manifold edge is one whose faces cannot be paired
+
+More than two faces on an edge does not make it non-manifold, and counting it that way is
+how a model the reference engine calls clean, and which is clean, came out of a repair
+reported as broken.
+
+Four faces with two traversing the edge each way are two coincident manifold edges: two
+surfaces meeting along a shared edge, each of them closed. So `Topology::non_manifold_edges`
+pairs every forward traversal with a backward one and looks at what is left. Two forward
+and one backward is a fan with a face it cannot pair, which is non-manifold. A single face
+is a boundary, which is a hole and not this class at all. Two faces traversing the same way
+are a winding disagreement, which `inconsistent_edges` reports and the orientation pass can
+fix, so they are not counted here either.
+
+Measured on `213277_438404_1039898_HF_Warlock_unified_mm.3mf`: eleven edges carry four
+faces, and all eleven are two forward and two backward. Under the old count the file read
+as having 11 non-manifold edges and 4 pinched vertices, and the reference engine's panel
+reports 0 bad edges, 0 holes and 0 bad orientation for the same file and the same vertex
+count. The file is clean.
+
+`bad_edges` is the union of this class with the hole edges, which is how the reference
+counts it, so the two agree by construction once the pairing is right.
+
+## Three passes where the five classes are not enough
+
+### The cull is two face classes, and they behave nothing alike
+
+`cull_faces` removes two kinds of face and now judges them separately, because judging them
+together is how `3DBenchy.stl` came out of a repair with all 355 of its winding edges and
+every one of its 2,017 degenerate faces still in place.
+
+A face that names the same vertex twice, `(a, b, a)`, has no area and no volume, and its
+edges are phantom: it contributes both `(a, b)` and `(b, a)`, so an edge carrying one real
+face looks like it carries two. That manufactured pairing is exactly what the winding count
+reports, which is why benchy read 355 inconsistent edges and watertight at once. Removing
+its 2,006 of these clears all 355 with no other class moving.
+
+A face whose three positions are collinear but whose indices are all different is a
+different animal: benchy's 11 of them are load-bearing, and removing them opens 29 edges
+and 9 holes.
+
+The guard used to wrap the pair, so the second class's refusal threw away the first class's
+removal. Now `cull_repeated_vertex_faces` is guarded on its own and runs first, and
+`cull_duplicate_and_zero_area_faces` follows it.
+
+### Winding runs cheapest first and stops when flipping cannot help
+
+Three passes in increasing cost, each running only when the one before it has given up:
+
+1. `greedy_flip_winding_edges` — single-face flips, best net first, over one topology
+   build. A full rebuild per flip hung benchy: 355 flips at a full build each.
+2. `solve_winding_regions` — the disagreements no single flip can reach. A frustrated cycle
+   has no improving first move, but flipping a *set* of faces changes only the edges on the
+   set's boundary, so a bounded region around the residual is enumerated exactly and the
+   best assignment kept.
+3. `walk_winding_edges` — the disagreements neither of those can enter. It takes the
+   steepest toggle available even when that toggle makes the count *worse*, never revisits
+   a face, remembers the best count it saw, and undoes everything past that point.
+
+All three answer to the same guard: the volume must not move more than one percent. The
+`unify_winding` that runs before them is per patch, and a patch decision cannot settle a
+disagreement *within* a patch. That is the gap these three close.
+
+**What they cannot close** is a genuinely frustrated seam. The V3 Cones keep exactly 4
+edges, and those form a closed loop 58357 → 162679 → 160762 → 160761 → 58357 around a
+sliver cluster whose faces measure 1e-5 to 2.6e-4 square units. Every face on it scores
+-1, the tree assignment leaves the same 4, and 400 toggles of the walk never beat it. They
+are independent frustrated cycles: no assignment of face orientations resolves them, so
+they need the surface rebuild the reference engine gets from its self-intersection split,
+not a winding pass. That is reported, and not forced.
+
+### A union is judged on what it costs as well as what it merges
+
+`union_overlapping_parts` accepts on a falling part count, classes that did not get worse,
+and no volume growth. That was not enough. On the harbinger file it merged 5,414 solids and
+took the parts 3,083 down to 646, and paid for that with 47% more triangles and 10,664 new
+degenerate faces on a mesh that started with 683 of them.
+
+So it also carries a size budget: triangles within 10% of the count it started with, and
+degenerate faces within 0.1% of the triangle count or 64, whichever is larger. COOKIE_b4's
+union — the one that makes that file read as repaired — adds 4.3% and 126, and stays.
+
+`split_non_manifold_edges` has the same shape of problem and a worse one. It judges itself
+on the volume not moving, and it was comparing the volume of a mesh that *arrived* with
+boundary edges to one whose rims it had just filled. Those are different measurements —
+signing a boundary loop the other way is the same mesh and a different number. On the corbu
+model, sealing alone moves the volume 97.7 to 117.4 before the split does anything, so the
++26% it was refused for was mostly the measurement changing.
+
+Against a sealed baseline its own cost is +5.28%: non-manifold edges 1364 to 0, loops 30 to
+4, parts 8 to 13 against an allowance of 16. That is still above the one percent guard, so
+it is still refused, and the stage note now says which of the four tests refused it.
+
+`split_self_intersections` is the only pass that rebuilds the surface rather than editing it,
+and it carried no acceptance test at all. On the V3 Cones it took non-manifold edges 0 to
+5,557, the boundary 0 to 344 and the volume up 132%; on corbu, bad edges 822 to 16,704 and
+the volume up 852%. Both were applied and kept. It is guarded on the same test as the rest
+now, so asking for it on a mesh it cannot handle gives the mesh back unchanged, with the
+refusal in the stage report.
 
 ## Two things that are not what they look like
 

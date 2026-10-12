@@ -13,15 +13,16 @@ pub mod arrangement;
 pub use dragonfruit_mesh_core as core;
 pub mod decimation_config;
 pub mod evaluate;
-pub mod hollowing;
 pub mod holes;
-pub mod shells;
-#[cfg(test)]
-mod test_fixtures;
+pub mod topology_passes;
+pub mod hollowing;
 pub mod io;
 pub mod repair;
 pub mod report;
+pub mod shells;
 pub mod stl_budget;
+#[cfg(test)]
+mod test_fixtures;
 
 pub use crate::analysis::{analyze, minimal_analysis, MeshAnalysis};
 pub use crate::core::mesh::{IndexedMesh, Vec3};

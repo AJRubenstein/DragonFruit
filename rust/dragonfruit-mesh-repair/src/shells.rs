@@ -1,24 +1,27 @@
 //! Shells, and which of them are noise.
 //!
-//! the reference engine's `the noise-shell pass` deletes a shell when it has fewer than
-//! four triangles, or when its area is under a hundredth of the mesh's and its
-//! triangle count under a twentieth. The rule needs no parameter and it cannot
-//! delete a model: the largest shell is more than a twentieth of the count by
-//! definition, so it never qualifies.
+//! A shell with fewer than four triangles is a scrap: three faces cannot be a feature anybody
+//! designed, and the pass that leaves them behind is the one that split a shared edge.
 //!
-//! This replaces `prune_open_fragments`, which kept a component only when it was
-//! closed or nearly so. On a single-component mesh that rule deleted the entire
-//! model, which is why the extraction it belonged to had to be rolled back.
+//! The reference engine's rule is wider than that. It also deletes a shell whose area is under
+//! a hundredth of the mesh's *and* whose triangle count is under a twentieth, and that clause
+//! cannot tell a stray fragment from a designed one. On `COOKIE_b4.stl`, a model with supports,
+//! it took 88,912 faces: every support pillar is a small shell by that rule, and the repair
+//! reported success while the supports were gone.
+//!
+//! The two mistakes are not symmetric. Keeping a stray shell costs a shell the user can see and
+//! delete; deleting a support costs a print. So the clause is not used, and this is a
+//! deliberate departure from the reference.
+//!
+//! This replaces `prune_open_fragments`, which kept a component only when it was closed or
+//! nearly so. On a single-component mesh that rule deleted the entire model, which is why the
+//! extraction it belonged to had to be rolled back.
 
 use crate::core::mesh::IndexedMesh;
 use crate::repair::triangle_components;
 
-/// A shell with fewer triangles than this is noise whatever else is true.
+/// A shell with fewer triangles than this is noise.
 const NOISE_SHELL_MIN_TRIANGLES: usize = 4;
-/// A shell under this fraction of the mesh's area is small.
-const NOISE_SHELL_AREA_DIVISOR: f64 = 100.0;
-/// And under this fraction of its triangle count.
-const NOISE_SHELL_COUNT_DIVISOR: usize = 20;
 
 /// Which shells are noise, by the reference engine's rule.
 pub fn noise_shells(mesh: &IndexedMesh) -> Vec<u32> {
@@ -43,16 +46,9 @@ pub fn noise_shells(mesh: &IndexedMesh) -> Vec<u32> {
     let total_triangles = mesh.triangles.len();
     let total_area: f64 = area_per_shell.iter().sum();
 
+    let _ = (area_per_shell, total_area, total_triangles);
     (0..shell_count)
-        .filter(|&shell| {
-            let triangles = triangles_per_shell[shell];
-            if triangles < NOISE_SHELL_MIN_TRIANGLES {
-                return true;
-            }
-            let small_area = area_per_shell[shell] < total_area / NOISE_SHELL_AREA_DIVISOR;
-            let small_count = triangles < total_triangles / NOISE_SHELL_COUNT_DIVISOR;
-            small_area && small_count
-        })
+        .filter(|&shell| triangles_per_shell[shell] < NOISE_SHELL_MIN_TRIANGLES)
         .map(|shell| shell as u32)
         .collect()
 }
@@ -78,8 +74,8 @@ pub fn remove_noise_shells(mesh: &mut IndexedMesh) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_fixtures::unit_cube;
     use crate::core::mesh::Vec3;
+    use crate::test_fixtures::unit_cube;
 
     fn tiny_triangle(offset: f32) -> ([Vec3; 3], [u32; 3]) {
         (

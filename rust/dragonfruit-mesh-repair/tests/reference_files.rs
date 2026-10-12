@@ -84,5 +84,8 @@ fn benchy_is_kept_from_a_clean_verdict_by_a_real_defect() {
         report.post.non_manifold_edges, 0,
         "the repair resolves non-manifoldness on this file"
     );
-    assert!(analyze(&outcome.mesh).triangle_count > 0, "and the mesh is still there");
+    assert!(
+        analyze(&outcome.mesh).triangle_count > 0,
+        "and the mesh is still there"
+    );
 }
