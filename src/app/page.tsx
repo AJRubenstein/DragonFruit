@@ -11610,8 +11610,8 @@ export default function Home() {
 
       {isExporting && (
         <BlockingOverlay
-          title="Exporting…"
-          details={['Writing mesh geometry and support data to file…']}
+          title={_(msg`Exporting…`)}
+          details={[_(msg`Writing mesh geometry and support data to file…`)]}
           progress={null}
           zIndexClassName="z-[120]"
         />
@@ -11720,7 +11720,7 @@ export default function Home() {
               className="flex-shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold"
               style={{ background: 'color-mix(in srgb, #f59e0b, transparent 80%)', color: 'var(--text-strong)' }}
             >
-              Dismiss
+              {_(msg`Dismiss`)}
             </button>
           </Toast>
         </ToastViewport>

@@ -49,6 +49,14 @@ const TERNARY_RE = /\s[?:]\s+(['"])([A-Z][^'"\\\n]+?)\1/g;
 const SETTER_RE = /\bset[A-Z]\w*(?:Text|Label|Message|Title|Status|Error)\(\s*(['"])([^'"\\\n]{2,}?)\1/g;
 // A template literal that reads as a sentence, `Upload to ${name}`; its static text must look human.
 const TEMPLATE_RE = /(^|[^\w.])`([A-Z][a-z]+ [^`]*)`/g;
+// JSX text that shares its element with an expression: `>Slot {slot}<`, `>{count} items<`.
+const JSX_BEFORE_EXPR_RE = />([^<>{}\n]*[A-Za-z]{2}[^<>{}\n]*)\{/g;
+const JSX_AFTER_EXPR_RE = /\}([^<>{}\n]*[A-Za-z]{2}[^<>{}\n]*)</g;
+// A label handed to a render/format helper, or the label slot of a `['Low', 2]` tuple.
+// Generics and annotations (`(): void, opts?:`, `as Record<`) share that shape; they are not text.
+const TYPE_SHAPED = /^\s*[:[]|\bas\b|\bvoid\b|\?:|React\./;
+const ARG_RE = /\b(?:render|format)\w*\(\s*(['"])([A-Z][^'"\\\n]+?)\1/g;
+const TUPLE_RE = /\[\s*(['"])([A-Z][a-z]+(?: [A-Za-z]+)*)\1\s*,/g;
 const NOT_UI = /\b(Error|console|throw|logger|debug|warn)\b|className|style=/;
 
 const TS_TYPES = new Set(['Promise', 'Array', 'Record', 'Readonly', 'Partial', 'Map', 'Set',
@@ -117,7 +125,7 @@ function scanFile(raw, known) {
       const found = [];
       const keep = (line, kind, text) => {
             const value = text.trim().replace(/\s+/g, ' ');
-            if (!looksHuman(value) || known.has(value) || ignored(line)) return;
+            if (!looksHuman(value) || ignored(line)) return;
             found.push({ line, kind, text: value });
       };
 
@@ -127,14 +135,19 @@ function scanFile(raw, known) {
             if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
             for (const m of lineText.matchAll(PROP_RE)) keep(line, `prop:${m[1]}`, m[2]);
             for (const m of lineText.matchAll(JSX_TEXT_RE)) keep(line, 'jsx-text', m[1]);
+            for (const re of [JSX_BEFORE_EXPR_RE, JSX_AFTER_EXPR_RE]) {
+                  for (const m of lineText.matchAll(re)) if (!TYPE_SHAPED.test(m[1])) keep(line, 'jsx-text', m[1]);
+            }
             for (const m of lineText.matchAll(DATA_RE)) keep(line, `data:${m[1]}`, m[3].replace(/\\'/g, "'"));
             if (NOT_UI.test(lineText)) return;
             for (const m of lineText.matchAll(TERNARY_RE)) keep(line, 'ternary', m[2]);
             for (const m of lineText.matchAll(SETTER_RE)) keep(line, 'setter', m[2]);
+            for (const m of lineText.matchAll(ARG_RE)) keep(line, 'argument', m[2]);
+            for (const m of lineText.matchAll(TUPLE_RE)) keep(line, 'tuple', m[2]);
       });
       withoutMessages.split('\n').forEach((lineText, index) => {
             const trimmed = lineText.trim();
-            if (trimmed.startsWith('//') || trimmed.startsWith('*') || NOT_UI.test(lineText)) return;
+            if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*') || NOT_UI.test(lineText)) return;
             for (const m of lineText.matchAll(TEMPLATE_RE)) {
                   // Placeholders read as `…`, so `keep` judges the words around them, not the code inside.
                   keep(index + 1, 'template', m[2].replace(/\$\{[^}]*\}/g, '…'));

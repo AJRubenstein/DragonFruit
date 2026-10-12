@@ -58,7 +58,8 @@ export function OrientElapsed() {
   }, []);
   const minutes = Math.floor(sec / 60);
   const seconds = sec % 60;
-  return <>Elapsed: {minutes}:{seconds.toString().padStart(2, '0')}</>;
+  const elapsed = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  return <Trans>Elapsed: {elapsed}</Trans>;
 }
 
 /** Module-level labels (React Compiler must not rename Lingui locals). */

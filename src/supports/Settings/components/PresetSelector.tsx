@@ -760,7 +760,7 @@ export function PresetSelector({
                                                     >
                                                         {slot}
                                                     </span>
-                                                    <div className="flex-1 truncate">Slot {slot}</div>
+                                                    <div className="flex-1 truncate">{formatPresetSlotLabel(slot, _)}</div>
                                                 </div>
                                             </div>
                                         </button>
@@ -800,7 +800,7 @@ export function PresetSelector({
                             >
                                 <div className="flex items-center justify-center gap-1.5">
                                     <Save className="h-3.5 w-3.5" />
-                                    <span>New Preset</span>
+                                    <span><Trans>New Preset</Trans></span>
                                 </div>
                             </button>
                         </div>

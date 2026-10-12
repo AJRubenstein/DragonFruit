@@ -41,8 +41,10 @@ test('the page mounts on an empty scene and settles', async () => {
 
         assert.equal(commits, commitsAtHalfTime, `still committing after 500 ms (${commitsAtHalfTime} → ${commits})`);
         assert.deepEqual(errors.filter((message) => message.startsWith('Maximum update depth exceeded')), []);
+        // i18n-ignore-start: selectors against the English UI
         assert.ok(container.querySelector('button[aria-label="Open DragonFruit menu"]'), 'the top bar menu renders');
         assert.ok(container.querySelector('button[aria-label="Settings"]'), 'the settings button renders');
+        // i18n-ignore-end
     } finally {
         root.unmount();
         container.remove();

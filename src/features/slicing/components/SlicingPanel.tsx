@@ -1899,6 +1899,7 @@ export function SlicingPanel({
 
     setIsSlicingZip(true);
     setCurrentPhase('Preparing');
+    // i18n-ignore: sliceStatus is never rendered
     setSliceStatus('Preparing');
     setProgressDone(0);
     setProgressTotal(1);
@@ -2104,6 +2105,7 @@ export function SlicingPanel({
       });
 
       setCurrentPhase('Encoding');
+      // i18n-ignore: sliceStatus is never rendered
       setSliceStatus('Encoding');
 
       const runEndMs = performance.now();
@@ -2189,6 +2191,7 @@ export function SlicingPanel({
     } catch (error) {
       if ((error as { name?: string } | null)?.name === 'AbortError') {
         setCurrentPhase('Cancelled');
+        // i18n-ignore: sliceStatus is never rendered
         setSliceStatus('Cancelled');
         setSlicingModalStage('cancelled');
       } else {
@@ -2213,6 +2216,7 @@ export function SlicingPanel({
       // is also when the app switches to the printing workspace.
       if (slicingSucceeded && !batch) {
         setCurrentPhase('Opening');
+        // i18n-ignore: sliceStatus is never rendered
         setSliceStatus('Opening');
         onSlicingFinished?.({ totalLayers: Math.max(completedTotalLayers, completedTotalLayersFromResult, 1) });
       }
@@ -2292,6 +2296,7 @@ export function SlicingPanel({
   const handleCancelSlicing = useCallback(() => {
     if (!isSlicingZip) return;
     setCurrentPhase('Cancelling');
+    // i18n-ignore: sliceStatus is never rendered
     setSliceStatus('Cancelling');
     slicingAbortControllerRef.current?.abort();
   }, [isSlicingZip]);
@@ -2896,7 +2901,7 @@ export function SlicingPanel({
                 onClick={() => setIsMaterialAaEditorOpen(false)}
                 className="!h-8 !px-3 !py-0 text-xs rounded-full"
               >
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button
                 variant="secondary"
@@ -2986,7 +2991,7 @@ export function SlicingPanel({
                   onClick={() => setIsSessionAaOverrideOpen(false)}
                   className="!h-8 !px-3 !py-0 text-xs rounded-full"
                 >
-                  Cancel
+                  <Trans>Cancel</Trans>
                 </Button>
                 <Button
                   variant="secondary"
@@ -3179,7 +3184,7 @@ export function SlicingPanel({
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
         zIndexClassName="z-[130]"
-        closeAriaLabel="Close modal"
+        closeAriaLabel={_(msg`Close modal`)}
         onClose={() => settleOutOfBoundsSliceConfirmation(false)}
         onBackdropClick={() => settleOutOfBoundsSliceConfirmation(false)}
         actions={(
@@ -3218,7 +3223,7 @@ export function SlicingPanel({
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
         zIndexClassName="z-[130]"
-        closeAriaLabel="Close modal"
+        closeAriaLabel={_(msg`Close modal`)}
         onClose={() => settleOverwriteConfirmation(false)}
         onBackdropClick={() => settleOverwriteConfirmation(false)}
         actions={(

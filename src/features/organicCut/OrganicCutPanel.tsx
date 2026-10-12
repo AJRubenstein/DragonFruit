@@ -756,7 +756,7 @@ export function OrganicCutPanel({
                         background: 'color-mix(in srgb, #f87171, var(--surface-1) 90%)',
                       }}
                     >
-                      Reset
+                      <Trans>Reset</Trans>
                     </Button>
                   </div>
                 </div>
