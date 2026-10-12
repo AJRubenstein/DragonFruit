@@ -26,6 +26,7 @@ import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBri
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
 import { runWithConcurrency } from '@/utils/runWithConcurrency';
 import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, bumpBakedOcclusionVersion, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
+import { computeProjectedFootprintSize } from '@/utils/modelFootprint';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -1906,24 +1907,19 @@ export function useSceneCollectionManager(options?: {
     );
   }, [activePlateRect]);
 
-  const footprintForTransform = useCallback((size: THREE.Vector3, transform: ModelTransform) => {
-    const baseW = Math.max(2, Math.abs(size.x * transform.scale.x));
-    const baseD = Math.max(2, Math.abs(size.y * transform.scale.y));
-    const rz = transform.rotation.z;
-    const c = Math.abs(Math.cos(rz));
-    const s = Math.abs(Math.sin(rz));
-    return {
-      width: (baseW * c) + (baseD * s),
-      depth: (baseW * s) + (baseD * c),
-    };
-  }, []);
+  // Projected through the whole rotation: a model tipped on X or Y does not stand
+  // on the footprint its unrotated XY size describes.
+  const footprintForTransform = useCallback((
+    geometry: Pick<GeometryWithBounds, 'geometry' | 'center'>,
+    transform: ModelTransform,
+  ) => computeProjectedFootprintSize(geometry, transform.rotation, transform.scale), []);
 
   const buildMeshPlacementOffsets = useCallback((
     center: { x: number; y: number },
-    size: THREE.Vector3,
+    geometry: Pick<GeometryWithBounds, 'geometry' | 'center'>,
     transform: ModelTransform,
   ) => {
-    const footprint = footprintForTransform(size, transform);
+    const footprint = footprintForTransform(geometry, transform);
     const meshRect: Rect2D = {
       minX: center.x - (footprint.width * 0.5),
       maxX: center.x + (footprint.width * 0.5),
@@ -1947,7 +1943,7 @@ export function useSceneCollectionManager(options?: {
   ): Rect2D => {
     const placement = buildMeshPlacementOffsets(
       { x: model.transform.position.x, y: model.transform.position.y },
-      model.geometry.size,
+      model.geometry,
       model.transform,
     );
 
@@ -1978,7 +1974,7 @@ export function useSceneCollectionManager(options?: {
 
     const placementOffsets = incomingModels.map((model) => buildMeshPlacementOffsets(
       { x: model.transform.position.x, y: model.transform.position.y },
-      model.geometry.size,
+      model.geometry,
       model.transform,
     ));
 
@@ -1992,7 +1988,7 @@ export function useSceneCollectionManager(options?: {
       .map((model) => {
         const meshPlacement = buildMeshPlacementOffsets(
           { x: model.transform.position.x, y: model.transform.position.y },
-          model.geometry.size,
+          model.geometry,
           model.transform,
         );
 
@@ -2628,7 +2624,7 @@ export function useSceneCollectionManager(options?: {
 
       const placement = buildMeshPlacementOffsets(
         { x: model.transform.position.x, y: model.transform.position.y },
-        model.geometry.size,
+        model.geometry,
         model.transform,
       );
       if (placement.width > view3dSettings.widthMm || placement.depth > view3dSettings.depthMm) return;
@@ -5725,7 +5721,7 @@ export function useSceneCollectionManager(options?: {
             if (!candidate) return false;
             const placement = buildMeshPlacementOffsets(
               { x: candidate.transform.position.x, y: candidate.transform.position.y },
-              candidate.geometry.size,
+              candidate.geometry,
               candidate.transform,
             );
             return placement.width <= view3dSettings.widthMm && placement.depth <= view3dSettings.depthMm;
