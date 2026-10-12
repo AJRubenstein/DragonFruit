@@ -225,12 +225,12 @@ export function IslandListCard({
                       </div>
                       <div className="ui-meta leading-tight">
                         {island.volumeMm3 !== undefined
-                          ? `${fmt.fixed(island.volumeMm3, 2)} mm³`
-                          : `${fmt.fixed(island.totalAreaMm2, 1)} mm²`}
+                          ? fmt.quantity(island.volumeMm3, 2, 'mm3')
+                          : fmt.quantity(island.totalAreaMm2, 1, 'mm2')}
                       </div>
                       {island.maxAreaMm2 !== undefined && island.maxAreaLayer !== undefined && (
                         <div className="ui-meta leading-tight" style={{ color: 'color-mix(in srgb, var(--text-muted), black 20%)' }}>
-                          Max: {fmt.fixed(island.maxAreaMm2, 2)} mm² @ L{Math.round(island.maxAreaLayer + (zOffsetMm / layerHeightMm))}
+                          Max: {fmt.quantity(island.maxAreaMm2, 2, 'mm2')} @ L{Math.round(island.maxAreaLayer + (zOffsetMm / layerHeightMm))}
                         </div>
                       )}
                     </div>

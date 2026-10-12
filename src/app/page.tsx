@@ -3177,9 +3177,9 @@ export default function Home() {
   const printingOutputSizeLabel = React.useMemo(() => {
     if (!printingArtifact) return '—';
     const bytes = Math.max(0, printingArtifact.byteSize);
-    if (bytes < 1024) return `${fmt.fixed(bytes, 0)} B`;
-    if (bytes < 1024 * 1024) return `${fmt.fixed(bytes / 1024, 1)} KB`;
-    return `${fmt.fixed(bytes / (1024 * 1024), 2)} MB`;
+    if (bytes < 1024) return fmt.quantity(bytes, 0, 'B');
+    if (bytes < 1024 * 1024) return fmt.quantity(bytes / 1024, 1, 'KB');
+    return fmt.quantity(bytes / (1024 * 1024), 2, 'MB');
   }, [printingArtifact, fmt]);
 
   const yieldResinEstimateToMainThread = React.useCallback(async () => {
@@ -3795,10 +3795,10 @@ export default function Home() {
     if (visible.length === 0) return '—';
     // An empty plate is a real answer, not an unknown: it holds no resin. The
     // scene-wide row beside it still carries the whole figure.
-    if (visibleResinModels.length === 0) return `${fmt.fixed(0, 2)} ml`;
+    if (visibleResinModels.length === 0) return fmt.quantity(0, 2, 'ml');
     if (isPrintingEstimatedResinBusy && printingEstimatedResinMl == null) return 'Calculating…';
     if (printingEstimatedResinMl == null) return '—';
-    return `${fmt.fixed(printingEstimatedResinMl, 2)} ml`;
+    return fmt.quantity(printingEstimatedResinMl, 2, 'ml');
   }, [isPrintingEstimatedResinBusy, printingEstimatedResinMl, scene.models, visibleResinModels.length, fmt]);
 
 
@@ -3807,7 +3807,7 @@ export default function Home() {
   const estimatedResinTotalLabel = React.useMemo(() => {
     if (sceneResinModels.length === 0) return null;
     if (printingEstimatedResinTotalMl == null) return null;
-    return `${fmt.fixed(printingEstimatedResinTotalMl, 2)} ml`;
+    return fmt.quantity(printingEstimatedResinTotalMl, 2, 'ml');
   }, [printingEstimatedResinTotalMl, sceneResinModels.length, fmt]);
 
   const estimatedPrintTimeLabel = React.useMemo(() => {

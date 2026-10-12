@@ -1,8 +1,8 @@
 import { useLingui } from '@lingui/react';
-import { localeFormat, type LocaleFormat } from '@/utils/localeNumber';
+import { unitFormat, type UnitFormat } from '@/utils/unitFormatting';
 
-/** Number formatters for the active Lingui locale; a new object after a locale switch. */
-export function useLocaleFormat(): LocaleFormat {
-  const { i18n } = useLingui();
-  return localeFormat(i18n.locale);
+/** Number and unit formatters for the active Lingui locale; a new object after a locale switch. */
+export function useLocaleFormat(): UnitFormat {
+  const { _, i18n } = useLingui();
+  return unitFormat(i18n.locale, _);
 }

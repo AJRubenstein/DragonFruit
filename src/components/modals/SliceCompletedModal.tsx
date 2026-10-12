@@ -50,8 +50,8 @@ export function SliceCompletedModal({
 
   const formatTime = (ms: number | null): string => {
     if (ms === null || ms === undefined) return '—';
-    if (ms < 1000) return `${fmt.fixed(ms, 0)} ms`;
-    return `${fmt.fixed(ms / 1000, 2)} s`;
+    if (ms < 1000) return fmt.quantity(ms, 0, 'ms');
+    return fmt.quantity(ms / 1000, 2, 's');
   };
 
   return (

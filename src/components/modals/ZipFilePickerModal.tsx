@@ -7,7 +7,7 @@ import { Button, IconButton } from '@/components/atoms';
 import { getFileExtensionLower } from '@/utils/zipImport';
 import { SCENE_FILE_EXTENSIONS } from '@/features/plugins/pluginFileTypeExtensions';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
-import type { LocaleFormat } from '@/utils/localeNumber';
+import type { UnitFormat, Unit } from '@/utils/unitFormatting';
 
 const MESH_EXTS = new Set(['.stl', '.obj', '.3mf']);
 const SCENE_EXTS = new Set(SCENE_FILE_EXTENSIONS.map((ext) => `.${ext}`));
@@ -37,10 +37,10 @@ const EXT_COLORS_LIGHT: Record<string, string> = {
   '.lys': '#b45309',
 };
 
-const FILE_SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+const FILE_SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const satisfies readonly Unit[];
 
-function formatFileSize(bytes: number, fmt: LocaleFormat): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+function formatFileSize(bytes: number, fmt: UnitFormat): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return fmt.quantity(0, 0, 'B');
 
   let value = bytes;
   let unitIndex = 0;
@@ -50,11 +50,11 @@ function formatFileSize(bytes: number, fmt: LocaleFormat): string {
   }
 
   if (unitIndex === 0) {
-    return `${fmt.fixed(value, 0)} ${FILE_SIZE_UNITS[unitIndex]}`;
+    return fmt.quantity(value, 0, FILE_SIZE_UNITS[unitIndex]);
   }
 
   const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${fmt.fixed(value, decimals)} ${FILE_SIZE_UNITS[unitIndex]}`;
+  return fmt.quantity(value, decimals, FILE_SIZE_UNITS[unitIndex]);
 }
 
 function getDefaultSelectedIndices(

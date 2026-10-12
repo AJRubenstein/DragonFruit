@@ -290,16 +290,21 @@ function resolveSlicingPhaseKind(phase: string): SlicingPhaseKind {
   return 'other';
 }
 
-function formatClockFromSeconds(totalSeconds: number): string {
+// h/m/s are unit abbreviations the translator may change, so each form is one message.
+const CLOCK_HOURS_MINUTES = msg({ message: '{hours}h {minutes}m', comment: 'Estimated print time: hours and minutes, as in "2h 5m".' });
+const CLOCK_MINUTES_SECONDS = msg({ message: '{minutes}m {paddedSeconds}s', comment: 'Estimated print time: minutes and two-digit seconds, as in "8m 05s".' });
+
+function formatClockFromSeconds(translate: Translate, totalSeconds: number): string {
   const total = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return translate({ ...CLOCK_HOURS_MINUTES, values: { hours, minutes } });
   }
-  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+  const paddedSeconds = seconds.toString().padStart(2, '0');
+  return translate({ ...CLOCK_MINUTES_SECONDS, values: { minutes, paddedSeconds } });
 }
 
 function formatElapsedClock(ms: number): string {
@@ -1364,7 +1369,7 @@ export function SlicingPanel({
     }
 
     const ml = totalMm3 / 1000;
-    return `${fmt.fixed(ml, 2)} mL`;
+    return fmt.quantity(ml, 2, 'ml');
   }, [estimatedVolumeLabelOverride, visibleModels, fmt]);
 
   const effectiveLayerHeightMm = useMemo(() => {
@@ -1439,8 +1444,8 @@ export function SlicingPanel({
       + normalLayers * (effectiveMaterialProfile.normalExposureSec + travelSecPerLayer)
     );
 
-    return formatClockFromSeconds(totalSec);
-  }, [effectiveMaterialProfile, estimatedLayerCount]);
+    return formatClockFromSeconds(_, totalSec);
+  }, [effectiveMaterialProfile, estimatedLayerCount, _]);
 
   const sliceAntiAliasing = useMemo(() => resolveSliceAntiAliasing({
     printerProfile: activePrinterProfile,
@@ -2459,7 +2464,7 @@ export function SlicingPanel({
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}><Trans>Layer Height</Trans></div>
                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {effectiveLayerHeightMm != null ? `${fmt.fixed(effectiveLayerHeightMm, 3)} mm` : '—'}
+                  {effectiveLayerHeightMm != null ? fmt.quantity(effectiveLayerHeightMm, 3, 'mm') : '—'}
                 </div>
               </div>
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
