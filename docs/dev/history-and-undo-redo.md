@@ -206,7 +206,7 @@ still shift when the cascade re-spaces the beds.
 
 ### Geometry replacements with external modifiers
 
-`scene.replaceModelGeometry` in `src/features/scene/useSceneCollectionManager.ts` accepts `{ meshModifiersAfter, meshModifiersBefore? }` for hollowing operations that must undo geometry and externally stored `ModelMeshModifiers` together. Pass the complete modifier value as `meshModifiersAfter` (or `null` to delete it); without it or `historyBefore`, the replacement creates no history entry. The optional `meshModifiersBefore` overrides the history before-state when Apply follows an unbaked draft: restoring that draft verbatim would bake the hollow again at slice time.
+`scene.replaceModelGeometry` in `src/features/scene/useSceneCollectionManager.ts` accepts `{ meshModifiersAfter, meshModifiersBefore? }` for hollowing operations that must undo geometry and externally stored `ModelMeshModifiers` together. Pass the complete modifier value as `meshModifiersAfter` (or `null` to delete it); without it or `historyBefore`, the replacement creates no history entry. The optional `meshModifiersBefore` overrides the history before-state when Apply follows a draft edited over an earlier Apply: that geometry is hollow already, so restoring the draft verbatim would hollow it again at slice time, and the before-state is the earlier baked hollow instead.
 
 ```ts
 scene.replaceModelGeometry(modelId, hollowedGeometry, 'Apply Hollowing', {
@@ -215,7 +215,7 @@ scene.replaceModelGeometry(modelId, hollowedGeometry, 'Apply Hollowing', {
 });
 ```
 
-The scene history handler restores the modifier store before the corresponding model snapshot. A first Apply records no hollowing modifier as its before-state, and Remove Hollowing deletes the hollowing field while retaining unrelated modifiers. Later panel edits can create a new unbaked hollowing draft; Apply commits that draft as baked geometry. Snapshot geometry remains available for redo; `useHollowingManager` and `prepareModelGeometry` discard only derived source, cavity, preview, and slice-preparation caches on reversal.
+The scene history handler restores the modifier store before the corresponding model snapshot. A first Apply records the draft it applied, blockers included, as its before-state (the draft edits are steps of their own), and Remove Hollowing deletes the hollowing field while retaining unrelated modifiers. Later panel edits can create a new unbaked hollowing draft; Apply commits that draft as baked geometry. Snapshot geometry remains available for redo; `useHollowingManager` and `prepareModelGeometry` discard only derived source, cavity, preview, and slice-preparation caches on reversal.
 
 A tool that previews its change on the live model passes `historyBefore: { transform?, supportState? }` instead, so the step's before-state is the model as it was before the preview, and `transformAfter` so the final transform lands with the geometry in the same update and step. Mirror does this: the preview flips the transform (and X/Y move the supports), and the bake at the end of the session records one step back to the unmirrored model.
 

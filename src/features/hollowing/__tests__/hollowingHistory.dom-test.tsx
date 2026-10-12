@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { resolveObjectURL } from 'node:buffer';
 import test from 'node:test';
 import { useEffect, useRef } from 'react';
+import { clearMocks, mockIPC } from '@tauri-apps/api/mocks';
 import { useHollowingManager, type HollowingManagerDeps } from '@/features/hollowing/useHollowingManager';
 import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import { useTransformManager } from '@/features/transform/useTransformManager';
@@ -44,7 +45,7 @@ function Probe({ onRender }: { onRender: (mounted: Mounted) => void }) {
   const noop = () => {};
   const deps = useRef<HollowingManagerDeps>({
     showOperationError: (message) => assert.fail(message),
-    setShowDamagedModelDialog: noop,
+    setShowDamagedModelDialog: () => assert.fail('the damaged-model dialog opened'),
     beginFinalizing: noop,
     clearFinalizing: noop,
     nextPaint: () => Promise.resolve(),
@@ -157,6 +158,41 @@ test('hollowing edits land in undo history', async (t) => {
       await settle(20);
       assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7, 9], 'the committed blockers are untouched');
       assert.equal(getUndoCount(), 0);
+    });
+
+    await t.test('undoing Apply returns to the draft, blockers included', async () => {
+      const hollowed = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0]);
+      const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: unknown };
+      tauriWindow.__TAURI_INTERNALS__ ??= {};
+      mockIPC((cmd) => {
+        if (cmd === 'mesh_hollow_apply_from_captured_source') {
+          return JSON.stringify({ removedVoxels: 100, outputTriangleCount: 2 });
+        }
+        if (cmd === 'mesh_repair_read_positions') return new Uint8Array(hollowed.buffer);
+        if (cmd === 'mesh_hollow_staged_read_cavity_positions') throw new Error('no cavity');
+        return null;
+      });
+      try {
+        clearHistory();
+        const draft = hollowingModifier();
+        assert.equal(draft?.bakedIntoGeometry, false);
+        const geometryBefore = current().scene.models[0].geometry.geometry;
+        current().hollowing.handleApplyHollowing();
+        await waitFor(() => current().scene.models[0].geometry.geometry !== geometryBefore, 'the hollowed geometry');
+        await settle(20);
+        assert.equal(hollowingModifier()?.bakedIntoGeometry, true);
+        assert.equal(getUndoCount(), 1);
+
+        undo();
+        await settle(20);
+        assert.equal(current().scene.models[0].geometry.geometry, geometryBefore, 'undo restores the geometry');
+        assert.equal(hollowingModifier()?.bakedIntoGeometry, false, 'the hollow is a draft again');
+        assert.deepEqual(hollowingModifier()?.blockedVoxelIndices, [4, 7, 9], 'with its blockers');
+        assert.deepEqual(current().hollowing.blockedHollowVoxelIndices, [4, 7, 9], 'and the panel shows them');
+      } finally {
+        clearMocks();
+        delete tauriWindow.__TAURI_INTERNALS__;
+      }
     });
   } finally {
     await tree.unmount();

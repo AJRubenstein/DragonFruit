@@ -404,9 +404,11 @@ export function useHollowingManager({
 
         const previousBaked = bakedHollowingBeforeDraftRef.current.get(activeModel.id)
           ?? (persistedHollowing?.bakedIntoGeometry ? persistedHollowing : undefined);
+        // Undo returns to the draft Apply started from, blockers included: it sits on the
+        // source geometry, so it slices the same. Not when that draft was edited over an
+        // earlier Apply, whose geometry is hollow already: then it is the earlier one.
         const beforeModifiers: ModelMeshModifiers = { ...(activeModel.meshModifiers ?? {}) };
         if (previousBaked) beforeModifiers.hollowing = previousBaked;
-        else delete beforeModifiers.hollowing;
 
         const modeLabel = hollowingState.mode === 'shell_open_face'
           ? 'Shell Hollowing'
