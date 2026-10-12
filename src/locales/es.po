@@ -272,7 +272,7 @@ msgstr "Un candidato que esté a esta distancia 3D de un soporte existente se fu
 
 #: src/features/organicCut/OrganicCutPanel.tsx:799
 msgid "A cut needs at least one loop."
-msgstr ""
+msgstr "Un corte necesita al menos un bucle."
 
 #: src/features/slicing/components/SlicingPanel.tsx:4141
 msgid "A file this run writes is already in that folder. Slicing replaces it."
@@ -1139,7 +1139,7 @@ msgstr "Cancelar el laminado"
 #: src/app/page.tsx:5749
 #: src/app/page.tsx:5750
 msgid "Canceling upload…"
-msgstr ""
+msgstr "Cancelando la subida…"
 
 #: src/components/organisms/modals/PrintingModals.tsx:530
 msgid "Canceling will stop the current print job and clear queued progress for this plate."
@@ -1348,7 +1348,7 @@ msgstr "Transparente empieza en el 55 % y sube hasta el 65 %."
 
 #: src/features/organicCut/OrganicCutPanel.tsx:369
 msgid "Click 2 points across the model to set a flat cut that slices it in two along a single plane. Turn on a Tenon to add a tenon/mortise so the halves index together."
-msgstr ""
+msgstr "Haz clic en 2 puntos a lo ancho del modelo para fijar un corte plano que lo divida en dos por un único plano. Activa la espiga para añadir espiga y mortaja y que las mitades encajen en su sitio."
 
 #: src/features/slicing/components/LutCurveEditor.tsx:1428
 msgid "Click a point to inspect · Drag to move · Right-click canvas to add · Use inspector to remove"
@@ -1368,7 +1368,7 @@ msgstr "Haz clic o usa el lazo para dejar vóxeles macizos, <0>Alt+Lazo</0> para
 
 #: src/features/organicCut/OrganicCutPanel.tsx:368
 msgid "Click points around the model to trace a curved seam that splits it in two — the cut follows your loop (3+ points). Turn on a Tenon to add a tenon/mortise so the halves index together."
-msgstr ""
+msgstr "Haz clic en puntos alrededor del modelo para trazar una costura curva que lo divida en dos; el corte sigue tu bucle (3 puntos o más). Activa la espiga para añadir espiga y mortaja y que las mitades encajen en su sitio."
 
 #: src/features/hollowing/HollowingPanel.tsx:286
 msgid "Click the face you want to open in the scene."
@@ -1873,7 +1873,7 @@ msgstr "Texto y detalles nítidos."
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:101
 msgid "Crosses"
-msgstr ""
+msgstr "Cruces"
 
 #: src/components/settings/MeshSettingsTab.tsx:233
 msgid "Cube"
@@ -1954,7 +1954,7 @@ msgstr "Resolución del corte"
 
 #: src/features/organicCut/OrganicCutMounts.tsx:137
 msgid "Cut Seam"
-msgstr ""
+msgstr "Costura de corte"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:512
 msgid "Cut Smoothing"
@@ -1982,7 +1982,7 @@ msgstr "Abriendo los agujeros en la geometría actual del modelo."
 
 #: src/features/organicCut/OrganicCutPanel.tsx:901
 msgid "Cutting..."
-msgstr ""
+msgstr "Cortando..."
 
 #: src/components/layout/FirstRunOnboarding.tsx:227
 msgid "Dark"
@@ -2215,7 +2215,7 @@ msgstr "Detección"
 
 #: src/app/page.tsx:5671
 msgid "Device still processing"
-msgstr ""
+msgstr "La impresora sigue procesando"
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:242
 msgid "Diagnostics"
@@ -3109,7 +3109,7 @@ msgstr "Ocultar"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:420
 msgid "Hide the cut preview"
-msgstr ""
+msgstr "Ocultar la vista previa del corte"
 
 #: src/supports/Settings/AnatomyPreview/SupportAnatomyPreviewSlot.tsx:27
 msgid "Hide Tuner"
@@ -3286,11 +3286,11 @@ msgstr "Importa un preajuste desde un archivo JSON y lo aplica"
 #. Plate here is the file slot on the printer.
 #: src/app/page.tsx:518
 msgid "Import complete • Plate #{plateId}. Click Print Now when ready."
-msgstr ""
+msgstr "Importación completa • Placa n.º {plateId}. Pulsa Imprimir ahora cuando esté lista."
 
 #: src/app/page.tsx:519
 msgid "Import complete. Click Print Now when ready."
-msgstr ""
+msgstr "Importación completa. Pulsa Imprimir ahora cuando esté lista."
 
 #: src/components/layout/TopBar.tsx:652
 msgid "Import mesh…"
@@ -3527,7 +3527,7 @@ msgstr "Holgura de la junta en milímetros"
 
 #: src/supports/Curves/CurveSettingsCard.tsx:158
 msgid "Joint curve"
-msgstr ""
+msgstr "Curva de unión"
 
 #: src/components/controls/IslandScanCard.tsx:167
 msgid "JSON loaded. Now select the original STL file."
@@ -3687,11 +3687,11 @@ msgstr "Modo de disposición"
 
 #: src/app/page.tsx:11733
 msgid "Leaf Fanning Active: Click model to sprout leaf"
-msgstr ""
+msgstr "Abanico de hojas activo: haz clic en el modelo para que brote una hoja"
 
 #: src/app/page.tsx:11734
 msgid "Leaf Fanning: Click a support shaft to lock anchor knot"
-msgstr ""
+msgstr "Abanico de hojas: haz clic en el fuste de un soporte para fijar el nudo de anclaje"
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:175
 msgid "Least diameter a branch or leaf takes as a fraction of the trunk it grows from. The default, 0.7, keeps a hosted member a step below its host instead of a needle beside it."
@@ -3758,7 +3758,7 @@ msgstr "Líneas"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:672
 msgid "Link width and depth together so the dome keeps its shape."
-msgstr ""
+msgstr "Vincula la anchura y la profundidad para que la cúpula conserve su forma."
 
 #: src/components/organisms/modals/PrintingModals.tsx:1881
 msgid "Live"
@@ -3924,19 +3924,19 @@ msgstr "Ver el interior del hueco, la cavidad y sus agujeros de drenaje"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:72
 msgid "Loop {loop} — {points, plural, one {# point} other {# points}} — click to edit"
-msgstr ""
+msgstr "Bucle {loop} — {points, plural, one {# punto} other {# puntos}} — haz clic para editarlo"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:71
 msgid "Loop {loop} — {points, plural, one {# point} other {# points}} — editing"
-msgstr ""
+msgstr "Bucle {loop} — {points, plural, one {# punto} other {# puntos}} — en edición"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:68
 msgid "Loop {loop} — {points, plural, one {# point} other {# points}} (needs 3+ to cut) — click to edit"
-msgstr ""
+msgstr "Bucle {loop} — {points, plural, one {# punto} other {# puntos}} (necesita 3 o más para cortar) — haz clic para editarlo"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:67
 msgid "Loop {loop} — {points, plural, one {# point} other {# points}} (needs 3+ to cut) — editing"
-msgstr ""
+msgstr "Bucle {loop} — {points, plural, one {# punto} other {# puntos}} (necesita 3 o más para cortar) — en edición"
 
 #: src/features/organicCut/OrganicCutColorsSection.tsx:18
 msgid "Loops of a multi-loop cut you are not editing."
@@ -4427,7 +4427,7 @@ msgstr "Este modelo no tiene riostras que quitar."
 #: src/app/page.tsx:5716
 #: src/app/page.tsx:5722
 msgid "No connected printer is available for upload."
-msgstr ""
+msgstr "No hay ninguna impresora conectada disponible para subir."
 
 #: src/features/slicing/components/SlicingPanel.tsx:1545
 #: src/features/slicing/components/SlicingPanel.tsx:1547
@@ -4507,7 +4507,7 @@ msgstr "No se ha encontrado en esta flota ninguna impresora en red con una direc
 #: src/app/page.tsx:4432
 #: src/app/page.tsx:4456
 msgid "No online printer is available for upload."
-msgstr ""
+msgstr "No hay ninguna impresora en línea disponible para subir."
 
 #: src/components/controls/ModelStatsCard.tsx:437
 msgid "No printer connected"
@@ -4515,11 +4515,11 @@ msgstr "Sin impresora conectada"
 
 #: src/app/page.tsx:5774
 msgid "No printer IP address available for Print Now."
-msgstr ""
+msgstr "No hay dirección IP de impresora para Imprimir ahora."
 
 #: src/app/page.tsx:5459
 msgid "No printer IP address available for send operation."
-msgstr ""
+msgstr "No hay dirección IP de impresora para el envío."
 
 #: src/components/settings/BackupsSettingsTab.tsx:1479
 #: src/components/settings/LocalBackupsSettingsTab.tsx:1222
@@ -4554,7 +4554,7 @@ msgstr "No hay archivos recientes"
 
 #: src/app/page.tsx:4334
 msgid "No resin selected"
-msgstr ""
+msgstr "Ninguna resina seleccionada"
 
 #: src/components/settings/LocalBackupsSettingsTab.tsx:921
 msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
@@ -5276,21 +5276,21 @@ msgstr "Comprobación previa a la impresión"
 
 #: src/app/page.tsx:535
 msgid "Print start failed: {reason}"
-msgstr ""
+msgstr "No se ha podido iniciar la impresión: {reason}"
 
 #: src/app/page.tsx:4500
 #: src/app/page.tsx:5794
 msgid "Print started"
-msgstr ""
+msgstr "Impresión iniciada"
 
 #. Plate here is the file slot on the printer.
 #: src/app/page.tsx:530
 msgid "Print started successfully • Plate #{plateId}."
-msgstr ""
+msgstr "Impresión iniciada correctamente • Placa n.º {plateId}."
 
 #: src/app/page.tsx:531
 msgid "Print started successfully."
-msgstr ""
+msgstr "Impresión iniciada correctamente."
 
 #: src/components/organisms/modals/PrintingModals.tsx:998
 msgid "Print started. Use <0>Monitor</0> in the top bar to view live progress and webcam."
@@ -5405,7 +5405,7 @@ msgstr "Repositorio privado listo"
 
 #: src/app/page.tsx:4502
 msgid "Processing"
-msgstr ""
+msgstr "Procesando"
 
 #: src/app/page.tsx:1807
 #: src/app/page.tsx:11583
@@ -5423,11 +5423,11 @@ msgstr "Procesando en {backend}… transcurrido {elapsed}"
 
 #: src/app/page.tsx:4497
 msgid "Processing on device"
-msgstr ""
+msgstr "Procesando en la impresora"
 
 #: src/app/page.tsx:5568
 msgid "Processing on device…"
-msgstr ""
+msgstr "Procesando en la impresora…"
 
 #: src/features/slicing/components/LutCurveEditor.tsx:1289
 msgid "Profile"
@@ -5522,7 +5522,7 @@ msgstr "¿Todo listo para tu próxima aventura?"
 #: src/app/page.tsx:4498
 #: src/app/page.tsx:5663
 msgid "Ready to print"
-msgstr ""
+msgstr "Lista para imprimir"
 
 #: src/app/page.tsx:1827
 msgid "Rebuilding the model geometry with the latest hollowing settings."
@@ -5670,7 +5670,7 @@ msgstr "Quitar los grupos ya soportados"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:799
 msgid "Remove the loop you're editing."
-msgstr ""
+msgstr "Quitar el bucle que estás editando."
 
 #: src/supports/autoBracing/autoBraceMessages.ts:23
 msgid "Removed {count, plural, one {# brace} other {# braces}}."
@@ -5955,7 +5955,7 @@ msgstr "Redondea la línea de costura a través de los puntos. En un corte plano
 
 #: src/features/organicCut/OrganicCutPanel.tsx:61
 msgid "Rounds the tenon's corners and tip. On this tenon the geometry accepts up to {maxMm}mm — a wider or deeper tenon raises that ceiling."
-msgstr ""
+msgstr "Redondea las esquinas y la punta de la espiga. En esta espiga la geometría admite hasta {maxMm} mm; una espiga más ancha o más profunda sube ese límite."
 
 #: src/components/settings/BackupsSettingsTab.tsx:1132
 msgid "Run a sync, verify repository readiness, or disconnect this GitHub account."
@@ -6222,7 +6222,7 @@ msgstr "s"
 
 #: src/supports/Curves/CurveSettingsCard.tsx:158
 msgid "Segment curve"
-msgstr ""
+msgstr "Curva de tramo"
 
 #: src/components/settings/FleetManagement.tsx:210
 msgid "Select"
@@ -6248,7 +6248,7 @@ msgstr "Elige un material equivalente al importar."
 
 #: src/app/page.tsx:5463
 msgid "Select a matching material profile before upload."
-msgstr ""
+msgstr "Selecciona un perfil de material que encaje antes de subir."
 
 #: src/features/slicing/components/SlicingPanel.tsx:1974
 msgid "Select a material profile first."
@@ -6339,7 +6339,7 @@ msgstr "Material seleccionado"
 
 #: src/app/page.tsx:505
 msgid "Selected material on this printer does not match sliced layer height {layerHeight} mm."
-msgstr ""
+msgstr "El material seleccionado en esta impresora no coincide con la altura de capa laminada de {layerHeight} mm."
 
 #: src/features/slicing/components/LutCurveEditor.tsx:1396
 msgid "Selected point alpha"
@@ -6394,7 +6394,7 @@ msgstr "Ángulo de autosoporte"
 
 #: src/app/page.tsx:513
 msgid "Send failed: {reason}"
-msgstr ""
+msgstr "No se ha podido enviar: {reason}"
 
 #: src/components/settings/SettingsModal.tsx:1290
 msgid "Send sliced files to UVTools for analysis"
@@ -6402,7 +6402,7 @@ msgstr "Envía los archivos laminados a UVTools para analizarlos"
 
 #: src/app/page.tsx:4346
 msgid "Send to Printer"
-msgstr ""
+msgstr "Enviar a la impresora"
 
 #: src/features/slicing/components/SlicingPanel.tsx:3651
 msgid "Send to UVTools"
@@ -6578,7 +6578,7 @@ msgstr "Mostrar consejos de soportes"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:420
 msgid "Show the cut preview"
-msgstr ""
+msgstr "Mostrar la vista previa del corte"
 
 #: src/supports/Settings/AnatomyPreview/SupportAnatomyPreviewSlot.tsx:27
 msgid "Show Tuner"
@@ -6598,7 +6598,7 @@ msgstr "Simplificado"
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:101
 msgid "Single Diagonal"
-msgstr ""
+msgstr "Diagonal simple"
 
 #: src/components/controls/autoSupport/AutoSupportRunDiagnostics.tsx:50
 msgid "Sizing Debug"
@@ -6836,7 +6836,7 @@ msgstr "Iniciar la impresión"
 #: src/app/page.tsx:5801
 #: src/app/page.tsx:5807
 msgid "Start print failed"
-msgstr ""
+msgstr "No se ha podido iniciar la impresión"
 
 #: src/components/organisms/modals/PrintingModals.tsx:488
 msgid "Start Recent Print File"
@@ -6857,7 +6857,7 @@ msgstr "Empezando"
 
 #: src/app/page.tsx:4499
 msgid "Starting print"
-msgstr ""
+msgstr "Iniciando la impresión"
 
 #: src/app/page.tsx:5779
 #: src/components/organisms/modals/PrintingModals.tsx:1111
@@ -7529,7 +7529,7 @@ msgstr "Marca desconocida"
 #: src/app/page.tsx:5682
 #: src/app/page.tsx:5806
 msgid "Unknown error"
-msgstr ""
+msgstr "Error desconocido"
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:158
 msgid "Unknown error installing the update."
@@ -7548,7 +7548,7 @@ msgstr "Fabricante desconocido"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:671
 msgid "Unlink width and depth — resize them independently."
-msgstr ""
+msgstr "Desvincula la anchura y la profundidad para cambiarlas por separado."
 
 #. Tooltip on the lock button beside the build plate while it is locked.
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1772
@@ -7663,30 +7663,30 @@ msgstr "Actualizando la vista previa del vaciado con tus zonas macizas."
 
 #: src/app/page.tsx:5686
 msgid "Upload canceled"
-msgstr ""
+msgstr "Subida cancelada"
 
 #: src/app/page.tsx:5685
 msgid "Upload canceled. You can retry when ready."
-msgstr ""
+msgstr "Subida cancelada. Puedes reintentarlo cuando quieras."
 
 #. Plate here is the file slot on the printer.
 #: src/app/page.tsx:524
 msgid "Upload complete • Plate #{plateId}. Device is still processing metadata after waiting."
-msgstr ""
+msgstr "Subida completa • Placa n.º {plateId}. La impresora sigue procesando los metadatos después de esperar."
 
 #: src/app/page.tsx:509
 msgid "Upload complete. {printer} is processing file metadata…"
-msgstr ""
+msgstr "Subida completa. {printer} está procesando los metadatos del archivo…"
 
 #: src/app/page.tsx:525
 msgid "Upload complete. Device is still processing metadata after waiting."
-msgstr ""
+msgstr "Subida completa. La impresora sigue procesando los metadatos después de esperar."
 
 #: src/app/page.tsx:4501
 #: src/app/page.tsx:5579
 #: src/app/page.tsx:5689
 msgid "Upload failed"
-msgstr ""
+msgstr "Falló la subida"
 
 #. placeholder {0}: activeNetworkUiAdapter?.displayName ?? _(msg`Printer`)
 #: src/components/organisms/modals/PrintingModals.tsx:962
@@ -7696,7 +7696,7 @@ msgstr "Subir a {0}"
 #. Send button label; {printer} is the target printer name, shortened when long.
 #: src/app/page.tsx:501
 msgid "Upload to {printer}"
-msgstr ""
+msgstr "Subir a {printer}"
 
 #: src/components/organisms/modals/PrintingModals.tsx:934
 msgid "Upload to Selected Printer"
@@ -7704,15 +7704,15 @@ msgstr "Subir a la impresora seleccionada"
 
 #: src/app/page.tsx:5502
 msgid "Uploading Print Job to Printer…"
-msgstr ""
+msgstr "Subiendo el trabajo de impresión a la impresora…"
 
 #: src/app/page.tsx:5501
 msgid "Uploading Print Job…"
-msgstr ""
+msgstr "Subiendo el trabajo de impresión…"
 
 #: src/app/page.tsx:4496
 msgid "Uploading to printer"
-msgstr ""
+msgstr "Subiendo a la impresora"
 
 #: src/components/modals/AaSupportWarningModal.tsx:47
 msgid "Use Anyway"
@@ -8126,7 +8126,7 @@ msgstr "Cero polígonos. Potencial infinito."
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:101
 msgid "Zig Zag"
-msgstr ""
+msgstr "Zigzag"
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:163
 msgid "Zigzag chains step by their own rise — interval has no effect"
