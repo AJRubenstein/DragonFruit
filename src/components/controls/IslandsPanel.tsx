@@ -13,6 +13,7 @@ import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { ISLAND_LAYER_COLORS, markerIdFor } from '@/volumeAnalysis/Islands/islandPuckMarkers';
 import { Trans } from '@lingui/react/macro';
+import { formatFixed } from '@/utils/localeNumber';
 
 const SECTION_CARD: React.CSSProperties = {
   borderColor: 'var(--border-subtle)',
@@ -65,7 +66,7 @@ interface IslandsPanelProps {
 }
 
 export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: IslandsPanelProps) {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [showSettings, setShowSettings] = React.useState(false);
 
@@ -338,7 +339,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{_(msg`Resolution`)}</span>
-                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{draftPxMm.toFixed(2)} mm/px</span>
+                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{formatFixed(draftPxMm, 2, i18n.locale)} mm/px</span>
                 </div>
                 <input type="range" min="0.03" max="0.5" step="0.01" value={draftPxMm} onChange={(e) => setDraftPxMm(parseFloat(e.target.value))} disabled={scanning} className="ui-range w-full" />
               </div>
@@ -347,7 +348,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{_(msg`Support buffer`)}</span>
-                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{draftSupportBufMm.toFixed(2)} mm</span>
+                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{formatFixed(draftSupportBufMm, 2, i18n.locale)} mm</span>
                 </div>
                 <input type="range" min="0" max="1" step="0.05" value={draftSupportBufMm} onChange={(e) => setDraftSupportBufMm(parseFloat(e.target.value))} disabled={scanning} className="ui-range w-full" />
               </div>

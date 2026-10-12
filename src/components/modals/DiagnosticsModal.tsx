@@ -3,6 +3,7 @@
 import React from 'react';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { X } from 'lucide-react';
+import { useLingui } from '@lingui/react';
 import { IconButton } from '@/components/atoms';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { getSnapshot as getSupportSnapshot } from '@/supports/state';
@@ -17,6 +18,7 @@ import {
   type DiagnosticsBenchmarkResult,
   type DiagnosticsBenchmarkStressProfile,
 } from '@/components/modals/diagnosticsBenchmarkEvents';
+import { formatFixed, formatNumber } from '@/utils/localeNumber';
 
 type DiagnosticsModalProps = {
   isOpen: boolean;
@@ -81,32 +83,32 @@ const GRAPH_WINDOW_SECONDS = 120;
 const SAMPLE_INTERVAL_MS = 250;
 const MAX_GRAPH_POINTS = Math.floor((GRAPH_WINDOW_SECONDS * 1000) / SAMPLE_INTERVAL_MS);
 
-function formatBytes(bytes: number | null): string {
+function formatBytes(bytes: number | null, locale: string): string {
   if (bytes == null || !Number.isFinite(bytes)) return 'N/A';
   const abs = Math.max(0, bytes);
   const KB = 1024;
   const MB = KB * 1024;
   const GB = MB * 1024;
 
-  if (abs >= GB) return `${(abs / GB).toFixed(2)} GB`;
-  if (abs >= MB) return `${(abs / MB).toFixed(2)} MB`;
-  if (abs >= KB) return `${(abs / KB).toFixed(1)} KB`;
-  return `${abs.toFixed(0)} B`;
+  if (abs >= GB) return `${formatFixed(abs / GB, 2, locale)} GB`;
+  if (abs >= MB) return `${formatFixed(abs / MB, 2, locale)} MB`;
+  if (abs >= KB) return `${formatFixed(abs / KB, 1, locale)} KB`;
+  return `${formatFixed(abs, 0, locale)} B`;
 }
 
-function formatPercent(value: number | null): string {
+function formatPercent(value: number | null, locale: string): string {
   if (value == null || !Number.isFinite(value)) return 'N/A';
-  return `${(value * 100).toFixed(1)}%`;
+  return `${formatFixed(value * 100, 1, locale)}%`;
 }
 
-function formatMs(value: number | null | undefined, digits = 2): string {
+function formatMs(value: number | null | undefined, locale: string, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return 'N/A';
-  return `${value.toFixed(digits)} ms`;
+  return `${formatFixed(value, digits, locale)} ms`;
 }
 
-function formatFps(value: number | null | undefined, digits = 1): string {
+function formatFps(value: number | null | undefined, locale: string, digits = 1): string {
   if (value == null || !Number.isFinite(value)) return 'N/A';
-  return `${value.toFixed(digits)} fps`;
+  return `${formatFixed(value, digits, locale)} fps`;
 }
 
 function computeSupportDiagnostics(): SupportDiagnosticsStats {
@@ -216,6 +218,7 @@ export function DiagnosticsModal({
   totalPolygons,
   selectedPolygons,
 }: DiagnosticsModalProps) {
+  const { i18n } = useLingui();
   useEscapeToClose(isOpen, onClose);
 
   const [stats, setStats] = React.useState<RuntimeStats>({
@@ -442,35 +445,35 @@ export function DiagnosticsModal({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>FPS</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{stats.fps.toFixed(1)}</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.fps, 1, i18n.locale)}</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Frame Time</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{stats.frameTimeMs.toFixed(2)} ms</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.frameTimeMs, 2, i18n.locale)} ms</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Used JS Heap</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatBytes(stats.usedJsHeapBytes)}</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatBytes(stats.usedJsHeapBytes, i18n.locale)}</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Heap Usage</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatPercent(heapUsageRatio)}</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatPercent(heapUsageRatio, i18n.locale)}</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>CPU Usage (est.)</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{stats.cpuUsageEstimate.toFixed(0)}%</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.cpuUsageEstimate, 0, i18n.locale)}%</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Support Segments</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{stats.supportStats.segmentCount.toLocaleString()}</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.segmentCount, i18n.locale)}</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Support Pickers</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingRegisteredSupportRelated.toLocaleString()}</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.pickingRegisteredSupportRelated, i18n.locale)}</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Picking Avg</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingAvgMs.toFixed(3)} ms</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.supportStats.pickingAvgMs, 3, i18n.locale)} ms</div>
             </div>
           </div>
 
@@ -536,21 +539,21 @@ export function DiagnosticsModal({
                   <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                     <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Overall Avg</div>
                     <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                      {formatFps(benchmarkResult.overall.fpsAvg)}
+                      {formatFps(benchmarkResult.overall.fpsAvg, i18n.locale)}
                     </div>
-                    <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatMs(benchmarkResult.overall.frameTimeAvgMs)}</div>
+                    <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatMs(benchmarkResult.overall.frameTimeAvgMs, i18n.locale)}</div>
                   </div>
                   <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                     <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Overall P95</div>
                     <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                      {formatMs(benchmarkResult.overall.frameTimeP95Ms)}
+                      {formatMs(benchmarkResult.overall.frameTimeP95Ms, i18n.locale)}
                     </div>
                     <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Projection: {benchmarkResult.projectionMode}</div>
                   </div>
                   <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                     <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Run Duration</div>
                     <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                      {(benchmarkResult.totalDurationMs / 1000).toFixed(2)}s
+                      {formatFixed(benchmarkResult.totalDurationMs / 1000, 2, i18n.locale)}s
                     </div>
                     <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                       Camera feel: {benchmarkResult.cameraFeelPreset} • Stress: {benchmarkResult.stressProfile}
@@ -574,11 +577,11 @@ export function DiagnosticsModal({
                       {benchmarkResult.phases.map((phase) => (
                         <tr key={phase.phase} style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-1)' }}>
                           <td className="px-2 py-1.5" style={{ color: 'var(--text-strong)' }}>{phase.phase}</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-strong)' }}>{phase.stats.fpsAvg.toFixed(1)}</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{phase.stats.fpsMin.toFixed(1)}</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-strong)' }}>{phase.stats.frameTimeAvgMs.toFixed(2)} ms</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{phase.stats.frameTimeP95Ms.toFixed(2)} ms</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{phase.stats.frameTimeMaxMs.toFixed(2)} ms</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-strong)' }}>{formatFixed(phase.stats.fpsAvg, 1, i18n.locale)}</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{formatFixed(phase.stats.fpsMin, 1, i18n.locale)}</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-strong)' }}>{formatFixed(phase.stats.frameTimeAvgMs, 2, i18n.locale)} ms</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{formatFixed(phase.stats.frameTimeP95Ms, 2, i18n.locale)} ms</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{formatFixed(phase.stats.frameTimeMaxMs, 2, i18n.locale)} ms</td>
                         </tr>
                       ))}
                     </tbody>
@@ -615,8 +618,8 @@ export function DiagnosticsModal({
                 <div>Models: <span style={{ color: 'var(--text-strong)' }}>{modelCount}</span></div>
                 <div>Visible Models: <span style={{ color: 'var(--text-strong)' }}>{visibleModelCount}</span></div>
                 <div>Selected Models: <span style={{ color: 'var(--text-strong)' }}>{selectedModelCount}</span></div>
-                <div>Total Triangles: <span style={{ color: 'var(--text-strong)' }}>{totalPolygons.toLocaleString()}</span></div>
-                <div>Selected Triangles: <span style={{ color: 'var(--text-strong)' }}>{selectedPolygons.toLocaleString()}</span></div>
+                <div>Total Triangles: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(totalPolygons, i18n.locale)}</span></div>
+                <div>Selected Triangles: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(selectedPolygons, i18n.locale)}</span></div>
               </div>
             </div>
 
@@ -625,8 +628,8 @@ export function DiagnosticsModal({
               <div className="space-y-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                 <div>Logical CPU Cores: <span style={{ color: 'var(--text-strong)' }}>{hardwareConcurrency ?? 'N/A'}</span></div>
                 <div>Device Memory: <span style={{ color: 'var(--text-strong)' }}>{deviceMemory ? `${deviceMemory} GB` : 'N/A'}</span></div>
-                <div>Total JS Heap: <span style={{ color: 'var(--text-strong)' }}>{formatBytes(stats.totalJsHeapBytes)}</span></div>
-                <div>JS Heap Limit: <span style={{ color: 'var(--text-strong)' }}>{formatBytes(stats.heapLimitBytes)}</span></div>
+                <div>Total JS Heap: <span style={{ color: 'var(--text-strong)' }}>{formatBytes(stats.totalJsHeapBytes, i18n.locale)}</span></div>
+                <div>JS Heap Limit: <span style={{ color: 'var(--text-strong)' }}>{formatBytes(stats.heapLimitBytes, i18n.locale)}</span></div>
                 <div>User Agent: <span style={{ color: 'var(--text-strong)' }}>{navigator.userAgent}</span></div>
               </div>
             </div>
@@ -637,25 +640,25 @@ export function DiagnosticsModal({
               <div className="text-[12px] font-semibold mb-2" style={{ color: 'var(--text-strong)' }}>Support Stats</div>
               <div className="space-y-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                 {SUPPORT_COLLECTION_KEYS.map((key) => (
-                  <div key={key}>{key.charAt(0).toUpperCase()}{key.slice(1)}: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats[key].toLocaleString()}</span></div>
+                  <div key={key}>{key.charAt(0).toUpperCase()}{key.slice(1)}: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats[key], i18n.locale)}</span></div>
                 ))}
-                <div>Segments: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.segmentCount.toLocaleString()}</span></div>
-                <div>Joints: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.jointCount.toLocaleString()}</span></div>
-                <div>Estimated Render Primitives: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.estimatedRenderablePrimitives.toLocaleString()}</span></div>
+                <div>Segments: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.segmentCount, i18n.locale)}</span></div>
+                <div>Joints: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.jointCount, i18n.locale)}</span></div>
+                <div>Estimated Render Primitives: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.estimatedRenderablePrimitives, i18n.locale)}</span></div>
               </div>
             </div>
 
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[12px] font-semibold mb-2" style={{ color: 'var(--text-strong)' }}>GPU Picking Stats</div>
               <div className="space-y-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                <div>Total Registered: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingRegisteredTotal.toLocaleString()}</span></div>
-                <div>Support Registered: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingRegisteredSupportRelated.toLocaleString()}</span></div>
-                <div>Visible Pick Objects: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingVisibleObjects.toLocaleString()}</span></div>
-                <div>Cached Pick Objects: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingCachedObjects.toLocaleString()}</span></div>
-                <div>Pick Avg: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingAvgMs.toFixed(3)} ms</span></div>
-                <div>Pick Last: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingLastMs.toFixed(3)} ms</span></div>
-                <div>Sync Cache Avg: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingSyncAvgMs.toFixed(3)} ms</span></div>
-                <div>Pick Rate: <span style={{ color: 'var(--text-strong)' }}>{stats.supportStats.pickingPicksPerSecond.toFixed(1)} /s</span></div>
+                <div>Total Registered: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.pickingRegisteredTotal, i18n.locale)}</span></div>
+                <div>Support Registered: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.pickingRegisteredSupportRelated, i18n.locale)}</span></div>
+                <div>Visible Pick Objects: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.pickingVisibleObjects, i18n.locale)}</span></div>
+                <div>Cached Pick Objects: <span style={{ color: 'var(--text-strong)' }}>{formatNumber(stats.supportStats.pickingCachedObjects, i18n.locale)}</span></div>
+                <div>Pick Avg: <span style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.supportStats.pickingAvgMs, 3, i18n.locale)} ms</span></div>
+                <div>Pick Last: <span style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.supportStats.pickingLastMs, 3, i18n.locale)} ms</span></div>
+                <div>Sync Cache Avg: <span style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.supportStats.pickingSyncAvgMs, 3, i18n.locale)} ms</span></div>
+                <div>Pick Rate: <span style={{ color: 'var(--text-strong)' }}>{formatFixed(stats.supportStats.pickingPicksPerSecond, 1, i18n.locale)} /s</span></div>
               </div>
             </div>
           </div>

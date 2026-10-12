@@ -79,16 +79,21 @@ describe("wrapAngle / shortestAngleDelta", () => {
 
 describe("formatSweepDegrees", () => {
   it("signs the sweep and gives two decimals", () => {
-    assert.equal(formatSweepDegrees(deg(10)), "+10.00");
-    assert.equal(formatSweepDegrees(deg(-10)), "-10.00");
-    assert.equal(formatSweepDegrees(deg(47.3)), "+47.30");
-    assert.equal(formatSweepDegrees(deg(-3.456)), "-3.46");
+    assert.equal(formatSweepDegrees(deg(10), "en"), "+10.00");
+    assert.equal(formatSweepDegrees(deg(-10), "en"), "-10.00");
+    assert.equal(formatSweepDegrees(deg(47.3), "en"), "+47.30");
+    assert.equal(formatSweepDegrees(deg(-3.456), "en"), "-3.46");
+  });
+
+  it("uses the locale decimal separator", () => {
+    assert.equal(formatSweepDegrees(deg(47.3), "es"), "+47,30");
+    assert.equal(formatSweepDegrees(deg(-3.456), "es"), "-3,46");
   });
 
   it("never shows a signed zero", () => {
-    assert.equal(formatSweepDegrees(0), "0.00");
-    assert.equal(formatSweepDegrees(-0), "0.00");
-    assert.equal(formatSweepDegrees(deg(-0.001)), "0.00");
+    assert.equal(formatSweepDegrees(0, "en"), "0.00");
+    assert.equal(formatSweepDegrees(-0, "en"), "0.00");
+    assert.equal(formatSweepDegrees(deg(-0.001), "en"), "0.00");
   });
 
   it("NEVER reports an angle beyond one turn, however far the drag went", () => {
@@ -97,15 +102,15 @@ describe("formatSweepDegrees", () => {
     // accumulator printed 540 for a turn and a half, which no other angle in the
     // app does. Every readout has to land inside one turn, like the Transform
     // panel's fields.
-    assert.equal(formatSweepDegrees(deg(370)), "+10.00");
-    assert.equal(formatSweepDegrees(deg(-370)), "-10.00");
-    assert.equal(formatSweepDegrees(deg(540)), "+180.00");
-    assert.equal(formatSweepDegrees(deg(720)), "0.00");
-    assert.equal(formatSweepDegrees(deg(1085)), "+5.00");
-    assert.equal(formatSweepDegrees(deg(200)), "-160.00", "wraps the short way, like the panel");
+    assert.equal(formatSweepDegrees(deg(370), "en"), "+10.00");
+    assert.equal(formatSweepDegrees(deg(-370), "en"), "-10.00");
+    assert.equal(formatSweepDegrees(deg(540), "en"), "+180.00");
+    assert.equal(formatSweepDegrees(deg(720), "en"), "0.00");
+    assert.equal(formatSweepDegrees(deg(1085), "en"), "+5.00");
+    assert.equal(formatSweepDegrees(deg(200), "en"), "-160.00", "wraps the short way, like the panel");
 
     for (let d = -2000; d <= 2000; d += 7) {
-      const shown = Number(formatSweepDegrees(deg(d)));
+      const shown = Number(formatSweepDegrees(deg(d), "en"));
       assert.ok(
         Math.abs(shown) <= 180,
         `${d}deg was reported as ${shown}, outside one turn`,
@@ -114,8 +119,8 @@ describe("formatSweepDegrees", () => {
   });
 
   it("survives a non-finite sweep instead of printing NaN at the cursor", () => {
-    assert.equal(formatSweepDegrees(Number.NaN), "0.00");
-    assert.equal(formatSweepDegrees(Number.POSITIVE_INFINITY), "0.00");
+    assert.equal(formatSweepDegrees(Number.NaN, "en"), "0.00");
+    assert.equal(formatSweepDegrees(Number.POSITIVE_INFINITY, "en"), "0.00");
   });
 });
 

@@ -2,6 +2,7 @@
 
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
+import { formatFixed } from '@/utils/localeNumber';
 
 // {hours}/{minutes} are the whole-number quantities (e.g. "2h 05m", "8m") —
 // translators control abbreviation and spacing (e.g. "2 h 05 min") through their msgstr.
@@ -24,16 +25,16 @@ export function formatPrintingMonitorEstimatedTime(seconds: number | null, trans
   return translate(msg({ message: '< 1 min', comment: 'Shown when the estimated print time rounds down to under one minute. Keep the "<" comparison symbol.' }));
 }
 
-export function formatPrintingMonitorUsedMaterial(ml: number | null): string {
+export function formatPrintingMonitorUsedMaterial(ml: number | null, locale: string): string {
   if (ml == null || !Number.isFinite(ml) || ml <= 0) return '—';
-  return `${ml.toFixed(2)} ml`;
+  return `${formatFixed(ml, 2, locale)} ml`;
 }
 
-export function formatPrintingMonitorAreaMm2(areaMm2: number | null): string {
+export function formatPrintingMonitorAreaMm2(areaMm2: number | null, locale: string): string {
   if (areaMm2 == null || !Number.isFinite(areaMm2) || areaMm2 <= 0) return '—';
-  if (areaMm2 >= 1000) return `${areaMm2.toFixed(0)} mm²`;
-  if (areaMm2 >= 100) return `${areaMm2.toFixed(1)} mm²`;
-  return `${areaMm2.toFixed(2)} mm²`;
+  if (areaMm2 >= 1000) return `${formatFixed(areaMm2, 0, locale)} mm²`;
+  if (areaMm2 >= 100) return `${formatFixed(areaMm2, 1, locale)} mm²`;
+  return `${formatFixed(areaMm2, 2, locale)} mm²`;
 }
 
 export function parsePrintingMonitorSeconds(value: unknown): number | null {

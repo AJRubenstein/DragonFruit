@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 import { useIsLinux } from '@/hooks/usePlatform';
 import { formatFileSize, formatPolygonCountCompact } from '@/utils/meshStatsFormatting';
+import { formatFixed } from '@/utils/localeNumber';
 import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
 import {
   getActiveMaterialProfile,
@@ -431,8 +432,8 @@ export function ModelStatsCard({
     const price = Math.max(0, activeMaterialProfile.bottlePrice || 0);
     const currency = (activeMaterialProfile.currencyCode || 'USD').toUpperCase();
     const cost = (estimatedResinMl / bottleMl) * price;
-    return `${currency} ${cost.toFixed(2)}`;
-  }, [activeMaterialProfile, estimatedResinMl]);
+    return `${currency} ${formatFixed(cost, 2, i18n.locale)}`;
+  }, [activeMaterialProfile, estimatedResinMl, i18n.locale]);
 
   const frontHeader = connectedHostName || activePrinterProfile?.name || _(msg`No printer connected`);
   const frontHeaderColor = isNetworkPrinterOffline
@@ -531,7 +532,7 @@ export function ModelStatsCard({
               <span><Trans>Exposure:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>
                 {effectiveNormalExposureSec != null
-                  ? `${effectiveNormalExposureSec.toFixed(1)}s • ${(effectiveBottomExposureSec ?? effectiveNormalExposureSec).toFixed(1)}s`
+                  ? `${formatFixed(effectiveNormalExposureSec, 1, i18n.locale)}s • ${formatFixed(effectiveBottomExposureSec ?? effectiveNormalExposureSec, 1, i18n.locale)}s`
                   : '-'}
               </span>
 
@@ -549,7 +550,7 @@ export function ModelStatsCard({
               <span><Trans comment='Row label on the printer card: estimated resin volume. Keep it terse — the label column is narrow.'>Est. resin:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>
                 {estimatedResinLabelOverride ?? (estimatedResinMl != null
-                  ? `${estimatedResinMl.toFixed(2)} ml${estimatedResinCost ? ` (${estimatedResinCost})` : ''}`
+                  ? `${formatFixed(estimatedResinMl, 2, i18n.locale)} ml${estimatedResinCost ? ` (${estimatedResinCost})` : ''}`
                   : '-')}
               </span>
 
@@ -592,7 +593,7 @@ export function ModelStatsCard({
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.geometry.meshDefects?.nativeRepairReport?.post.component_count ?? '-'}</span>
 
               <span><Trans>Height:</Trans></span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? `${heightMm.toFixed(2)} mm` : '-'}</span>
+              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? `${formatFixed(heightMm, 2, i18n.locale)} mm` : '-'}</span>
             </div>
 
             {model?.geometry.meshDefects?.hasDefects && (

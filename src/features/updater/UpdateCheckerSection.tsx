@@ -26,14 +26,15 @@ import {
   formatUpdateVersionChip,
   formatUpdateVersionReady,
 } from '@/features/updater/updaterMessages';
+import { formatFixed } from '@/utils/localeNumber';
 
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function formatBytes(bytes: number, locale: string): string {
+  if (bytes < 1024) return `${formatFixed(bytes, 0, locale)} B`;
+  if (bytes < 1024 * 1024) return `${formatFixed(bytes / 1024, 1, locale)} KB`;
+  return `${formatFixed(bytes / (1024 * 1024), 1, locale)} MB`;
 }
 
 async function openExternal(url: string): Promise<void> {
@@ -285,11 +286,10 @@ function DownloadingState({
 }: {
   state: UpdateState & { status: 'downloading' };
 }) {
-  const { _ } = useLingui();
+  const { _, i18n } = useLingui();
   const { contentLength, downloaded } = s.progress;
-  const pct = contentLength > 0
-    ? ((downloaded / contentLength) * 100).toFixed(1)
-    : '0.0';
+  const pctValue = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
+  const pct = formatFixed(pctValue, 1, i18n.locale);
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16">
@@ -309,12 +309,12 @@ function DownloadingState({
             <Trans>Downloading Update</Trans>
           </span>
           <span className="block text-sm mt-1.5 font-medium" style={{ color: 'var(--text-muted)' }}>
-            {formatUpdateDownloadedBytes(formatBytes(downloaded), formatBytes(contentLength), pct, _)}
+            {formatUpdateDownloadedBytes(formatBytes(downloaded, i18n.locale), formatBytes(contentLength, i18n.locale), pct, _)}
           </span>
         </span>
       </div>
       <div className="w-full max-w-sm">
-        <ProgressBar pct={parseFloat(pct)} />
+        <ProgressBar pct={pctValue} />
       </div>
     </div>
   );

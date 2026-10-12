@@ -134,6 +134,7 @@ import {
 } from '@/components/layout/floatingLayoutPreferences';
 
 import { initializeBVH } from '@/utils/bvh';
+import { formatFixed } from '@/utils/localeNumber';
 import {
   computeApproxModelWorldBounds,
   computePreciseModelWorldBounds,
@@ -3175,10 +3176,10 @@ export default function Home() {
   const printingOutputSizeLabel = React.useMemo(() => {
     if (!printingArtifact) return '—';
     const bytes = Math.max(0, printingArtifact.byteSize);
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  }, [printingArtifact]);
+    if (bytes < 1024) return `${formatFixed(bytes, 0, i18n.locale)} B`;
+    if (bytes < 1024 * 1024) return `${formatFixed(bytes / 1024, 1, i18n.locale)} KB`;
+    return `${formatFixed(bytes / (1024 * 1024), 2, i18n.locale)} MB`;
+  }, [printingArtifact, i18n.locale]);
 
   const yieldResinEstimateToMainThread = React.useCallback(async () => {
     await new Promise<void>((resolve) => {
@@ -3793,11 +3794,11 @@ export default function Home() {
     if (visible.length === 0) return '—';
     // An empty plate is a real answer, not an unknown: it holds no resin. The
     // scene-wide row beside it still carries the whole figure.
-    if (visibleResinModels.length === 0) return '0.00 ml';
+    if (visibleResinModels.length === 0) return `${formatFixed(0, 2, i18n.locale)} ml`;
     if (isPrintingEstimatedResinBusy && printingEstimatedResinMl == null) return 'Calculating…';
     if (printingEstimatedResinMl == null) return '—';
-    return `${printingEstimatedResinMl.toFixed(2)} ml`;
-  }, [isPrintingEstimatedResinBusy, printingEstimatedResinMl, scene.models, visibleResinModels.length]);
+    return `${formatFixed(printingEstimatedResinMl, 2, i18n.locale)} ml`;
+  }, [isPrintingEstimatedResinBusy, printingEstimatedResinMl, scene.models, visibleResinModels.length, i18n.locale]);
 
 
 
@@ -3805,8 +3806,8 @@ export default function Home() {
   const estimatedResinTotalLabel = React.useMemo(() => {
     if (sceneResinModels.length === 0) return null;
     if (printingEstimatedResinTotalMl == null) return null;
-    return `${printingEstimatedResinTotalMl.toFixed(2)} ml`;
-  }, [printingEstimatedResinTotalMl, sceneResinModels.length]);
+    return `${formatFixed(printingEstimatedResinTotalMl, 2, i18n.locale)} ml`;
+  }, [printingEstimatedResinTotalMl, sceneResinModels.length, i18n.locale]);
 
   const estimatedPrintTimeLabel = React.useMemo(() => {
     if (!activeMaterialProfile || printingPreviewTotalLayers <= 0) return '—';

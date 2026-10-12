@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react';
 import { MouseTooltip } from '@/components/ui/MouseTooltip';
 import { formatSweepDegrees } from './rotationDialModel';
 
@@ -9,6 +10,7 @@ const AXIS_COLORS: Record<string, string> = {
 };
 
 export function SnapAngleReadout() {
+  const { i18n } = useLingui();
   const [snap, setSnap] = useState<{ active: boolean; angle?: number; axis?: string }>({ active: false });
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export function SnapAngleReadout() {
 
   if (!snap.active || snap.angle === undefined) return null;
 
-  const degrees = formatSweepDegrees(snap.angle);
+  const degrees = formatSweepDegrees(snap.angle, i18n.locale);
   const color = AXIS_COLORS[snap.axis ?? 'x'] ?? '#ffffff';
 
   return (
