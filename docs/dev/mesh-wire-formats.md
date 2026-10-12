@@ -59,6 +59,15 @@ What counts as a body is the loader's decision:
   `<build><item>` expanded through its components, with the composed transform
   baked into the vertices (`three_mf::load_bodies`).
 
+  A component may name a **part** rather than an object in the same file:
+  BambuStudio and OrcaSlicer put each object in `3D/Objects/object_N.model` and
+  write `<component p:path="/3D/Objects/object_N.model" objectid="1" />` in
+  `3D/3dmodel.model`. Every `.model` entry in the archive is parsed and keyed by
+  its normalized entry name, and a component with a `p:path` resolves its
+  `objectid` inside that part. Without it those exporters' files fail outright
+  with `object 1 referenced but not defined`, which is every Bambu or Orca export
+  rather than an edge case.
+
 `load_mesh_file` calls the body dispatcher, with one format-specific step in
 front of it: `stl_special_case_response`. A binary STL announces its triangle
 count in its 84-byte header, so a mesh too large to render is decimated into a

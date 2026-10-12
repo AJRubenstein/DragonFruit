@@ -18,7 +18,7 @@ use ahash::{AHashMap, AHashSet};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::analysis::{analyze, minimal_analysis};
+use crate::analysis::{analyze, analyze_lightweight, minimal_analysis};
 use crate::core::bvh::Bvh;
 use crate::core::halfedge::{edge_key, EdgeInfo, EdgeKey, Topology};
 use crate::core::mesh::{IndexedMesh, Vec3};
@@ -337,8 +337,11 @@ pub fn repair_with_progress(
         // 8,237. Merging 5,414 solids is the work; whether the merged solid is manifold is a
         // different operation, and the reference engine's own union is a full surface union that
         // this one is not.
-        let structure_before_union = crate::analysis::analyze(&mesh);
-        let structure_after_union = crate::analysis::analyze(&candidate);
+        // Lightweight: this guard reads components, volume and face counts, and the full
+        // `analyze` would run the BVH crossing pass over every triangle to compute a field
+        // nothing here looks at. On a multi-million-triangle scene that pass is the run.
+        let structure_before_union = analyze_lightweight(&mesh);
+        let structure_after_union = analyze_lightweight(&candidate);
         let union_volume = structure_before_union.signed_volume.abs().max(1e-9);
         // One-sided. A union *drops* the volume when parts overlap, because the overlap is counted
         // once instead of twice, and that drop is the union doing its job. An absolute test
@@ -484,8 +487,10 @@ pub fn repair_with_progress(
         //
         // The volume is the test that tells a real change from a rounding one: that split moved it
         // -0.96% and was refused, corbu's moved +19.6% and should be.
-        let structure_before = crate::analysis::analyze(&before_split_mesh);
-        let structure_after = crate::analysis::analyze(&candidate);
+        // Lightweight for the same reason as the union's: this is a guard over components,
+        // volume and face counts, and it runs once per split round.
+        let structure_before = analyze_lightweight(&before_split_mesh);
+        let structure_after = analyze_lightweight(&candidate);
         // The volume is measured against a *sealed* copy of what the split started from. A mesh
         // that arrives with boundary edges has no signed volume to compare against: signing those
         // loops the other way is the same mesh and a different number. On the corbu model, sealing
@@ -1866,9 +1871,21 @@ fn reduce_winding_edges(mesh: &mut IndexedMesh) -> usize {
     }
     let volume_before = mesh.signed_volume();
     let triangles_before = mesh.triangles.clone();
-    let mut fixed = greedy_flip_winding_edges(mesh);
+    // The component cut runs first: it is the only one of these that turns whole regions over at
+    // once, which is what a residual that forms an even subgraph needs. Each pass strictly drops
+    // the count, and a pass that finds nothing ends the loop.
+    let mut fixed = 0usize;
+    for _ in 0..8 {
+        let cut = solve_winding_cut(mesh);
+        if cut == 0 {
+            break;
+        }
+        fixed += cut;
+    }
+    fixed += greedy_flip_winding_edges(mesh);
     fixed += solve_winding_regions(mesh);
     fixed += walk_winding_edges(mesh);
+    fixed += search_winding_assignments(mesh);
     if fixed > 0 {
         let moved = (mesh.signed_volume() - volume_before).abs();
         if moved > volume_before.abs().max(1e-9) * 0.01 {
@@ -2191,7 +2208,416 @@ fn walk_winding_edges(mesh: &mut IndexedMesh) -> usize {
     best_len
 }
 
-fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
+/// One two-face edge the winding search can change, carrying the local index of each of its
+/// faces (`u32::MAX` when that face is outside the search set, and therefore fixed).
+struct SearchEdge {
+    a0: u32,
+    b0: u32,
+    i0: u32,
+    a1: u32,
+    b1: u32,
+    i1: u32,
+}
+
+impl SearchEdge {
+    fn disagrees(&self, state: &[bool]) -> bool {
+        let (mut a0, mut b0) = (self.a0, self.b0);
+        if self.i0 != u32::MAX && state[self.i0 as usize] {
+            std::mem::swap(&mut a0, &mut b0);
+        }
+        let (mut a1, mut b1) = (self.a1, self.b1);
+        if self.i1 != u32::MAX && state[self.i1 as usize] {
+            std::mem::swap(&mut a1, &mut b1);
+        }
+        (a0, b0) == (a1, b1)
+    }
+}
+
+/// Toggles one face of the search set, keeping the disagreement count in step.
+///
+/// Toggling exactly one of an edge's two face orientations always flips whether that edge
+/// disagrees, so every edge the face sits on — never more than three — changes state and nothing
+/// else does. That is what makes a move O(1) rather than a pass over the search set.
+fn toggle_search_face(
+    state: &mut [bool],
+    cost: &mut usize,
+    edges: &[SearchEdge],
+    face_edges: &[smallvec::SmallVec<[u32; 3]>],
+    local: usize,
+) {
+    state[local] = !state[local];
+    for &id in face_edges[local].iter() {
+        if edges[id as usize].disagrees(state) {
+            *cost += 1;
+        } else {
+            *cost -= 1;
+        }
+    }
+}
+
+/// The assignment of face orientations a descent cannot reach, searched rather than descended.
+///
+/// Minimizing the number of winding-disagreeing edges over orientations is MAX-2-LIN, and it is
+/// NP-hard: the local minima the greedy and the walk stall in are what that hardness looks like
+/// from the inside. Four reference files sit in one — the V3 Cones at 4 edges, `Untitled2.stl` at
+/// 1,389, `INDIGO AWARD '26_Hollow_Fixed.stl` at 10,417 — where no single flip improves anything
+/// and the tree assignment is already the best the per-patch pass can do.
+///
+/// What escapes a local minimum is flipping a *set* of faces at once, and a set only changes the
+/// edges on its own boundary, so the search only has to consider faces near the residual. Around a
+/// small residual that set is enumerated exactly, by Gray code so each step is one toggle; around
+/// a large one it is annealed on a fixed schedule and then descended greedily, keeping the best
+/// assignment either finds. The seed is a constant, so two runs on the same mesh agree.
+///
+/// Answers 0 and changes nothing when it cannot beat what it was given.
+fn search_winding_assignments(mesh: &mut IndexedMesh) -> usize {
+    const FACE_BUDGET: usize = 20_000;
+    const EXACT_FACES: usize = 20;
+    const ANNEAL_STEPS: usize = 300_000;
+
+    let topo = Topology::build(mesh);
+    // Seeds: the faces on a disagreement. Then outward through two-face edges, bounded.
+    let mut index_of: Vec<u32> = vec![u32::MAX; mesh.triangles.len()];
+    let mut faces: Vec<u32> = Vec::new();
+    let mut queue: std::collections::VecDeque<u32> = std::collections::VecDeque::new();
+    for info in topo.edges.values() {
+        if !winding_disagrees(info) {
+            continue;
+        }
+        for d in info.directed.iter() {
+            if index_of[d.2 as usize] == u32::MAX {
+                index_of[d.2 as usize] = faces.len() as u32;
+                faces.push(d.2);
+                queue.push_back(d.2);
+            }
+        }
+    }
+    if faces.is_empty() {
+        return 0;
+    }
+    while let Some(f) = queue.pop_front() {
+        if faces.len() >= FACE_BUDGET {
+            break;
+        }
+        let t = mesh.triangles[f as usize];
+        for k in 0..3 {
+            let key = edge_key(t[k], t[(k + 1) % 3]);
+            let Some(info) = topo.edges.get(&key) else {
+                continue;
+            };
+            if info.directed.len() != 2 {
+                continue;
+            }
+            for d in info.directed.iter() {
+                if faces.len() >= FACE_BUDGET {
+                    break;
+                }
+                let g = d.2;
+                if index_of[g as usize] == u32::MAX {
+                    index_of[g as usize] = faces.len() as u32;
+                    faces.push(g);
+                    queue.push_back(g);
+                }
+            }
+        }
+    }
+
+    // Every two-face edge touching the set. Only these can change state, so the cost the search
+    // minimizes is the disagreements among them.
+    let mut seen: ahash::AHashSet<EdgeKey> = ahash::AHashSet::new();
+    let mut edges: Vec<SearchEdge> = Vec::new();
+    let mut face_edges: Vec<smallvec::SmallVec<[u32; 3]>> =
+        vec![smallvec::SmallVec::new(); faces.len()];
+    for &f in faces.iter() {
+        let t = mesh.triangles[f as usize];
+        for k in 0..3 {
+            let key = edge_key(t[k], t[(k + 1) % 3]);
+            if !seen.insert(key) {
+                continue;
+            }
+            let Some(info) = topo.edges.get(&key) else {
+                continue;
+            };
+            if info.directed.len() != 2 || info.directed[0].2 == info.directed[1].2 {
+                continue;
+            }
+            let (d0, d1) = (info.directed[0], info.directed[1]);
+            let i0 = index_of[d0.2 as usize];
+            let i1 = index_of[d1.2 as usize];
+            if i0 == u32::MAX && i1 == u32::MAX {
+                continue;
+            }
+            let id = edges.len() as u32;
+            edges.push(SearchEdge {
+                a0: d0.0,
+                b0: d0.1,
+                i0,
+                a1: d1.0,
+                b1: d1.1,
+                i1,
+            });
+            if i0 != u32::MAX {
+                face_edges[i0 as usize].push(id);
+            }
+            if i1 != u32::MAX {
+                face_edges[i1 as usize].push(id);
+            }
+        }
+    }
+    if edges.is_empty() {
+        return 0;
+    }
+
+    let n = faces.len();
+    let mut state = vec![false; n];
+    let mut cost = edges.iter().filter(|e| e.disagrees(&state)).count();
+    let original = cost;
+    if original == 0 {
+        return 0;
+    }
+
+    let mut best_state = state.clone();
+    let mut best_cost = cost;
+    if n <= EXACT_FACES {
+        // Gray code: step i toggles bit `i.trailing_zeros()` and visits `i ^ (i >> 1)`.
+        let steps = 1u64 << n;
+        for i in 1..steps {
+            let bit = i.trailing_zeros() as usize;
+            toggle_search_face(&mut state, &mut cost, &edges, &face_edges, bit);
+            if cost < best_cost {
+                best_cost = cost;
+                best_state.clone_from(&state);
+            }
+        }
+        // Unwind the same sequence, which returns the state to where it started.
+        for i in (1..steps).rev() {
+            let bit = i.trailing_zeros() as usize;
+            toggle_search_face(&mut state, &mut cost, &edges, &face_edges, bit);
+        }
+    } else {
+        let mut rng: u64 = 0x9E37_79B9_7F4A_7C15;
+        macro_rules! next_rand {
+            () => {{
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                rng
+            }};
+        }
+        let mut temp = 1.5f64;
+        let cooling = (0.02f64 / temp).powf(1.0 / ANNEAL_STEPS as f64);
+        for _ in 0..ANNEAL_STEPS {
+            let local = (next_rand!() % n as u64) as usize;
+            let before = cost;
+            toggle_search_face(&mut state, &mut cost, &edges, &face_edges, local);
+            if cost > before {
+                let delta = (cost - before) as f64;
+                let uniform = (next_rand!() >> 11) as f64 / (1u64 << 53) as f64;
+                if uniform >= (-delta / temp).exp() {
+                    toggle_search_face(&mut state, &mut cost, &edges, &face_edges, local);
+                }
+            }
+            if cost < best_cost {
+                best_cost = cost;
+                best_state.clone_from(&state);
+            }
+            temp *= cooling;
+        }
+        // Descend from the best the anneal saw.
+        state.clone_from(&best_state);
+        cost = best_cost;
+        loop {
+            let mut improved = false;
+            for local in 0..n {
+                let before = cost;
+                toggle_search_face(&mut state, &mut cost, &edges, &face_edges, local);
+                if cost < before {
+                    improved = true;
+                    if cost < best_cost {
+                        best_cost = cost;
+                        best_state.clone_from(&state);
+                    }
+                } else {
+                    toggle_search_face(&mut state, &mut cost, &edges, &face_edges, local);
+                }
+            }
+            if !improved {
+                break;
+            }
+        }
+    }
+
+    if best_cost >= original {
+        return 0;
+    }
+    let mut flipped = 0usize;
+    for (local, &f) in faces.iter().enumerate() {
+        if best_state[local] {
+            mesh.triangles[f as usize].swap(1, 2);
+            flipped += 1;
+        }
+    }
+    flipped
+}
+
+/// The disagreement set as a cut of the face graph.
+///
+/// Every residual we could not move has the same shape. The bad edges form an even subgraph of the
+/// mesh — measured, zero odd-degree vertices on the V3 Cones, `Untitled2.stl` and the hollowed
+/// INDIGO model — so they are the boundary of *some* set of faces. On an orientable surface that
+/// set is always reachable, by Poincaré duality: an even subgraph of the mesh is a cut of the face
+/// graph. Flipping it fixes every bad edge at once.
+///
+/// Why three other searches missed it: the set is a union of whole regions, not a patch. Removing
+/// the bad edges splits the face graph into components — 15 on the cones, 158 on Untitled2, 43,130
+/// on INDIGO — and the set to flip is a union of those. Toggling faces one at a time cannot find a
+/// union of millions of faces, and a region cap cannot contain one.
+///
+/// So: split the face graph by the bad edges, then choose which components to turn over. That is a
+/// max-cut on the component graph, which has one node per region and one edge per bad edge, and it
+/// is solved exactly when small and by a local search when not. Every flip it makes is a whole
+/// component, so it never disturbs an edge it did not set out to fix.
+fn solve_winding_cut(mesh: &mut IndexedMesh) -> usize {
+    const EXACT_COMPONENTS: usize = 22;
+
+    let n = mesh.triangles.len();
+    if n == 0 {
+        return 0;
+    }
+    let topo = Topology::build(mesh);
+    if topo.inconsistent_edges() == 0 {
+        return 0;
+    }
+
+    // Faces joined across every agreeing two-face edge. A component is a region that can be turned
+    // over without touching an edge inside it.
+    let mut parent: Vec<u32> = (0..n as u32).collect();
+    fn find(parent: &mut [u32], mut x: u32) -> u32 {
+        while parent[x as usize] != x {
+            parent[x as usize] = parent[parent[x as usize] as usize];
+            x = parent[x as usize];
+        }
+        x
+    }
+    for (key, info) in topo.edges.iter() {
+        if info.directed.len() != 2 || info.directed[0].2 == info.directed[1].2 {
+            continue;
+        }
+        if winding_disagrees(info) {
+            continue;
+        }
+        let (a, b) = (info.directed[0].2, info.directed[1].2);
+        let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+        if ra != rb {
+            parent[ra as usize] = rb;
+        }
+    }
+
+    // The component graph: one node per region, one edge per bad edge. A bad edge with both faces
+    // in the same region cannot be fixed by turning a region over, and is counted, not used.
+    let mut node_of: ahash::AHashMap<u32, u32> = ahash::AHashMap::new();
+    let mut edges: Vec<(u32, u32)> = Vec::new();
+    let mut unfixable = 0usize;
+    for (key, info) in topo.edges.iter() {
+        if !winding_disagrees(info) {
+            continue;
+        }
+        let (a, b) = (info.directed[0].2, info.directed[1].2);
+        let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+        if ra == rb {
+            unfixable += 1;
+            continue;
+        }
+        let next = node_of.len() as u32;
+        let na = *node_of.entry(ra).or_insert(next);
+        let next = node_of.len() as u32;
+        let nb = *node_of.entry(rb).or_insert(next);
+        edges.push((na, nb));
+    }
+    let k = node_of.len();
+    if edges.is_empty() {
+        return 0;
+    }
+
+    let mut side = vec![false; k];
+    let mut best_cut = 0usize;
+    if k <= EXACT_COMPONENTS {
+        let mut best_mask = 0u64;
+        for mask in 0u64..(1u64 << k) {
+            let cut = edges
+                .iter()
+                .filter(|(a, b)| ((mask >> a) & 1) != ((mask >> b) & 1))
+                .count();
+            if cut > best_cut {
+                best_cut = cut;
+                best_mask = mask;
+            }
+        }
+        for (v, s) in side.iter_mut().enumerate() {
+            *s = (best_mask >> v) & 1 == 1;
+        }
+    } else {
+        // A local search over the component graph, from two starts. Nodes are moved only when the
+        // move increases the cut, so it terminates, and it keeps the best start.
+        let mut adj: Vec<Vec<u32>> = vec![Vec::new(); k];
+        for &(a, b) in &edges {
+            adj[a as usize].push(b);
+            adj[b as usize].push(a);
+        }
+        for start in 0..2u32 {
+            let mut s: Vec<bool> = (0..k).map(|v| start == 1 && v % 2 == 1).collect();
+            let mut cut = edges
+                .iter()
+                .filter(|(a, b)| s[*a as usize] != s[*b as usize])
+                .count();
+            loop {
+                let mut improved = false;
+                for v in 0..k {
+                    let (mut same, mut diff) = (0usize, 0usize);
+                    for &u in adj[v].iter() {
+                        if s[u as usize] == s[v] {
+                            same += 1;
+                        } else {
+                            diff += 1;
+                        }
+                    }
+                    if same > diff {
+                        s[v] = !s[v];
+                        cut = cut + same - diff;
+                        improved = true;
+                    }
+                }
+                if !improved {
+                    break;
+                }
+            }
+            if cut > best_cut {
+                best_cut = cut;
+                side.clone_from(&s);
+            }
+        }
+    }
+
+    let gain = best_cut;
+    if gain == 0 {
+        return 0;
+    }
+    // Turn the chosen regions over.
+    let mut flipped = 0usize;
+    for face in 0..n as u32 {
+        let root = find(&mut parent, face);
+        let Some(&node) = node_of.get(&root) else {
+            continue;
+        };
+        if side[node as usize] {
+            mesh.triangles[face as usize].swap(1, 2);
+            flipped += 1;
+        }
+    }
+    flipped
+}
+
+pub(crate) fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     if mesh.triangles.is_empty() {
         return 0;
     }
@@ -2208,19 +2634,38 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     // overall BVH.
     let bvh = Bvh::build(mesh);
 
+    // Faces bucketed by component, and the bbox hoisted, for the same reason. Walking the whole
+    // component array once per component is O(faces × components), and calling `mesh.bbox()`
+    // inside the loop is the same order again. On a presupported scene with thousands of parts and
+    // four million triangles this stage spent its whole 420 s budget without reaching `stitch`.
+    // Bucketing and hoisting make it O(faces).
+    let mut component_faces: Vec<Vec<u32>> = vec![Vec::new(); n_components as usize];
+    for (face, &component) in components.iter().enumerate() {
+        component_faces[component as usize].push(face as u32);
+    }
+    let sample_eps = (mesh.bbox().diag() * 1e-4).max(1e-6);
+    // The scale the per-component flip guard measures against, read once. Inside the loop it
+    // would be a pass over every face for every flipped component.
+    let mesh_volume = mesh.signed_volume();
+
     for comp_id in 0..n_components {
-        let face_indices: Vec<u32> = components
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &c)| if c == comp_id { Some(i as u32) } else { None })
-            .collect();
+        let face_indices = &component_faces[comp_id as usize];
         if face_indices.is_empty() {
+            continue;
+        }
+        // A fragment too small to enclose anything is left alone. A closed solid needs at least
+        // four faces, so below that the signed volume is a statement about where the triangle sits
+        // relative to the origin rather than about which way it faces, and the ray vote that
+        // replaces it answers the same non-question. A presupported scene is mostly these — 2.9M
+        // components over 3.8M triangles, nearly one per triangle — and classifying every one of
+        // them is where an hour of that run went.
+        if face_indices.len() < 4 {
             continue;
         }
 
         // Component signed volume.
         let mut vol = 0.0f64;
-        for &fi in &face_indices {
+        for &fi in face_indices {
             let t = mesh.triangles[fi as usize];
             let a = mesh.positions[t[0] as usize];
             let b = mesh.positions[t[1] as usize];
@@ -2239,9 +2684,19 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
         // mesh with an interior: measured on one, 83,745 faces flipped and the volume moved
         // 17%. The reference engine guards this with a nesting depth and describes the
         // result as cavity-safe.
-        let sample_eps = (mesh.bbox().diag() * 1e-4).max(1e-6);
-        let samples = interior_sample_points(mesh, &face_indices, sample_eps, 5);
-        let nested = nesting_depth_is_odd(&bvh, mesh, &components, comp_id, &samples);
+        //
+        // Only asked when it can change the answer. Above a positive volume the outcome is
+        // "do not flip" whatever the nesting is, so the test is skipped there, and on a
+        // presupported scene that is almost every component. Running it unconditionally is
+        // what made such a scene unusable: 2.9M components at five samples and a direction
+        // set each is hundreds of millions of BVH ray casts, and it had not reached the
+        // second stage after an hour.
+        let nesting_matters = flip_by_volume || vol.abs() < 1e-6;
+        let nested = nesting_matters
+            && {
+                let samples = interior_sample_points(mesh, face_indices, sample_eps, 5);
+                nesting_depth_is_odd(&bvh, mesh, &components, comp_id, &samples)
+            };
 
         let should_flip = if nested {
             false
@@ -2274,18 +2729,22 @@ fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
         };
 
         if should_flip {
-            let volume_before = mesh.signed_volume();
-            for &fi in &face_indices {
+            for &fi in face_indices {
                 let t = &mut mesh.triangles[fi as usize];
                 t.swap(1, 2);
             }
-            let moved = (mesh.signed_volume() - volume_before).abs();
+            // Turning a component over negates exactly its own signed-volume contribution, so the
+            // move this guard measures is 2·|vol| — no pass over the mesh required. Asking
+            // `mesh.signed_volume()` here was O(faces) per flipped component, and this scene flips
+            // 119,104 faces, so it was the rest of the 146 s.
+            let moved = 2.0 * vol.abs();
+            let scale = mesh_volume.abs().max(1e-9) * 0.01;
             // Only when there is more than one component. With one there is nothing for it to be
             // nested in, so a negative volume means the model is inside out and turning it is
             // the whole point: an inverted cube goes from -1 to +1, a 200% move, and refusing
             // that would leave the model inverted.
-            if n_components > 1 && moved > volume_before.abs().max(1e-9) * 0.01 {
-                for &fi in &face_indices {
+            if n_components > 1 && moved > scale {
+                for &fi in face_indices {
                     let t = &mut mesh.triangles[fi as usize];
                     t.swap(1, 2);
                 }
@@ -2824,6 +3283,93 @@ mod classify_hollowing_tests {
         let outcome = classify_and_reorder_model_support_triangles(&mut mesh, None);
         assert_eq!(outcome.split, None);
         assert_eq!(outcome.component_count, 2);
+    }
+}
+
+#[cfg(test)]
+mod winding_search_tests {
+    use super::*;
+
+    fn tetrahedron() -> IndexedMesh {
+        IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ],
+            triangles: vec![[0u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+        }
+    }
+
+    /// A tetrahedron with a block of its faces turned over. The search has to reach a consistent
+    /// orientation again. This is a machinery test and it earns its place: the cost it minimizes is
+    /// kept in step incrementally by `toggle_search_face`, and a bookkeeping slip there would leave
+    /// the search finding nothing rather than failing loudly.
+    #[test]
+    fn the_search_reaches_a_consistent_orientation() {
+        let mut mesh = tetrahedron();
+        for tri in mesh.triangles.iter_mut().take(2) {
+            tri.swap(1, 2);
+        }
+        let before = Topology::build(&mesh).inconsistent_edges();
+        assert!(before > 0, "the turned-over block has to disagree somewhere");
+        assert!(search_winding_assignments(&mut mesh) > 0);
+        assert_eq!(Topology::build(&mesh).inconsistent_edges(), 0);
+    }
+
+    /// A mesh it cannot improve comes out untouched, which is what keeps it safe to run
+    /// unconditionally after the cheaper passes.
+    #[test]
+    fn the_search_leaves_a_settled_mesh_alone() {
+        let mut mesh = tetrahedron();
+        let triangles = mesh.triangles.clone();
+        assert_eq!(search_winding_assignments(&mut mesh), 0);
+        assert_eq!(mesh.triangles, triangles);
+    }
+}
+
+#[cfg(test)]
+mod winding_cut_tests {
+    use super::*;
+
+    /// A disagreement whose two faces fall in different regions once it is removed. That is the
+    /// shape the cut solver exists for, and the shape a single-face greedy cannot take: turning
+    /// either face over on its own breaks the edges that currently agree.
+    #[test]
+    fn the_cut_solver_fixes_a_disagreement_across_two_regions() {
+        let mut mesh = IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ],
+            triangles: vec![[0u32, 1, 2], [1, 0, 3]],
+        };
+        assert_eq!(Topology::build(&mesh).inconsistent_edges(), 0);
+        mesh.triangles[1].swap(1, 2);
+        assert_eq!(Topology::build(&mesh).inconsistent_edges(), 1);
+        let flipped = solve_winding_cut(&mut mesh);
+        assert!(flipped > 0, "the cut solver should turn a region over");
+        assert_eq!(Topology::build(&mesh).inconsistent_edges(), 0);
+    }
+
+    /// It only ever moves whole regions, so a mesh it cannot help comes back exactly as it was.
+    #[test]
+    fn the_cut_solver_leaves_a_settled_mesh_alone() {
+        let mut mesh = IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ],
+            triangles: vec![[0u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+        };
+        let triangles = mesh.triangles.clone();
+        assert_eq!(solve_winding_cut(&mut mesh), 0);
+        assert_eq!(mesh.triangles, triangles);
     }
 }
 

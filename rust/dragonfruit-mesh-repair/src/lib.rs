@@ -20,6 +20,7 @@ pub mod io;
 pub mod repair;
 pub mod report;
 pub mod shells;
+pub mod shrink_wrap;
 pub mod stl_budget;
 #[cfg(test)]
 mod test_fixtures;
@@ -36,6 +37,7 @@ pub use crate::repair::{
     ClassificationOutcome, RepairOptions, RepairOutcome, SectionDecimationOutcome,
 };
 pub use crate::report::MeshHealthReport;
+pub use crate::shrink_wrap::{shrink_wrap, ShrinkWrapOptions, ShrinkWrapOutcome, ShrinkWrapReport};
 pub use crate::stl_budget::{compute_triangle_budget, TriangleBudget};
 
 use std::path::Path;
