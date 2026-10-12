@@ -34,7 +34,7 @@ msgstr ""
 
 #. placeholder {0}: scene.sceneImportHollowingPrompt.hollowedModelCount
 #. placeholder {1}: scene.sceneImportHollowingPrompt.modelCount
-#: src/components/organisms/modals/SceneFileModals.tsx:385
+#: src/components/organisms/modals/SceneFileModals.tsx:403
 msgid "{0} of {1, plural, one {# model carries an interior cavity.} other {# models carry an interior cavity.}}"
 msgstr ""
 
@@ -95,6 +95,10 @@ msgstr ""
 
 #: src/features/updater/updaterMessages.ts:39
 msgid "{downloaded} / {total} ({pct}%)"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:82
+msgid "{feature} is Experimental"
 msgstr ""
 
 #: src/app/page.tsx:543
@@ -194,7 +198,7 @@ msgid "< 1 min"
 msgstr "< 1 min"
 
 #. {excludedVisibleModelCount} is always 2 or more; the singular case is its own message.
-#: src/features/slicing/components/SlicingPanel.tsx:3207
+#: src/features/slicing/components/SlicingPanel.tsx:3212
 msgid "<0>{excludedVisibleModelCount}</0> visible models outside the build volume will be excluded from this slice."
 msgstr ""
 
@@ -204,7 +208,7 @@ msgid "<0>{fileName}</0> was saved in the VOXL V1 format, which this version no 
 msgstr ""
 
 #. {overwriteCollisionCount} is always 2 or more; the singular case is its own message.
-#: src/features/slicing/components/SlicingPanel.tsx:3246
+#: src/features/slicing/components/SlicingPanel.tsx:3251
 msgid "<0>{overwriteCollisionCount}</0> files this run writes are already in that folder. Slicing replaces them."
 msgstr ""
 
@@ -216,11 +220,19 @@ msgstr ""
 msgid "<0>{recordedLabel}</0> has a build volume of {0} × {1} × {2} mm."
 msgstr ""
 
-#: src/components/organisms/modals/SceneFileModals.tsx:401
+#: src/components/scene/MeshRepairConfirmModal.tsx:95
+msgid "<0>Disclaimer:</0> Repair is recommended. Loading this mesh as-is may cause slicing errors or print failures, and successful output cannot be guaranteed."
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:166
+msgid "<0>Heads up:</0> The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward."
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:419
 msgid "<0>Import Solid</0> loads the outer shape only. The cavity is kept, so you can apply it later from the Hollowing panel."
 msgstr ""
 
-#: src/components/organisms/modals/SceneFileModals.tsx:397
+#: src/components/organisms/modals/SceneFileModals.tsx:415
 msgid "<0>Keep Hollow</0> builds the stored cavity into each model, so it prints hollow exactly as authored."
 msgstr ""
 
@@ -274,7 +286,7 @@ msgstr ""
 msgid "A cut needs at least one loop."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3244
+#: src/features/slicing/components/SlicingPanel.tsx:3249
 msgid "A file this run writes is already in that folder. Slicing replaces it."
 msgstr ""
 
@@ -298,7 +310,7 @@ msgstr ""
 #. Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").
 #: src/components/controls/IslandListCard.tsx:127
 #: src/components/layout/TopBar.tsx:935
-#: src/features/slicing/components/SlicingPanel.tsx:2681
+#: src/features/slicing/components/SlicingPanel.tsx:2686
 msgid "Active"
 msgstr "Aktívne"
 
@@ -313,7 +325,7 @@ msgstr ""
 msgid "Active Model"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:71
+#: src/components/controls/AutoRotationPanel.tsx:72
 msgid "Active model has no readable geometry."
 msgstr ""
 
@@ -322,20 +334,20 @@ msgid "Active print thumbnail"
 msgstr ""
 
 #: src/supports/Settings/components/TipSettingsCard.tsx:62
-#: src/supports/Settings/SupportSidebar.tsx:914
-#: src/supports/Settings/SupportSidebar.tsx:1078
+#: src/supports/Settings/SupportSidebar.tsx:916
+#: src/supports/Settings/SupportSidebar.tsx:1080
 msgid "Adaptive"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:919
-#: src/supports/Settings/SupportSidebar.tsx:1083
+#: src/supports/Settings/SupportSidebar.tsx:921
+#: src/supports/Settings/SupportSidebar.tsx:1085
 msgid "Adaptive mode"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:937
-#: src/supports/Settings/SupportSidebar.tsx:938
-#: src/supports/Settings/SupportSidebar.tsx:1100
-#: src/supports/Settings/SupportSidebar.tsx:1101
+#: src/supports/Settings/SupportSidebar.tsx:939
+#: src/supports/Settings/SupportSidebar.tsx:940
+#: src/supports/Settings/SupportSidebar.tsx:1102
+#: src/supports/Settings/SupportSidebar.tsx:1103
 msgid "Adaptive offset"
 msgstr ""
 
@@ -399,8 +411,14 @@ msgstr ""
 msgid "Advanced (calibration)"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:327
+#: src/components/controls/IslandsPanel.tsx:328
 msgid "Advanced mode"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:326
+#: src/components/scene/MeshRepairReportModal.tsx:365
+#: src/components/scene/MeshRepairReportModal.tsx:534
+msgid "After"
 msgstr ""
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:221
@@ -448,11 +466,15 @@ msgstr ""
 msgid "Ambient Occlusion"
 msgstr ""
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:76
+msgid "Analysis"
+msgstr ""
+
 #: src/app/page.tsx:11580
 msgid "Analyzing Model Islands & Minima"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:239
+#: src/components/controls/AutoRotationPanel.tsx:240
 msgid "Analyzing…"
 msgstr ""
 
@@ -465,7 +487,7 @@ msgstr ""
 msgid "Anchor"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2516
+#: src/features/slicing/components/SlicingPanel.tsx:2521
 msgid "Anti-Aliasing"
 msgstr ""
 
@@ -473,17 +495,23 @@ msgstr ""
 msgid "Anti-aliasing: nothing to anti-alias."
 msgstr "Anti-aliasing: nič sa nedá anti-aliasovať."
 
+#. placeholder {0}: report.steps.length
+#: src/components/scene/MeshRepairReportModal.tsx:63
+msgid "Applied {0, plural, one {# automated repair step} other {# automated repair steps}} and re-validated the mesh."
+msgstr ""
+
 #: src/components/settings/GeneralSettingsTab.tsx:169
 msgid "Applied immediately across the app."
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:310
+#: src/components/controls/IslandsPanel.tsx:311
+#: src/features/hole-punching/HolePunchPanel.tsx:253
 #: src/features/hollowing/HollowingPanel.tsx:371
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:232
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:236
 msgid "Apply"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3008
+#: src/features/slicing/components/SlicingPanel.tsx:3013
 msgid "Apply for Session"
 msgstr ""
 
@@ -497,6 +525,10 @@ msgstr ""
 
 #: src/app/page.tsx:8410
 msgid "Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually."
+msgstr ""
+
+#: src/features/scene/arrange/useArrangeManager.ts:173
+msgid "Applying Array Arrange…"
 msgstr ""
 
 #: src/app/page.tsx:1835
@@ -529,6 +561,10 @@ msgstr ""
 
 #: src/features/hollowing/HollowingPanel.tsx:366
 msgid "Applying..."
+msgstr ""
+
+#: src/features/hole-punching/HolePunchPanel.tsx:253
+msgid "Applying…"
 msgstr ""
 
 #: src/app/page.tsx:11675
@@ -587,6 +623,10 @@ msgstr ""
 msgid "Arrange selected models only"
 msgstr ""
 
+#: src/features/scene/arrange/useArrangeManager.ts:182
+msgid "Arranging Models…"
+msgstr ""
+
 #: src/components/controls/ArrangePanel.tsx:362
 #: src/components/controls/ArrangePanel.tsx:385
 msgid "Arranging…"
@@ -616,7 +656,8 @@ msgstr ""
 #: src/components/controls/ArrangePanel.tsx:166
 #: src/components/printers/SetupMethodChooser.tsx:28
 #: src/components/settings/PerformanceSettingsTab.tsx:220
-#: src/features/slicing/components/SlicingPanel.tsx:2522
+#: src/features/hole-punching/HolePunchPanel.tsx:125
+#: src/features/slicing/components/SlicingPanel.tsx:2527
 msgid "Auto"
 msgstr ""
 
@@ -633,11 +674,15 @@ msgstr ""
 msgid "Auto Brace complete: {generated, plural, one {# brace generated} other {# braces generated}}, {removed, plural, one {# legacy brace removed} other {# legacy braces removed}}."
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:612
+#: src/supports/Settings/SupportSidebar.tsx:614
 msgid "Auto Brace failed. Check console for details."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2517
+#: src/features/hole-punching/HolePunchPanel.tsx:123
+msgid "Auto depth requires a hollowed model or hollow preview."
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:2522
 msgid "Auto derives slice settings from your printer resolution and material layer height. Expert lets you jump to material AA settings or apply a temporary session override."
 msgstr ""
 
@@ -649,7 +694,7 @@ msgstr ""
 msgid "Auto Orientation"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:65
+#: src/components/controls/AutoRotationPanel.tsx:66
 msgid "Auto Orientation (Beta)"
 msgstr ""
 
@@ -670,10 +715,17 @@ msgstr ""
 msgid "Auto Supports (Beta) Settings"
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:294
+#: src/components/organisms/modals/SceneFileModals.tsx:313
+msgid "Auto-Arrange"
+msgstr ""
+
+#. Toggle button sharing a narrow row with the preset dropdown. Keep it about as short as the English.
 #: src/components/controls/autoSupport/AutoSupportPresetRow.tsx:30
 msgid "Auto-Lift OFF"
 msgstr ""
 
+#. Toggle button sharing a narrow row with the preset dropdown. Keep it about as short as the English.
 #: src/components/controls/autoSupport/AutoSupportPresetRow.tsx:29
 msgid "Auto-Lift ON"
 msgstr ""
@@ -836,7 +888,7 @@ msgstr ""
 msgid "Background gradient"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3044
+#: src/features/slicing/components/SlicingPanel.tsx:3049
 msgid "Background Pipeline"
 msgstr ""
 
@@ -925,6 +977,16 @@ msgstr ""
 msgid "Beds per row"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:325
+#: src/components/scene/MeshRepairReportModal.tsx:364
+#: src/components/scene/MeshRepairReportModal.tsx:533
+msgid "Before"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:318
+msgid "Before/after analysis and repair steps."
+msgstr ""
+
 #: src/components/settings/MultiPlateSettingsTab.tsx:52
 msgid "Behaviour across the beds of a scene."
 msgstr ""
@@ -945,20 +1007,24 @@ msgstr ""
 msgid "Binary STL (recommended)"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:77
+#: src/components/controls/AutoRotationPanel.tsx:78
 msgid "Blocker Painting Mode"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:72
+#: src/components/controls/AutoRotationPanel.tsx:73
 msgid "Blockers"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2617
+#: src/features/slicing/components/SlicingPanel.tsx:2622
 msgid "Blur"
 msgstr ""
 
 #: src/supports/Settings/components/TipSettingsCard.tsx:104
 msgid "Body"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:45
+msgid "Boolean operation requires a manifold mesh"
 msgstr ""
 
 #: src/supports/Rafts/Crenelated/components/RaftSettingsCard.tsx:252
@@ -968,6 +1034,22 @@ msgstr ""
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1785
 msgid "Bottom"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:606
+#: src/components/scene/MeshRepairReportModal.tsx:647
+msgctxt "Mesh analysis row"
+msgid "Boundary edges"
+msgstr ""
+
+#: src/components/scene/MeshRepairConfirmModal.tsx:81
+msgid "Boundary loops"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:607
+#: src/components/scene/MeshRepairReportModal.tsx:648
+msgctxt "Mesh analysis row"
+msgid "Boundary loops"
 msgstr ""
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:119
@@ -991,7 +1073,7 @@ msgstr ""
 msgid "Bring in a mesh or scene to start preparing, analyzing, supporting, and exporting your print."
 msgstr "Pridaj mesh alebo scénu a začni pripravovať, analyzovať, podporovať a exportovať tvoj výtlačok."
 
-#: src/components/controls/AutoRotationPanel.tsx:79
+#: src/components/controls/AutoRotationPanel.tsx:80
 #: src/components/controls/IslandOverlayControls.tsx:94
 msgid "Brush Size"
 msgstr ""
@@ -1056,7 +1138,7 @@ msgstr ""
 msgid "Busy…"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2663
+#: src/features/slicing/components/SlicingPanel.tsx:2668
 msgid "Bypassed"
 msgstr ""
 
@@ -1082,11 +1164,12 @@ msgstr ""
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 #: src/components/controls/AutoSupportPanel.tsx:652
 #: src/components/controls/IslandScanCard.tsx:184
-#: src/components/controls/IslandsPanel.tsx:301
+#: src/components/controls/IslandsPanel.tsx:302
 #: src/components/controls/ModelManagerPanel.tsx:770
 #: src/components/organisms/modals/PrintingModals.tsx:659
 #: src/components/organisms/modals/PrintingModals.tsx:901
 #: src/components/organisms/modals/PrintingModals.tsx:1995
+#: src/components/organisms/modals/SceneFileModals.tsx:495
 #: src/components/printers/PrinterVariantPickerModal.tsx:695
 #: src/components/settings/FleetManagement.tsx:442
 #: src/components/settings/LocalBackupsSettingsTab.tsx:984
@@ -1094,8 +1177,10 @@ msgstr ""
 #: src/features/slicing/components/LutCurveEditor.tsx:1500
 #: src/features/slicing/components/LutCurveEditor.tsx:1643
 #: src/features/slicing/components/LutCurveEditor.tsx:1737
-#: src/features/slicing/components/SlicingPanel.tsx:3192
-#: src/features/slicing/components/SlicingPanel.tsx:3231
+#: src/features/slicing/components/SlicingPanel.tsx:2904
+#: src/features/slicing/components/SlicingPanel.tsx:2994
+#: src/features/slicing/components/SlicingPanel.tsx:3197
+#: src/features/slicing/components/SlicingPanel.tsx:3236
 #: src/features/updater/UpdateCheckerSection.tsx:259
 #: src/supports/Settings/components/PresetSelector.tsx:830
 #: src/supports/Settings/components/PresetSelector.tsx:873
@@ -1108,6 +1193,10 @@ msgstr ""
 #: src/supports/Settings/components/PresetSelector.tsx:863
 #: src/supports/Settings/components/PresetSelector.tsx:956
 msgid "Cancel delete"
+msgstr ""
+
+#: src/components/scene/MeshRepairConfirmModal.tsx:43
+msgid "Cancel importing this model"
 msgstr ""
 
 #: src/supports/Settings/components/PresetSelector.tsx:820
@@ -1123,7 +1212,7 @@ msgstr ""
 msgid "Cancel restore"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3154
+#: src/features/slicing/components/SlicingPanel.tsx:3159
 msgid "Cancel Slicing"
 msgstr ""
 
@@ -1141,7 +1230,7 @@ msgid "Canceling…"
 msgstr ""
 
 #: src/features/slicing/components/SlicingPanel.tsx:190
-#: src/features/slicing/components/SlicingPanel.tsx:3076
+#: src/features/slicing/components/SlicingPanel.tsx:3081
 msgid "Cancelled"
 msgstr ""
 
@@ -1232,11 +1321,15 @@ msgstr ""
 msgid "Choose Folder"
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:267
+msgid "Choose how to place imported models."
+msgstr ""
+
 #: src/components/organisms/modals/PrintingModals.tsx:689
 msgid "Choose printer"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2791
+#: src/features/slicing/components/SlicingPanel.tsx:2796
 msgid "Choose slice action"
 msgstr ""
 
@@ -1248,7 +1341,11 @@ msgstr ""
 msgid "Choose target printer"
 msgstr ""
 
-#: src/components/organisms/modals/SceneFileModals.tsx:363
+#: src/components/organisms/modals/SceneFileModals.tsx:620
+msgid "Choose where Ctrl+S should save this imported `.voxl` scene."
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:381
 msgid "Choose whether to keep the hollow."
 msgstr ""
 
@@ -1284,7 +1381,11 @@ msgstr ""
 msgid "Clean (no pending recovery)"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:73
+#: src/components/scene/MeshRepairReportModal.tsx:52
+msgid "Cleaned up {cleanedNonManifoldEdges, plural, one {# non-manifold edge} other {# non-manifold edges}}."
+msgstr ""
+
+#: src/components/controls/AutoRotationPanel.tsx:74
 #: src/components/layout/EmptySceneState.tsx:620
 #: src/features/hollowing/HollowingPanel.tsx:301
 #: src/features/slicing/components/SlicingPanel.tsx:1048
@@ -1298,11 +1399,11 @@ msgid "Clear"
 msgstr ""
 
 #: src/features/organicCut/OrganicCutPanel.tsx:889
-#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:245
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:249
 msgid "Clear All"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:633
+#: src/supports/Settings/SupportSidebar.tsx:635
 msgid "Clear All failed. Check console for details."
 msgstr ""
 
@@ -1317,7 +1418,7 @@ msgstr ""
 msgid "Clear Build Plate?"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2980
+#: src/features/slicing/components/SlicingPanel.tsx:2985
 msgid "Clear Override"
 msgstr ""
 
@@ -1329,7 +1430,7 @@ msgstr ""
 msgid "Clear Selection"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2701
+#: src/features/slicing/components/SlicingPanel.tsx:2706
 msgid "Clear Session Override"
 msgstr ""
 
@@ -1380,8 +1481,10 @@ msgstr ""
 
 #: src/components/controls/AutoSupportPanel.tsx:505
 #: src/components/layout/TopBar.tsx:1140
+#: src/components/modals/SliceCompletedModal.tsx:91
 #: src/components/organisms/modals/PrintingModals.tsx:1090
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
+#: src/components/scene/MeshRepairReportModal.tsx:176
 #: src/features/slicing/components/LutCurveEditor.tsx:1269
 msgid "Close"
 msgstr "Zatvoriť"
@@ -1406,13 +1509,19 @@ msgstr ""
 msgid "Close discard changes confirmation"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2874
+#: src/components/organisms/modals/SceneFileModals.tsx:550
+msgid "Close DragonFruit now?"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:2879
 msgid "Close material anti-aliasing settings"
 msgstr ""
 
 #: src/components/controls/ModelManagerPanel.tsx:764
 #: src/components/modals/ObsoleteVoxlVersionModal.tsx:40
 #: src/components/modals/ScenePrinterMismatchModal.tsx:62
+#: src/features/slicing/components/SlicingPanel.tsx:3187
+#: src/features/slicing/components/SlicingPanel.tsx:3226
 msgid "Close modal"
 msgstr ""
 
@@ -1432,8 +1541,12 @@ msgstr ""
 msgid "Close OAuth setup"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3163
+#: src/features/slicing/components/SlicingPanel.tsx:3168
 msgid "Close Plate"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:469
+msgid "Close plugin import warning"
 msgstr ""
 
 #: src/components/organisms/modals/PrintingModals.tsx:631
@@ -1453,12 +1566,28 @@ msgstr "Zatvoriť Program"
 msgid "Close rename curve profile dialog"
 msgstr ""
 
-#: src/components/organisms/modals/SceneFileModals.tsx:371
+#: src/components/organisms/modals/MeshRepairModals.tsx:136
+msgid "Close repair mesh dialog"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:628
+msgid "Close save scene options"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:389
 msgid "Close scene import hollowing prompt"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2946
+#: src/components/organisms/modals/SceneFileModals.tsx:275
+msgid "Close scene import placement prompt"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:2951
 msgid "Close session anti-aliasing override"
+msgstr ""
+
+#: src/components/modals/SliceCompletedModal.tsx:64
+msgid "Close slicing finished modal"
 msgstr ""
 
 #: src/components/settings/BackupsSettingsTab.tsx:1358
@@ -1478,6 +1607,10 @@ msgstr ""
 msgid "Close the report"
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:109
+msgid "Close unsaved changes modal"
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:1158
 msgid "Close warning"
 msgstr "Zatvoriť varovanie"
@@ -1490,6 +1623,10 @@ msgstr "Zatvoriť okno"
 msgid "Close without applying the edits made in this dialog"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:46
+msgid "Closed {closedHoles, plural, one {# open hole} other {# open holes}}."
+msgstr ""
+
 #: src/components/controls/AutoSupportPanel.tsx:632
 msgid "Closing now leaves the auto-support settings as they are. Save in the dialog's footer writes them."
 msgstr ""
@@ -1498,12 +1635,12 @@ msgstr ""
 msgid "Cluster Spacing"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:383
+#: src/components/controls/IslandsPanel.tsx:384
 msgid "Clustering"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:194
-#: src/components/controls/IslandsPanel.tsx:256
+#: src/components/controls/IslandsPanel.tsx:195
+#: src/components/controls/IslandsPanel.tsx:257
 msgid "Coincident"
 msgstr ""
 
@@ -1546,15 +1683,29 @@ msgstr ""
 msgid "Compiling results"
 msgstr ""
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:78
+msgid "Components"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:603
+#: src/components/scene/MeshRepairReportModal.tsx:644
+msgctxt "Mesh analysis row"
+msgid "Components"
+msgstr ""
+
 #: src/components/settings/PerformanceSettingsTab.tsx:214
 #: src/components/settings/PerformanceSettingsTab.tsx:218
 msgid "Compression"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:900
-#: src/supports/Settings/SupportSidebar.tsx:900
-#: src/supports/Settings/SupportSidebar.tsx:1064
-#: src/supports/Settings/SupportSidebar.tsx:1064
+#: src/features/scene/arrange/useArrangeManager.ts:184
+msgid "Computing placements and resolving collisions."
+msgstr ""
+
+#: src/supports/Settings/SupportSidebar.tsx:902
+#: src/supports/Settings/SupportSidebar.tsx:902
+#: src/supports/Settings/SupportSidebar.tsx:1066
+#: src/supports/Settings/SupportSidebar.tsx:1066
 msgid "Cone Angle"
 msgstr ""
 
@@ -1567,12 +1718,13 @@ msgstr ""
 msgid "Cone H"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:1161
-#: src/supports/Settings/SupportSidebar.tsx:1161
+#: src/supports/Settings/SupportSidebar.tsx:1005
+#: src/supports/Settings/SupportSidebar.tsx:1163
+#: src/supports/Settings/SupportSidebar.tsx:1163
 msgid "Cone Height"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:289
+#: src/components/controls/IslandsPanel.tsx:290
 msgid "Configure island detection parameters"
 msgstr ""
 
@@ -1680,7 +1832,7 @@ msgstr ""
 msgid "Connectivity"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:402
+#: src/components/controls/IslandsPanel.tsx:403
 msgid "Consolidate"
 msgstr ""
 
@@ -1689,18 +1841,18 @@ msgid "Contact"
 msgstr ""
 
 #: src/supports/Settings/components/PresetCard.tsx:132
-#: src/supports/Settings/SupportSidebar.tsx:876
-#: src/supports/Settings/SupportSidebar.tsx:876
-#: src/supports/Settings/SupportSidebar.tsx:1041
-#: src/supports/Settings/SupportSidebar.tsx:1041
+#: src/supports/Settings/SupportSidebar.tsx:878
+#: src/supports/Settings/SupportSidebar.tsx:878
+#: src/supports/Settings/SupportSidebar.tsx:1043
+#: src/supports/Settings/SupportSidebar.tsx:1043
 msgid "Contact Cone Length"
 msgstr ""
 
 #: src/supports/Settings/components/PresetCard.tsx:115
-#: src/supports/Settings/SupportSidebar.tsx:860
-#: src/supports/Settings/SupportSidebar.tsx:860
-#: src/supports/Settings/SupportSidebar.tsx:1026
-#: src/supports/Settings/SupportSidebar.tsx:1026
+#: src/supports/Settings/SupportSidebar.tsx:862
+#: src/supports/Settings/SupportSidebar.tsx:862
+#: src/supports/Settings/SupportSidebar.tsx:1028
+#: src/supports/Settings/SupportSidebar.tsx:1028
 msgid "Contact Diameter"
 msgstr ""
 
@@ -1715,6 +1867,7 @@ msgstr ""
 #. Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).
 #: src/components/layout/FirstRunOnboarding.tsx:286
 #: src/components/layout/TopBar.tsx:1179
+#: src/components/organisms/modals/SceneFileModals.tsx:507
 msgid "Continue"
 msgstr "Pokračovať"
 
@@ -1727,7 +1880,7 @@ msgstr ""
 msgid "Contour"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:424
+#: src/components/controls/IslandsPanel.tsx:425
 msgid "Contoured regions"
 msgstr ""
 
@@ -1749,6 +1902,14 @@ msgstr ""
 msgid "Copy"
 msgstr "Kopírovať"
 
+#: src/components/scene/MeshRepairReportModal.tsx:209
+msgid "Copy full JSON to clipboard"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:212
+msgid "Copy JSON"
+msgstr ""
+
 #: src/components/settings/BackupsSettingsTab.tsx:1653
 msgid "Copy template"
 msgstr ""
@@ -1763,6 +1924,10 @@ msgstr ""
 
 #: src/components/controls/AutoSupportPanel.tsx:495
 msgid "Copy the whole report to the clipboard"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:55
+msgid "Corrected {correctedWindingIssues, plural, one {# winding issue} other {# winding issues}}."
 msgstr ""
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:339
@@ -1873,7 +2038,7 @@ msgstr ""
 msgid "Current arrange algorithm"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2939
+#: src/features/slicing/components/SlicingPanel.tsx:2944
 msgid "Current material"
 msgstr ""
 
@@ -1902,7 +2067,7 @@ msgstr ""
 msgid "Curve Settings"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:1223
+#: src/supports/Settings/SupportSidebar.tsx:1225
 msgid "Curves"
 msgstr ""
 
@@ -1913,6 +2078,7 @@ msgstr ""
 msgid "Custom"
 msgstr ""
 
+#. Shown in a half-width preset dropdown when no preset is selected. Keep it short; "no preset" alone is enough.
 #: src/supports/Settings/autoSupportPresetMessages.ts:25
 msgid "Custom — not a preset"
 msgstr ""
@@ -2010,7 +2176,7 @@ msgstr ""
 msgid "Decrease minimum alpha"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2498
+#: src/features/slicing/components/SlicingPanel.tsx:2503
 msgid "Decrease offline layer height"
 msgstr ""
 
@@ -2042,6 +2208,12 @@ msgstr ""
 #. placeholder {0}: model.geometry.meshDefects.repairedFloats
 #: src/components/controls/ModelStatsCard.tsx:608
 msgid "Defective — {0} errors"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:609
+#: src/components/scene/MeshRepairReportModal.tsx:650
+msgctxt "Mesh analysis row"
+msgid "Degenerate tris"
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:610
@@ -2168,6 +2340,10 @@ msgstr ""
 msgid "Density & Sizing"
 msgstr ""
 
+#: src/features/hole-punching/HolePunchPanel.tsx:114
+msgid "Depth Mode"
+msgstr ""
+
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:306
 msgid "Desktop-only diagnostics for autosave files and recovery state."
 msgstr ""
@@ -2230,6 +2406,10 @@ msgstr ""
 msgid "Discard auto-support settings changes"
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:128
+msgid "Discard Changes"
+msgstr ""
+
 #: src/components/controls/AutoSupportPanel.tsx:596
 msgid "Discard Changes?"
 msgstr ""
@@ -2260,11 +2440,13 @@ msgstr ""
 msgid "Discovered Printers"
 msgstr ""
 
+#: src/app/page.tsx:11723
+#: src/components/scene/MeshRepairReportModal.tsx:219
 #: src/features/updater/GlobalUpdateIndicator.tsx:234
 msgid "Dismiss"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:319
+#: src/components/controls/IslandsPanel.tsx:320
 msgid "Display"
 msgstr ""
 
@@ -2278,6 +2460,10 @@ msgstr ""
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:61
 msgid "Distribution"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:487
+msgid "Do not remind again"
 msgstr ""
 
 #. Paraphrase of Yoda's line from Star Wars: The Empire Strikes Back (1980): "Do or do not. There is no try."
@@ -2307,7 +2493,7 @@ msgstr ""
 msgid "Don't add a registration tenon — the halves are cut apart with no way to index them back together."
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:74
+#: src/components/controls/AutoRotationPanel.tsx:75
 #: src/features/hollowing/HollowingPanel.tsx:316
 msgid "Done"
 msgstr ""
@@ -2342,6 +2528,10 @@ msgstr "Potiahni sem súbor. Tvoja plocha ťa súdi."
 msgid "DragonFruit app menu"
 msgstr "Menu aplikácie DragonFruit"
 
+#: src/components/scene/MeshRepairReportModal.tsx:236
+msgid "DragonFruit could not fully repair this mesh — it is still not a valid manifold and may cause problems later in your workflow."
+msgstr ""
+
 #: src/components/layout/FirstRunOnboarding.tsx:103
 msgid "DragonFruit first-time setup"
 msgstr ""
@@ -2363,12 +2553,20 @@ msgstr ""
 msgid "DragonFruit menu"
 msgstr "Menu DragonFruit"
 
+#: src/components/scene/MeshRepairReportModal.tsx:235
+msgid "DragonFruit repaired this mesh and replaced the model in your current scene."
+msgstr ""
+
 #: src/components/settings/BackupsSettingsTab.tsx:955
 msgid "DragonFruit stores backups in your own private GitHub repository. We intentionally avoid ORA-hosted cloud storage and we do not operate a DragonFruit backup server."
 msgstr ""
 
 #: src/features/updater/UpdateCheckerSection.tsx:266
 msgid "DragonFruit will <0>download, verify and install</0> the update, then restart automatically."
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:128
+msgid "DragonFruit will try to fix common geometry issues before you keep working."
 msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:727
@@ -2382,6 +2580,12 @@ msgstr ""
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:391
 #: src/components/controls/toolRailEntries.ts:57
 msgid "Duplicate"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:610
+#: src/components/scene/MeshRepairReportModal.tsx:651
+msgctxt "Mesh analysis row"
+msgid "Duplicate tris"
 msgstr ""
 
 #: src/components/settings/MultiPlateSettingsTab.tsx:84
@@ -2405,7 +2609,7 @@ msgstr ""
 msgid "Edge Fillet"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2663
+#: src/features/slicing/components/SlicingPanel.tsx:2668
 msgid "Edit"
 msgstr ""
 
@@ -2414,11 +2618,11 @@ msgstr ""
 msgid "Edit LUT Curve"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2434
+#: src/features/slicing/components/SlicingPanel.tsx:2439
 msgid "Edit material profile"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2416
+#: src/features/slicing/components/SlicingPanel.tsx:2421
 msgid "Edit printer profile"
 msgstr ""
 
@@ -2441,12 +2645,14 @@ msgstr "Kontextové menu editoru"
 msgid "Editor tools"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3143
+#: src/features/slicing/components/SlicingPanel.tsx:3148
 msgid "Elapsed {slicingElapsedLabel}"
 msgstr ""
 
 #. Time a blocking task has been running, e.g. "Elapsed: 1 min 12 s".
 #: src/app/page.tsx:495
+#: src/components/controls/AutoRotationPanel.tsx:62
+#: src/components/organisms/modals/SceneFileModals.tsx:78
 msgid "Elapsed: {elapsed}"
 msgstr ""
 
@@ -2514,7 +2720,7 @@ msgstr ""
 msgid "Encoding"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2472
+#: src/features/slicing/components/SlicingPanel.tsx:2477
 msgid "Engine"
 msgstr ""
 
@@ -2535,7 +2741,7 @@ msgstr ""
 msgid "Est. {estimatedTimeLabel} • {usedMaterialLabel}"
 msgstr "Est. {estimatedTimeLabel} • {usedMaterialLabel}"
 
-#: src/features/slicing/components/SlicingPanel.tsx:2462
+#: src/features/slicing/components/SlicingPanel.tsx:2467
 msgid "Est. Print Time"
 msgstr ""
 
@@ -2554,7 +2760,7 @@ msgstr ""
 msgid "Est. resin:"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2458
+#: src/features/slicing/components/SlicingPanel.tsx:2463
 msgid "Est. Volume"
 msgstr ""
 
@@ -2622,7 +2828,7 @@ msgstr ""
 msgid "Experiments disclaimer"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2522
+#: src/features/slicing/components/SlicingPanel.tsx:2527
 msgid "Expert"
 msgstr ""
 
@@ -2675,6 +2881,7 @@ msgstr ""
 msgid "Export the selected preset as a JSON file"
 msgstr ""
 
+#: src/app/page.tsx:11613
 #: src/features/export/components/ExportPanel.tsx:761
 msgid "Exporting…"
 msgstr ""
@@ -2687,8 +2894,12 @@ msgstr ""
 msgid "Factory presets will be reset and user presets will be unpinned."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3077
+#: src/features/slicing/components/SlicingPanel.tsx:3082
 msgid "Failed"
+msgstr ""
+
+#: src/components/modals/ManifoldWarningModal.tsx:44
+msgid "Failed manifold validation. Recommend mesh repair before continuing."
 msgstr ""
 
 #: src/components/settings/LocalBackupsSettingsTab.tsx:469
@@ -2758,6 +2969,11 @@ msgstr ""
 msgid "Failed to open autosave location."
 msgstr ""
 
+#: src/components/modals/SliceCompletedModal.tsx:43
+#: src/components/modals/SliceCompletedModal.tsx:44
+msgid "Failed to open directory."
+msgstr ""
+
 #: src/components/settings/LocalBackupsSettingsTab.tsx:492
 msgid "Failed to open folder in file manager."
 msgstr ""
@@ -2789,19 +3005,24 @@ msgstr ""
 msgid "Far faces, darker so the shape reads solid."
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:67
+#: src/components/controls/AutoRotationPanel.tsx:68
 msgid "Fewest Supports"
 msgstr ""
 
 #: src/components/organisms/modals/PrintingModals.tsx:512
+#: src/components/scene/MeshRepairConfirmModal.tsx:68
 msgid "File"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3216
+#: src/components/modals/SliceCompletedModal.tsx:110
+msgid "File Location"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:3221
 msgid "Files will be overwritten"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:358
+#: src/components/controls/IslandsPanel.tsx:359
 msgid "Filters"
 msgstr ""
 
@@ -2825,7 +3046,7 @@ msgstr ""
 msgid "Fine supports for delicate features"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3154
+#: src/features/slicing/components/SlicingPanel.tsx:3159
 msgid "Finishing…"
 msgstr ""
 
@@ -2887,6 +3108,10 @@ msgstr ""
 
 #: src/components/settings/MultiPlateSettingsTab.tsx:26
 msgid "Follow the plate a model lands on"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:301
+msgid "Follow-up notes"
 msgstr ""
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:247
@@ -3007,11 +3232,15 @@ msgstr ""
 msgid "Go to Settings → 3D Mouse to configure or block it."
 msgstr ""
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:56
+msgid "Got it"
+msgstr ""
+
 #: src/features/slicing/components/LutCurveEditor.tsx:503
 msgid "Gradient Position"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2618
+#: src/features/slicing/components/SlicingPanel.tsx:2623
 msgid "Grey"
 msgstr ""
 
@@ -3109,8 +3338,21 @@ msgstr ""
 msgid "Hierarchy"
 msgstr ""
 
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:190
+msgctxt "Cluster spacing"
+msgid "High"
+msgstr ""
+
 #: src/components/controls/ArrangePanel.tsx:238
 msgid "High-Precision"
+msgstr ""
+
+#: src/features/scene/arrange/useArrangeManager.ts:163
+msgid "High-Precision Arrange Running…"
+msgstr ""
+
+#: src/features/scene/arrange/useArrangeManager.ts:153
+msgid "High-Precision Fill Running…"
 msgstr ""
 
 #: src/components/controls/ArrangePanel.tsx:320
@@ -3119,6 +3361,26 @@ msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresetRow.tsx:36
 msgid "Hold the model clear of the plate, so a support can stand under it. Turns off a manual Z move."
+msgstr ""
+
+#: src/features/hole-punching/HolePunchPanel.tsx:159
+msgid "Hole Diameter"
+msgstr ""
+
+#: src/features/hole-punching/HolePunchPanel.tsx:216
+msgid "Hole diameter X in millimeters"
+msgstr ""
+
+#: src/features/hole-punching/HolePunchPanel.tsx:228
+msgid "Hole diameter Y in millimeters"
+msgstr ""
+
+#: src/features/hole-punching/HolePunchPanel.tsx:150
+msgid "Hole punch depth in millimeters"
+msgstr ""
+
+#: src/features/hole-punching/HolePunchPanel.tsx:90
+msgid "Hole Punching"
 msgstr ""
 
 #. Tool rail label in Support mode. One word, like the other tool names: opens the hollowing tool (shell the model, add drainage holes).
@@ -3264,6 +3526,10 @@ msgstr ""
 msgid "If you quit now, your unsaved LUT curve changes will be lost."
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:274
+msgid "If you want them, a few follow-up notes are tucked below."
+msgstr ""
+
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:423
 #: src/features/slicing/components/LutCurveEditor.tsx:1335
 msgid "Import"
@@ -3294,11 +3560,12 @@ msgstr ""
 msgid "Import scene…"
 msgstr "Importovať Scénu…"
 
-#: src/components/organisms/modals/SceneFileModals.tsx:413
+#: src/components/organisms/modals/SceneFileModals.tsx:431
 msgid "Import Solid"
 msgstr ""
 
-#: src/components/organisms/modals/SceneFileModals.tsx:380
+#: src/components/organisms/modals/SceneFileModals.tsx:284
+#: src/components/organisms/modals/SceneFileModals.tsx:398
 msgid "Imported scene"
 msgstr ""
 
@@ -3335,6 +3602,12 @@ msgstr ""
 msgid "Include Supports"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:608
+#: src/components/scene/MeshRepairReportModal.tsx:649
+msgctxt "Mesh analysis row"
+msgid "Inconsistent edges"
+msgstr ""
+
 #: src/features/slicing/components/LutCurveEditor.tsx:1608
 msgid "Increase maximum alpha"
 msgstr ""
@@ -3343,7 +3616,7 @@ msgstr ""
 msgid "Increase minimum alpha"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2499
+#: src/features/slicing/components/SlicingPanel.tsx:2504
 msgid "Increase offline layer height"
 msgstr ""
 
@@ -3359,7 +3632,7 @@ msgstr ""
 msgid "Increase spacing"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:255
+#: src/components/controls/IslandsPanel.tsx:256
 msgid "Individual lowest-vertex triangles on the mesh surface"
 msgstr ""
 
@@ -3392,6 +3665,11 @@ msgstr ""
 msgid "Initial Distance"
 msgstr ""
 
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:179
+msgid "Initial Pattern"
+msgstr ""
+
+#: src/components/printers/PrinterVariantPickerModal.tsx:405
 #: src/components/printers/PrinterVariantPickerModal.tsx:414
 msgid "Initial Setup"
 msgstr ""
@@ -3447,6 +3725,10 @@ msgstr ""
 msgid "Interior"
 msgstr ""
 
+#: src/features/hole-punching/HolePunchPanel.tsx:105
+msgid "Interior View Mode"
+msgstr ""
+
 #: src/components/controls/IslandListCard.tsx:86
 msgid "Island IDs"
 msgstr ""
@@ -3472,7 +3754,7 @@ msgid "Island Voxels"
 msgstr ""
 
 #. Tool rail label in Support mode. Short for the Islands panel, which scans the model for unsupported islands.
-#: src/components/controls/IslandsPanel.tsx:137
+#: src/components/controls/IslandsPanel.tsx:138
 #: src/components/controls/toolRailEntries.ts:148
 msgid "Islands"
 msgstr ""
@@ -3523,7 +3805,7 @@ msgstr ""
 msgid "JSON loaded. Now select the original STL file."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2755
+#: src/features/slicing/components/SlicingPanel.tsx:2760
 msgid "Just Slice"
 msgstr ""
 
@@ -3549,8 +3831,12 @@ msgstr ""
 msgid "Keep going without a printer. You can add one later."
 msgstr "Pokračuj bez tlačiarne. Môžeš ju pridať neskôr."
 
-#: src/components/organisms/modals/SceneFileModals.tsx:420
+#: src/components/organisms/modals/SceneFileModals.tsx:438
 msgid "Keep Hollow"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:178
+msgid "Keep Original"
 msgstr ""
 
 #: src/components/organisms/modals/PrintingModals.tsx:546
@@ -3649,7 +3935,7 @@ msgstr ""
 msgid "Layer 0 of 0. Living dangerously."
 msgstr "Vrstva 0 z 0. Žiješ na hrane."
 
-#: src/features/slicing/components/SlicingPanel.tsx:2452
+#: src/features/slicing/components/SlicingPanel.tsx:2457
 msgid "Layer Height"
 msgstr ""
 
@@ -3663,7 +3949,7 @@ msgstr ""
 
 #. Sort order for the island list: by layer span. One of three narrow buttons (ID / Volume / Layers).
 #: src/components/controls/IslandListCard.tsx:175
-#: src/features/slicing/components/SlicingPanel.tsx:2448
+#: src/features/slicing/components/SlicingPanel.tsx:2453
 msgid "Layers"
 msgstr ""
 
@@ -3687,7 +3973,7 @@ msgstr ""
 msgid "Least diameter a branch or leaf takes as a fraction of the trunk it grows from. The default, 0.7, keeps a hosted member a step below its host instead of a needle beside it."
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:69
+#: src/components/controls/AutoRotationPanel.tsx:70
 msgid "Least Scarring"
 msgstr ""
 
@@ -3750,6 +4036,10 @@ msgstr ""
 msgid "Link width and depth together so the dome keeps its shape."
 msgstr ""
 
+#: src/features/hole-punching/HolePunchPanel.tsx:173
+msgid "Link X and Y"
+msgstr ""
+
 #: src/components/organisms/modals/PrintingModals.tsx:1881
 msgid "Live"
 msgstr ""
@@ -3762,8 +4052,14 @@ msgstr ""
 msgid "Load a model in Prepare to unlock this stage"
 msgstr "Načítajte model v Príprave aby ste odomkli túto časť"
 
-#: src/components/controls/AutoRotationPanel.tsx:70
+#: src/components/controls/AutoRotationPanel.tsx:71
 msgid "Load a model to get an orientation suggestion."
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:296
+#: src/components/organisms/modals/SceneFileModals.tsx:306
+#: src/components/scene/MeshRepairConfirmModal.tsx:53
+msgid "Load As-Is"
 msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:576
@@ -3780,6 +4076,10 @@ msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1266
 msgid "Load vendor profile plugins"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:644
+msgid "Loaded file"
 msgstr ""
 
 #: src/features/scene/sceneImportMessages.ts:97
@@ -3886,8 +4186,8 @@ msgid "Lock build plate"
 msgstr ""
 
 #: src/supports/Settings/components/TipSettingsCard.tsx:61
-#: src/supports/Settings/SupportSidebar.tsx:913
-#: src/supports/Settings/SupportSidebar.tsx:1077
+#: src/supports/Settings/SupportSidebar.tsx:915
+#: src/supports/Settings/SupportSidebar.tsx:1079
 msgid "Locked"
 msgstr ""
 
@@ -3932,12 +4232,21 @@ msgstr ""
 msgid "Loops of a multi-loop cut you are not editing."
 msgstr ""
 
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:188
+msgctxt "Cluster spacing"
+msgid "Low"
+msgstr ""
+
 #: src/components/layout/FirstRunOnboarding.tsx:232
 msgid "Low-glare surfaces for late-night printing."
 msgstr ""
 
 #: src/features/slicing/components/SlicingPanel.tsx:167
 msgid "LUT: {curveName}"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:43
+msgid "Made the mesh watertight."
 msgstr ""
 
 #: src/components/settings/BackupsSettingsTab.tsx:1253
@@ -3957,6 +4266,7 @@ msgstr ""
 #: src/components/controls/ArrangePanel.tsx:176
 #: src/components/controls/toolRailEntries.ts:160
 #: src/components/printers/SetupMethodChooser.tsx:28
+#: src/features/hole-punching/HolePunchPanel.tsx:135
 msgid "Manual"
 msgstr ""
 
@@ -3989,19 +4299,19 @@ msgstr ""
 msgid "Matcap Style"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2437
+#: src/features/slicing/components/SlicingPanel.tsx:2442
 msgid "Material"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2859
+#: src/features/slicing/components/SlicingPanel.tsx:2864
 msgid "Material anti-aliasing settings"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2864
+#: src/features/slicing/components/SlicingPanel.tsx:2869
 msgid "Material Anti-Aliasing Settings"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2661
+#: src/features/slicing/components/SlicingPanel.tsx:2666
 msgid "Material Profile Settings"
 msgstr ""
 
@@ -4091,14 +4401,39 @@ msgstr ""
 msgid "Mesh"
 msgstr "Mesh"
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:43
+msgid "Mesh boolean operation failed"
+msgstr ""
+
 #: src/components/settings/MeshSettingsTab.tsx:272
 #: src/components/settings/MeshSettingsTab.tsx:302
 msgid "Mesh Color"
 msgstr ""
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:44
+msgid "Mesh quality too low"
+msgstr ""
+
+#: src/components/scene/MeshRepairConfirmModal.tsx:38
+msgid "Mesh repair confirmation"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:145
+msgid "Mesh repair report"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:117
+msgid "Mesh Repair Report"
+msgstr ""
+
 #. Badge label next to the number of meshes this export writes. Rendered uppercase; keep it to one short word.
 #: src/features/export/components/ExportPanel.tsx:568
 msgid "Meshes"
+msgstr ""
+
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:189
+msgctxt "Cluster spacing"
+msgid "Mid"
 msgstr ""
 
 #. Unit suffix after a minutes input box. Keep it abbreviated.
@@ -4137,8 +4472,8 @@ msgid "Min Overlap: 4"
 msgstr ""
 
 #: src/components/controls/AutoSupportPanel.tsx:428
-#: src/components/controls/IslandsPanel.tsx:193
-#: src/components/controls/IslandsPanel.tsx:255
+#: src/components/controls/IslandsPanel.tsx:194
+#: src/components/controls/IslandsPanel.tsx:256
 msgid "Minima"
 msgstr ""
 
@@ -4171,8 +4506,13 @@ msgid "Mirror across X, Y, or Z"
 msgstr "Zrkadliť podľa X, Y alebo Z"
 
 #: src/features/hollowing/HollowingPanel.tsx:145
-#: src/features/slicing/components/SlicingPanel.tsx:2615
+#: src/features/slicing/components/SlicingPanel.tsx:2620
 msgid "Mode"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:146
+msgctxt "Mesh repair dialog field"
+msgid "Model"
 msgstr ""
 
 #: src/features/scene/sceneImportMessages.ts:142
@@ -4233,7 +4573,7 @@ msgstr ""
 msgid "Models context menu"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3177
+#: src/features/slicing/components/SlicingPanel.tsx:3182
 msgid "Models Outside Build Volume"
 msgstr ""
 
@@ -4318,7 +4658,7 @@ msgstr ""
 msgid "Network Settings"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2504
+#: src/features/slicing/components/SlicingPanel.tsx:2509
 msgid "Network unavailable."
 msgstr ""
 
@@ -4359,6 +4699,7 @@ msgstr ""
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:95
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:452
 #: src/supports/Settings/components/PresetSelector.tsx:597
+#: src/supports/Settings/components/PresetSelector.tsx:803
 msgid "New Preset"
 msgstr ""
 
@@ -4370,8 +4711,13 @@ msgstr ""
 msgid "New scene"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:242
+#: src/components/controls/IslandsPanel.tsx:243
 msgid "Next (N)"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:613
+#: src/components/scene/MeshRepairReportModal.tsx:654
+msgid "no"
 msgstr ""
 
 #. {groupLabel} is a support type name (Trunks, Branches, Knots, …), lowercased by the caller in English.
@@ -4476,7 +4822,7 @@ msgstr ""
 msgid "No meshes loaded yet. Import a model first, then hop back to Export."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2389
+#: src/features/slicing/components/SlicingPanel.tsx:2394
 msgid "No meshes loaded yet. Import a model first, then return to Slicing."
 msgstr ""
 
@@ -4516,8 +4862,8 @@ msgstr ""
 msgid "No printer profiles."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2420
-#: src/features/slicing/components/SlicingPanel.tsx:2421
+#: src/features/slicing/components/SlicingPanel.tsx:2425
+#: src/features/slicing/components/SlicingPanel.tsx:2426
 msgid "No printer selected"
 msgstr ""
 
@@ -4566,9 +4912,25 @@ msgstr ""
 msgid "No visible models available for slicing."
 msgstr ""
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:80
+msgid "Non-manifold edges"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:604
+#: src/components/scene/MeshRepairReportModal.tsx:645
+msgctxt "Mesh analysis row"
+msgid "Non-manifold edges"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:605
+#: src/components/scene/MeshRepairReportModal.tsx:646
+msgctxt "Mesh analysis row"
+msgid "Non-manifold verts"
+msgstr ""
+
 #: src/supports/Settings/components/TipSettingsCard.tsx:60
-#: src/supports/Settings/SupportSidebar.tsx:912
-#: src/supports/Settings/SupportSidebar.tsx:1076
+#: src/supports/Settings/SupportSidebar.tsx:914
+#: src/supports/Settings/SupportSidebar.tsx:1078
 msgid "Normal"
 msgstr ""
 
@@ -4673,21 +5035,22 @@ msgstr ""
 msgid "Offline"
 msgstr "Offline"
 
-#: src/features/slicing/components/SlicingPanel.tsx:2483
+#: src/features/slicing/components/SlicingPanel.tsx:2488
 msgid "Offline Layer Height"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2497
+#: src/features/slicing/components/SlicingPanel.tsx:2502
 msgid "Offline layer height override in micrometers"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:902
-#: src/supports/Settings/SupportSidebar.tsx:902
-#: src/supports/Settings/SupportSidebar.tsx:1066
-#: src/supports/Settings/SupportSidebar.tsx:1066
+#: src/supports/Settings/SupportSidebar.tsx:904
+#: src/supports/Settings/SupportSidebar.tsx:904
+#: src/supports/Settings/SupportSidebar.tsx:1068
+#: src/supports/Settings/SupportSidebar.tsx:1068
 msgid "Offset"
 msgstr ""
 
+#: src/components/modals/ManifoldWarningModal.tsx:39
 #: src/components/modals/ObsoleteVoxlVersionModal.tsx:49
 msgid "OK"
 msgstr ""
@@ -4769,7 +5132,7 @@ msgstr ""
 msgid "One or more models have hole punches that haven’t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3205
+#: src/features/slicing/components/SlicingPanel.tsx:3210
 msgid "One visible model outside the build volume will be excluded from this slice."
 msgstr ""
 
@@ -4781,7 +5144,7 @@ msgstr ""
 msgid "Online"
 msgstr "Online"
 
-#: src/features/slicing/components/SlicingPanel.tsx:3178
+#: src/features/slicing/components/SlicingPanel.tsx:3183
 msgid "Only printable models will be sliced"
 msgstr ""
 
@@ -4811,6 +5174,11 @@ msgstr ""
 msgid "Open detailed monitor for {printer}"
 msgstr ""
 
+#: src/components/modals/SliceCompletedModal.tsx:85
+#: src/components/modals/SliceCompletedModal.tsx:100
+msgid "Open Directory"
+msgstr ""
+
 #. "DragonFruit" is the product name and should stay untranslated/unchanged.
 #: src/components/layout/TopBar.tsx:731
 msgid "Open DragonFruit menu"
@@ -4828,8 +5196,12 @@ msgstr ""
 msgid "Open GitHub Developer Settings and create a new OAuth App."
 msgstr ""
 
+#: src/components/modals/SliceCompletedModal.tsx:76
+msgid "Open in UVTools"
+msgstr ""
+
 #: src/components/controls/ModelStatsCard.tsx:521
-#: src/features/slicing/components/SlicingPanel.tsx:2435
+#: src/features/slicing/components/SlicingPanel.tsx:2440
 msgid "Open material profiles"
 msgstr ""
 
@@ -4851,7 +5223,7 @@ msgid "Open printer monitor"
 msgstr "Otvoriť monitor tlačiarne"
 
 #: src/components/controls/ModelStatsCard.tsx:506
-#: src/features/slicing/components/SlicingPanel.tsx:2417
+#: src/features/slicing/components/SlicingPanel.tsx:2422
 msgid "Open printer profiles"
 msgstr ""
 
@@ -4871,11 +5243,15 @@ msgstr ""
 msgid "Opening scene…"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:302
+msgid "Optional details if you want them."
+msgstr ""
+
 #: src/components/controls/toolRailEntries.ts:52
 msgid "Orient flat against plate"
 msgstr "Orientovať rovinu proti ploche"
 
-#: src/components/controls/AutoRotationPanel.tsx:66
+#: src/components/controls/AutoRotationPanel.tsx:67
 msgid "Orient Model"
 msgstr ""
 
@@ -4887,7 +5263,7 @@ msgstr ""
 msgid "Origin Colors"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3176
+#: src/features/slicing/components/SlicingPanel.tsx:3181
 msgid "Out-of-bounds models will be excluded"
 msgstr ""
 
@@ -4896,7 +5272,7 @@ msgstr ""
 msgid "Outer"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2466
+#: src/features/slicing/components/SlicingPanel.tsx:2471
 msgid "Output"
 msgstr ""
 
@@ -4908,7 +5284,7 @@ msgid "Outside plate"
 msgstr ""
 
 #. View mode colouring surfaces by how steeply they overhang, which is where supports are needed.
-#: src/components/controls/IslandsPanel.tsx:257
+#: src/components/controls/IslandsPanel.tsx:258
 #: src/features/shaders/mesh/types.ts:44
 msgid "Overhangs"
 msgstr ""
@@ -4932,7 +5308,7 @@ msgstr ""
 msgid "Overlap Radius: 1"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2663
+#: src/features/slicing/components/SlicingPanel.tsx:2668
 msgid "Override On"
 msgstr ""
 
@@ -4941,12 +5317,16 @@ msgstr ""
 msgid "Overview"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3237
+#: src/features/slicing/components/SlicingPanel.tsx:3242
 msgid "Overwrite and Slice"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3217
+#: src/features/slicing/components/SlicingPanel.tsx:3222
 msgid "Overwrite Existing Files?"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:668
+msgid "Overwrite Loaded Scene"
 msgstr ""
 
 #: src/supports/Settings/components/PresetSelector.tsx:814
@@ -4958,11 +5338,11 @@ msgstr ""
 msgid "Overwrite the preset <0>{0}</0> with the current scene settings?"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:75
+#: src/components/controls/AutoRotationPanel.tsx:76
 msgid "Paint areas to keep support-free. Orientation avoids them."
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:76
+#: src/components/controls/AutoRotationPanel.tsx:77
 msgid "Paint nogo areas for supports. Blocked contact is refused when generating supports and avoided when orienting."
 msgstr ""
 
@@ -5040,7 +5420,7 @@ msgstr ""
 msgid "Pin to Slot"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3084
+#: src/features/slicing/components/SlicingPanel.tsx:3089
 msgid "Pipeline Stage"
 msgstr ""
 
@@ -5098,7 +5478,7 @@ msgstr ""
 msgid "Plate Ordering"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3108
+#: src/features/slicing/components/SlicingPanel.tsx:3113
 msgid "Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}"
 msgstr ""
 
@@ -5111,8 +5491,21 @@ msgstr ""
 msgid "Please <0>save your scene and any unsaved progress</0> before continuing."
 msgstr ""
 
+#: src/features/scene/arrange/useArrangeManager.ts:156
+msgid "Please be patient while we compute the densest valid fill."
+msgstr ""
+
+#: src/features/scene/arrange/useArrangeManager.ts:166
+msgid "Please be patient while we process your models."
+msgstr ""
+
 #: src/app/page.tsx:1816
 msgid "Please be patient while we rebuild the model."
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:553
+#: src/components/organisms/modals/SceneFileModals.tsx:577
+msgid "Please ensure you have saved any important work."
 msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:501
@@ -5131,7 +5524,20 @@ msgstr ""
 #: src/app/page.tsx:1838
 #: src/app/page.tsx:1848
 #: src/app/page.tsx:1857
+#: src/features/scene/arrange/useArrangeManager.ts:176
 msgid "Please wait a moment."
+msgstr ""
+
+#: src/features/scene/arrange/useArrangeManager.ts:185
+msgid "Please wait."
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:460
+msgid "Plugin import experimental warning"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:464
+msgid "Plugin Import is Experimental"
 msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1265
@@ -5149,6 +5555,14 @@ msgstr ""
 #: src/features/slicing/components/LutCurveEditor.tsx:1368
 msgctxt "LUT curve point"
 msgid "Position"
+msgstr ""
+
+#: src/features/scene/arrange/useArrangeManager.ts:175
+msgid "Positioning models and validating placement."
+msgstr ""
+
+#: src/components/modals/ManifoldWarningModal.tsx:24
+msgid "Possible mesh manifold issues"
 msgstr ""
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:79
@@ -5219,7 +5633,7 @@ msgid "Presets"
 msgstr ""
 
 #. Sits under the Blocker Painting Mode heading. {clearLabel} and {doneLabel} are the Clear and Done button labels; keep them as placeholders so the two always match the buttons.
-#: src/components/controls/AutoRotationPanel.tsx:219
+#: src/components/controls/AutoRotationPanel.tsx:220
 msgid "Press <0>{clearLabel}</0> to reset all, or <1>{doneLabel}</1> to apply."
 msgstr ""
 
@@ -5228,7 +5642,7 @@ msgstr ""
 msgid "Preview"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3127
+#: src/features/slicing/components/SlicingPanel.tsx:3132
 msgid "Preview for this layer is not available."
 msgstr ""
 
@@ -5236,7 +5650,7 @@ msgstr ""
 msgid "Preview Model"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:218
+#: src/components/controls/IslandsPanel.tsx:219
 msgid "Previous (B)"
 msgstr ""
 
@@ -5286,7 +5700,7 @@ msgstr ""
 #: src/components/layout/TopBar.tsx:488
 #: src/components/organisms/modals/PrintingModals.tsx:520
 #: src/components/organisms/modals/PrintingModals.tsx:962
-#: src/features/slicing/components/SlicingPanel.tsx:2419
+#: src/features/slicing/components/SlicingPanel.tsx:2424
 msgid "Printer"
 msgstr "Tlačiareň"
 
@@ -5393,6 +5807,10 @@ msgstr ""
 msgid "Processing"
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:86
+msgid "Processing {count, plural, one {# model} other {# models}}"
+msgstr ""
+
 #: src/app/page.tsx:1807
 #: src/app/page.tsx:11583
 #: src/app/page.tsx:11595
@@ -5424,7 +5842,7 @@ msgstr ""
 msgid "Profiles"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3094
+#: src/features/slicing/components/SlicingPanel.tsx:3099
 msgid "Progress"
 msgstr ""
 
@@ -5434,6 +5852,10 @@ msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1218
 msgid "Projection and navigation behavior"
+msgstr ""
+
+#: src/features/hole-punching/HolePunchPanel.tsx:142
+msgid "Punch Depth"
 msgstr ""
 
 #: src/features/organicCut/OrganicCutPanel.tsx:752
@@ -5497,7 +5919,7 @@ msgid "Reading autosaved scene…"
 msgstr ""
 
 #: src/features/slicing/components/SlicingPanel.tsx:188
-#: src/features/slicing/components/SlicingPanel.tsx:3074
+#: src/features/slicing/components/SlicingPanel.tsx:3079
 msgid "Ready"
 msgstr ""
 
@@ -5514,7 +5936,7 @@ msgstr ""
 msgid "Rebuilding the model geometry with the latest hollowing settings."
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:163
+#: src/components/controls/IslandsPanel.tsx:164
 msgid "Recalculating…"
 msgstr ""
 
@@ -5561,13 +5983,21 @@ msgstr ""
 msgid "Recovery state"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:468
+#: src/components/modals/ManifoldWarningModal.tsx:53
+msgid "Red overlay indicates individual components failing validation."
+msgstr ""
+
+#: src/components/controls/IslandsPanel.tsx:469
 msgid "Reduce intersections"
 msgstr ""
 
 #: src/components/controls/ArrangePanel.tsx:354
 #: src/components/controls/ArrangePanel.tsx:377
 msgid "Reduce Total Copies to 1 before arranging"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:60
+msgid "Reduced disconnected mesh sections from {before} to {after}."
 msgstr ""
 
 #: src/features/slicing/components/LutCurveEditor.tsx:1211
@@ -5592,7 +6022,7 @@ msgstr ""
 msgid "Refresh print files"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:256
+#: src/components/controls/IslandsPanel.tsx:257
 msgid "Regions where both voxel and geometric islands overlap"
 msgstr ""
 
@@ -5629,7 +6059,7 @@ msgstr ""
 msgid "Remote backup is newer. Choose restore or force sync."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2486
+#: src/features/slicing/components/SlicingPanel.tsx:2491
 msgid "Remote material unavailable."
 msgstr ""
 
@@ -5650,7 +6080,7 @@ msgstr ""
 msgid "Remove saved printer"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:446
+#: src/components/controls/IslandsPanel.tsx:447
 msgid "Remove supported clusters"
 msgstr ""
 
@@ -5728,16 +6158,64 @@ msgstr ""
 msgid "Reopen {0}"
 msgstr "Znovu otvoriť {0}"
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:195
+#: src/components/scene/MeshRepairConfirmModal.tsx:61
 #: src/components/ui/EditorContextMenu.tsx:104
 msgid "Repair"
 msgstr "Opraviť"
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:153
+msgid "Repair can help with holes, broken surfaces, and other mesh problems that may lead to slicing or print issues."
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:116
+msgid "Repair Complete"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:256
+msgid "Repair finished"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:256
+msgid "Repair incomplete"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:116
+msgid "Repair Incomplete"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:109
+msgid "Repair mesh"
+msgstr ""
 
 #: src/components/controls/ModelManagerPanel.tsx:495
 msgid "Repair mesh…"
 msgstr ""
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:39
+msgid "Repair recommended before slicing"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:335
+#: src/components/scene/MeshRepairReportModal.tsx:374
+#: src/components/scene/MeshRepairReportModal.tsx:540
+msgid "Repair steps"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:125
+msgid "Repair this mesh?"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:194
+msgid "Repairing…"
+msgstr ""
+
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:162
 msgid "Repeat Interval"
+msgstr ""
+
+#: src/supports/autoBracing/AutoBracingSettingsCard.tsx:180
+msgid "Repeating Pattern"
 msgstr ""
 
 #: src/components/controls/AutoSupportPanel.tsx:669
@@ -5757,7 +6235,9 @@ msgid "Required for self-compiled builds that do not ship with backup OAuth env 
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:626
+#: src/features/hole-punching/HolePunchPanel.tsx:242
 #: src/features/hollowing/HollowingPanel.tsx:332
+#: src/features/organicCut/OrganicCutPanel.tsx:759
 #: src/features/slicing/components/LutCurveEditor.tsx:1462
 #: src/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard.tsx:31
 msgid "Reset"
@@ -5775,7 +6255,7 @@ msgstr ""
 msgid "Reset cut settings to defaults"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:496
+#: src/components/controls/IslandsPanel.tsx:497
 msgid "Reset defaults"
 msgstr ""
 
@@ -5801,12 +6281,21 @@ msgstr ""
 msgid "Resetting stream…"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:402
+#: src/components/scene/MeshRepairReportModal.tsx:562
+msgid "Residual issues"
+msgstr ""
+
 #: src/components/organisms/modals/PrintingModals.tsx:646
 msgid "Resin is mixed, sufficient for the print, and at operating temperature."
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:339
+#: src/components/controls/IslandsPanel.tsx:340
 msgid "Resolution"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:49
+msgid "Resolved {resolvedSelfIntersections, plural, one {# self-intersection} other {# self-intersections}}."
 msgstr ""
 
 #: src/components/settings/LocalBackupsSettingsTab.tsx:734
@@ -5827,7 +6316,7 @@ msgstr "Obnoviť"
 msgid "Restore as Current"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:1209
+#: src/supports/Settings/SupportSidebar.tsx:1211
 msgid "Restore defaults"
 msgstr ""
 
@@ -5910,8 +6399,9 @@ msgstr "Cesty? Kde tlačíme my, nepotrebujeme cesty."
 msgid "Root Disk H"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:1146
-#: src/supports/Settings/SupportSidebar.tsx:1146
+#: src/supports/Settings/SupportSidebar.tsx:990
+#: src/supports/Settings/SupportSidebar.tsx:1148
+#: src/supports/Settings/SupportSidebar.tsx:1148
 msgid "Root Disk Height"
 msgstr ""
 
@@ -5919,10 +6409,10 @@ msgstr ""
 msgid "Roots"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:972
-#: src/supports/Settings/SupportSidebar.tsx:972
-#: src/supports/Settings/SupportSidebar.tsx:1129
-#: src/supports/Settings/SupportSidebar.tsx:1129
+#: src/supports/Settings/SupportSidebar.tsx:974
+#: src/supports/Settings/SupportSidebar.tsx:974
+#: src/supports/Settings/SupportSidebar.tsx:1131
+#: src/supports/Settings/SupportSidebar.tsx:1131
 msgid "Roots Diameter"
 msgstr ""
 
@@ -5947,7 +6437,7 @@ msgstr ""
 msgid "Run a sync, verify repository readiness, or disconnect this GitHub account."
 msgstr ""
 
-#: src/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard.tsx:1096
+#: src/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard.tsx:1099
 msgid "Run an Island Scan first."
 msgstr ""
 
@@ -5971,7 +6461,7 @@ msgstr "Spusťi sekanie v Exporte aby si odomkol preview tlače"
 msgid "Run TypeScript scanline scan"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3072
+#: src/features/slicing/components/SlicingPanel.tsx:3077
 msgid "Running"
 msgstr ""
 
@@ -5987,7 +6477,7 @@ msgstr ""
 msgid "Sample per-vertex color data when available."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2616
+#: src/features/slicing/components/SlicingPanel.tsx:2621
 msgid "Samples"
 msgstr ""
 
@@ -5995,6 +6485,14 @@ msgstr ""
 #: src/features/slicing/components/LutCurveEditor.tsx:1475
 #: src/supports/Settings/components/PresetSelector.tsx:844
 msgid "Save"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:541
+msgid "Save & Close"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:565
+msgid "Save & New Scene"
 msgstr ""
 
 #: src/supports/Settings/components/PresetSelector.tsx:605
@@ -6005,11 +6503,19 @@ msgstr ""
 msgid "Save current settings to this preset"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:1202
+#: src/components/organisms/modals/SceneFileModals.tsx:200
+msgid "Save Error"
+msgstr ""
+
+#: src/supports/Settings/SupportSidebar.tsx:1204
 msgid "Save failed"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2912
+#: src/components/organisms/modals/SceneFileModals.tsx:617
+msgid "Save Loaded Scene"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:2917
 msgid "Save Material"
 msgstr ""
 
@@ -6030,7 +6536,11 @@ msgstr "Uložiť Scénu"
 msgid "Save scene as…"
 msgstr "Uložiť Scénu Ako…"
 
-#: src/supports/Settings/SupportSidebar.tsx:1202
+#: src/components/organisms/modals/SceneFileModals.tsx:601
+msgid "Save scene options"
+msgstr ""
+
+#: src/supports/Settings/SupportSidebar.tsx:1204
 msgid "Save settings"
 msgstr ""
 
@@ -6044,7 +6554,7 @@ msgid "Save webcam snapshot"
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:635
-#: src/supports/Settings/SupportSidebar.tsx:1202
+#: src/supports/Settings/SupportSidebar.tsx:1204
 msgid "Saved"
 msgstr ""
 
@@ -6060,11 +6570,11 @@ msgstr ""
 msgid "Saving…"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:389
+#: src/components/controls/IslandsPanel.tsx:390
 msgid "Scale markers with area"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:334
+#: src/components/controls/IslandsPanel.tsx:335
 msgid "Scan"
 msgstr ""
 
@@ -6081,16 +6591,20 @@ msgstr ""
 msgid "Scan for Supports"
 msgstr ""
 
+#: src/components/controls/IslandsPanel.tsx:182
+msgid "Scan Islands"
+msgstr ""
+
 #: src/components/scene/ScanProgressBar.tsx:49
 msgid "Scan progress"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:144
-#: src/components/controls/IslandsPanel.tsx:287
+#: src/components/controls/IslandsPanel.tsx:145
+#: src/components/controls/IslandsPanel.tsx:288
 msgid "Scan settings"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:288
+#: src/components/controls/IslandsPanel.tsx:289
 msgid "Scan Settings"
 msgstr ""
 
@@ -6099,7 +6613,7 @@ msgstr ""
 msgid "Scan the model for unsupported islands"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:277
+#: src/components/controls/IslandsPanel.tsx:278
 msgid "Scan the model to detect unsupported islands"
 msgstr ""
 
@@ -6125,6 +6639,7 @@ msgid "Scanning your network for {presetName} printers…"
 msgstr ""
 
 #: src/components/controls/IslandScanCard.tsx:143
+#: src/components/controls/IslandsPanel.tsx:182
 #: src/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard.tsx:49
 msgid "Scanning…"
 msgstr ""
@@ -6143,19 +6658,27 @@ msgstr ""
 msgid "Scene built for another printer"
 msgstr ""
 
-#: src/components/organisms/modals/SceneFileModals.tsx:344
+#: src/components/organisms/modals/SceneFileModals.tsx:362
 msgid "Scene import hollowing decision"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:248
+msgid "Scene import placement decision"
 msgstr ""
 
 #: src/app/page.tsx:4991
 msgid "Scene is too large to save"
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:264
+msgid "Scene may be off-plate"
+msgstr ""
+
 #: src/components/settings/PerformanceSettingsTab.tsx:139
 msgid "Scene mood overlay in thumbnail"
 msgstr ""
 
-#: src/components/organisms/modals/SceneFileModals.tsx:360
+#: src/components/organisms/modals/SceneFileModals.tsx:378
 msgid "Scene was hollowed before export"
 msgstr ""
 
@@ -6228,7 +6751,7 @@ msgstr ""
 msgid "Select a LocalStorage key from the left to view its value."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2505
+#: src/features/slicing/components/SlicingPanel.tsx:2510
 msgid "Select a matching material during import instead."
 msgstr ""
 
@@ -6374,6 +6897,16 @@ msgstr ""
 msgid "Selection Preview"
 msgstr ""
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:79
+msgid "Self-intersections"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:611
+#: src/components/scene/MeshRepairReportModal.tsx:652
+msgctxt "Mesh analysis row"
+msgid "Self-intersections"
+msgstr ""
+
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:158
 msgid "Self-Support Angle"
 msgstr ""
@@ -6390,7 +6923,7 @@ msgstr ""
 msgid "Send to Printer"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2754
+#: src/features/slicing/components/SlicingPanel.tsx:2759
 msgid "Send to UVTools"
 msgstr ""
 
@@ -6402,11 +6935,11 @@ msgstr ""
 msgid "Separating model and support geometry…"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2931
+#: src/features/slicing/components/SlicingPanel.tsx:2936
 msgid "Session anti-aliasing override"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2936
+#: src/features/slicing/components/SlicingPanel.tsx:2941
 msgid "Session Anti-Aliasing Override"
 msgstr ""
 
@@ -6414,7 +6947,7 @@ msgstr ""
 msgid "Session Override active"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2679
+#: src/features/slicing/components/SlicingPanel.tsx:2684
 msgid "Session Overrides"
 msgstr ""
 
@@ -6464,7 +6997,7 @@ msgstr ""
 msgid "Shaft Ø range"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:257
+#: src/components/controls/IslandsPanel.tsx:258
 msgid "Shallow surfaces detected by the mesh-normal classifier (the surfaces auto-supports grid)"
 msgstr ""
 
@@ -6485,7 +7018,7 @@ msgstr ""
 msgid "Shells:"
 msgstr ""
 
-#: src/components/controls/AutoRotationPanel.tsx:68
+#: src/components/controls/AutoRotationPanel.tsx:69
 msgid "Shortest Print Time"
 msgstr ""
 
@@ -6501,7 +7034,7 @@ msgstr ""
 msgid "Show alpha as 0-255"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:367
+#: src/components/controls/IslandsPanel.tsx:368
 msgid "Show already-supported islands"
 msgstr ""
 
@@ -6541,7 +7074,7 @@ msgstr ""
 msgid "Show or hide the model list"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:376
+#: src/components/controls/IslandsPanel.tsx:377
 msgid "Show plate-contact islands"
 msgstr ""
 
@@ -6574,8 +7107,14 @@ msgstr ""
 msgid "Shows \"Cannot Place Support\" and \"Stability Warning\" tooltips."
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:329
+#: src/components/controls/IslandsPanel.tsx:330
 msgid "Shows the Voxels, Minima, Coincident, and Overhangs layer toggles."
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:612
+#: src/components/scene/MeshRepairReportModal.tsx:653
+msgctxt "Mesh analysis row"
+msgid "Signed volume"
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportSettingsBody.tsx:208
@@ -6606,15 +7145,15 @@ msgstr ""
 msgid "Slack between tenon and mortise, on every face. 0 = press fit (needs force). 0.1mm is a slide fit on a well-calibrated printer; raise it if the halves won't go together."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2753
+#: src/features/slicing/components/SlicingPanel.tsx:2758
 msgid "Slice & Print"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2752
+#: src/features/slicing/components/SlicingPanel.tsx:2757
 msgid "Slice & Upload"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2779
+#: src/features/slicing/components/SlicingPanel.tsx:2784
 msgid "Slice All"
 msgstr ""
 
@@ -6622,15 +7161,15 @@ msgstr ""
 msgid "Slice along a single flat plane derived from your points."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2729
+#: src/features/slicing/components/SlicingPanel.tsx:2734
 msgid "Slice plates"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3198
+#: src/features/slicing/components/SlicingPanel.tsx:3203
 msgid "Slice Printable Models"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2751
+#: src/features/slicing/components/SlicingPanel.tsx:2756
 msgid "Slice to File"
 msgstr ""
 
@@ -6640,8 +7179,8 @@ msgstr ""
 
 #: src/components/scene/scanProgressMessages.ts:20
 #: src/components/settings/SettingsModal.tsx:1229
-#: src/features/slicing/components/SlicingPanel.tsx:2383
-#: src/features/slicing/components/SlicingPanel.tsx:2402
+#: src/features/slicing/components/SlicingPanel.tsx:2388
+#: src/features/slicing/components/SlicingPanel.tsx:2407
 msgid "Slicing"
 msgstr ""
 
@@ -6649,23 +7188,35 @@ msgstr ""
 msgid "Slicing and analysis in progress..."
 msgstr ""
 
+#: src/components/modals/SliceCompletedModal.tsx:58
+msgid "Slicing completed"
+msgstr ""
+
+#: src/components/modals/SliceCompletedModal.tsx:59
+msgid "Slicing Finished"
+msgstr ""
+
 #: src/components/layout/TopBar.tsx:1003
 msgid "Slicing in progress. Topbar actions are temporarily disabled."
 msgstr "Momentálne sekám. Akcie vo vrchnej lište sú momentálne vypnuté."
 
-#: src/components/controls/IslandsPanel.tsx:254
+#: src/components/controls/IslandsPanel.tsx:255
 msgid "Slicing islands and suspended areas detected from layer contours"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3047
+#: src/features/slicing/components/SlicingPanel.tsx:3052
 msgid "Slicing Plate"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3028
+#: src/features/slicing/components/SlicingPanel.tsx:3033
 msgid "Slicing progress"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2778
+#: src/components/modals/SliceCompletedModal.tsx:124
+msgid "Slicing Time"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:2783
 msgid "Slicing…"
 msgstr ""
 
@@ -6740,7 +7291,7 @@ msgid "Sparse supports — the detail sizing band"
 msgstr ""
 
 #: src/components/organisms/modals/PrintingModals.tsx:1008
-#: src/features/slicing/components/SlicingPanel.tsx:3099
+#: src/features/slicing/components/SlicingPanel.tsx:3104
 msgid "Speed"
 msgstr ""
 
@@ -6805,6 +7356,10 @@ msgstr ""
 
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:355
 msgid "Standing Autosave Error"
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:574
+msgid "Start a new scene now?"
 msgstr ""
 
 #: src/features/slicing/components/LutCurveEditor.tsx:1485
@@ -6916,7 +7471,7 @@ msgstr ""
 msgid "Support base must be below the tip (knot cannot be above the tip)."
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:348
+#: src/components/controls/IslandsPanel.tsx:349
 msgid "Support buffer"
 msgstr ""
 
@@ -6941,7 +7496,7 @@ msgstr ""
 msgid "Support Size"
 msgstr ""
 
-#: src/supports/Settings/SupportSidebar.tsx:1194
+#: src/supports/Settings/SupportSidebar.tsx:1196
 msgid "Support Studio"
 msgstr ""
 
@@ -7045,7 +7600,11 @@ msgstr ""
 msgid "Target Printer"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2681
+#: src/components/scene/MeshRepairReportModal.tsx:317
+msgid "Technical details"
+msgstr ""
+
+#: src/features/slicing/components/SlicingPanel.tsx:2686
 msgid "Temporary"
 msgstr ""
 
@@ -7220,7 +7779,7 @@ msgstr ""
 msgid "The seam while the cursor is over it."
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:2715
+#: src/features/slicing/components/SlicingPanel.tsx:2720
 msgid "The selected Machine does not support AA at this time."
 msgstr ""
 
@@ -7292,6 +7851,10 @@ msgstr ""
 msgid "This cannot be undone."
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:466
+msgid "This feature is still under development."
+msgstr ""
+
 #: src/components/modals/ObsoleteVoxlVersionModal.tsx:63
 msgid "This file is a VOXL V1 binary container."
 msgstr ""
@@ -7304,12 +7867,32 @@ msgstr ""
 msgid "This is a built-in profile, so its fields are fixed. Duplicate it and edit the copy — custom settings belong in a custom profile."
 msgstr ""
 
+#: src/features/scene/arrange/useArrangeManager.ts:165
+msgid "This is a computationally expensive operation for dense packing."
+msgstr ""
+
 #: src/components/organisms/modals/PrintingModals.tsx:1641
 msgid "This machine is currently offline"
 msgstr ""
 
+#: src/components/modals/ManifoldWarningModal.tsx:47
+msgid "This may cause issues with printability including support placement and slicing. Some may not be immediately visible (e.g. slicing defects, etc.)."
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:62
+msgid "This mesh contains too many self-intersecting triangles and non-manifold edges for boolean operations to succeed. The import repair pass reduced but could not fully resolve all issues in the geometry."
+msgstr ""
+
+#: src/components/modals/ManifoldWarningModal.tsx:26
+msgid "This mesh may not be a valid solid"
+msgstr ""
+
 #: src/components/controls/AutoSupportPanel.tsx:640
 msgid "This model already has supports. How would you like to proceed?"
+msgstr ""
+
+#: src/components/scene/MeshRepairConfirmModal.tsx:40
+msgid "This model has severe mesh issues and is likely to need heavy repair."
 msgstr ""
 
 #: src/components/printers/PrinterVariantPickerModal.tsx:461
@@ -7327,6 +7910,11 @@ msgstr ""
 #: src/components/layout/EmptySceneState.tsx:77
 msgid "This scene is aggressively unoccupied."
 msgstr "Táto scéna je agresívne prázdna."
+
+#: src/components/organisms/modals/SceneFileModals.tsx:540
+#: src/components/organisms/modals/SceneFileModals.tsx:564
+msgid "This scene is already saved."
+msgstr ""
 
 #: src/components/modals/ScenePrinterMismatchModal.tsx:57
 msgid "This scene may not fit the one selected"
@@ -7453,15 +8041,25 @@ msgstr ""
 msgid "Transform"
 msgstr ""
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:77
+msgid "Triangles"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:601
+#: src/components/scene/MeshRepairReportModal.tsx:642
+msgctxt "Mesh analysis row"
+msgid "Triangles"
+msgstr ""
+
 #: src/components/controls/ModelStatsCard.tsx:588
 msgid "Triangles:"
 msgstr ""
 
 #: src/supports/Settings/components/PresetCard.tsx:149
-#: src/supports/Settings/SupportSidebar.tsx:952
-#: src/supports/Settings/SupportSidebar.tsx:952
-#: src/supports/Settings/SupportSidebar.tsx:1114
-#: src/supports/Settings/SupportSidebar.tsx:1114
+#: src/supports/Settings/SupportSidebar.tsx:954
+#: src/supports/Settings/SupportSidebar.tsx:954
+#: src/supports/Settings/SupportSidebar.tsx:1116
+#: src/supports/Settings/SupportSidebar.tsx:1116
 msgid "Trunk Diameter"
 msgstr ""
 
@@ -7536,6 +8134,10 @@ msgstr ""
 msgid "Unlink width and depth — resize them independently."
 msgstr ""
 
+#: src/features/hole-punching/HolePunchPanel.tsx:173
+msgid "Unlink X and Y"
+msgstr ""
+
 #. Tooltip on the lock button beside the build plate while it is locked.
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1771
 msgid "Unlock build plate"
@@ -7559,8 +8161,16 @@ msgstr ""
 msgid "Unpin"
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:103
+msgid "Unsaved changes"
+msgstr ""
+
 #: src/features/updater/UpdateCheckerSection.tsx:275
 msgid "Unsaved changes may be lost."
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:104
+msgid "Unsaved Scene Changes"
 msgstr ""
 
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:102
@@ -7745,6 +8355,10 @@ msgstr ""
 msgid "Using Material Settings"
 msgstr ""
 
+#: src/features/scene/arrange/useArrangeManager.ts:155
+msgid "Using SAT-based 2.5D nesting to pack duplicates onto the plate."
+msgstr ""
+
 #: src/components/settings/SettingsModal.tsx:1289
 msgid "UVTools"
 msgstr ""
@@ -7780,6 +8394,12 @@ msgstr ""
 
 #: src/components/controls/ToolRail.tsx:412
 msgid "Vertical"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:602
+#: src/components/scene/MeshRepairReportModal.tsx:643
+msgctxt "Mesh analysis row"
+msgid "Vertices"
 msgstr ""
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:208
@@ -7849,8 +8469,8 @@ msgstr ""
 msgid "Voxel Size"
 msgstr ""
 
-#: src/components/controls/IslandsPanel.tsx:192
-#: src/components/controls/IslandsPanel.tsx:254
+#: src/components/controls/IslandsPanel.tsx:193
+#: src/components/controls/IslandsPanel.tsx:255
 msgid "Voxels"
 msgstr ""
 
@@ -7917,6 +8537,16 @@ msgstr ""
 msgid "Warm"
 msgstr ""
 
+#: src/components/modals/ManifoldWarningModal.tsx:25
+msgid "Warning: Non-manifold mesh"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:613
+#: src/components/scene/MeshRepairReportModal.tsx:654
+msgctxt "Mesh analysis row"
+msgid "Watertight"
+msgstr ""
+
 #: src/features/organicCut/OrganicCutColorsSection.tsx:29
 #: src/features/organicCut/OrganicCutMounts.tsx:137
 msgid "Waypoint"
@@ -7932,6 +8562,10 @@ msgstr ""
 
 #: src/components/settings/BackupsSettingsTab.tsx:1017
 msgid "We found <0>{defaultRepoName}</0>. Choose whether to keep using it or create a fresh repository."
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:70
+msgid "We recommend repairing the mesh in a dedicated 3D modeling program such as <0>Blender</0> or <1>Netfabb</1> before importing it into DragonFruit."
 msgstr ""
 
 #: src/components/organisms/modals/PrintingModals.tsx:236
@@ -7965,6 +8599,10 @@ msgstr "Čo tlačíme dnes?"
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:57
 msgid "What counts as a support-needing surface, and how tightly neighbouring detections merge"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:287
+msgid "What DragonFruit repaired"
 msgstr ""
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:56
@@ -8020,6 +8658,10 @@ msgstr ""
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr ""
 
+#: src/app/page.tsx:11614
+msgid "Writing mesh geometry and support data to file…"
+msgstr ""
+
 #: src/features/hollowing/HollowingPanel.tsx:277
 msgid "X Max"
 msgstr ""
@@ -8045,6 +8687,11 @@ msgstr ""
 msgid "Y Min"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:613
+#: src/components/scene/MeshRepairReportModal.tsx:654
+msgid "yes"
+msgstr ""
+
 #: src/components/settings/LocalBackupsSettingsTab.tsx:1043
 msgid "Yes, restore"
 msgstr ""
@@ -8061,6 +8708,11 @@ msgstr ""
 msgid "You can replace all existing supports with auto-placed ones, or incorporate your existing supports and fill in the gaps."
 msgstr ""
 
+#: src/components/organisms/modals/SceneFileModals.tsx:539
+#: src/components/organisms/modals/SceneFileModals.tsx:563
+msgid "You have unsaved edits in this scene."
+msgstr ""
+
 #: src/features/slicing/components/LutCurveEditor.tsx:1684
 msgid "You have unsaved LUT curve edits."
 msgstr ""
@@ -8069,6 +8721,14 @@ msgstr ""
 #: src/components/layout/EmptySceneState.tsx:87
 msgid "You shall not pass... until you load a model."
 msgstr "Neprejdeš… kým nenahráš model."
+
+#: src/components/organisms/modals/SceneFileModals.tsx:549
+msgid "You’re about to close DragonFruit with unsaved scene changes."
+msgstr ""
+
+#: src/components/organisms/modals/SceneFileModals.tsx:573
+msgid "You’re about to start a new scene with unsaved edits in this one."
+msgstr ""
 
 #: src/components/layout/FirstRunOnboarding.tsx:314
 msgid "You're all set!"
