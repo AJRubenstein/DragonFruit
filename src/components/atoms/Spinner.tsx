@@ -22,15 +22,34 @@ const sizeClassMap: Record<SpinnerSize, string> = {
   lg: 'h-5 w-5',
 };
 
-/** The app's busy glyph. One definition for size, animation and naming. */
+/**
+ * The app's busy glyph. One definition for size, animation and naming.
+ *
+ * The glyph turns inside its own SVG (SMIL) rather than with `animate-spin`. Under the
+ * fractional webview zoom of the UI scale, the compositor rotates a CSS-spun layer about
+ * a point that is off the glyph's centre, and the spinner wobbles.
+ */
 export function Spinner({ size = 'sm', label, icon: Icon = Loader2, className, ...props }: SpinnerProps) {
   return (
-    <Icon
-      className={cn('animate-spin', sizeClassMap[size], className)}
+    <svg
+      viewBox="0 0 24 24"
+      className={cn('shrink-0', sizeClassMap[size], className)}
       aria-label={label}
       role={label ? 'status' : undefined}
       aria-hidden={label ? undefined : true}
       {...props}
-    />
+    >
+      <g>
+        <animateTransform
+          attributeName="transform"
+          type="rotate"
+          from="0 12 12"
+          to="360 12 12"
+          dur="1s"
+          repeatCount="indefinite"
+        />
+        <Icon width={24} height={24} aria-hidden />
+      </g>
+    </svg>
   );
 }
