@@ -52,10 +52,19 @@ export function useMarqueeSelectionHandlers({
   const marqueePointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const [marqueeSelection, setMarqueeSelection] = React.useState<MarqueeSelection | null>(null);
   const isMarqueeSelecting = marqueeSelection !== null;
+  // The drag reads and writes the selection faster than React re-renders: a move
+  // is handled against the render it was queued in, so state alone is a frame
+  // behind and both the extend and the commit below would read a stale box.
+  const marqueeSelectionRef = React.useRef<MarqueeSelection | null>(null);
+  const writeMarqueeSelection = React.useCallback((next: MarqueeSelection | null) => {
+    marqueeSelectionRef.current = next;
+    setMarqueeSelection(next);
+  }, []);
 
   React.useEffect(() => {
     marqueePointerIdRef.current = null;
     marqueePointerStartRef.current = null;
+    marqueeSelectionRef.current = null;
     setMarqueeSelection(null);
     clearSupportMarqueeSelection();
   }, [interactionResetToken]);
@@ -111,7 +120,7 @@ export function useMarqueeSelectionHandlers({
     const clamped = clampPointToContainer(e.clientX, e.clientY);
     if (!clamped) return;
 
-    if (!marqueeSelection) {
+    if (!marqueeSelectionRef.current) {
       const dx = clamped.x - start.x;
       const dy = clamped.y - start.y;
       const dragDistanceSq = (dx * dx) + (dy * dy);
@@ -121,7 +130,7 @@ export function useMarqueeSelectionHandlers({
       }
 
       suppressNextCanvasClickRef.current = true;
-      setMarqueeSelection({
+      writeMarqueeSelection({
         start: { x: start.x, y: start.y },
         current: { x: clamped.x, y: clamped.y },
       });
@@ -142,12 +151,10 @@ export function useMarqueeSelectionHandlers({
       return;
     }
 
-    setMarqueeSelection((prev) => (prev
-      ? {
-        ...prev,
-        current: { x: clamped.x, y: clamped.y },
-      }
-      : prev));
+    writeMarqueeSelection({
+      ...marqueeSelectionRef.current,
+      current: { x: clamped.x, y: clamped.y },
+    });
 
     if (mode === 'support') {
       const previewSelection = {
@@ -163,20 +170,20 @@ export function useMarqueeSelectionHandlers({
     if (e.nativeEvent?.stopImmediatePropagation) e.nativeEvent.stopImmediatePropagation();
   }, [
     clampPointToContainer,
-    marqueeSelection,
     mode,
     resolveMarqueeSelectedSupportIds,
     suppressNextCanvasClickRef,
+    writeMarqueeSelection,
   ]);
 
   const endMarqueeSelection = React.useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (marqueePointerIdRef.current == null) return;
     if (e.pointerId !== marqueePointerIdRef.current) return;
 
-    const currentSelection = marqueeSelection;
+    const currentSelection = marqueeSelectionRef.current;
     marqueePointerIdRef.current = null;
     marqueePointerStartRef.current = null;
-    setMarqueeSelection(null);
+    writeMarqueeSelection(null);
 
     if (currentSelection) {
       try {
@@ -240,7 +247,6 @@ export function useMarqueeSelectionHandlers({
     e.stopPropagation();
     if (e.nativeEvent?.stopImmediatePropagation) e.nativeEvent.stopImmediatePropagation();
   }, [
-    marqueeSelection,
     mode,
     onMarqueeSelectionChange,
     prepareMarqueePublishesModelSelectionEvents,
@@ -248,6 +254,7 @@ export function useMarqueeSelectionHandlers({
     resolveMarqueeSelectedSupportIds,
     selectedModelIds,
     suppressNextCanvasClickRef,
+    writeMarqueeSelection,
   ]);
 
   return {
