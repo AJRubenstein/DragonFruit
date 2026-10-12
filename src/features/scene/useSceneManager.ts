@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import * as THREE from 'three';
 import { useStlGeometry } from '@/hooks/useStlGeometry';
+import { countTriangles } from '@/utils/geometry';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { loadFromImportFormat } from '@/supports/state';
 import { updateRaftSettings } from '@/supports/Rafts/Crenelated/RaftState';
@@ -27,9 +28,7 @@ export function useSceneManager() {
   const geom = useStlGeometry(fileUrl);
 
   // Polygon count computation
-  const polygonCount = geom?.geometry?.getAttribute('position')?.count 
-    ? geom.geometry.getAttribute('position').count / 3 
-    : 0;
+  const polygonCount = geom?.geometry ? countTriangles(geom.geometry) : 0;
 
   // File handling
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

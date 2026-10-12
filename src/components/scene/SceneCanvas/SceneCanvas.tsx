@@ -186,7 +186,7 @@ import {
   isBoundsOutsideVolume,
   shouldUsePreciseBoundsForTransform,
 } from '@/utils/modelBounds';
-import { computeLowestZ } from '@/utils/geometry';
+import { computeLowestZ, countTriangles } from '@/utils/geometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { Toast } from '@/components/atoms';
 import { getCenteredPositions } from '@/utils/modelBounds';
@@ -1021,9 +1021,7 @@ export function SceneCanvas({
           },
           visible,
           color: fallbackColor,
-          polygonCount: geom.geometry.getAttribute('position')?.count
-            ? geom.geometry.getAttribute('position').count / 3
-            : 0,
+          polygonCount: countTriangles(geom.geometry),
         },
       ];
     }
