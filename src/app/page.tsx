@@ -1788,9 +1788,9 @@ export default function Home() {
 
     if (isApplyingBlockersHollowing) {
       return {
-        title: 'Applying Blockers...',
+        title: 'Applying Solid Areas...',
         detailLines: [
-          'Updating the hollowing preview with your blocker changes.',
+          'Updating the hollowing preview with your solid areas.',
           'Please wait a moment.',
         ],
       };

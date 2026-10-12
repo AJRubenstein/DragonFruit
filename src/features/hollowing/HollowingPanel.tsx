@@ -129,10 +129,10 @@ export function HollowingPanel({
                 background: 'var(--accent-secondary-action-bg-92)',
               }}
             >
-              <div className="ui-meta font-semibold" style={{ color: 'var(--accent-secondary-action-color)' }}>Voxel Editing Mode</div>
+              <div className="ui-meta font-semibold" style={{ color: 'var(--accent-secondary-action-color)' }}>Solid Areas</div>
               <div className="flex items-start justify-center min-h-8">
                 <p className="text-[10px] leading-snug line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                  Lasso to set blockers, <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Alt+Lasso</span> to clear.<br /><span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Clear</span> to reset all, <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Done</span> to apply.
+                  Click or lasso to keep voxels solid, <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Alt+Lasso</span> to release.<br /><span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Clear</span> to reset all, <span style={{ color: 'var(--accent-secondary-action-color)', fontWeight: 600 }}>Done</span> to apply.
                 </p>
               </div>
             </div>
@@ -327,7 +327,7 @@ export function HollowingPanel({
                         strokeLinecap="round"
                       />
                     </svg>
-                    <span>Applying Blockers</span>
+                    <span>Applying Solid Areas</span>
                   </span>
                 ) : 'Done'}
               </Button>
@@ -369,7 +369,7 @@ export function HollowingPanel({
                     onClick={onStartEdit}
                     disabled={isApplying || isPreviewing || !canEdit}
                   >
-                    Blockers
+                    Solid Areas
                   </Button>
 
                   <Button
