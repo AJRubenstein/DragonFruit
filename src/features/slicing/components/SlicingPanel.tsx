@@ -2154,6 +2154,7 @@ export function SlicingPanel({
       }));
 
       setCurrentPhase('Ready');
+      // i18n-ignore: sliceStatus is never rendered
       setSliceStatus(`Generated ${result.outputFormat} via native Rust backend.`);
       // A batch reaches "finished" once, at the end: one plate of several is not the run's end,
       // and the modal would otherwise announce every plate but the last.
@@ -2470,7 +2471,7 @@ export function SlicingPanel({
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}><Trans>Engine</Trans></div>
                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {slicerEngineVersion ? `v${slicerEngineVersion}` : 'Slicer V3'}
+                  {slicerEngineVersion ? `v${slicerEngineVersion}` : 'Slicer V3' /* i18n-ignore: product name */}
                 </div>
               </div>
             </div>

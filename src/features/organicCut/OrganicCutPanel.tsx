@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Trans } from '@lingui/react/macro';
 import { CircleHelp, Eye, EyeOff, Link2, Link2Off, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
 import { Button, Card, CardHeader, IconButton, Spinner } from '@/components/atoms';
@@ -52,6 +53,25 @@ const TENON_TOLERANCE_MAX_MM = 1;
  * on screen is the range that does something. Width is the binding side
  * (length = 1.25× width), and the top face is the narrowest ring.
  */
+type Translate = (descriptor: MessageDescriptor) => string;
+
+// Interpolating messages stay at module scope: React Compiler renames the locals they
+// read inside a component, which desyncs the ids from the compiled catalog.
+function formatTenonFilletTitle(translate: Translate, maxMm: number): string {
+  return translate(msg`Rounds the tenon's corners and tip. On this tenon the geometry accepts up to ${maxMm}mm — a wider or deeper tenon raises that ceiling.`);
+}
+
+function formatLoopTitle(translate: Translate, loop: number, points: number, incomplete: boolean, active: boolean): string {
+  if (incomplete) {
+    return active
+      ? translate(msg`Loop ${loop} — ${plural(points, { one: '# point', other: '# points' })} (needs 3+ to cut) — editing`)
+      : translate(msg`Loop ${loop} — ${plural(points, { one: '# point', other: '# points' })} (needs 3+ to cut) — click to edit`);
+  }
+  return active
+    ? translate(msg`Loop ${loop} — ${plural(points, { one: '# point', other: '# points' })} — editing`)
+    : translate(msg`Loop ${loop} — ${plural(points, { one: '# point', other: '# points' })} — click to edit`);
+}
+
 function maxTenonFilletMm(widthMm: number, depthMm: number): number {
   const topHalfWidth = widthMm * TENON_TOP_SCALE * 0.5;
   const height = depthMm + TENON_BASE_OVERLAP_MM;
@@ -345,8 +365,8 @@ export function OrganicCutPanel({
   const isContour = state.cutMode === 'contour';
   // The header help only explains the mode the user is in, not both at once.
   const cutHelpContent = isContour
-    ? 'Click points around the model to trace a curved seam that splits it in two — the cut follows your loop (3+ points). Turn on a Tenon to add a tenon/mortise so the halves index together.'
-    : 'Click 2 points across the model to set a flat cut that slices it in two along a single plane. Turn on a Tenon to add a tenon/mortise so the halves index together.';
+    ? _(msg`Click points around the model to trace a curved seam that splits it in two — the cut follows your loop (3+ points). Turn on a Tenon to add a tenon/mortise so the halves index together.`)
+    : _(msg`Click 2 points across the model to set a flat cut that slices it in two along a single plane. Turn on a Tenon to add a tenon/mortise so the halves index together.`);
 
   // Bound the expanded panel to the viewport so its body can scroll. Collapsed it
   // stays unbounded, which keeps it the height of its header.
@@ -397,7 +417,7 @@ export function OrganicCutPanel({
               className="!p-0.5 transition-colors disabled:opacity-40"
               onClick={() => setState({ showPreview: !state.showPreview })}
               disabled={disabled || isApplying}
-              title={state.showPreview ? 'Hide the cut preview' : 'Show the cut preview'}
+              title={state.showPreview ? _(msg`Hide the cut preview`) : _(msg`Show the cut preview`)}
               aria-label={_(msg`Toggle cut preview`)}
             >
               {state.showPreview ? (
@@ -648,8 +668,8 @@ export function OrganicCutPanel({
                               className="inline-flex items-center justify-center"
                               style={{ color: state.tenonUniformScale ? 'var(--accent)' : 'var(--text-muted)' }}
                               title={state.tenonUniformScale
-                                ? 'Unlink width and depth — resize them independently.'
-                                : 'Link width and depth together so the dome keeps its shape.'}
+                                ? _(msg`Unlink width and depth — resize them independently.`)
+                                : _(msg`Link width and depth together so the dome keeps its shape.`)}
                               aria-label={_(msg`Toggle linked width and depth`)}
                             >
                               {state.tenonUniformScale
@@ -686,7 +706,7 @@ export function OrganicCutPanel({
                         unit="mm"
                         disabled={disabled || isApplying}
                         ariaLabel={_(msg`Tenon edge fillet radius in millimeters (0 = sharp)`)}
-                        title={`Rounds the tenon's corners and tip. On this tenon the geometry accepts up to ${tenonFilletMaxMm}mm — a wider or deeper tenon raises that ceiling.`}
+                        title={formatTenonFilletTitle(_, tenonFilletMaxMm)}
                       />
                     )}
                     <CompactNumberField
@@ -776,7 +796,7 @@ export function OrganicCutPanel({
                   className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--surface-2)] disabled:opacity-40"
                   onClick={() => onRemoveLoop?.(activeLoopIndex)}
                   disabled={disabled || isApplying || !canRemoveLoop}
-                  title={canRemoveLoop ? "Remove the loop you're editing." : 'A cut needs at least one loop.'}
+                  title={canRemoveLoop ? _(msg`Remove the loop you're editing.`) : _(msg`A cut needs at least one loop.`)}
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <Trash2 className="h-3 w-3" />
@@ -801,11 +821,7 @@ export function OrganicCutPanel({
                             ? { borderStyle: 'dashed', color: 'var(--text-muted)' }
                             : undefined
                       }
-                      title={
-                        `Loop ${s.index + 1} — ${s.pointCount} point${s.pointCount === 1 ? '' : 's'}` +
-                        (incomplete ? ' (needs 3+ to cut)' : '') +
-                        (isActive ? ' — editing' : ' — click to edit')
-                      }
+                      title={formatLoopTitle(_, s.index + 1, s.pointCount, incomplete, isActive)}
                     >
                       {s.index + 1}
                     </Button>
@@ -882,7 +898,7 @@ export function OrganicCutPanel({
             >
               <span className="inline-flex items-center justify-center gap-1.5">
                 {isApplying && <Spinner size="xs" />}
-                <span>{isApplying ? 'Cutting...' : 'Cut'}</span>
+                <span>{isApplying ? _(msg`Cutting...`) : _(msg`Cut`)}</span>
               </span>
             </Button>
           </div>

@@ -98,7 +98,7 @@ export function AutoBracingSettingsCard({
                     onChange={(nextValue) => onPatternChange(nextValue as AutoBracingPattern)}
                     options={AUTO_BRACING_PATTERN_OPTIONS.map((pattern) => ({
                         value: pattern,
-                        label: pattern === 'singleDiagonal' ? 'Single Diagonal' : pattern === 'zigZag' ? 'Zig Zag' : 'Crosses',
+                        label: pattern === 'singleDiagonal' ? _(msg`Single Diagonal`) : pattern === 'zigZag' ? _(msg`Zig Zag`) : _(msg`Crosses`),
                     }))}
                     className="min-w-0 space-y-0"
                     selectClassName="h-[36px] py-2 text-base"

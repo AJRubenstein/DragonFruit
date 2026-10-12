@@ -10,8 +10,10 @@
  *
  * What counts as a literal: JSX text (single- and multi-line), text-bearing
  * props (`title`, `label`, `aria-label`, `ariaLabel`, `placeholder`, `help`, …)
- * with a plain string value, and `label`/`hint`/`title`/`description` keys in
- * data arrays. Text inside `<Trans>` and template literals is skipped. It is a
+ * with a plain string value, `label`/`hint`/`title`/`description` keys in data
+ * arrays, capitalised strings in a ternary branch, literals passed to a text
+ * setter (`setStatusText('…')`), and template literals that read as a sentence
+ * (`Upload to ${name}`). Text inside `<Trans>`, `msg` and `t` is skipped. It is a
  * heuristic: when a literal is deliberately not translatable (a unit, a brand,
  * a file extension), put `i18n-ignore` in a comment on that line or the line
  * above it. A developer-only section goes between `i18n-ignore-start` and
@@ -40,6 +42,14 @@ const PROP_RE = new RegExp(`\\b(${TEXT_PROPS.join('|')})="([^"]{2,})"`, 'g');
 const DATA_RE = /\b(label|hint|title|description): (['"])((?:[^'"\\]|\\.){2,}?)\2/g;
 const JSX_TEXT_RE = />([^<>{}\n]{2,})</g;
 const JSX_MULTILINE_RE = />\s*\n\s*([A-Za-z][^<>{}]{1,240}?)\s*\n\s*<\//gs;
+// A ternary branch (` ? 'Text'` / ` : 'Text'`). Object keys (`label: 'x'`) have no space before
+// the colon, so they do not match.
+const TERNARY_RE = /\s[?:]\s+(['"])([A-Z][^'"\\\n]+?)\1/g;
+// A text setter fed a literal: `setStatusText('Uploading…')`.
+const SETTER_RE = /\bset[A-Z]\w*(?:Text|Label|Message|Title|Status|Error)\(\s*(['"])([^'"\\\n]{2,}?)\1/g;
+// A template literal that reads as a sentence, `Upload to ${name}`; its static text must look human.
+const TEMPLATE_RE = /(^|[^\w.])`([A-Z][a-z]+ [^`]*)`/g;
+const NOT_UI = /\b(Error|console|throw|logger|debug|warn)\b|className|style=/;
 
 const TS_TYPES = new Set(['Promise', 'Array', 'Record', 'Readonly', 'Partial', 'Map', 'Set',
       'React', 'HTMLElement', 'HTMLDivElement', 'HTMLInputElement', 'Omit', 'Pick']);
@@ -98,9 +108,12 @@ function scanFile(raw, known) {
       });
       const ignored = (line) => ignoredBlockLines.has(line)
             || /i18n-ignore/.test(rawLines[line - 1] ?? '') || /i18n-ignore/.test(rawLines[line - 2] ?? '');
-      const source = raw
-            .replace(/<Trans[\s>][\s\S]*?<\/Trans>/g, blank)
-            .replace(/`[^`]*`/g, blank);
+      const withoutTrans = raw.replace(/<Trans[\s>][\s\S]*?<\/Trans>/g, blank);
+      // Messages already handed to Lingui (`msg\`…\``, `msg({ … })`, `t\`…\``) are not literals.
+      const withoutMessages = withoutTrans
+            .replace(/\b(msg|t|plural)\s*`[^`]*`/g, blank)
+            .replace(/\bmsg\(\{[\s\S]*?\}\)/g, blank);
+      const source = withoutMessages.replace(/`[^`]*`/g, blank);
       const found = [];
       const keep = (line, kind, text) => {
             const value = text.trim().replace(/\s+/g, ' ');
@@ -115,6 +128,17 @@ function scanFile(raw, known) {
             for (const m of lineText.matchAll(PROP_RE)) keep(line, `prop:${m[1]}`, m[2]);
             for (const m of lineText.matchAll(JSX_TEXT_RE)) keep(line, 'jsx-text', m[1]);
             for (const m of lineText.matchAll(DATA_RE)) keep(line, `data:${m[1]}`, m[3].replace(/\\'/g, "'"));
+            if (NOT_UI.test(lineText)) return;
+            for (const m of lineText.matchAll(TERNARY_RE)) keep(line, 'ternary', m[2]);
+            for (const m of lineText.matchAll(SETTER_RE)) keep(line, 'setter', m[2]);
+      });
+      withoutMessages.split('\n').forEach((lineText, index) => {
+            const trimmed = lineText.trim();
+            if (trimmed.startsWith('//') || trimmed.startsWith('*') || NOT_UI.test(lineText)) return;
+            for (const m of lineText.matchAll(TEMPLATE_RE)) {
+                  // Placeholders read as `…`, so `keep` judges the words around them, not the code inside.
+                  keep(index + 1, 'template', m[2].replace(/\$\{[^}]*\}/g, '…'));
+            }
       });
       for (const m of source.matchAll(JSX_MULTILINE_RE)) {
             keep(lineOf(source, m.index + m[0].indexOf(m[1])), 'jsx-multiline', m[1]);
