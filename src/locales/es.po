@@ -440,6 +440,10 @@ msgstr "Formato de los valores alfa"
 msgid "Already optimal for this goal."
 msgstr "Ya es óptimo para este objetivo."
 
+#: src/components/settings/MeshSettingsTab.tsx:421
+msgid "Ambient Occlusion"
+msgstr "Oclusión ambiental"
+
 #: src/app/page.tsx:11538
 msgid "Analyzing Model Islands & Minima"
 msgstr "Analizando islas y mínimos del modelo"
@@ -1522,6 +1526,10 @@ msgstr "Color"
 msgid "Color Scheme"
 msgstr "Esquema de color"
 
+#: src/components/settings/MeshSettingsTab.tsx:510
+msgid "Colors"
+msgstr "Colores"
+
 #. Hover text on the add-plate button beside the build plate. The app has one plate for now, so the button says so instead of doing nothing.
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1683
 msgid "Coming Soon!"
@@ -1716,6 +1724,10 @@ msgstr "Contorno"
 msgid "Contoured regions"
 msgstr "Regiones contorneadas"
 
+#: src/components/settings/MeshSettingsTab.tsx:406
+msgid "Contrast"
+msgstr "Contraste"
+
 #: src/app/page.tsx:8648
 msgid "Converting support data and model metadata"
 msgstr "Convirtiendo los datos de soportes y los metadatos del modelo"
@@ -1841,6 +1853,10 @@ msgstr "Creando el repositorio nuevo: {repoName}"
 #: src/features/slicing/components/SlicingPanel.tsx:785
 msgid "Crisp text and details."
 msgstr "Texto y detalles nítidos."
+
+#: src/components/settings/MeshSettingsTab.tsx:233
+msgid "Cube"
+msgstr "Cubo"
 
 #: src/components/controls/ArrangePanel.tsx:222
 msgid "Current arrange algorithm"
@@ -3014,6 +3030,15 @@ msgstr "Espiga semiesférica: sitúa las piezas, pero permite el giro."
 msgid "Halo around the hovered seam."
 msgstr "Halo alrededor de la costura señalada."
 
+#. Short label of one overhang heatmap color stop, numbered from 1.
+#: src/components/settings/MeshSettingsTab.tsx:72
+msgid "Heatmap {index}"
+msgstr "Mapa de calor {index}"
+
+#: src/components/settings/MeshSettingsTab.tsx:76
+msgid "Heatmap Color {index}"
+msgstr "Color {index} del mapa de calor"
+
 #. Built-in auto-support preset for dense supports — the Heavy tier in the Auto Support panel's preset selector.
 #: src/supports/Settings/autoSupportPresetMessages.ts:30
 msgctxt "auto-support preset"
@@ -3094,6 +3119,20 @@ msgstr "Los ángulos horizontales no sirven para sostener voladizos. Solo aporta
 msgid "Hotkeys"
 msgstr "Atajos de teclado"
 
+#: src/components/settings/MeshSettingsTab.tsx:565
+msgctxt "Tint intensity"
+msgid "Hover"
+msgstr "Al pasar por encima"
+
+#: src/components/settings/MeshSettingsTab.tsx:541
+msgid "Hover Color"
+msgstr "Color al pasar por encima"
+
+#: src/components/settings/MeshSettingsTab.tsx:629
+msgctxt "Preview state"
+msgid "hovered"
+msgstr "por encima"
+
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:63
 msgid "How a region's contacts scatter across it, and how far leaves fan out from a trunk"
 msgstr "Cómo se reparten los contactos por una región y cuánto se abren las hojas desde un tronco"
@@ -3113,6 +3152,10 @@ msgstr "Cuánta huella de cada región debe cubrir la rejilla antes de dejar de 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:174
 msgid "How much of the free width a contact tip may occupy. The default, 0.9, keeps the disc just inside the feature it lands on; lower values shrink every tip on a feature narrower than the band tip."
 msgstr "Qué parte del ancho libre puede ocupar una punta de contacto. El valor por defecto, 0,9, deja el disco justo dentro del detalle en que se apoya; valores más bajos encogen todas las puntas en detalles más estrechos que la punta de la banda."
+
+#: src/components/settings/MeshSettingsTab.tsx:498
+msgid "How selected and hovered models are emphasized throughout the app. These two colors come from the current theme — editing them here changes the theme, exactly like UI & Theme › Mesh Highlights."
+msgstr "Cómo se resaltan en toda la aplicación los modelos seleccionados y los que tienen el puntero encima. Estos dos colores vienen del tema actual: cambiarlos aquí cambia el tema, igual que en Interfaz y tema › Resaltado de mallas."
 
 #: src/features/organicCut/OrganicCutPanel.tsx:500
 msgid "How smooth/taut the curved cutter surface is — contour cut only."
@@ -3168,6 +3211,11 @@ msgstr "ID"
 #: src/components/settings/LocalBackupsSettingsTab.tsx:936
 msgid "ID {0}"
 msgstr "ID {0}"
+
+#: src/components/settings/MeshSettingsTab.tsx:630
+msgctxt "Preview state"
+msgid "idle"
+msgstr "en reposo"
 
 #: src/components/organisms/modals/PrintingModals.tsx:1539
 #: src/components/organisms/modals/PrintingModals.tsx:1881
@@ -3484,6 +3532,11 @@ msgstr "Conservar el preajuste"
 msgid "Keyboard bindings and presets"
 msgstr "Combinaciones de teclas y perfiles"
 
+#. A torus-knot preview shape.
+#: src/components/settings/MeshSettingsTab.tsx:235
+msgid "Knot"
+msgstr "Nudo"
+
 #: src/components/settings/GeneralSettingsTab.tsx:205
 msgid "Larger percentages magnify the whole UI."
 msgstr "Los porcentajes mayores amplían toda la interfaz."
@@ -3620,6 +3673,10 @@ msgstr "Claro"
 msgctxt "auto-support preset"
 msgid "Light"
 msgstr "Ligero"
+
+#: src/components/settings/MeshSettingsTab.tsx:391
+msgid "Lightness"
+msgstr "Luminosidad"
 
 #. Raft bottom mode. One of three narrow buttons: Off / Solid / Line.
 #: src/components/settings/GeneralSettingsTab.tsx:442
@@ -3859,6 +3916,10 @@ msgstr "Multiplicador general sobre las bandas de tamaño del preajuste: todo m�
 msgid "Master switch for the run-level size, load and height factors. Off pins all three to ×1, so sizing is the active band plus the local terms alone (default: on)."
 msgstr "Interruptor general de los factores de tamaño, carga y altura de la ejecución. Apagado los fija los tres a ×1, de modo que el dimensionado es solo la banda activa más los términos locales (por defecto: encendido)."
 
+#: src/components/settings/MeshSettingsTab.tsx:339
+msgid "Matcap Style"
+msgstr "Estilo de matcap"
+
 #: src/features/slicing/components/SlicingPanel.tsx:2539
 msgid "Material"
 msgstr "Material"
@@ -3914,6 +3975,10 @@ msgstr "Máximo de ramas más hojas que puede cargar un tronco antes de empezar 
 msgid "Max horizontal distance a fan-out leaf may span from a trunk shaft"
 msgstr "Distancia horizontal máxima que puede abarcar una hoja en abanico desde el vástago del tronco"
 
+#: src/components/settings/MeshSettingsTab.tsx:464
+msgid "Max Overhang"
+msgstr "Voladizo máximo"
+
 #: src/components/layout/TopBar.tsx:1118
 msgid "Maximize"
 msgstr "Maximizar"
@@ -3957,6 +4022,11 @@ msgstr "Fusionando soportes…"
 msgid "Mesh"
 msgstr "Malla"
 
+#: src/components/settings/MeshSettingsTab.tsx:272
+#: src/components/settings/MeshSettingsTab.tsx:302
+msgid "Mesh Color"
+msgstr "Color de la malla"
+
 #. Badge label next to the number of meshes this export writes. Rendered uppercase; keep it to one short word.
 #: src/features/export/components/ExportPanel.tsx:568
 msgid "Meshes"
@@ -3984,6 +4054,10 @@ msgstr "Área mínima: 0"
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:145
 msgid "Min Island Size"
 msgstr "Tamaño mínimo de isla"
+
+#: src/components/settings/MeshSettingsTab.tsx:452
+msgid "Min Overhang"
+msgstr "Voladizo mínimo"
 
 #: src/components/controls/IslandScanCard.tsx:287
 msgid "Min Overlap (px)"
@@ -4479,6 +4553,7 @@ msgstr "No"
 #: src/components/settings/GeneralSettingsTab.tsx:504
 #: src/components/settings/GeneralSettingsTab.tsx:521
 #: src/components/settings/LocalBackupsSettingsTab.tsx:862
+#: src/components/settings/MeshSettingsTab.tsx:365
 #: src/components/settings/MultiPlateSettingsTab.tsx:67
 #: src/components/settings/PerformanceSettingsTab.tsx:144
 #: src/components/settings/PerformanceSettingsTab.tsx:159
@@ -4552,6 +4627,7 @@ msgstr "Sí"
 #: src/components/settings/GeneralSettingsTab.tsx:505
 #: src/components/settings/GeneralSettingsTab.tsx:522
 #: src/components/settings/LocalBackupsSettingsTab.tsx:863
+#: src/components/settings/MeshSettingsTab.tsx:366
 #: src/components/settings/MultiPlateSettingsTab.tsx:66
 #: src/components/settings/PerformanceSettingsTab.tsx:145
 #: src/components/settings/PerformanceSettingsTab.tsx:160
@@ -4833,6 +4909,10 @@ msgstr "Guarda en el almacenamiento local las posiciones de los paneles al arras
 msgid "Pick a model to export."
 msgstr "Elige un modelo para exportar."
 
+#: src/components/settings/MeshSettingsTab.tsx:203
+msgid "Pick the shader type to configure here, and tune the mesh color. The camera dropdown chooses what the viewport renders."
+msgstr "Elige aquí el tipo de sombreado que quieres configurar y ajusta el color de la malla. El desplegable de la cámara decide qué se ve en la vista."
+
 #: src/components/organisms/modals/PrintingModals.tsx:707
 msgid "Pick the target machine and material profile for this upload."
 msgstr "Elige la máquina de destino y el perfil de material para esta subida."
@@ -5064,6 +5144,10 @@ msgstr "Vista previa"
 #: src/features/slicing/components/SlicingPanel.tsx:4023
 msgid "Preview for this layer is not available."
 msgstr "No hay vista previa de esta capa."
+
+#: src/components/settings/MeshSettingsTab.tsx:226
+msgid "Preview Model"
+msgstr "Modelo de vista previa"
 
 #: src/components/controls/IslandsPanel.tsx:221
 msgid "Previous (B)"
@@ -5509,6 +5593,10 @@ msgstr "Mostrar la rejilla de impresión en la miniatura"
 msgid "Render build plate in thumbnail"
 msgstr "Mostrar la placa de impresión en la miniatura"
 
+#: src/components/settings/MeshSettingsTab.tsx:330
+msgid "Rendering Options"
+msgstr "Opciones de renderizado"
+
 #. placeholder {0}: entry.name
 #: src/components/layout/EmptySceneState.tsx:663
 msgid "Reopen {0}"
@@ -5553,6 +5641,10 @@ msgstr "Restablecer"
 msgid "Reset all windows layout"
 msgstr "Restablecer la distribución de todas las ventanas"
 
+#: src/components/settings/MeshSettingsTab.tsx:515
+msgid "Reset colors to default"
+msgstr "Restablecer los colores predeterminados"
+
 #: src/features/organicCut/OrganicCutPanel.tsx:413
 msgid "Reset cut settings to defaults"
 msgstr "Restablecer los ajustes de corte"
@@ -5564,6 +5656,10 @@ msgstr "Restablecer los valores por defecto"
 #: src/components/settings/GeneralSettingsTab.tsx:341
 msgid "Reset saved window layout"
 msgstr "Restablecer la distribución guardada"
+
+#: src/components/settings/MeshSettingsTab.tsx:516
+msgid "Reset selection and hover colors to default"
+msgstr "Restablecer los colores predeterminados de selección y de puntero encima"
 
 #: src/components/organisms/modals/PrintingModals.tsx:2095
 #: src/components/organisms/modals/PrintingModals.tsx:2278
@@ -5709,6 +5805,10 @@ msgstr "Diámetro de las raíces"
 msgid "Roots Enabled on Import"
 msgstr "Raíces activadas al importar"
 
+#: src/components/settings/MeshSettingsTab.tsx:375
+msgid "Roughness"
+msgstr "Rugosidad"
+
 #: src/features/organicCut/OrganicCutPanel.tsx:472
 msgid "Rounds the seam line through the waypoints. A flat cut's seam is the plane ∩ mesh, so this only affects contour cuts."
 msgstr "Redondea la línea de costura a través de los puntos. En un corte plano la costura es la intersección del plano con la malla, así que esto solo afecta a los cortes por contorno."
@@ -5752,6 +5852,10 @@ msgstr "Ejecutando…"
 #: src/components/organisms/modals/PrintingModals.tsx:624
 msgid "Safety Check"
 msgstr "Comprobación de seguridad"
+
+#: src/components/settings/MeshSettingsTab.tsx:358
+msgid "Sample per-vertex color data when available."
+msgstr "Usa los colores por vértice cuando el modelo los tenga."
 
 #: src/features/slicing/components/SlicingPanel.tsx:2718
 msgid "Samples"
@@ -6058,10 +6162,20 @@ msgstr "Seleccionar perfil"
 msgid "Select STL File"
 msgstr "Seleccionar el fichero STL"
 
+#: src/components/settings/MeshSettingsTab.tsx:627
+msgctxt "Preview state"
+msgid "selected"
+msgstr "seleccionado"
+
 #: src/components/organisms/modals/PrintingModals.tsx:783
 #: src/components/organisms/modals/PrintingModals.tsx:862
 msgid "Selected"
 msgstr "Seleccionada"
+
+#: src/components/settings/MeshSettingsTab.tsx:577
+msgctxt "Tint intensity"
+msgid "Selected"
+msgstr "Seleccionado"
 
 #: src/components/settings/LocalBackupsSettingsTab.tsx:739
 msgid "Selected directory"
@@ -6096,6 +6210,14 @@ msgstr "La impresora seleccionada está sin conexión"
 msgid "Selected printer is offline. Choose an online printer to continue."
 msgstr "La impresora seleccionada está desconectada. Elige una impresora conectada para continuar."
 
+#: src/components/settings/MeshSettingsTab.tsx:495
+msgid "Selection & Hover"
+msgstr "Selección y puntero encima"
+
+#: src/components/settings/MeshSettingsTab.tsx:524
+msgid "Selection Color"
+msgstr "Color de selección"
+
 #. Shown while dragging a selection rectangle right to left, which takes every object the rectangle touches. Mirrors the CAD convention; keep it on one short line.
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:3307
 msgid "Selection Mode: Contact (Right to Left)"
@@ -6105,6 +6227,10 @@ msgstr "Modo de selección: contacto (de derecha a izquierda)"
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:3311
 msgid "Selection Mode: Enclosed (Left to Right)"
 msgstr "Modo de selección: volumen completo (de izquierda a derecha)"
+
+#: src/components/settings/MeshSettingsTab.tsx:603
+msgid "Selection Preview"
+msgstr "Vista previa de la selección"
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:158
 msgid "Self-Support Angle"
@@ -6167,6 +6293,14 @@ msgstr "Configura las copias privadas"
 #: src/components/layout/TopBar.tsx:1079
 msgid "Settings"
 msgstr "Ajustes"
+
+#: src/components/settings/MeshSettingsTab.tsx:200
+msgid "Shader & Preview"
+msgstr "Sombreado y vista previa"
+
+#: src/components/settings/MeshSettingsTab.tsx:211
+msgid "Shader Type"
+msgstr "Tipo de sombreado"
 
 #: src/components/settings/SettingsModal.tsx:1224
 msgid "Shader, rendering options, and selection behavior"
@@ -6451,6 +6585,10 @@ msgstr "Soportes escasos: la banda de dimensionado de detalle"
 #: src/features/slicing/components/SlicingPanel.tsx:3995
 msgid "Speed"
 msgstr "Velocidad"
+
+#: src/components/settings/MeshSettingsTab.tsx:234
+msgid "Sphere"
+msgstr "Esfera"
 
 #. Title of the panel that splits one model along a drawn seam. The tool rail calls this tool Split; keep the two identical.
 #. Tool rail label in Prepare mode. Splits the model along a drawn seam.
@@ -7059,6 +7197,10 @@ msgstr "Esto restablecerá <0>Detalle</0>, <1>Estructura</1> y <2>Anclaje</2> a 
 msgid "Time to make something real."
 msgstr "Es hora de crear algo real."
 
+#: src/components/settings/MeshSettingsTab.tsx:561
+msgid "Tint Intensity"
+msgstr "Intensidad del tinte"
+
 #: src/supports/Settings/components/TipSettingsCard.tsx:34
 msgid "Tip"
 msgstr "Punta"
@@ -7414,6 +7556,11 @@ msgstr "La versión {version} está lista para instalarse"
 msgid "Version info and project details"
 msgstr "Versión y detalles del proyecto"
 
+#: src/components/settings/MeshSettingsTab.tsx:357
+#: src/components/settings/MeshSettingsTab.tsx:361
+msgid "Vertex Colors"
+msgstr "Colores por vértice"
+
 #: src/components/controls/ToolRail.tsx:412
 msgid "Vertical"
 msgstr "Vertical"
@@ -7671,6 +7818,10 @@ msgstr "X mín."
 #: src/features/shaders/mesh/types.ts:47
 msgid "X-Ray"
 msgstr "Rayos X"
+
+#: src/components/settings/MeshSettingsTab.tsx:436
+msgid "X-Ray Opacity"
+msgstr "Opacidad de rayos X"
 
 #: src/features/hollowing/HollowingPanel.tsx:279
 msgid "Y Max"

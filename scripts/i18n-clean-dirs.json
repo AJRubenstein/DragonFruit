@@ -21,6 +21,7 @@
             "src/components/scene/SceneAutosaveRecoveryModal.tsx",
             "src/components/scene/camera",
             "src/components/selection",
+            "src/components/settings/MeshSettingsTab.tsx",
             "src/components/settings/meshSettings",
             "src/components/templates",
             "src/features/experiments",
