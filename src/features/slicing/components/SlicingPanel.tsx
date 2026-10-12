@@ -3172,7 +3172,7 @@ export function SlicingPanel({
 
       <StructuredDialogModal
         open={showOutOfBoundsWarningModal}
-        ariaLabel="Out-of-bounds models will be excluded"
+        ariaLabel={_(msg`Out-of-bounds models will be excluded`)}
         title={<Trans>Models Outside Build Volume</Trans>}
         subtitle={<Trans>Only printable models will be sliced</Trans>}
         icon={<AlertTriangle className="h-4 w-4" />}
@@ -3212,7 +3212,7 @@ export function SlicingPanel({
 
       <StructuredDialogModal
         open={overwriteCollisionCount > 0}
-        ariaLabel="Files will be overwritten"
+        ariaLabel={_(msg`Files will be overwritten`)}
         title={<Trans>Overwrite Existing Files?</Trans>}
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"

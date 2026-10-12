@@ -482,6 +482,19 @@ function formatProcessingElapsedLabel(translate: (descriptor: MessageDescriptor)
   return translate(msg`${minutes} min ${seconds} s`);
 }
 
+/** Module-scope helpers because they interpolate: React Compiler renames inline `msg` locals in production. */
+function formatApplyingToModelLabel(translate: (descriptor: MessageDescriptor) => string, current: number, total: number): string {
+  return translate(msg`Applying to model ${current} of ${total}`);
+}
+
+function formatCompressedModelSize(translate: (descriptor: MessageDescriptor) => string, name: string, megabytes: string): string {
+  return translate(msg({ message: `${name}: ${megabytes} MB compressed`, comment: 'One row of the per-model breakdown when a scene is too large to save.' }));
+}
+
+function formatElapsedLabel(translate: (descriptor: MessageDescriptor) => string, elapsed: string): string {
+  return translate(msg({ message: `Elapsed: ${elapsed}`, comment: 'Time a blocking task has been running, e.g. "Elapsed: 1 min 12 s".' }));
+}
+
 function formatEstimatedPrintTimeLabel(translate: (descriptor: MessageDescriptor) => string, totalSec: number): string {
   const wholeSeconds = Math.max(0, Math.floor(totalSec));
   const hours = Math.floor(wholeSeconds / 3600);
@@ -1750,17 +1763,17 @@ export default function Home() {
   // Sub-line under the blocking-overlay title. During "Apply to All" it reports
   // sequence progress; otherwise it's the single-model default.
   const modifierApplyProcessingLabel = applyAllHolePunchProgress
-    ? `Applying to model ${Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total)} of ${applyAllHolePunchProgress.total}`
-    : 'Processing 1 model';
+    ? formatApplyingToModelLabel(_, Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total), applyAllHolePunchProgress.total)
+    : _(msg`Processing 1 model`);
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
   const modifierApplyOverlayContent = React.useMemo(() => {
     if (isApplyingHollowing && pendingHolePunchAutoApplyModelId) {
       return {
-        title: 'Applying Hollowing and Hole Punches...',
+        title: _(msg`Applying Hollowing and Hole Punches...`),
         detailLines: [
-          'Updating the hollowed mesh and preserving your hole punches afterward.',
-          'Please be patient while we rebuild the model.',
+          _(msg`Updating the hollowed mesh and preserving your hole punches afterward.`),
+          _(msg`Please be patient while we rebuild the model.`),
         ],
       };
     }
@@ -1769,42 +1782,42 @@ export default function Home() {
 
     if (isApplyingHollowing) {
       return {
-        title: 'Applying Hollowing...',
+        title: _(msg`Applying Hollowing...`),
         detailLines: [
-          'Rebuilding the model geometry with the latest hollowing settings.',
-          'Please wait a moment.',
+          _(msg`Rebuilding the model geometry with the latest hollowing settings.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     if (isApplyingHolePunch || pendingHolePunchAutoApplyModelId) {
       return {
-        title: 'Applying Hole Punches...',
+        title: _(msg`Applying Hole Punches...`),
         detailLines: [
-          'Cutting hole punches into the current model geometry.',
-          'Please wait a moment.',
+          _(msg`Cutting hole punches into the current model geometry.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     if (isApplyingBlockersHollowing) {
       return {
-        title: 'Applying Solid Areas...',
+        title: _(msg`Applying Solid Areas...`),
         detailLines: [
-          'Updating the hollowing preview with your solid areas.',
-          'Please wait a moment.',
+          _(msg`Updating the hollowing preview with your solid areas.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     return {
-      title: 'Applying Model Changes...',
+      title: _(msg`Applying Model Changes...`),
       detailLines: [
-        'Updating model geometry.',
-        'Please wait a moment.',
+        _(msg`Updating model geometry.`),
+        _(msg`Please wait a moment.`),
       ],
     };
-  }, [finalizingOverlayContent, isApplyingBlockersHollowing, isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
+  }, [_, finalizingOverlayContent, isApplyingBlockersHollowing, isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
 
   React.useEffect(() => {
     if (!showModifierApplyBlockingOverlay) {
@@ -4932,15 +4945,15 @@ export default function Home() {
           setSceneSaveError(
             error instanceof VoxlSizeLimitError
               ? {
-                  title: 'Scene is too large to save',
+                  title: _(msg`Scene is too large to save`),
                   message: error.userMessage,
                   detail: error.perModelBreakdown
                     .slice(0, 5)
-                    .map((row) => `${row.name}: ${(row.compressedBytes / (1024 * 1024)).toFixed(0)} MB compressed`)
+                    .map((row) => formatCompressedModelSize(_, row.name, (row.compressedBytes / (1024 * 1024)).toFixed(0)))
                     .join('\n'),
                 }
               : {
-                  title: 'Could not save the scene',
+                  title: _(msg`Could not save the scene`),
                   message: error instanceof Error ? error.message : String(error),
                   detail: null,
                 },
@@ -8326,34 +8339,37 @@ export default function Home() {
     const hasHoles = holeIds.length > 0;
     const hasHollowing = hollowIds.length > 0;
     if (unappliedModifierPromptPurpose === 'supports') {
-      const what = hasHoles && hasHollowing
-        ? 'hole punches and hollowing'
-        : (hasHoles ? 'hole punches' : 'hollowing');
-      const verb = hasHoles && !hasHollowing
-        ? 'Hole punches are'
-        : (hasHollowing && !hasHoles ? 'Hollowing is' : 'Holes and hollowing are');
+      // Whole sentences per case: spliced fragments cannot be reordered by a translation.
+      const subtitle = hasHoles && hasHollowing
+        ? _(msg`Some models have unapplied hole punches and hollowing`)
+        : (hasHoles ? _(msg`Some models have unapplied hole punches`) : _(msg`Some models have unapplied hollowing`));
+      const bakedLater = hasHoles && !hasHollowing
+        ? _(msg`Supports are generated against the mesh as it stands. Hole punches are only baked in later, so a support generated now can land inside a hole that does not exist yet.`)
+        : (hasHollowing && !hasHoles
+          ? _(msg`Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet.`)
+          : _(msg`Supports are generated against the mesh as it stands. Holes and hollowing are only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet.`));
       return {
-        title: 'Unapplied Changes',
-        subtitle: `Some models have unapplied ${what}`,
+        title: _(msg`Unapplied Changes`),
+        subtitle,
         paragraphs: [
-          `Supports are generated against the mesh as it stands. ${verb} only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet.`,
+          bakedLater,
           hasHoles
-            ? 'Apply the holes to every visible model, or open the Hollow tool to review and apply them per model.'
-            : 'Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh.',
+            ? _(msg`Apply the holes to every visible model, or open the Hollow tool to review and apply them per model.`)
+            : _(msg`Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh.`),
         ],
         showApplyAll: hasHoles,
       };
     }
     return {
-      title: 'Unapplied Holes',
-      subtitle: 'Some models have unapplied hole punches',
+      title: _(msg`Unapplied Holes`),
+      subtitle: _(msg`Some models have unapplied hole punches`),
       paragraphs: [
-        'One or more models have hole punches that haven\u2019t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output.',
-        'Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually.',
+        _(msg`One or more models have hole punches that haven’t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output.`),
+        _(msg`Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually.`),
       ],
       showApplyAll: true,
     };
-  }, [getVisibleModelIdsWithUnappliedModifiers, unappliedModifierPromptPurpose]);
+  }, [_, getVisibleModelIdsWithUnappliedModifiers, unappliedModifierPromptPurpose]);
 
   // Generate Supports: stop for unapplied holes / hollowing first, then run
   // against whatever the user chose.
@@ -11519,10 +11535,10 @@ export default function Home() {
 
       {islandsPoc.scanning && !autoSupportDrivingScan && (
         <BlockingOverlay
-          title="Analyzing Model Islands & Minima"
-          details={['Slicing and analysis in progress...']}
-          elapsed={<>Elapsed: {islandsPoc.elapsedLabel}</>}
-          footnote="Processing 1 model"
+          title={_(msg`Analyzing Model Islands & Minima`)}
+          details={[_(msg`Slicing and analysis in progress...`)]}
+          elapsed={formatElapsedLabel(_, islandsPoc.elapsedLabel)}
+          footnote={_(msg`Processing 1 model`)}
           zIndexClassName="z-[121]"
         >
           <ScanProgressBar progress={islandsPoc.scanProgress} />
@@ -11531,10 +11547,10 @@ export default function Home() {
 
       {autoSupportBusy && (
         <BlockingOverlay
-          title="Generating Supports"
-          details={[islandsPoc.scanning ? 'Scanning islands & minima…' : 'Placing and bracing supports…']}
-          elapsed={islandsPoc.scanning ? <>Elapsed: {islandsPoc.elapsedLabel}</> : <OrientElapsed />}
-          footnote="Processing 1 model"
+          title={_(msg`Generating Supports`)}
+          details={[islandsPoc.scanning ? _(msg`Scanning islands & minima…`) : _(msg`Placing and bracing supports…`)]}
+          elapsed={islandsPoc.scanning ? formatElapsedLabel(_, islandsPoc.elapsedLabel) : <OrientElapsed />}
+          footnote={_(msg`Processing 1 model`)}
           zIndexClassName="z-[122]"
         >
           <ScanProgressBar progress={islandsPoc.scanning ? islandsPoc.scanProgress : autoSupportProgress} />
@@ -11542,8 +11558,8 @@ export default function Home() {
       )}
       {orientationBusy && (
         <BlockingOverlay
-          title="Orienting Model"
-          details={['Sweeping orientations…']}
+          title={_(msg`Orienting Model`)}
+          details={[_(msg`Sweeping orientations…`)]}
           elapsed={<OrientElapsed />}
           progress={null}
           zIndexClassName="z-[123]"
@@ -11653,8 +11669,8 @@ export default function Home() {
           >
             <Gamepad2 className="h-4 w-4 flex-shrink-0" />
             <span className="flex-1 leading-snug">
-              New input device detected.<br />
-              <span style={{ fontWeight: 400, opacity: 0.8 }}>Go to Settings → 3D Mouse to configure or block it.</span>
+              {_(msg`New input device detected.`)}<br />
+              <span style={{ fontWeight: 400, opacity: 0.8 }}>{_(msg`Go to Settings → 3D Mouse to configure or block it.`)}</span>
             </span>
             <button
               type="button"
