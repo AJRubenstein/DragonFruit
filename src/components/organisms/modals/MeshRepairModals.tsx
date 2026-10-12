@@ -57,7 +57,7 @@ function RepairProgressPanel({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="mx-1.5 flex items-baseline justify-between gap-3">
         <div className="min-w-0 truncate text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>
           {stageLabel}
         </div>
@@ -66,8 +66,10 @@ function RepairProgressPanel({
         </div>
       </div>
 
+      {/* The row and the bar share one inset: the stage name and the elapsed time are set in from the
+          dialog edge by the same amount the bar is, so the three of them line up. */}
       <div
-        className="h-1.5 w-full overflow-hidden rounded-full"
+        className="mx-1.5 h-1.5 overflow-hidden rounded-full"
         style={{ background: 'var(--surface-2)' }}
         role="progressbar"
         aria-label={_(msg`Repair progress`)}
