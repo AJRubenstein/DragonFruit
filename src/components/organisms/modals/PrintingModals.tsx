@@ -1681,7 +1681,7 @@ export function PrintingModals({
                       title="Refresh print files"
                       aria-label="Refresh print files"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isPrintingMonitorRecentPlatesLoading ? 'animate-spin' : ''}`} />
+                      {isPrintingMonitorRecentPlatesLoading ? <Spinner size="sm" icon={RefreshCw} /> : <RefreshCw className="w-3.5 h-3.5" />}
                     </IconButton>
                   </div>
                   <div className="mt-1.5 w-full min-w-0 max-w-full rounded-md border overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), #000 6%)' }}>

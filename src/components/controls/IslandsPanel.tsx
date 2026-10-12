@@ -4,7 +4,7 @@ import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Settings, RotateCcw } from 'lucide-react';
-import { Button, Card, CardHeader, IconButton } from '@/components/atoms';
+import { Button, Card, CardHeader, IconButton, Spinner } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -159,10 +159,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                 }}
               >
                 <div className="flex items-center gap-2 px-3 py-2 border rounded-md shadow-md" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                  <svg className="animate-spin h-4 w-4" style={{ color: 'var(--accent)' }} viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
+                  <Spinner size="md" style={{ color: 'var(--accent)' }} />
                   <span className="text-[11px] font-semibold" style={{ color: 'var(--text-strong)' }}>{_(msg`Recalculating…`)}</span>
                 </div>
               </div>

@@ -8,13 +8,12 @@ import {
   CloudOff,
   Download,
   ExternalLink,
-  Loader2,
   Package,
   RotateCcw,
 } from 'lucide-react';
 import { FLATPAK_APP_ID, LINUX_RELEASES_URL } from '@/features/updater/updateBridge';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
-import { Button } from '@/components/atoms';
+import { Button, Spinner } from '@/components/atoms';
 import { useUpdateChecker } from '@/features/updater/useUpdateChecker';
 import type { UpdateState } from '@/features/updater/useUpdateChecker';
 import { isAllowSameVersionEnabled, enableAllowSameVersionForSession } from '@/features/updater/debugForceSession';
@@ -106,7 +105,7 @@ function CheckingState() {
             color: 'var(--accent)',
           }}
         >
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <Spinner size="xl" />
         </span>
         <span className="min-w-0">
           <span className="block text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
@@ -303,7 +302,7 @@ function DownloadingState({
             color: 'var(--accent)',
           }}
         >
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <Spinner size="xl" />
         </span>
         <span className="min-w-0">
           <span className="block text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
@@ -333,7 +332,7 @@ function InstallingState() {
             color: 'var(--accent)',
           }}
         >
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <Spinner size="xl" />
         </span>
         <span className="min-w-0">
           <span className="block text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
