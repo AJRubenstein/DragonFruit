@@ -330,7 +330,7 @@ msgid "Add or switch printer anytime from the top bar."
 msgstr "Añade o cambia de impresora en cualquier momento desde la barra superior."
 
 #. Accessible name of the button beside the build plate that will add another plate. Inert for now, so it reads as unavailable to a screen reader too.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1680
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1682
 msgid "Add plate"
 msgstr "Añadir plataforma"
 
@@ -489,7 +489,7 @@ msgid "Auto adapts by AA level, Off is fastest, On favors smaller PNG files"
 msgstr "Automático se adapta al nivel de AA, Desactivado es lo más rápido, Activado prioriza archivos PNG más pequeños"
 
 #. Tooltip on the arrange button beside the build plate. Runs the standard arrange across every model, 1mm apart, with Z-rotation allowed.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1774
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1776
 msgid "Auto arrange the plate"
 msgstr "Ordenar la plataforma automáticamente"
 
@@ -551,11 +551,6 @@ msgstr "Reparación automática"
 #: src/components/settings/GeneralSettingsTab.tsx:519
 msgid "Auto-Repair Scenes"
 msgstr "Reparación automática de escenas"
-
-#. placeholder {0}: model.geometry.meshDefects.repairedFloats
-#: src/components/controls/ModelStatsCard.tsx:616
-msgid "Auto-repaired — {0} errors"
-msgstr "Reparado automáticamente — {0} errores"
 
 #: src/features/scene/sceneImportMessages.ts:101
 msgid "Auto-Repairing {fileName}"
@@ -684,7 +679,7 @@ msgstr "Área media de isla"
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
 #: src/components/layout/FirstRunOnboarding.tsx:278
 #: src/components/layout/OnboardingPrinterLibrary.tsx:279
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1780
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1782
 msgid "Back"
 msgstr "Atrás"
 
@@ -827,7 +822,7 @@ msgid "Border Margin"
 msgstr "Margen del borde"
 
 #. View cube face (seen from below), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1784
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1786
 msgid "Bottom"
 msgstr "Abajo"
 
@@ -1104,7 +1099,7 @@ msgstr "«Borrar todo» ha fallado. Mira la consola para más detalles."
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #: src/app/page.tsx:10859
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1771
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1773
 msgid "Clear build plate"
 msgstr "Vaciar la plataforma"
 
@@ -1128,7 +1123,7 @@ msgstr "Quitar la selección"
 msgid "Clear Session Override"
 msgstr "Quitar la anulación de sesión"
 
-#: src/components/controls/ModelStatsCard.tsx:623
+#: src/components/controls/ModelStatsCard.tsx:613
 msgid "Click card to return to print settings"
 msgstr "Pulsa la tarjeta para volver a los ajustes de impresión"
 
@@ -1219,9 +1214,21 @@ msgstr "Cerrar ventana"
 msgid "Close without applying the edits made in this dialog"
 msgstr "Cierra sin aplicar los cambios hechos en esta ventana"
 
+#: src/components/scene/repairProgressMessages.ts:23
+msgid "Closing gaps"
+msgstr "Cerrando huecos"
+
 #: src/components/controls/AutoSupportPanel.tsx:632
 msgid "Closing now leaves the auto-support settings as they are. Save in the dialog's footer writes them."
 msgstr "Si cierras ahora, los ajustes de autosoportes se quedan como están. «Guardar», al pie de la ventana, los escribe."
+
+#: src/components/scene/repairProgressMessages.ts:21
+msgid "Closing small holes"
+msgstr "Cerrando agujeros pequeños"
+
+#: src/components/scene/repairProgressMessages.ts:24
+msgid "Closing the remaining gaps"
+msgstr "Cerrando los huecos restantes"
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:185
 msgid "Cluster Spacing"
@@ -1258,7 +1265,7 @@ msgid "Color Scheme"
 msgstr "Esquema de color"
 
 #. Hover text on the add-plate button beside the build plate. The app has one plate for now, so the button says so instead of doing nothing.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1681
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1683
 msgid "Coming Soon!"
 msgstr "¡Próximamente!"
 
@@ -1622,7 +1629,7 @@ msgid "Default Raft Wall"
 msgstr "Pared de balsa predeterminada"
 
 #. placeholder {0}: model.geometry.meshDefects.repairedFloats
-#: src/components/controls/ModelStatsCard.tsx:617
+#: src/components/controls/ModelStatsCard.tsx:608
 msgid "Defective — {0} errors"
 msgstr "Defectuoso — {0} errores"
 
@@ -1782,6 +1789,10 @@ msgstr "Descarta todos los bucles de este corte, no solo el activo."
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:623
 msgid "Discard the edits made in this dialog and reload the selected preset"
 msgstr "Descarta los cambios hechos en esta ventana y recarga el preajuste seleccionado"
+
+#: src/components/scene/repairProgressMessages.ts:31
+msgid "Discarding scraps"
+msgstr "Descartando restos"
 
 #: src/components/settings/BackupsSettingsTab.tsx:1162
 #: src/components/settings/FleetManagement.tsx:230
@@ -2385,7 +2396,7 @@ msgid "From the community, for the community. Free to use, open to contribute, a
 msgstr "De la comunidad y para la comunidad. Libre de usar, abierto a contribuciones y moldeado por quienes imprimen con él."
 
 #. Orientation label, rendered uppercase on the view cube and on the build plate's front edge. Keep it as short as possible — long words are auto-shrunk to fit and become hard to read.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1776
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1778
 msgid "Front"
 msgstr "Frente"
 
@@ -2449,7 +2460,7 @@ msgid "GitHub OAuth popup opened."
 msgstr "Ventana de OAuth de GitHub abierta."
 
 #. Tooltip on the build plate's name widget while it is still unnamed.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1679
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1681
 msgid "Give this build plate a name"
 msgstr "Dale un nombre a esta plataforma"
 
@@ -2823,6 +2834,10 @@ msgstr "Sus bandejas están separadas para esa impresora"
 msgid "Join the Open Resin Alliance!"
 msgstr "¡Únete a la Open Resin Alliance!"
 
+#: src/components/scene/repairProgressMessages.ts:20
+msgid "Joining loose edges"
+msgstr "Uniendo bordes sueltos"
+
 #: src/features/organicCut/OrganicCutPanel.tsx:476
 msgid "Joint Clearance"
 msgstr "Holgura de la junta"
@@ -2867,6 +2882,10 @@ msgstr "Conserva los soportes existentes y coloca los nuevos alrededor"
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:662
 msgid "Keep the preset"
 msgstr "Conservar el preajuste"
+
+#: src/components/scene/repairProgressMessages.ts:29
+msgid "Keeping the largest pieces"
+msgstr "Conservando las piezas más grandes"
 
 #: src/components/settings/SettingsModal.tsx:1254
 msgid "Keyboard bindings and presets"
@@ -2965,7 +2984,7 @@ msgid "Leave the collection as it is"
 msgstr "Deja la colección como está"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1782
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1784
 #: src/components/settings/GeneralSettingsTab.tsx:280
 msgid "Left"
 msgstr "Izq."
@@ -3117,7 +3136,7 @@ msgid "LocalStorage Keys"
 msgstr "Claves de LocalStorage"
 
 #. Tooltip on the lock button beside the build plate while it is unlocked. Locking refuses new meshes and moves of the models already on the plate.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1769
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1771
 msgid "Lock build plate"
 msgstr "Bloquear la plataforma"
 
@@ -3284,6 +3303,10 @@ msgstr "Radio de fusión"
 #: src/components/ui/EditorContextMenu.tsx:114
 msgid "Merge supports"
 msgstr "Unir soportes"
+
+#: src/components/scene/repairProgressMessages.ts:28
+msgid "Merging overlapping parts"
+msgstr "Fusionando piezas superpuestas"
 
 #: src/features/scene/sceneImportMessages.ts:43
 msgid "Merging Supports…"
@@ -4071,7 +4094,7 @@ msgid "Plate {index}"
 msgstr "Plata {index}"
 
 #. What the build plate's name widget shows while the plate has no name of its own, including after the plate is cleared or a new scene is started. The number is the plate's, plural forms come later with multiple plates.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1677
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1679
 msgid "Plate 1"
 msgstr "Plataforma 1"
 
@@ -4119,6 +4142,10 @@ msgstr "Complementos"
 #: src/components/settings/SettingsModal.tsx:1230
 msgid "PNG compression and engine metadata"
 msgstr "Compresión PNG y metadatos del motor"
+
+#: src/components/scene/repairProgressMessages.ts:19
+msgid "Pointing faces the same way"
+msgstr "Orientando las caras en el mismo sentido"
 
 #: src/components/modals/AaSupportWarningModal.tsx:30
 msgid "Possible unclassified support geometry"
@@ -4473,13 +4500,25 @@ msgstr "Quitar los grupos ya soportados"
 msgid "Removed {count, plural, one {# brace} other {# braces}}."
 msgstr "{count, plural, one {Se ha quitado # riostra} other {Se han quitado # riostras}}."
 
+#: src/components/scene/repairProgressMessages.ts:22
+msgid "Removing doubled faces"
+msgstr "Eliminando caras duplicadas"
+
+#: src/components/scene/repairProgressMessages.ts:25
+msgid "Removing doubled faces again"
+msgstr "Eliminando caras duplicadas de nuevo"
+
+#: src/components/scene/repairProgressMessages.ts:30
+msgid "Removing faces inside the model"
+msgstr "Eliminando caras dentro del modelo"
+
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:378
 #: src/supports/Settings/components/PresetSelector.tsx:598
 msgid "Rename"
 msgstr "Renombrar"
 
 #. Tooltip on the pencil beside the build plate's name.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1678
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1680
 msgid "Rename build plate"
 msgstr "Renombrar la plataforma"
 
@@ -4533,6 +4572,10 @@ msgstr "Reparar"
 #: src/components/controls/ModelManagerPanel.tsx:495
 msgid "Repair mesh…"
 msgstr "Reparar la malla…"
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:73
+msgid "Repair progress"
+msgstr "Progreso de la reparación"
 
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:162
 msgid "Repeat Interval"
@@ -4647,7 +4690,7 @@ msgid "Revert Changes"
 msgstr "Descartar los cambios"
 
 #. View cube face, rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1781
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1783
 msgid "Right"
 msgstr "Dcha."
 
@@ -5002,12 +5045,12 @@ msgid "Selected printer is offline"
 msgstr "La impresora seleccionada está sin conexión"
 
 #. Shown while dragging a selection rectangle right to left, which takes every object the rectangle touches. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3295
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3307
 msgid "Selection Mode: Contact (Right to Left)"
 msgstr "Modo de selección: contacto (de derecha a izquierda)"
 
 #. Shown while dragging a selection rectangle left to right, which takes only the objects the rectangle fully encloses. Mirrors the CAD convention; keep it on one short line.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3299
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:3311
 msgid "Selection Mode: Enclosed (Left to Right)"
 msgstr "Modo de selección: volumen completo (de izquierda a derecha)"
 
@@ -5030,6 +5073,18 @@ msgstr "Separados"
 #: src/features/scene/sceneImportMessages.ts:113
 msgid "Separating model and support geometry…"
 msgstr "Separando la geometría del modelo y la de los soportes…"
+
+#: src/components/scene/repairProgressMessages.ts:33
+msgid "Separating model and supports"
+msgstr "Separando modelo y soportes"
+
+#: src/components/scene/repairProgressMessages.ts:26
+msgid "Separating surfaces that overlap"
+msgstr "Separando superficies que se superponen"
+
+#: src/components/scene/repairProgressMessages.ts:27
+msgid "Separating surfaces that share an edge"
+msgstr "Separando superficies que comparten una arista"
 
 #: src/features/slicing/components/SlicingPanel.tsx:3827
 msgid "Session anti-aliasing override"
@@ -5369,6 +5424,8 @@ msgid "Start using DragonFruit"
 msgstr "Empezar a usar DragonFruit"
 
 #. Island scan progress before the first phase reports in.
+#. Mesh repair progress before the first stage reports in.
+#: src/components/scene/repairProgressMessages.ts:39
 #: src/components/scene/scanProgressMessages.ts:31
 msgid "Starting"
 msgstr "Empezando"
@@ -5400,6 +5457,10 @@ msgstr "Malla STL (.stl)"
 #: src/components/controls/ModelStatsCard.tsx:585
 msgid "STL size:"
 msgstr "Tamaño del STL:"
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:55
+msgid "Stopping at the end of this step…"
+msgstr "Deteniendo al final de este paso…"
 
 #. Support preset for general use. Shown on a narrow card next to "Detail" and "Anchor".
 #: src/supports/Settings/presetMessages.ts:23
@@ -5806,6 +5867,10 @@ msgstr "Esto sustituirá el preajuste por tus ajustes actuales."
 msgid "This will reset <0>Detail</0>, <1>Structure</1>, and <2>Anchor</2> to their factory settings and unpin all user presets. Your user presets will <3>not</3> be deleted."
 msgstr "Esto restablecerá <0>Detalle</0>, <1>Estructura</1> y <2>Anclaje</2> a sus valores de fábrica y desanclará todos los preajustes del usuario. Tus preajustes <3>no</3> se eliminarán."
 
+#: src/components/scene/repairProgressMessages.ts:32
+msgid "Tidying up"
+msgstr "Ajustes finales"
+
 #: src/components/layout/EmptySceneState.tsx:71
 msgid "Time to make something real."
 msgstr "Es hora de crear algo real."
@@ -5860,7 +5925,7 @@ msgid "Toolbar position"
 msgstr "Posición de la barra de herramientas"
 
 #. View cube face (seen from above), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1783
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1785
 #: src/components/settings/GeneralSettingsTab.tsx:279
 msgid "Top"
 msgstr "Arriba"
@@ -5949,7 +6014,7 @@ msgid "Unknown manufacturer"
 msgstr "Fabricante desconocido"
 
 #. Tooltip on the lock button beside the build plate while it is locked.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1770
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1772
 msgid "Unlock build plate"
 msgstr "Desbloquear la plataforma"
 
@@ -5958,12 +6023,12 @@ msgid "Unlock it to add or move models."
 msgstr "Desbloquéala para añadir o mover modelos."
 
 #. Tooltip on the arrange button beside the build plate while the plate is locked, which is why it is disabled.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1775
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1777
 msgid "Unlock the plate to arrange it"
 msgstr "Desbloquea la plataforma para ordenarla"
 
 #. Tooltip on the bin beside the build plate while the plate is locked, which is why it is disabled.
-#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1773
+#: src/components/scene/SceneCanvas/SceneCanvas.tsx:1775
 msgid "Unlock the plate to clear it"
 msgstr "Desbloquea la plataforma para vaciarla"
 

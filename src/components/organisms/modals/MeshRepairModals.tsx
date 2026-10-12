@@ -1,10 +1,13 @@
 import * as React from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { AlertTriangle, Wrench, X } from 'lucide-react';
 import { Button, IconButton, IconChip, Spinner } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
+import { translateRepairStage } from '@/components/scene/repairProgressMessages';
 import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import { cancelMeshRepair } from '@/utils/meshRepair';
 import type { MeshRepairProgress } from '@/utils/meshRepair';
@@ -37,15 +40,6 @@ function formatElapsed(ms: number): string {
   return `${minutes}:${seconds.toFixed(1).padStart(4, '0')}`;
 }
 
-/**
- * How many stages the checklist shows.
- *
- * Capped rather than scrolled: a scrollbar inside a dialog that is already moving is
- * one thing too many, and the stages that matter are the current one and the few
- * before it. The report modal has the full list.
- */
-const VISIBLE_REPAIR_STAGES = 6;
-
 /** The bar, the stage it is on, and how long it has been going. */
 function RepairProgressPanel({
   state,
@@ -56,22 +50,16 @@ function RepairProgressPanel({
   elapsedMs: number;
   cancelling: boolean;
 }) {
-  const current = state.stage;
-  const seen = React.useMemo(() => {
-    // Keyed by name so a stage the order revisits updates its entry rather than
-    // appending a duplicate.
-    const byName = new Map<string, MeshRepairProgress>();
-    for (const stage of state.stages) byName.set(stage.name, stage);
-    return [...byName.values()];
-  }, [state.stages]);
-  const visible = seen.slice(-VISIBLE_REPAIR_STAGES);
-  const hidden = seen.length - visible.length;
+  const { _ } = useLingui();
+  const stageLabel = cancelling
+    ? _(msg`Stopping at the end of this step…`)
+    : translateRepairStage(state.stage?.name, _);
 
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-3">
-        <div className="min-w-0 truncate font-mono text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>
-          {cancelling ? 'Stopping at the end of this step…' : current?.name ?? 'starting'}
+        <div className="min-w-0 truncate text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>
+          {stageLabel}
         </div>
         <div className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
           {formatElapsed(elapsedMs)}
@@ -82,36 +70,13 @@ function RepairProgressPanel({
         className="h-1.5 w-full overflow-hidden rounded-full"
         style={{ background: 'var(--surface-2)' }}
         role="progressbar"
-        aria-label="Repair progress"
+        aria-label={_(msg`Repair progress`)}
       >
         <div
           className="h-full rounded-full transition-[width] duration-300 ease-out"
           style={{ width: `${Math.round(repairProgressFraction(state) * 100)}%`, background: '#d97706' }}
         />
       </div>
-
-      {visible.length > 0 && (
-        <ol className="space-y-1">
-          {hidden > 0 && (
-            <li className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              {hidden} earlier step{hidden === 1 ? '' : 's'}
-            </li>
-          )}
-          {visible.map((stage) => {
-            const isCurrent = stage.name === current?.name;
-            return (
-              <li
-                key={stage.name}
-                className="flex items-center gap-2 font-mono text-[11px]"
-                style={{ color: isCurrent ? 'var(--text-strong)' : 'var(--text-muted)' }}
-              >
-                <span className="w-3 shrink-0">{isCurrent ? '>' : ' '}</span>
-                <span className="truncate">{stage.name}</span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
     </div>
   );
 }
