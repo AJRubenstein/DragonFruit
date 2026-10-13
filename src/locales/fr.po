@@ -151,6 +151,16 @@ msgstr ""
 msgid "{modelName} (hidden)"
 msgstr ""
 
+#: src/features/scene/modelCopyNames.ts:13
+msgctxt "Name of a pasted model"
+msgid "{modelName} Copy"
+msgstr ""
+
+#: src/features/scene/modelCopyNames.ts:17
+msgctxt "Name of a duplicated model"
+msgid "{modelName} Copy {copyNumber}"
+msgstr ""
+
 #. One row of the per-model breakdown when a scene is too large to save.
 #: src/app/page.tsx:503
 msgid "{name}: {megabytes} MB compressed"
@@ -2077,7 +2087,7 @@ msgstr ""
 msgid "Could not reopen this file from cache."
 msgstr "Impossible de rouvrir ce fichier depuis le cache."
 
-#: src/features/scene/useSceneCollectionManager.ts:7052
+#: src/features/scene/useSceneCollectionManager.ts:7053
 msgid "Could not restore the model."
 msgstr ""
 
@@ -5058,7 +5068,7 @@ msgstr ""
 msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
 msgstr ""
 
-#: src/features/scene/useSceneCollectionManager.ts:7025
+#: src/features/scene/useSceneCollectionManager.ts:7026
 msgid "No source file to restore this model from."
 msgstr ""
 

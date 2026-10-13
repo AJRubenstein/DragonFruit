@@ -62,6 +62,7 @@ import {
   importLabelVoxlScene,
   reportRestoredModel,
 } from '@/features/scene/sceneImportMessages';
+import { duplicatedModelName, pastedModelName } from '@/features/scene/modelCopyNames';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
 import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
@@ -4891,7 +4892,7 @@ export function useSceneCollectionManager(options?: {
     const id = uuidv4();
     const pastedModel: LoadedModel = {
       id,
-      name: `${first.name} Copy`,
+      name: pastedModelName(first.name, _),
       fileUrl: '',
       fileSizeBytes: first.fileSizeBytes,
       geometry: pastedGeometry,
@@ -4938,7 +4939,7 @@ export function useSceneCollectionManager(options?: {
     });
 
     return id;
-  }, [activeModelId, cloneGeometryWithBounds, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [_, activeModelId, cloneGeometryWithBounds, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   const pasteCopiedModelsAutoArrange = useCallback((spacingMm = 5) => {
     if (modelClipboard.length === 0) return [] as string[];
@@ -5400,7 +5401,7 @@ export function useSceneCollectionManager(options?: {
 
       return {
         id,
-        name: `${entry.name} Copy`,
+        name: pastedModelName(entry.name, _),
         fileUrl: '',
         fileSizeBytes: entry.fileSizeBytes,
         geometry,
@@ -5473,7 +5474,7 @@ export function useSceneCollectionManager(options?: {
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
+  }, [_, activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
 
   const duplicateModelWithTransforms = useCallback((
     sourceId: string,
@@ -5514,7 +5515,7 @@ export function useSceneCollectionManager(options?: {
 
       return {
         id,
-        name: `${source.name} Copy ${index + 1}`,
+        name: duplicatedModelName(source.name, index + 1, _),
         groupId: resolvedGroupId,
         groupName: resolvedGroupName,
         fileUrl: source.fileUrl,
@@ -5606,7 +5607,7 @@ export function useSceneCollectionManager(options?: {
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [_, activeModelId, cloneGeometryWithBounds, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   // LYS Import (1-step) — dispatched via plugin registry
 

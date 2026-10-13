@@ -151,6 +151,16 @@ msgstr "{minutes}m {paddedSeconds}s"
 msgid "{modelName} (hidden)"
 msgstr "{modelName} (hidden)"
 
+#: src/features/scene/modelCopyNames.ts:13
+msgctxt "Name of a pasted model"
+msgid "{modelName} Copy"
+msgstr "{modelName} Copy"
+
+#: src/features/scene/modelCopyNames.ts:17
+msgctxt "Name of a duplicated model"
+msgid "{modelName} Copy {copyNumber}"
+msgstr "{modelName} Copy {copyNumber}"
+
 #. One row of the per-model breakdown when a scene is too large to save.
 #: src/app/page.tsx:503
 msgid "{name}: {megabytes} MB compressed"
@@ -2077,7 +2087,7 @@ msgstr "Could not read printer data."
 msgid "Could not reopen this file from cache."
 msgstr "Could not reopen this file from cache."
 
-#: src/features/scene/useSceneCollectionManager.ts:7052
+#: src/features/scene/useSceneCollectionManager.ts:7053
 msgid "Could not restore the model."
 msgstr "Could not restore the model."
 
@@ -5059,7 +5069,7 @@ msgstr "No resin selected"
 msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
 msgstr "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
 
-#: src/features/scene/useSceneCollectionManager.ts:7025
+#: src/features/scene/useSceneCollectionManager.ts:7026
 msgid "No source file to restore this model from."
 msgstr "No source file to restore this model from."
 
