@@ -51,11 +51,14 @@
   "file import": {
     "description": "Opening or importing any file that is not a native DragonFruit project: model files (STL, OBJ, 3MF and similar), Lychee .lys scenes, Chitubox .chitubox scenes, drag and drop; imports that fail, hang or produce the wrong geometry or supports. Opening .voxl projects is not an import: that belongs to voxl."
   },
-  "printing": {
-    "description": "Working with the physical printer: sending jobs over the network (upload, start, pause, status), the printer's camera feed, and defects seen on the physical print itself."
+  "printer connection": {
+    "description": "Talking to a printer over the network: finding it, sending a print job to it (upload, start, pause, cancel), showing its status and progress, its camera feed. Defects seen on the physical print are not this area: they belong to the area that produced them, such as slicing, aa-3daa or autosupports."
   },
   "platform": {
     "description": "The app as a program on the user's system: installing, starting up, updating, the app hanging or dying regardless of what the user was doing, packaging (Flatpak, installers, bundled binaries), behaviour specific to Windows, macOS or Linux."
+  },
+  "infra": {
+    "description": "The project's own infrastructure rather than the app: GitHub Actions workflows, CI builds and checks, release and packaging scripts, the plugin registry pipeline, repository tooling and automation (including this issue labeller), the documentation site build."
   },
   "anycubic": {
     "description": "Anycubic printers (Photon Mono, Photon M3/M5/M7, Photon P1 and P1 Max, Photon D2 and others): their printer profiles, their print formats (.pwmb, .pwma, .pm3, .px6s and similar), behaviour that differs on them. Only when the problem is specific to these printers; a report that merely says which printer it was printed on does not count."

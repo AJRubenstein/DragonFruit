@@ -125,9 +125,9 @@
     "split": "train",
     "areas": [
       "platform",
-      "printing"
+      "printer connection"
     ],
-    "note": "Packaging problem in the camera relay: platform, and printing for whoever filters by the camera."
+    "note": "Packaging problem in the camera relay: platform, and printer connection for whoever filters by the camera."
   },
   "641": {
     "title": "[BUG] P1Max screen needs mirroring",
