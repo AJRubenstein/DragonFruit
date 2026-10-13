@@ -9200,21 +9200,24 @@ export default function Home() {
 
   /**
    * Seats the models the way a single model is seated after a rotation: lowest point at the lift
-   * distance with Auto on, on the plate with it off, and left alone with auto-snap disabled. A
-   * group scale needs it too, since it spreads the models along Z from their centre.
+   * distance with Auto on, on the plate with it off. A model whose Z was set by hand (or that came
+   * in from a project with its own Z) is left where it is, as it would be on its own. A group
+   * scale needs it too, since it spreads the models along Z from their centre.
    */
   const seatSelectionOnPlate = React.useCallback((
     entries: Array<{ id: string; transform: ModelTransform }>,
   ) => {
-    if (!transformMgr.autoSnapEnabled) return entries;
     const targetZ = transformMgr.autoLift ? transformMgr.liftDistance : 0;
-    const geometryById = new Map(scene.models.map((model) => [model.id, model.geometry]));
+    const modelById = new Map(scene.models.map((model) => [model.id, model]));
     const seatable = entries.flatMap((entry) => {
-      const geometry = geometryById.get(entry.id);
-      return geometry ? [{ ...entry, geometry }] : [];
+      const model = modelById.get(entry.id);
+      return model && model.manualZMoveOverride !== true ? [{ ...entry, geometry: model.geometry }] : [];
     });
-    return buildLiftDropUpdates(seatable, seatable.map((entry) => entry.id), targetZ);
-  }, [scene.models, transformMgr.autoLift, transformMgr.autoSnapEnabled, transformMgr.liftDistance]);
+    const seated = new Map(
+      buildLiftDropUpdates(seatable, seatable.map((entry) => entry.id), targetZ).map((entry) => [entry.id, entry]),
+    );
+    return entries.map((entry) => seated.get(entry.id) ?? entry);
+  }, [scene.models, transformMgr.autoLift, transformMgr.liftDistance]);
 
   const handleGizmoTransformGroupCommit = React.useCallback((payload: {
     operation: 'move' | 'rotate' | 'scale';
@@ -9247,9 +9250,9 @@ export default function Home() {
           scale: entry.after.scale.clone(),
         },
       }));
-    // A turned selection is seated as a single turned model is, in the same undo step.
+    // A turned or scaled selection is seated as a single model is, in the same undo step.
     if (payload.operation === 'rotate' && changedEntries.length > 0) islands.clearScanData();
-    const updates = payload.operation === 'rotate' ? seatSelectionOnPlate(changedEntries) : changedEntries;
+    const updates = payload.operation === 'move' ? changedEntries : seatSelectionOnPlate(changedEntries);
 
     if (updates.length === 0) {
       beginSupportDragSyncTransaction([], {
@@ -9288,13 +9291,6 @@ export default function Home() {
     setSupportRenderRefreshNonce((value) => value + 1);
     skipNextTransformEndCommitRef.current = null;
   }, [beginSupportDragSyncTransaction, isFiniteTransform, islands, scene, seatSelectionOnPlate, transformMgr.transformHook]);
-
-  const handleAutoLiftChange = React.useCallback((enabled: boolean) => {
-    if (scene.activeModelId) {
-      scene.setModelManualZMoveOverride(scene.activeModelId, false);
-    }
-    transformMgr.setAutoLift(enabled);
-  }, [scene, transformMgr]);
 
   const commitPendingSelectionPositionHistory = React.useCallback(() => {
     const pending = pendingSelectionPositionHistoryRef.current;
@@ -9581,9 +9577,26 @@ export default function Home() {
 
   const disableAutoLiftForManualZMove = React.useCallback(() => {
     if (!scene.activeModelId) return;
-    scene.setModelManualZMoveOverride(scene.activeModelId, true);
+    for (const modelId of getSelectionTargetIds()) {
+      scene.setModelManualZMoveOverride(modelId, true);
+    }
     transformMgr.disableAutoLiftForManualZMove();
-  }, [scene, transformMgr]);
+  }, [getSelectionTargetIds, scene, transformMgr]);
+
+  // Auto applies to the whole selection: every selected model is snapped again, and with
+  // several selected they are lifted or dropped together, as a single model is on its own.
+  const handleAutoLiftChange = React.useCallback((enabled: boolean) => {
+    const targetIds = getSelectionTargetIds();
+    // Placed before the overrides are cleared: the placement writes from the models as they
+    // stand, which would put the overrides back.
+    if (targetIds.length > 1) {
+      placeSelectedModelsAtWorldZ(enabled ? transformMgr.liftDistance : 0);
+    }
+    for (const modelId of targetIds) {
+      scene.setModelManualZMoveOverride(modelId, false);
+    }
+    transformMgr.setAutoLift(enabled);
+  }, [getSelectionTargetIds, placeSelectedModelsAtWorldZ, scene, transformMgr]);
 
   /** Whether the bed a model stands on refuses edits. */
   const isModelPlateLocked = React.useCallback((modelId: string) => {
