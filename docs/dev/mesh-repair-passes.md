@@ -194,15 +194,33 @@ correcting it.
 
 ### The V3 Cones cannot be fixed by flipping at all
 
-Its 4 disagreements sit **inside a single region** — zero lie between regions — so no union of
+Its disagreements sit **inside a single region** — zero lie between regions — so no union of
 regions has them as its boundary. Three independent searches agree the count cannot be reduced:
 exact enumeration over 20 faces, an annealed search over 20,000, and the cut solver. An even
 subgraph that is not a cut of the dual is the signature of a non-orientable surface, and on a
 closed mesh the usual cause is self-intersection: two sheets passing through each other glue into
 a twisted neighbourhood.
 
-That is why the reference engines run their self-intersection split *before* their last orientation
-pass, and why our order already matches. For these files the fix is to resolve the crossing.
+Flipping cannot help, so the *surface* has to change. `retessellate_unsatisfiable` deletes the
+faces carrying those edges and lets the fill close what that opens: the edge is gone, so the
+winding drops, and what replaces it is the fill's own surface rather than a copy of anything. On
+the cones that is 7 edges, 11 faces deleted and 13 filled — winding 4 to 0, parts 15 to 15, volume
+unchanged in the sixth decimal.
+
+It is judged on the outcome, not on a threshold count, because the same move is wrong elsewhere: on
+the harbinger file those edges number 181, deleting them adds nine parts, and the winding only
+reaches 48. A localised defect can be re-tessellated; one spread across the surface cannot, because
+every local fix for it adds geometry. The rule that decides it is **no pass may add a part**, and a
+pass that means to repair winding has to be judged on whether it did.
+
+### An earlier attempt at this is worth knowing about
+
+Duplicating the vertices around those edges also makes the surface orientable, and it was in the
+tree for a while. It is wrong, and the reason is subtle enough to be worth recording: the copies
+sit exactly on the originals, so the volume does not move and no class gets worse — the mesh reads
+as fully repaired while carrying coincident facets. What it actually costs shows in the
+self-intersection count, 17,879 to 20,906 on corbu, and in the viewport as doubled surfaces. Adding
+a part is the defect; nothing in the five classes sees it.
 
 ### The orientation pass is per component, so it has to stay O(faces)
 

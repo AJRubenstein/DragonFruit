@@ -687,11 +687,27 @@ pub fn repair_with_progress(
     // leftover: corbu's six loops of 78 to 653 edges covering all 1,359 of its boundary edges were
     // every one refused by the derived cap of 48.
     let filled = crate::holes::holes_all(&mut mesh, options.residual_fill_max_edges);
+    // Last, after every other pass has had its turn: re-tessellate a localised winding defect. It
+    // refuses when the move would add parts or move the volume, which is what the Cones needs and
+    // Harbinger does not.
+    let mut retessellated = 0usize;
+    for _ in 0..8 {
+        let n = retessellate_unsatisfiable(&mut mesh);
+        if n == 0 {
+            break;
+        }
+        retessellated += n;
+    }
+    let settled = if retessellated > 0 {
+        repair_orientation(&mut mesh)
+    } else {
+        0
+    };
     stage!(
         "settle",
-        welded + collapsed + noise + filled + flipped,
+        welded + collapsed + noise + filled + flipped + retessellated + settled,
         Some(format!(
-            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s)"
+            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s), {retessellated} face(s) re-tessellated over unsatisfiable edges, {settled} face(s) flipped after that"
         )),
         t
     );
@@ -2845,6 +2861,65 @@ fn winding_sides(mesh: &IndexedMesh) -> AHashMap<u32, u8> {
         }
     }
     side
+}
+
+/// Re-tessellate the surface where the winding parity breaks, so what is left can be wound.
+///
+/// Every odd cycle contains an edge no assignment satisfies. Deleting the faces on those edges opens
+/// a hole, and the fill closes it with new surface — the edge is gone, so the winding drops, and
+/// nothing is duplicated. Measured on the V3 Cones: 7 unsatisfiable edges, 11 faces dropped, 13
+/// filled, winding 4 to 0, parts 15 to 15, volume unchanged in the sixth decimal.
+///
+/// Guarded on the outcome, not on a count. The same move on Harbinger takes 181 edges, adds nine
+/// parts and only reaches winding 48, so it is refused and the residual is reported instead. A
+/// localised defect can be re-tessellated; one spread across the surface cannot, because any local
+/// fix for it adds geometry.
+fn retessellate_unsatisfiable(mesh: &mut IndexedMesh) -> usize {
+    let conflicts = frustrated_edges(mesh);
+    if conflicts.is_empty() {
+        return 0;
+    }
+    let topo = Topology::build(mesh);
+    let mut doomed: AHashSet<u32> = AHashSet::new();
+    for key in &conflicts {
+        if let Some(info) = topo.edges.get(key) {
+            for &f in info.faces.iter() {
+                doomed.insert(f);
+            }
+        }
+    }
+    if doomed.is_empty() {
+        return 0;
+    }
+
+    let before_triangles = mesh.triangles.clone();
+    let before_positions = mesh.positions.clone();
+    let parts_before = triangle_components(mesh).iter().max().copied().unwrap_or(0) + 1;
+    let volume_before = mesh.signed_volume();
+
+    mesh.triangles = mesh
+        .triangles
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !doomed.contains(&(*i as u32)))
+        .map(|(_, t)| *t)
+        .collect();
+    // The hole the deletion opened is closed here rather than by a later pass, so the whole move is
+    // one decision that can be refused as a whole.
+    let filled = crate::holes::holes_all(mesh, usize::MAX);
+
+    let parts_after = triangle_components(mesh).iter().max().copied().unwrap_or(0) + 1;
+    let volume_after = mesh.signed_volume();
+    let winding_after = Topology::build(mesh).inconsistent_edges();
+    let acceptable = parts_after <= parts_before
+        && winding_after < conflicts.len()
+        && (volume_after - volume_before).abs() <= volume_before.abs() * 0.01;
+    if !acceptable {
+        mesh.triangles = before_triangles;
+        mesh.positions = before_positions;
+        return 0;
+    }
+    filled
 }
 
 pub(crate) fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
