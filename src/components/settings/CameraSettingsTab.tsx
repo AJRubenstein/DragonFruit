@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useLingui } from '@lingui/react';
 import type { SupportMode } from '@/supports/types';
 import { Camera as CameraIcon, Hand as HandIcon } from 'lucide-react';
 import type { CameraProjectionMode } from '@/components/settings/cameraProjectionPreferences';
@@ -10,6 +11,7 @@ import type { CameraScopeMode, WorkspaceCameraDefaults } from '@/components/sett
 import { FOV_MIN, FOV_MAX } from '@/components/settings/cameraFovPreferences';
 import { SegmentedControl, SettingRow } from '@/components/atoms';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 interface CameraSettingsTabProps {
   cameraScope: CameraScopeMode;
@@ -67,6 +69,8 @@ export function CameraSettingsTab({
   higherContrastModelEdges = false,
   onHigherContrastModelEdgesChange,
 }: CameraSettingsTabProps) {
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [activeWorkspace, setActiveWorkspace] = React.useState<SupportMode>('prepare');
   const usingGlobalScope = cameraScope === 'global';
   const usingWorkspaceScope = cameraScope === 'workspace';
@@ -343,7 +347,7 @@ export function CameraSettingsTab({
                   <div className="space-y-0.5">
                     <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
                       <span>Pan acceleration</span>
-                      <span style={{ color: 'var(--text-strong)' }}>{cameraTrackpadPanAcceleration.toFixed(2)}x</span>
+                      <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(cameraTrackpadPanAcceleration, 2, 'times')}</span>
                     </label>
                     <input
                       type="range"
@@ -359,7 +363,7 @@ export function CameraSettingsTab({
                   <div className="space-y-0.5">
                     <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
                       <span>Orbit acceleration</span>
-                      <span style={{ color: 'var(--text-strong)' }}>{cameraTrackpadOrbitAcceleration.toFixed(2)}x</span>
+                      <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(cameraTrackpadOrbitAcceleration, 2, 'times')}</span>
                     </label>
                     <input
                       type="range"
@@ -375,7 +379,7 @@ export function CameraSettingsTab({
                   <div className="space-y-0.5">
                     <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
                       <span>Zoom acceleration</span>
-                      <span style={{ color: 'var(--text-strong)' }}>{cameraTrackpadZoomAcceleration.toFixed(2)}x</span>
+                      <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(cameraTrackpadZoomAcceleration, 2, 'times')}</span>
                     </label>
                     <input
                       type="range"

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { before } from 'node:test';
-import { registerHooks } from 'node:module';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '@lingui/react';
@@ -28,19 +27,8 @@ import {
  * render to static markup — which the body supports by construction: it is
  * store-free, taking the draft it edits plus the last run's diagnostics as props.
  *
- * The macro resolve hook has to be registered before anything that calls `msg`
- * is *evaluated*, which is why the panel modules arrive through a dynamic
- * `import()` in the `before` hook and why nothing here statically imports a
- * `.tsx` from the panel. See `linguiMacroStub.mjs`.
+ * The Lingui macros are stubbed for every unit test by `scripts/test-unit/register.mjs`.
  */
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@lingui/core/macro') {
-      return { url: new URL('./linguiMacroStub.mjs', import.meta.url).href, shortCircuit: true };
-    }
-    return nextResolve(specifier, context);
-  },
-});
 
 let AutoSupportSettingsBody: React.ComponentType<AutoSupportSettingsBodyProps>;
 let AutoSupportRunDiagnostics: React.ComponentType<AutoSupportRunDiagnosticsProps>;
@@ -65,8 +53,6 @@ let diagnosticToggles: ReadonlyArray<{ key: string }>;
 let togglesBySection: { debug: ReadonlyArray<{ key: string }> };
 let tierHints: Record<string, MessageDescriptor>;
 
-// Dynamic on purpose: these modules call `msg`, so the resolve hook above must
-// already be registered — a static import would be evaluated first.
 before(async () => {
   ({ AutoSupportSettingsBody } = await import('@/components/controls/autoSupport/AutoSupportSettingsBody'));
   ({ AutoSupportRunDiagnostics } = await import('@/components/controls/autoSupport/AutoSupportRunDiagnostics'));

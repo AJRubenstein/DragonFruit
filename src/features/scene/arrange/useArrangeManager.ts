@@ -1,5 +1,6 @@
 import React from 'react';
 import * as THREE from 'three';
+import { msg } from '@lingui/core/macro';
 import type { ScenePlate, useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
 import type { ArrangeAnchorMode, ArrangeLayoutMode, ArrangePrecisionMode } from '@/components/controls/ArrangePanel';
@@ -149,39 +150,39 @@ export function useArrangeManager({
   const arrangeOverlayContent = React.useMemo(() => {
     if (activeArrangeOperation === 'high_precision_fill') {
       return {
-        title: 'High-Precision Fill Running…',
+        title: msg`High-Precision Fill Running…`,
         detailLines: [
-          'Using SAT-based 2.5D nesting to pack duplicates onto the plate.',
-          'Please be patient while we compute the densest valid fill.',
+          msg`Using SAT-based 2.5D nesting to pack duplicates onto the plate.`,
+          msg`Please be patient while we compute the densest valid fill.`,
         ],
       };
     }
 
     if (activeArrangeOperation === 'high_precision') {
       return {
-        title: 'High-Precision Arrange Running…',
+        title: msg`High-Precision Arrange Running…`,
         detailLines: [
-          'This is a computationally expensive operation for dense packing.',
-          'Please be patient while we process your models.',
+          msg`This is a computationally expensive operation for dense packing.`,
+          msg`Please be patient while we process your models.`,
         ],
       };
     }
 
     if (activeArrangeOperation === 'array') {
       return {
-        title: 'Applying Array Arrange…',
+        title: msg`Applying Array Arrange…`,
         detailLines: [
-          'Positioning models and validating placement.',
-          'Please wait a moment.',
+          msg`Positioning models and validating placement.`,
+          msg`Please wait a moment.`,
         ],
       };
     }
 
     return {
-      title: 'Arranging Models…',
+      title: msg`Arranging Models…`,
       detailLines: [
-        'Computing placements and resolving collisions.',
-        'Please wait.',
+        msg`Computing placements and resolving collisions.`,
+        msg`Please wait.`,
       ],
     };
   }, [activeArrangeOperation]);

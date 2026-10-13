@@ -993,6 +993,7 @@ export function IslandVolumesHierarchyCard({ islands, layerHeightMm }: Props) {
         </Button>
       )}
 
+      {/* i18n-ignore-start: developer readout of the persistence graph */}
       {summary && (
         <div className="text-[11px] p-2 rounded space-y-1 border" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 8%)' }}>
           <div>Nodes: {summary.nodes}</div>
@@ -1007,6 +1008,7 @@ export function IslandVolumesHierarchyCard({ islands, layerHeightMm }: Props) {
           <div>Issues: {summary.issues}</div>
         </div>
       )}
+      {/* i18n-ignore-end */}
 
       {result && result.issues.length > 0 && (
         <div className="text-[11px] p-2 rounded space-y-1 max-h-28 overflow-auto border" style={{ color: '#fca5a5', borderColor: 'color-mix(in srgb, var(--danger), var(--border-subtle) 55%)', background: 'color-mix(in srgb, var(--danger), transparent 90%)' }}>
@@ -1080,6 +1082,7 @@ export function IslandVolumesHierarchyCard({ islands, layerHeightMm }: Props) {
             .slice(0, 30)
             .map(([systemId, rows]) => (
               <div key={systemId} className="space-y-0.5">
+                {/* i18n-ignore: developer readout */}
                 <div style={{ color: 'var(--text-strong)' }}>System {systemId}: {rows.length} cutoff junction(s)</div>
                 {rows.slice(0, 8).map((r, idx) => (
                   <div key={idx} style={{ color: 'var(--text-muted)' }}>

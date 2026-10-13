@@ -5,6 +5,7 @@ import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import type { Island } from '@/volumeAnalysis/IslandScan/types';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { IconButton } from '@/components/atoms';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type IslandHierarchyModalProps = {
   islands: Island[];
@@ -109,13 +110,14 @@ type TreeNodeComponentProps = {
 };
 
 function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeComponentProps) {
+  const fmt = useLocaleFormat();
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
 
   const layerRange = `L${node.island.firstLayer}-${node.island.lastLayer}`;
-  const volume = node.island.volumeMm3?.toFixed(2) || '0.00';
+  const volume = fmt.quantity(node.island.volumeMm3 ?? 0, 2, 'mm3');
   const layerCount = node.island.lastLayer - node.island.firstLayer + 1;
-  const maxArea = node.island.maxAreaMm2?.toFixed(2) || '0.00';
+  const maxArea = fmt.quantity(node.island.maxAreaMm2 ?? 0, 2, 'mm2');
   const maxAreaLayer = node.island.maxAreaLayer ?? 0;
   const worldMaxAreaLayer = Math.round(maxAreaLayer + (zOffsetMm / layerHeightMm));
 
@@ -181,7 +183,7 @@ function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeCo
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-sm" style={{ color: 'var(--text-strong)' }}>{volume} mm³</span>
+              <span className="text-sm" style={{ color: 'var(--text-strong)' }}>{volume}</span>
               {hasChildren && (
                 <span
                   className="text-[10px] px-2 py-0.5 rounded"
@@ -195,7 +197,7 @@ function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeCo
 
           {/* Max area info */}
           <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-            Max area: {maxArea} mm² at L{worldMaxAreaLayer}
+            Max area: {maxArea} at L{worldMaxAreaLayer}
           </div>
         </div>
       </div>

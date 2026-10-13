@@ -169,9 +169,9 @@ export function MeshRepairModals({
     <>
       <StructuredDialogModal
         open={showDamagedModelDialog}
-        ariaLabel="Mesh boolean operation failed"
-        title="Mesh quality too low"
-        subtitle="Boolean operation requires a manifold mesh"
+        ariaLabel={_(msg`Mesh boolean operation failed`)}
+        title={_(msg`Mesh quality too low`)}
+        subtitle={_(msg`Boolean operation requires a manifold mesh`)}
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="danger"
         closeDisabled
@@ -182,21 +182,25 @@ export function MeshRepairModals({
             className="inline-flex items-center justify-center gap-1.5"
             onClick={() => setShowDamagedModelDialog(false)}
           >
-            Got it
+            <Trans>Got it</Trans>
           </Button>
         )}
       >
         <div className="space-y-2">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            This mesh contains too many self-intersecting triangles and
-            non-manifold edges for boolean operations to succeed.
-            The import repair pass reduced but could not fully resolve
-            all issues in the geometry.
+            <Trans>
+              This mesh contains too many self-intersecting triangles and
+              non-manifold edges for boolean operations to succeed.
+              The import repair pass reduced but could not fully resolve
+              all issues in the geometry.
+            </Trans>
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            We recommend repairing the mesh in a dedicated 3D modeling
-            program such as <strong>Blender</strong> or{' '}
-            <strong>Netfabb</strong> before importing it into DragonFruit.
+            <Trans>
+              We recommend repairing the mesh in a dedicated 3D modeling
+              program such as <strong>Blender</strong> or{' '}
+              <strong>Netfabb</strong> before importing it into DragonFruit.
+            </Trans>
           </p>
         </div>
       </StructuredDialogModal>
@@ -260,7 +264,7 @@ export function MeshRepairModals({
                 <IconButton
                   variant="surface"
                   size="md"
-                  aria-label="Close repair mesh dialog"
+                  aria-label={_(msg`Close repair mesh dialog`)}
                   disabled={isManualRepairing}
                   onClick={() => setManualRepairModelId(null)}
                 >
@@ -270,7 +274,7 @@ export function MeshRepairModals({
 
               <div className="space-y-4 p-5">
                 <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                  <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Model</div>
+                  <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{_(msg({ message: 'Model', context: 'Mesh repair dialog field' }))}</div>
                   <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-strong)' }} title={repairModel.name}>
                     {repairModel.name}
                   </div>
@@ -298,7 +302,7 @@ export function MeshRepairModals({
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: '#d97706' }} />
                     <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                      <strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.
+                      <Trans><strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>
                     </p>
                   </div>
                 </div>

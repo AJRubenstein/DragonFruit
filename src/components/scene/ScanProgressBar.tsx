@@ -3,6 +3,7 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { formatPhaseStep, translateScanPhase } from '@/components/scene/scanProgressMessages';
 import { ProgressBar } from '@/components/atoms';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 export type ScanProgress = {
   done: number;
@@ -25,6 +26,7 @@ export type ScanProgress = {
  */
 export function ScanProgressBar({ progress }: { progress: ScanProgress | null }) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const total = progress?.total ?? 0;
   const percent = total > 0
     ? Math.min(100, Math.max(0, (progress!.done / total) * 100))
@@ -40,7 +42,7 @@ export function ScanProgressBar({ progress }: { progress: ScanProgress | null })
             : ''}
         </span>
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-          {total > 0 ? `${Math.round(percent)}%` : ''}
+          {total > 0 ? fmt.quantity(percent, 0, 'percent') : ''}
         </span>
       </div>
 

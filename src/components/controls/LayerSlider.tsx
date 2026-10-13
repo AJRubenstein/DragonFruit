@@ -1,9 +1,11 @@
 ﻿"use client";
 
 import React from 'react';
+import { useLingui } from '@lingui/react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useOutsideDismiss } from '@/hooks/useOutsideDismiss';
 import { clampToViewport } from '@/utils/math';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 /** min-width 136px + 10px offset + margin. */
 const THUMB_EDIT_POPOVER_WIDTH = 156;
@@ -35,6 +37,8 @@ type LayerSliderProps = {
 };
 
 export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onScrubEnd, currentHeightMm, maxHeightMm, className, showValue = false, docked = false, embedded = false, expandToContainer = false, dragBatchMode = 'raf', lowerValue, onLowerChange, lowerCurrentHeightMm, crossSectionEnabled = true, onToggleCrossSection, layerHeightMm, compactMinimalRail = false, allowTrackClickJump = false }: LayerSliderProps) {
+  const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const isMinimalRail = embedded && docked;
   const isCompactMinimalRail = isMinimalRail && compactMinimalRail;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -61,9 +65,9 @@ export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onS
   const openThumbEditRef = React.useRef<((thumb: 'upper' | 'lower') => void) | null>(null);
 
   const formatMm = React.useCallback((mm: number) => {
-    if (!Number.isFinite(mm)) return '0';
-    return mm.toFixed(2).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
-  }, []);
+    if (!Number.isFinite(mm)) return fmt.unit('mm', '0');
+    return fmt.unit('mm', fmt.number(mm, { maximumFractionDigits: 2 }));
+  }, [fmt]);
 
   // Update input value when slider value changes externally
   React.useEffect(() => {
@@ -602,7 +606,7 @@ export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onS
     ? { marginLeft: '10px' }
     : { marginRight: '10px' };
   const minimalRailTitle = React.useMemo(() => {
-    const mmLabel = typeof currentHeightMm === 'number' ? `${formatMm(currentHeightMm)} mm` : '—';
+    const mmLabel = typeof currentHeightMm === 'number' ? formatMm(currentHeightMm) : '—';
     const toggleHint = onToggleCrossSection
       ? ` • Double-click to turn the cross-section ${crossSectionEnabled ? 'off' : 'back on'}`
       : '';
@@ -651,11 +655,11 @@ export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onS
                 background: 'color-mix(in srgb, var(--surface-1), transparent 12%)',
               }}
             >
-              {typeof currentHeightMm === 'number' ? `${formatMm(currentHeightMm)} mm` : '—'}
+              {typeof currentHeightMm === 'number' ? formatMm(currentHeightMm) : '—'}
             </div>
             {typeof maxHeightMm === 'number' && !embedded && (
               <div className="text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                Max {formatMm(maxHeightMm)} mm
+                Max {formatMm(maxHeightMm)}
               </div>
             )}
           </div>
@@ -755,7 +759,7 @@ export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onS
                             color: 'var(--text-strong)',
                           }}
                     >
-                      {isMinimalRail ? `${lowerValue}` : `${formatMm(lowerCurrentHeightMm)} mm`}
+                      {isMinimalRail ? `${lowerValue}` : formatMm(lowerCurrentHeightMm)}
                     </div>
                   )}
                   <div
@@ -854,7 +858,7 @@ export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onS
                   >
                     {isMinimalRail
                       ? `${value}`
-                      : `${formatMm(currentHeightMm)} mm`}
+                      : formatMm(currentHeightMm)}
                   </div>
                 )}
             <div

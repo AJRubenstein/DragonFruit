@@ -402,7 +402,7 @@ export function PrinterVariantPickerModal({
         style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-0)' }}
         role="dialog"
         aria-modal="true"
-        aria-label="Initial Setup"
+        aria-label={_(msg`Initial Setup`)}
       >
         {/* Header */}
         <div

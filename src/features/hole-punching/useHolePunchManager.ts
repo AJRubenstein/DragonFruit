@@ -5,7 +5,7 @@ import type { useSceneCollectionManager } from '@/features/scene/useSceneCollect
 import type { useTransformManager } from '@/features/transform/useTransformManager';
 import type { HolePunchPanelState } from '@/features/hole-punching/HolePunchPanel';
 import type { HollowingPanelState } from '@/features/hollowing';
-import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
+import type { ModelMeshModifiers, ModelMeshModifiersHistoryOptions } from '@/features/mesh-modifiers/types';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { snapshotGeometryPositions, geometryFromSnapshot } from '@/utils/geometrySnapshot';
 import {
@@ -59,7 +59,7 @@ export type UseHolePunchManagerOptions = {
   setIsShellOpenFaceSelected: React.Dispatch<React.SetStateAction<boolean>>;
   setHollowingDraftEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   // Shared persistence + modifier machinery (stays in Home).
-  persistActiveModelModifiers: (next: ModelMeshModifiers | undefined) => void;
+  persistActiveModelModifiers: (next: ModelMeshModifiers | undefined, options?: ModelMeshModifiersHistoryOptions) => void;
   setPendingModifierResetAction: React.Dispatch<React.SetStateAction<'hollowing' | 'hole_punch' | 'clear_hollowing' | null>>;
   hollowingSourceByModelIdRef: React.MutableRefObject<Map<string, HollowingSourceEntry>>;
   hollowPreviewResultCacheRef: React.MutableRefObject<Map<string, HollowPreviewCacheEntry>>;
@@ -310,6 +310,7 @@ export function useHolePunchManager({
   const persistHolePunchPlacementsForModel = React.useCallback((
     activeModel: NonNullable<typeof scene.activeModel>,
     placements: HolePunchPlacementState[],
+    history?: ModelMeshModifiersHistoryOptions,
   ) => {
     const nextActivePlacements = placements.filter((placement) => placement.modelId === activeModel.id);
     const nextPersisted = toPersistedHolePunchPlacements(activeModel, nextActivePlacements)
@@ -325,7 +326,7 @@ export function useHolePunchManager({
       holePunchesBakedIntoGeometry: false,
       holePunchSourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
       holePunchSourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
-    });
+    }, history);
   }, [persistActiveModelModifiers]);
 
   const computeAutoHolePunchDepthMmForGeometry = React.useCallback((
@@ -491,7 +492,7 @@ export function useHolePunchManager({
           openFace: nextHollowingState.openFace,
           openFaceSelected: true,
         },
-      });
+      }, { historyDescription: 'Pick Open Face' });
       return;
     }
 
@@ -503,11 +504,10 @@ export function useHolePunchManager({
     }
 
     const placement = buildHolePunchPlacementFromHit(hit, activeModel.id);
-    setHolePunchPlacements((previous) => {
-      const nextPlacements = [...previous, placement];
-      persistHolePunchPlacementsForModel(activeModel, nextPlacements);
-      return nextPlacements;
-    });
+    const nextPlacements = [...holePunchPlacementsRef.current, placement];
+    holePunchPlacementsRef.current = nextPlacements;
+    setHolePunchPlacements(nextPlacements);
+    persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: 'Add Hole' });
     setSelectedHolePunchPlacementIds([]);
     setHoveredHolePunchPlacementId(null);
     setHolePunchHoverPlacement(null);
@@ -636,7 +636,7 @@ export function useHolePunchManager({
     suppressHolePunchClickPlacementIdRef.current = placementId;
     const activeModel = scene.activeModel;
     if (activeModel) {
-      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current);
+      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: 'Move Hole' });
     }
   }, [persistHolePunchPlacementsForModel, scene.activeModel]);
 
@@ -730,7 +730,7 @@ export function useHolePunchManager({
     holePunchGizmoDragRef.current = null;
     const activeModel = scene.activeModel;
     if (activeModel) {
-      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current);
+      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: 'Move Hole' });
     }
   }, [persistHolePunchPlacementsForModel, scene.activeModel]);
 
@@ -794,7 +794,7 @@ export function useHolePunchManager({
     holePunchGizmoRotateRef.current = null;
     const activeModel = scene.activeModel;
     if (activeModel) {
-      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current);
+      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: 'Rotate Hole' });
     }
   }, [persistHolePunchPlacementsForModel, scene.activeModel]);
 
@@ -817,13 +817,27 @@ export function useHolePunchManager({
     // actually undone — otherwise the hole remains in the mesh and the
     // hollowing cache keeps pointing at stale geometry.
     if (holesWereBaked && remainingForModel.length === 0) {
+      const clearedModifiers: ModelMeshModifiers = {
+        ...(activeModel.meshModifiers ?? {}),
+        holePunches: [],
+        holePunchAppliedPlacements: [],
+        holePunchesBakedIntoGeometry: false,
+        // Clear the source snapshot — pre-punch geometry was already restored
+        // so there's nothing left to apply.
+        holePunchSourcePositionsBase64: undefined,
+        holePunchSourcePositionCount: undefined,
+      };
       const restored = geometryFromSnapshot({
         sourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
         sourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
       });
+      // The geometry and the modifiers go back as one undo step.
+      let replaced = false;
       if (restored) {
         const restoredGeometry = restored.clone();
-        const replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Hole Punching (Removed)');
+        replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Hole Punching (Removed)', {
+          meshModifiersAfter: clearedModifiers,
+        });
         if (!replaced) {
           restoredGeometry.dispose();
         }
@@ -838,20 +852,13 @@ export function useHolePunchManager({
           hollowPreviewResultCacheRef.current.delete(key);
         }
       }
-      persistActiveModelModifiers({
-        ...(activeModel.meshModifiers ?? {}),
-        holePunches: [],
-        holePunchAppliedPlacements: [],
-        holePunchesBakedIntoGeometry: false,
-        // Clear the source snapshot — pre-punch geometry was already restored
-        // so there's nothing left to apply.
-        holePunchSourcePositionsBase64: undefined,
-        holePunchSourcePositionCount: undefined,
-      });
+      if (!replaced) {
+        persistActiveModelModifiers(clearedModifiers, { historyDescription: 'Delete Hole' });
+      }
     } else {
-      persistHolePunchPlacementsForModel(activeModel, nextPlacements);
+      persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: 'Delete Hole' });
     }
-  }, [holePunchPlacements, persistActiveModelModifiers, persistHolePunchPlacementsForModel, scene.activeModel, selectedHolePunchPlacementIds]);
+  }, [holePunchPlacements, persistActiveModelModifiers, persistHolePunchPlacementsForModel, scene, selectedHolePunchPlacementIds]);
 
   React.useEffect(() => {
     const unregister = registerDeleteHandler(
@@ -882,29 +889,27 @@ export function useHolePunchManager({
       ? next
       : { ...next, depthMode: 'manual' };
     setHolePunchState(normalizedNext);
-    setHolePunchPlacements((previous) => {
-      if (selectedHolePunchPlacementIds.length === 0) return previous;
-      const nextPlacements = previous.map((placement) => (
-        selectedHolePunchPlacementIdSet.has(placement.id)
-          ? {
-              ...placement,
-              radiusMm: normalizedNext.radiusMm,
-              radiusYMm: normalizedNext.radiusYMm,
-              depthMm: normalizedNext.depthMode === 'auto'
-                ? computeAutoHolePunchDepthMm(placement.modelId, placement.worldPoint, placement.worldNormal)
-                : normalizedNext.depthMm,
-              depthMode: normalizedNext.depthMode,
-            }
-          : placement
-      ));
+    if (selectedHolePunchPlacementIds.length === 0) return;
+    const nextPlacements = holePunchPlacementsRef.current.map((placement) => (
+      selectedHolePunchPlacementIdSet.has(placement.id)
+        ? {
+            ...placement,
+            radiusMm: normalizedNext.radiusMm,
+            radiusYMm: normalizedNext.radiusYMm,
+            depthMm: normalizedNext.depthMode === 'auto'
+              ? computeAutoHolePunchDepthMm(placement.modelId, placement.worldPoint, placement.worldNormal)
+              : normalizedNext.depthMm,
+            depthMode: normalizedNext.depthMode,
+          }
+        : placement
+    ));
+    holePunchPlacementsRef.current = nextPlacements;
+    setHolePunchPlacements(nextPlacements);
 
-      const activeModel = scene.activeModel;
-      if (activeModel) {
-        persistHolePunchPlacementsForModel(activeModel, nextPlacements);
-      }
-
-      return nextPlacements;
-    });
+    const activeModel = scene.activeModel;
+    if (activeModel) {
+      persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: 'Edit Hole', merge: true });
+    }
   }, [
     canUseAutoHolePunchDepth,
     computeAutoHolePunchDepthMm,
@@ -919,41 +924,47 @@ export function useHolePunchManager({
     const activeModelId = activeModel?.id ?? null;
     if (!activeModelId || !activeModel) return;
 
+    const resetModifiers: ModelMeshModifiers = {
+      ...(activeModel.meshModifiers ?? {}),
+      holePunches: [],
+      holePunchAppliedPlacements: [],
+      // Pre-punch geometry was restored — no holes are baked into it.
+      holePunchesBakedIntoGeometry: false,
+      holePunchSourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
+      holePunchSourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
+    };
     const restored = geometryFromSnapshot({
       sourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
       sourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
     });
+    // The geometry and the modifiers go back as one undo step.
+    let replaced = false;
     if (restored) {
       const restoredGeometry = restored.clone();
-      const replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Reset Hole Punching');
+      replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Reset Hole Punching', {
+        meshModifiersAfter: resetModifiers,
+      });
       if (!replaced) {
         restoredGeometry.dispose();
       }
       restored.dispose();
+    }
+    if (!replaced) {
+      persistActiveModelModifiers(resetModifiers, { historyDescription: 'Reset Hole Punching' });
     }
 
     // Pre-punch geometry was restored — invalidate the hollowing source cache
     // so the next hollowing preview uses the hole-free geometry.
     hollowingSourceByModelIdRef.current.delete(activeModel.id);
 
-    setHolePunchPlacements((previous) => {
-      const updated = previous.filter((placement) => placement.modelId !== activeModelId);
-      persistActiveModelModifiers({
-        ...(activeModel.meshModifiers ?? {}),
-        holePunches: [],
-        holePunchAppliedPlacements: [],
-        // Pre-punch geometry was restored — no holes are baked into it.
-        holePunchesBakedIntoGeometry: false,
-        holePunchSourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
-        holePunchSourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
-      });
-      return updated;
-    });
+    const updated = holePunchPlacementsRef.current.filter((placement) => placement.modelId !== activeModelId);
+    holePunchPlacementsRef.current = updated;
+    setHolePunchPlacements(updated);
     setHolePunchState(defaultHolePunchState);
     setSelectedHolePunchPlacementIds([]);
     setHoveredHolePunchPlacementId(null);
     setHolePunchHoverPlacement(null);
-  }, [defaultHolePunchState, persistActiveModelModifiers, scene.activeModel]);
+  }, [defaultHolePunchState, persistActiveModelModifiers, scene]);
 
   const requestResetHolePunch = React.useCallback(() => {
     if (!canResetHolePunch || isApplyingHolePunch) return;
@@ -1020,25 +1031,7 @@ export function useHolePunchManager({
         : persisted;
 
       if (persisted.length === 0) {
-        const restored = geometryFromSnapshot({
-          sourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
-          sourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
-        });
-
-        if (restored) {
-          const restoredGeometry = restored.clone();
-          const replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Hole Punching (Removed)');
-          if (!replaced) {
-            restoredGeometry.dispose();
-          }
-          restored.dispose();
-        }
-
-        // Pre-punch geometry was restored — clear the hollowing cache so the
-        // next preview resolves from the hole-free geometry.
-        hollowingSourceByModelIdRef.current.delete(activeModel.id);
-
-        persistActiveModelModifiers({
+        const removedModifiers: ModelMeshModifiers = {
           ...(activeModel.meshModifiers ?? {}),
           holePunches: [],
           holePunchAppliedPlacements: [],
@@ -1046,7 +1039,31 @@ export function useHolePunchManager({
           holePunchesBakedIntoGeometry: false,
           holePunchSourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
           holePunchSourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
+        };
+        const restored = geometryFromSnapshot({
+          sourcePositionsBase64: activeModel.meshModifiers?.holePunchSourcePositionsBase64,
+          sourcePositionCount: activeModel.meshModifiers?.holePunchSourcePositionCount,
         });
+
+        // The geometry and the modifiers go back as one undo step.
+        let replaced = false;
+        if (restored) {
+          const restoredGeometry = restored.clone();
+          replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Hole Punching (Removed)', {
+            meshModifiersAfter: removedModifiers,
+          });
+          if (!replaced) {
+            restoredGeometry.dispose();
+          }
+          restored.dispose();
+        }
+        if (!replaced) {
+          persistActiveModelModifiers(removedModifiers, { historyDescription: 'Hole Punching (Removed)' });
+        }
+
+        // Pre-punch geometry was restored — clear the hollowing cache so the
+        // next preview resolves from the hole-free geometry.
+        hollowingSourceByModelIdRef.current.delete(activeModel.id);
         return;
       }
 
@@ -1215,10 +1232,21 @@ export function useHolePunchManager({
         nextGeometry.computeBoundingBox();
         nextGeometry.computeBoundingSphere();
 
+        // The punched geometry and the modifiers that record it land as one undo step.
         const replaced = scene.replaceModelGeometry(
           activeModel.id,
           nextGeometry,
           `Hole Punching (${result.report.outputTriangleCount.toLocaleString()} tris)`,
+          {
+            meshModifiersAfter: {
+              ...(activeModel.meshModifiers ?? {}),
+              holePunches: persisted,
+              holePunchAppliedPlacements: persisted,
+              holePunchesBakedIntoGeometry: true,
+              holePunchSourcePositionsBase64: sourceSnapshot.sourcePositionsBase64,
+              holePunchSourcePositionCount: sourceSnapshot.sourcePositionCount,
+            },
+          },
         );
         if (!replaced) {
           if (ownsSourceGeometry) {
@@ -1237,15 +1265,6 @@ export function useHolePunchManager({
         // hollowing source cache so future hollowing previews resolve from
         // the current (hole-punched) geometry rather than a stale snapshot.
         hollowingSourceByModelIdRef.current.delete(activeModel.id);
-
-        persistActiveModelModifiers({
-          ...(activeModel.meshModifiers ?? {}),
-          holePunches: persisted,
-          holePunchAppliedPlacements: persisted,
-          holePunchesBakedIntoGeometry: true,
-          holePunchSourcePositionsBase64: sourceSnapshot.sourcePositionsBase64,
-          holePunchSourcePositionCount: sourceSnapshot.sourcePositionCount,
-        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         showOperationError(`Hole punching failed: ${message}`);

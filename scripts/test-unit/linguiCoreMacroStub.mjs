@@ -6,8 +6,7 @@
  * imports `babel-plugin-macros`, which is deliberately not installed. So a Node
  * test that imports any module calling `msg` would fail to even load it.
  *
- * `src/supports/__tests__/autoSupportPanel.test.tsx` registers a resolve hook
- * pointing `@lingui/core/macro` here before it dynamically imports the panel.
+ * `register.mjs`, preloaded by `npm test`, resolves `@lingui/core/macro` here.
  * The descriptor this returns is the shape the macro produces for a static
  * message — `{ id, message }` — and the real `i18n._` falls back to `message`
  * when the id is not in the catalog, so the rendered English text is the

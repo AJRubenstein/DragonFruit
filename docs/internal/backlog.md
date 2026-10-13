@@ -339,18 +339,9 @@
   handful of `set*` setters are unused.
 - Why: `sliceStatus` in particular reads like live status and is not — it
   invites someone to "fix" a display that no longer exists. Predates the i18n
-  pass (confirmed at HEAD); mechanical once the parked block below is resolved.
+  pass (confirmed at HEAD); mechanical now that the parked expert-AA block is gone.
 
-### [cleanup] 790 lines of parked expert-AA UI in SlicingPanel — M · medium risk
-- Where: src/features/slicing/components/SlicingPanel.tsx, lines ~2779-3571,
-  opened by `{false && aaQualityMode === 'expert' && <>`.
-- What: the whole expert anti-aliasing panel is switched off by a literal
-  `false`. It holds most of the AA vocabulary (Perturbation Pattern, LUT Curve,
-  Z Blur Radius, Minimum Grey Level, AA on Supports) and keeps several memoized
-  labels alive (`advancedSampleCountLabel`, `advancedBlurWidthLabel`…).
-- Why: decide with the AA owner whether this is parked or abandoned. Left
-  untranslated in the i18n pass on purpose — wrapping it would add ~80 strings
-  nobody can see; if it comes back, it needs that pass plus an AA glossary.
+
 ### [fix] Consolidation gives grid hosts the regular 8 mm fan radius — S · medium risk
 - Where: src/supports/autoSupport/autoPlace.ts, `fanLeafToHost(...)` call in the
   consolidation pass (~line 2372) passes `new Set()` as `gridHostIds`.

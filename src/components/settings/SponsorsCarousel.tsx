@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useLayoutEffect } from 'react';
 import { Heart } from 'lucide-react';
-import { Button } from '@/components/atoms';
+import { Button, Spinner } from '@/components/atoms';
 import { Tooltip } from '@/components/ui/Tooltip';
 import fallbackSponsors from '@/components/settings/sponsors.json';
 
@@ -293,7 +293,7 @@ function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { sr
             color: 'var(--text-muted)',
           }}
         >
-          <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+          <Spinner size="lg" />
         </span>
       </span>
     );
@@ -324,7 +324,7 @@ function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { sr
             }}
             aria-hidden="true"
           >
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            <Spinner size="lg" />
           </span>
         )}
         <div
@@ -503,7 +503,7 @@ export function SponsorsCarousel() {
 
       {isLoadingSponsors ? (
         <div className="mt-2 flex items-center justify-center gap-2 rounded-md border px-3 py-6" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 20%)', color: 'var(--text-muted)' }}>
-          <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+          <Spinner size="lg" />
           <span className="text-[11px]">Loading sponsors…</span>
         </div>
       ) : !hasSponsors ? (

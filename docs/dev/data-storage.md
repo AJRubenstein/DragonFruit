@@ -116,8 +116,8 @@ Autosave timing is stored in milliseconds: `debounceMs` defaults to `45_000` (45
 | `app-theme-custom-profiles`            | localStorage | User custom theme profiles                                |
 | `lumenslicer:floating-panel-layout:v5` | localStorage | Floating panel coordinates/sizing (moved panels only)   |
 | `app-floating-layout-persistence`      | localStorage | Enable/disable floating layout persistence                |
-| `app-models-panel-visible`             | localStorage | Model list visibility (shown unless hidden)               |
-| `app-tool-layout`                      | localStorage | Tool entries as a left column or a bar under the app bar  |
+| `app-models-panel-visible`             | localStorage | Model list visibility in the left-column layout (the bar always shows the list) |
+| `app-tool-layout`                      | localStorage | Tool entries as a left column or a bar under the app bar (the bar is the default) |
 
 ## Camera and view keys
 

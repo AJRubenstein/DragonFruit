@@ -136,6 +136,7 @@ export function BezierGizmoManager() {
                 updateSupportEntity(latestTrunk);
                 pushSupportHistory({
                     type: SUPPORT_UPDATE_TRUNK,
+                    // i18n-ignore: undo-history description, only shown in the history debug modal
                     description: `Edit ${ownEntryDescriptor.singular} curve`,
                     payload: {
                         before: initialTrunkRef.current,
@@ -174,6 +175,7 @@ export function BezierGizmoManager() {
             livePreviewRef.current = null;
 
             pushSupportEditHistory(
+                // i18n-ignore: undo-history description, only shown in the history debug modal
                 `Edit ${descriptor.singular} curve`,
                 initialEditSnapshotRef.current,
                 captureSupportEditSnapshot(),
