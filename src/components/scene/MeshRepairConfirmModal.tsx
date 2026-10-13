@@ -74,10 +74,10 @@ export function MeshRepairConfirmModal({ prompt, onRepair, onLoadAsIs, onCancelI
       {/* Analysis stats */}
       <div className="rounded-md border px-3 pt-2 pb-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
         <div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}><Trans>Analysis</Trans></div>
-        <StatRow label={_(msg`Triangles`)} value={analysis.triangle_count} />
-        <StatRow label={_(msg`Components`)} value={analysis.component_count} />
-        <StatRow label={_(msg`Non-manifold edges`)} value={analysis.non_manifold_edges} />
-        <StatRow label={_(msg`Boundary loops`)} value={analysis.boundary_loops} />
+        <StatRow label={_(msg({ message: 'Triangles', context: 'Mesh analysis row' }))} value={analysis.triangle_count} />
+        <StatRow label={_(msg({ message: 'Components', context: 'Mesh analysis row' }))} value={analysis.component_count} />
+        <StatRow label={_(msg({ message: 'Non-manifold edges', context: 'Mesh analysis row' }))} value={analysis.non_manifold_edges} />
+        <StatRow label={_(msg({ message: 'Boundary loops', context: 'Mesh analysis row' }))} value={analysis.boundary_loops} />
       </div>
 
       {/* Disclaimer */}

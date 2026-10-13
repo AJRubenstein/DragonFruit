@@ -1381,9 +1381,6 @@ msgid "Boundary edges"
 msgstr ""
 
 #: src/components/scene/MeshRepairConfirmModal.tsx:80
-msgid "Boundary loops"
-msgstr ""
-
 #: src/components/scene/MeshRepairReportModal.tsx:683
 #: src/components/scene/MeshRepairReportModal.tsx:724
 msgctxt "Mesh analysis row"
@@ -2073,9 +2070,6 @@ msgid "Compiling results"
 msgstr ""
 
 #: src/components/scene/MeshRepairConfirmModal.tsx:78
-msgid "Components"
-msgstr ""
-
 #: src/components/scene/MeshRepairReportModal.tsx:679
 #: src/components/scene/MeshRepairReportModal.tsx:720
 msgctxt "Mesh analysis row"
@@ -5499,9 +5493,6 @@ msgid "No visible models available for slicing."
 msgstr ""
 
 #: src/components/scene/MeshRepairConfirmModal.tsx:79
-msgid "Non-manifold edges"
-msgstr ""
-
 #: src/components/scene/MeshRepairReportModal.tsx:680
 #: src/components/scene/MeshRepairReportModal.tsx:721
 msgctxt "Mesh analysis row"
@@ -8896,9 +8887,6 @@ msgid "Transform {modelName}"
 msgstr ""
 
 #: src/components/scene/MeshRepairConfirmModal.tsx:77
-msgid "Triangles"
-msgstr ""
-
 #: src/components/scene/MeshRepairReportModal.tsx:677
 #: src/components/scene/MeshRepairReportModal.tsx:718
 msgctxt "Mesh analysis row"
