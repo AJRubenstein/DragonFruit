@@ -63,6 +63,11 @@ selection, each change as a single undo step:
   stands.
 - With auto-snap on, rotated or scaled models are set back on the plate (or at
   the lift distance) afterwards.
+- **Auto-Repair** (or **Repair Again**) from the model menu or the model list
+  repairs the selected models one after another, all in one undo step; the
+  progress names the model it is on. **Stop** keeps the models already
+  repaired and leaves the rest as they were. **Undo Repairs** and **Show
+  Report** still act on the active model.
 
 ## Practical checks
 
