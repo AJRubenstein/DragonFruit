@@ -251,6 +251,7 @@ export function JointGizmo() {
                 if (applied) {
                     pushSupportHistory({
                         type: descriptor!.historyUpdate,
+                        // i18n-ignore: undo-history description, only shown in the history debug modal
                         description: `Move ${descriptor!.singular} joint`,
                         // The payload cast keeps the per-action payload map the
                         // single source of truth, as the delete path does: the
@@ -271,6 +272,7 @@ export function JointGizmo() {
             if (committed) commitJointDragSupport(owner.typeId, committed as never);
 
             pushSupportEditHistory(
+                // i18n-ignore: undo-history description, only shown in the history debug modal
                 `Move ${getSupportTypeDescriptor(owner.typeId).singular} joint`,
                 initialEditSnapshotRef.current,
                 captureSupportEditSnapshot(),

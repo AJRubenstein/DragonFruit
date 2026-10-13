@@ -6,6 +6,10 @@ import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { Button, IconButton } from '@/components/atoms';
 import type { MeshRepairReportEntry } from '@/features/scene/useSceneCollectionManager';
 import type { MeshAnalysisJson } from '@/utils/meshRepair';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg, plural } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 
 type Props = {
   reports: MeshRepairReportEntry[];
@@ -23,7 +27,11 @@ function formatSignedVolume(value: unknown): string {
   return n.toFixed(3);
 }
 
-function summarizeRepairWins(report: MeshRepairReportEntry['report']): string[] {
+type Translate = (descriptor: MessageDescriptor) => string;
+
+// Module level on purpose: React Compiler renames locals inside components
+// before the Lingui macro derives the message id.
+function summarizeRepairWins(report: MeshRepairReportEntry['report'], translate: Translate): string[] {
   const wins: string[] = [];
   const closedHoles = Math.max(0, report.pre.boundary_loops - report.post.boundary_loops);
   const resolvedSelfIntersections = Math.max(0, report.pre.self_intersections - report.post.self_intersections);
@@ -32,31 +40,34 @@ function summarizeRepairWins(report: MeshRepairReportEntry['report']): string[] 
   const reducedComponents = Math.max(0, report.pre.component_count - report.post.component_count);
 
   if (report.post.is_watertight && !report.pre.is_watertight) {
-    wins.push('Made the mesh watertight.');
+    wins.push(translate(msg`Made the mesh watertight.`));
   }
   if (closedHoles > 0) {
-    wins.push(`Closed ${closedHoles.toLocaleString()} open ${closedHoles === 1 ? 'hole' : 'holes'}.`);
+    wins.push(translate(msg`Closed ${plural(closedHoles, { one: '# open hole', other: '# open holes' })}.`));
   }
   if (resolvedSelfIntersections > 0) {
-    wins.push(`Resolved ${resolvedSelfIntersections.toLocaleString()} self-intersection${resolvedSelfIntersections === 1 ? '' : 's'}.`);
+    wins.push(translate(msg`Resolved ${plural(resolvedSelfIntersections, { one: '# self-intersection', other: '# self-intersections' })}.`));
   }
   if (cleanedNonManifoldEdges > 0) {
-    wins.push(`Cleaned up ${cleanedNonManifoldEdges.toLocaleString()} non-manifold edge${cleanedNonManifoldEdges === 1 ? '' : 's'}.`);
+    wins.push(translate(msg`Cleaned up ${plural(cleanedNonManifoldEdges, { one: '# non-manifold edge', other: '# non-manifold edges' })}.`));
   }
   if (correctedWindingIssues > 0) {
-    wins.push(`Corrected ${correctedWindingIssues.toLocaleString()} winding issue${correctedWindingIssues === 1 ? '' : 's'}.`);
+    wins.push(translate(msg`Corrected ${plural(correctedWindingIssues, { one: '# winding issue', other: '# winding issues' })}.`));
   }
   if (reducedComponents > 0) {
-    wins.push(`Reduced disconnected mesh sections from ${report.pre.component_count.toLocaleString()} to ${report.post.component_count.toLocaleString()}.`);
+    const before = report.pre.component_count.toLocaleString();
+    const after = report.post.component_count.toLocaleString();
+    wins.push(translate(msg`Reduced disconnected mesh sections from ${before} to ${after}.`));
   }
   if (wins.length === 0 && report.steps.length > 0) {
-    wins.push(`Applied ${report.steps.length.toLocaleString()} automated repair ${report.steps.length === 1 ? 'step' : 'steps'} and re-validated the mesh.`);
+    wins.push(translate(msg`Applied ${plural(report.steps.length, { one: '# automated repair step', other: '# automated repair steps' })} and re-validated the mesh.`));
   }
 
   return wins.slice(0, 4);
 }
 
 export function MeshRepairReportModal({ reports, presentation = 'default', onDismiss }: Props) {
+  const { _ } = useLingui();
   useEscapeToClose(reports.length > 0, onDismiss);
 
   const [expandedId, setExpandedId] = React.useState<string | null>(
@@ -102,8 +113,8 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
   // not valid) is flagged with a red cross instead of the green check.
   const optimisticFailed = effectivePresentation === 'optimistic' && hasResidual;
   const headerTitle = effectivePresentation === 'optimistic'
-    ? (optimisticFailed ? 'Repair Incomplete' : 'Repair Complete')
-    : 'Mesh Repair Report';
+    ? (optimisticFailed ? _(msg`Repair Incomplete`) : _(msg`Repair Complete`))
+    : _(msg`Mesh Repair Report`);
   const headerToneColor = optimisticFailed
     ? '#ef4444'
     : effectivePresentation === 'optimistic' ? '#22c55e' : toneColor;
@@ -131,7 +142,7 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
         }}
         role="dialog"
         aria-modal="true"
-        aria-label="Mesh repair report"
+        aria-label={_(msg`Mesh repair report`)}
       >
         <div className={headerClassName} style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="flex min-w-0 items-center gap-3">
@@ -162,7 +173,7 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
           <IconButton
             variant="surface"
             size="md"
-            aria-label="Close"
+            aria-label={_(msg`Close`)}
             onClick={onDismiss}
           >
             <X className="w-4 h-4" />
@@ -195,17 +206,17 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
               variant="secondary"
               className="gap-1.5"
               onClick={copyAll}
-              title="Copy full JSON to clipboard"
+              title={_(msg`Copy full JSON to clipboard`)}
             >
               <ClipboardCopy className="h-3.5 w-3.5" />
-              Copy JSON
+              <Trans>Copy JSON</Trans>
             </Button>
           ) : <div />}
           <Button
             variant="secondary"
             onClick={onDismiss}
           >
-            Dismiss
+            <Trans>Dismiss</Trans>
           </Button>
         </div>
       </div>
@@ -214,14 +225,15 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
 }
 
 function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
+  const { _ } = useLingui();
   const { modelName, report } = entry;
-  const wins = React.useMemo(() => summarizeRepairWins(report), [report]);
+  const wins = React.useMemo(() => summarizeRepairWins(report, _), [report, _]);
   const [showResidualIssues, setShowResidualIssues] = React.useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = React.useState(false);
 
   const summaryText = report.fully_repaired
-    ? 'DragonFruit repaired this mesh and replaced the model in your current scene.'
-    : 'DragonFruit could not fully repair this mesh — it is still not a valid manifold and may cause problems later in your workflow.';
+    ? _(msg`DragonFruit repaired this mesh and replaced the model in your current scene.`)
+    : _(msg`DragonFruit could not fully repair this mesh — it is still not a valid manifold and may cause problems later in your workflow.`);
 
   const summaryAccent = report.fully_repaired ? '#22c55e' : '#ef4444';
 
@@ -241,7 +253,7 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                {report.fully_repaired ? 'Repair finished' : 'Repair incomplete'}
+                {report.fully_repaired ? <Trans>Repair finished</Trans> : <Trans>Repair incomplete</Trans>}
               </div>
               <span
                 className="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums"
@@ -259,7 +271,7 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
               {!report.fully_repaired ? (
                 <>
                   <br />
-                  If you want them, a few follow-up notes are tucked below.
+                  <Trans>If you want them, a few follow-up notes are tucked below.</Trans>
                 </>
               ) : null}
             </p>
@@ -272,7 +284,7 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
         style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), black 4%)' }}
       >
         <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>
-          What DragonFruit repaired
+          <Trans>What DragonFruit repaired</Trans>
         </div>
         <ul className="space-y-1.5">
           {wins.map((win) => (
@@ -286,8 +298,8 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
 
       {report.residual_issues.length > 0 && (
         <DrawerSection
-          title="Follow-up notes"
-          subtitle="Optional details if you want them."
+          title={_(msg`Follow-up notes`)}
+          subtitle={_(msg`Optional details if you want them.`)}
           open={showResidualIssues}
           onToggle={() => setShowResidualIssues((value) => !value)}
           tone="warning"
@@ -302,16 +314,16 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
       )}
 
       <DrawerSection
-        title="Technical details"
-        subtitle="Before/after analysis and repair steps."
+        title={_(msg`Technical details`)}
+        subtitle={_(msg`Before/after analysis and repair steps.`)}
         open={showTechnicalDetails}
         onToggle={() => setShowTechnicalDetails((value) => !value)}
         compact
       >
         <div className="space-y-2.5">
           <div className="grid grid-cols-2 gap-2.5">
-            <AnalysisBlock title="Before" analysis={report.pre} />
-            <AnalysisBlock title="After" analysis={report.post} />
+            <AnalysisBlock title={_(msg`Before`)} analysis={report.pre} />
+            <AnalysisBlock title={_(msg`After`)} analysis={report.post} />
           </div>
 
           {report.steps.length > 0 && (
@@ -320,7 +332,7 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
               style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), black 4%)' }}
             >
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                Repair steps
+                <Trans>Repair steps</Trans>
               </div>
               <ul className="space-y-0.5 text-[11px]" style={{ color: 'var(--text-strong)' }}>
                 {report.steps.map((step, idx) => (
@@ -345,11 +357,12 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
 }
 
 function ReportBody({ report }: { report: MeshRepairReportEntry['report'] }) {
+  const { _ } = useLingui();
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <AnalysisBlock title="Before" analysis={report.pre} />
-        <AnalysisBlock title="After" analysis={report.post} />
+        <AnalysisBlock title={_(msg`Before`)} analysis={report.pre} />
+        <AnalysisBlock title={_(msg`After`)} analysis={report.post} />
       </div>
 
       {report.steps.length > 0 && (
@@ -358,7 +371,7 @@ function ReportBody({ report }: { report: MeshRepairReportEntry['report'] }) {
           style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), black 4%)' }}
         >
           <div className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
-            Repair steps
+            <Trans>Repair steps</Trans>
           </div>
           <ul className="space-y-0.5 text-[11px]" style={{ color: 'var(--text-strong)' }}>
             {report.steps.map((step, idx) => (
@@ -386,7 +399,7 @@ function ReportBody({ report }: { report: MeshRepairReportEntry['report'] }) {
           }}
         >
           <div className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: '#d97706' }}>
-            Residual issues
+            <Trans>Residual issues</Trans>
           </div>
           <ul className="space-y-0.5 text-[11px]" style={{ color: 'var(--text-strong)' }}>
             {report.residual_issues.map((issue, idx) => (
@@ -470,6 +483,7 @@ function ReportCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { _ } = useLingui();
   const { modelName, report } = entry;
   const ok = report.fully_repaired;
   const toneColor = ok ? '#22c55e' : '#d97706';
@@ -516,14 +530,14 @@ function ReportCard({
       {expanded && (
         <div className="border-t px-3 py-3 space-y-3" style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="grid grid-cols-2 gap-x-4">
-            <FlatAnalysisColumn title="Before" analysis={report.pre} />
-            <FlatAnalysisColumn title="After" analysis={report.post} />
+            <FlatAnalysisColumn title={_(msg`Before`)} analysis={report.pre} />
+            <FlatAnalysisColumn title={_(msg`After`)} analysis={report.post} />
           </div>
 
           {report.steps.length > 0 && (
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                Repair steps
+                <Trans>Repair steps</Trans>
               </div>
               <ul className="space-y-0.5 text-[11px]" style={{ color: 'var(--text-strong)' }}>
                 {report.steps.map((step, idx) => (
@@ -545,7 +559,7 @@ function ReportCard({
           {report.residual_issues.length > 0 && (
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#d97706' }}>
-                Residual issues
+                <Trans>Residual issues</Trans>
               </div>
               <ul className="space-y-0.5 text-[11px]" style={{ color: 'var(--text-strong)' }}>
                 {report.residual_issues.map((issue, idx) => (
@@ -560,6 +574,7 @@ function ReportCard({
   );
 }
 
+// i18n-ignore-start: compact technical readout (abbreviations), kept in English
 function DeltaLine({ pre, post }: { pre: MeshAnalysisJson; post: MeshAnalysisJson }) {
   const parts: string[] = [];
   parts.push(`${pre.triangle_count.toLocaleString()} → ${post.triangle_count.toLocaleString()} tris`);
@@ -578,22 +593,24 @@ function DeltaLine({ pre, post }: { pre: MeshAnalysisJson; post: MeshAnalysisJso
   parts.push(post.is_watertight ? 'watertight' : 'not watertight');
   return <>{parts.join(' · ')}</>;
 }
+// i18n-ignore-end
 
 function AnalysisBlock({ title, analysis }: { title: string; analysis: MeshAnalysisJson }) {
-  const rows: [string, string | number][] = [
-    ['Triangles', analysis.triangle_count.toLocaleString()],
-    ['Vertices', analysis.vertex_count.toLocaleString()],
-    ['Components', analysis.component_count],
-    ['Non-manifold edges', analysis.non_manifold_edges],
-    ['Non-manifold verts', analysis.non_manifold_vertices],
-    ['Boundary edges', analysis.boundary_edges],
-    ['Boundary loops', analysis.boundary_loops],
-    ['Inconsistent edges', analysis.inconsistent_edges],
-    ['Degenerate tris', analysis.degenerate_triangles],
-    ['Duplicate tris', analysis.duplicate_triangles],
-    ['Self-intersections', analysis.self_intersections],
-    ['Signed volume', formatSignedVolume(analysis.signed_volume)],
-    ['Watertight', analysis.is_watertight ? 'yes' : 'no'],
+  const { _ } = useLingui();
+  const rows: [MessageDescriptor, string | number][] = [
+    [msg({ message: 'Triangles', context: 'Mesh analysis row' }), analysis.triangle_count.toLocaleString()],
+    [msg({ message: 'Vertices', context: 'Mesh analysis row' }), analysis.vertex_count.toLocaleString()],
+    [msg({ message: 'Components', context: 'Mesh analysis row' }), analysis.component_count],
+    [msg({ message: 'Non-manifold edges', context: 'Mesh analysis row' }), analysis.non_manifold_edges],
+    [msg({ message: 'Non-manifold verts', context: 'Mesh analysis row' }), analysis.non_manifold_vertices],
+    [msg({ message: 'Boundary edges', context: 'Mesh analysis row' }), analysis.boundary_edges],
+    [msg({ message: 'Boundary loops', context: 'Mesh analysis row' }), analysis.boundary_loops],
+    [msg({ message: 'Inconsistent edges', context: 'Mesh analysis row' }), analysis.inconsistent_edges],
+    [msg({ message: 'Degenerate tris', context: 'Mesh analysis row' }), analysis.degenerate_triangles],
+    [msg({ message: 'Duplicate tris', context: 'Mesh analysis row' }), analysis.duplicate_triangles],
+    [msg({ message: 'Self-intersections', context: 'Mesh analysis row' }), analysis.self_intersections],
+    [msg({ message: 'Signed volume', context: 'Mesh analysis row' }), formatSignedVolume(analysis.signed_volume)],
+    [msg({ message: 'Watertight', context: 'Mesh analysis row' }), analysis.is_watertight ? _(msg`yes`) : _(msg`no`)],
   ];
 
   return (
@@ -609,8 +626,8 @@ function AnalysisBlock({ title, analysis }: { title: string; analysis: MeshAnaly
       </div>
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-[10.5px] font-mono" style={{ color: 'var(--text-strong)' }}>
         {rows.map(([label, val]) => (
-          <React.Fragment key={label}>
-            <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+          <React.Fragment key={label.id}>
+            <span style={{ color: 'var(--text-muted)' }}>{_(label)}</span>
             <span className="text-right tabular-nums">{val}</span>
           </React.Fragment>
         ))}
@@ -620,20 +637,21 @@ function AnalysisBlock({ title, analysis }: { title: string; analysis: MeshAnaly
 }
 
 function FlatAnalysisColumn({ title, analysis }: { title: string; analysis: MeshAnalysisJson }) {
-  const rows: [string, string | number][] = [
-    ['Triangles', analysis.triangle_count.toLocaleString()],
-    ['Vertices', analysis.vertex_count.toLocaleString()],
-    ['Components', analysis.component_count],
-    ['Non-manifold edges', analysis.non_manifold_edges],
-    ['Non-manifold verts', analysis.non_manifold_vertices],
-    ['Boundary edges', analysis.boundary_edges],
-    ['Boundary loops', analysis.boundary_loops],
-    ['Inconsistent edges', analysis.inconsistent_edges],
-    ['Degenerate tris', analysis.degenerate_triangles],
-    ['Duplicate tris', analysis.duplicate_triangles],
-    ['Self-intersections', analysis.self_intersections],
-    ['Signed volume', formatSignedVolume(analysis.signed_volume)],
-    ['Watertight', analysis.is_watertight ? 'yes' : 'no'],
+  const { _ } = useLingui();
+  const rows: [MessageDescriptor, string | number][] = [
+    [msg({ message: 'Triangles', context: 'Mesh analysis row' }), analysis.triangle_count.toLocaleString()],
+    [msg({ message: 'Vertices', context: 'Mesh analysis row' }), analysis.vertex_count.toLocaleString()],
+    [msg({ message: 'Components', context: 'Mesh analysis row' }), analysis.component_count],
+    [msg({ message: 'Non-manifold edges', context: 'Mesh analysis row' }), analysis.non_manifold_edges],
+    [msg({ message: 'Non-manifold verts', context: 'Mesh analysis row' }), analysis.non_manifold_vertices],
+    [msg({ message: 'Boundary edges', context: 'Mesh analysis row' }), analysis.boundary_edges],
+    [msg({ message: 'Boundary loops', context: 'Mesh analysis row' }), analysis.boundary_loops],
+    [msg({ message: 'Inconsistent edges', context: 'Mesh analysis row' }), analysis.inconsistent_edges],
+    [msg({ message: 'Degenerate tris', context: 'Mesh analysis row' }), analysis.degenerate_triangles],
+    [msg({ message: 'Duplicate tris', context: 'Mesh analysis row' }), analysis.duplicate_triangles],
+    [msg({ message: 'Self-intersections', context: 'Mesh analysis row' }), analysis.self_intersections],
+    [msg({ message: 'Signed volume', context: 'Mesh analysis row' }), formatSignedVolume(analysis.signed_volume)],
+    [msg({ message: 'Watertight', context: 'Mesh analysis row' }), analysis.is_watertight ? _(msg`yes`) : _(msg`no`)],
   ];
 
   return (
@@ -643,8 +661,8 @@ function FlatAnalysisColumn({ title, analysis }: { title: string; analysis: Mesh
       </div>
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-[10.5px] font-mono" style={{ color: 'var(--text-strong)' }}>
         {rows.map(([label, val]) => (
-          <React.Fragment key={label}>
-            <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+          <React.Fragment key={label.id}>
+            <span style={{ color: 'var(--text-muted)' }}>{_(label)}</span>
             <span className="text-right tabular-nums">{val}</span>
           </React.Fragment>
         ))}

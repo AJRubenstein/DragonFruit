@@ -482,6 +482,59 @@ function formatProcessingElapsedLabel(translate: (descriptor: MessageDescriptor)
   return translate(msg`${minutes} min ${seconds} s`);
 }
 
+/** Module-scope helpers because they interpolate: React Compiler renames inline `msg` locals in production. */
+function formatApplyingToModelLabel(translate: (descriptor: MessageDescriptor) => string, current: number, total: number): string {
+  return translate(msg`Applying to model ${current} of ${total}`);
+}
+
+function formatCompressedModelSize(translate: (descriptor: MessageDescriptor) => string, name: string, megabytes: string): string {
+  return translate(msg({ message: `${name}: ${megabytes} MB compressed`, comment: 'One row of the per-model breakdown when a scene is too large to save.' }));
+}
+
+function formatElapsedLabel(translate: (descriptor: MessageDescriptor) => string, elapsed: string): string {
+  return translate(msg({ message: `Elapsed: ${elapsed}`, comment: 'Time a blocking task has been running, e.g. "Elapsed: 1 min 12 s".' }));
+}
+
+type Translate = (descriptor: MessageDescriptor) => string;
+
+function formatUploadToLabel(translate: Translate, printer: string): string {
+  return translate(msg({ message: `Upload to ${printer}`, comment: 'Send button label; {printer} is the target printer name, shortened when long.' }));
+}
+
+function formatLayerHeightMismatch(translate: Translate, layerHeight: string): string {
+  return translate(msg`Selected material on this printer does not match sliced layer height ${layerHeight} mm.`);
+}
+
+function formatUploadCompleteProcessing(translate: Translate, printer: string): string {
+  return translate(msg`Upload complete. ${printer} is processing file metadata…`);
+}
+
+function formatSendFailed(translate: Translate, reason: string): string {
+  return translate(msg`Send failed: ${reason}`);
+}
+
+function formatImportComplete(translate: Translate, plateId: string | number | null | undefined): string {
+  return plateId
+    ? translate(msg({ message: `Import complete • Plate #${plateId}. Click Print Now when ready.`, comment: 'Plate here is the file slot on the printer.' }))
+    : translate(msg`Import complete. Click Print Now when ready.`);
+}
+
+function formatUploadStillProcessing(translate: Translate, plateId: string | number | null | undefined): string {
+  return plateId
+    ? translate(msg({ message: `Upload complete • Plate #${plateId}. Device is still processing metadata after waiting.`, comment: 'Plate here is the file slot on the printer.' }))
+    : translate(msg`Upload complete. Device is still processing metadata after waiting.`);
+}
+
+function formatPrintStarted(translate: Translate, plateId: string | number | null | undefined): string {
+  return plateId
+    ? translate(msg({ message: `Print started successfully • Plate #${plateId}.`, comment: 'Plate here is the file slot on the printer.' }))
+    : translate(msg`Print started successfully.`);
+}
+
+function formatPrintStartFailed(translate: Translate, reason: string): string {
+  return translate(msg`Print start failed: ${reason}`);
+}
+
 function formatEstimatedPrintTimeLabel(translate: (descriptor: MessageDescriptor) => string, totalSec: number): string {
   const wholeSeconds = Math.max(0, Math.floor(totalSec));
   const hours = Math.floor(wholeSeconds / 3600);
@@ -1750,17 +1803,17 @@ export default function Home() {
   // Sub-line under the blocking-overlay title. During "Apply to All" it reports
   // sequence progress; otherwise it's the single-model default.
   const modifierApplyProcessingLabel = applyAllHolePunchProgress
-    ? `Applying to model ${Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total)} of ${applyAllHolePunchProgress.total}`
-    : 'Processing 1 model';
+    ? formatApplyingToModelLabel(_, Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total), applyAllHolePunchProgress.total)
+    : _(msg`Processing 1 model`);
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
   const modifierApplyOverlayContent = React.useMemo(() => {
     if (isApplyingHollowing && pendingHolePunchAutoApplyModelId) {
       return {
-        title: 'Applying Hollowing and Hole Punches...',
+        title: _(msg`Applying Hollowing and Hole Punches...`),
         detailLines: [
-          'Updating the hollowed mesh and preserving your hole punches afterward.',
-          'Please be patient while we rebuild the model.',
+          _(msg`Updating the hollowed mesh and preserving your hole punches afterward.`),
+          _(msg`Please be patient while we rebuild the model.`),
         ],
       };
     }
@@ -1769,42 +1822,42 @@ export default function Home() {
 
     if (isApplyingHollowing) {
       return {
-        title: 'Applying Hollowing...',
+        title: _(msg`Applying Hollowing...`),
         detailLines: [
-          'Rebuilding the model geometry with the latest hollowing settings.',
-          'Please wait a moment.',
+          _(msg`Rebuilding the model geometry with the latest hollowing settings.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     if (isApplyingHolePunch || pendingHolePunchAutoApplyModelId) {
       return {
-        title: 'Applying Hole Punches...',
+        title: _(msg`Applying Hole Punches...`),
         detailLines: [
-          'Cutting hole punches into the current model geometry.',
-          'Please wait a moment.',
+          _(msg`Cutting hole punches into the current model geometry.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     if (isApplyingBlockersHollowing) {
       return {
-        title: 'Applying Solid Areas...',
+        title: _(msg`Applying Solid Areas...`),
         detailLines: [
-          'Updating the hollowing preview with your solid areas.',
-          'Please wait a moment.',
+          _(msg`Updating the hollowing preview with your solid areas.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     return {
-      title: 'Applying Model Changes...',
+      title: _(msg`Applying Model Changes...`),
       detailLines: [
-        'Updating model geometry.',
-        'Please wait a moment.',
+        _(msg`Updating model geometry.`),
+        _(msg`Please wait a moment.`),
       ],
     };
-  }, [finalizingOverlayContent, isApplyingBlockersHollowing, isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
+  }, [_, finalizingOverlayContent, isApplyingBlockersHollowing, isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
 
   React.useEffect(() => {
     if (!showModifierApplyBlockingOverlay) {
@@ -2356,6 +2409,7 @@ export default function Home() {
 
     scene.deleteSupportsForModels(
       [pending.modelId],
+      // i18n-ignore: undo-history description, only shown in the history debug modal
       `Delete Supports Before ${pending.operationLabel} ${pending.modelName}`,
     );
 
@@ -4277,8 +4331,9 @@ export default function Home() {
 
     const compositeLocalMaterialName = resolveCompositeMaterialLabel(activeMaterialProfile);
 
-    return compositeLocalMaterialName ?? activeMaterialProfile?.name ?? 'No resin selected';
+    return compositeLocalMaterialName ?? activeMaterialProfile?.name ?? _(msg`No resin selected`);
   }, [
+    _,
     activeMaterialProfile,
     activeNetworkUiAdapter,
     activePrinterProfile?.networkConnection?.connected,
@@ -4287,8 +4342,8 @@ export default function Home() {
     shouldShowOfflineRemoteMaterialName,
   ]);
   const sendToPrinterButtonLabel = sendToPrinterTargetName
-    ? `Upload to ${sendToPrinterTargetName.length > 26 ? `${sendToPrinterTargetName.slice(0, 24)}…` : sendToPrinterTargetName}`
-    : 'Send to Printer';
+    ? formatUploadToLabel(_, sendToPrinterTargetName.length > 26 ? `${sendToPrinterTargetName.slice(0, 24)}…` : sendToPrinterTargetName)
+    : _(msg`Send to Printer`);
   const canSendToPrinter = Boolean(
     printingArtifact
     && activeNetworkUiAdapter
@@ -4374,7 +4429,7 @@ export default function Home() {
     }
 
     if (!activeNetworkUiAdapter || reachablePrintableConnectedPrinterFleet.length === 0) {
-      setPrintingSendStatusText('No online printer is available for upload.');
+      setPrintingSendStatusText(_(msg`No online printer is available for upload.`));
       return false;
     }
 
@@ -4398,7 +4453,7 @@ export default function Home() {
           : reachablePrintableConnectedPrinterFleet[0]
       ) ?? null;
       if (!selectedTarget) {
-        setPrintingSendStatusText('No online printer is available for upload.');
+        setPrintingSendStatusText(_(msg`No online printer is available for upload.`));
         return false;
       }
       preSliceUploadSelectionRef.current = {
@@ -4423,6 +4478,7 @@ export default function Home() {
 
     return true;
   }, [
+    _,
     activeNetworkUiAdapter,
     reachablePrintableConnectedPrinterFleet,
     printerReachabilityByDeviceId,
@@ -4437,15 +4493,15 @@ export default function Home() {
     }
 
     switch (printingUploadDialogStage) {
-      case 'uploading': return 'Uploading to printer';
-      case 'processing': return 'Processing on device';
-      case 'ready': return 'Ready to print';
-      case 'starting': return 'Starting print';
-      case 'started': return 'Print started';
-      case 'failed': return 'Upload failed';
-      default: return 'Processing';
+      case 'uploading': return _(msg`Uploading to printer`);
+      case 'processing': return _(msg`Processing on device`);
+      case 'ready': return _(msg`Ready to print`);
+      case 'starting': return _(msg`Starting print`);
+      case 'started': return _(msg`Print started`);
+      case 'failed': return _(msg`Upload failed`);
+      default: return _(msg`Processing`);
     }
-  }, [printingSendStageText, printingUploadDialogStage]);
+  }, [_, printingSendStageText, printingUploadDialogStage]);
 
   const printingDialogIsIndeterminate = printingUploadDialogStage === 'processing';
   const printingDialogProgressPercent = Math.max(0, Math.min(100, printingUploadDisplayProgress * 100));
@@ -4932,15 +4988,15 @@ export default function Home() {
           setSceneSaveError(
             error instanceof VoxlSizeLimitError
               ? {
-                  title: 'Scene is too large to save',
+                  title: _(msg`Scene is too large to save`),
                   message: error.userMessage,
                   detail: error.perModelBreakdown
                     .slice(0, 5)
-                    .map((row) => `${row.name}: ${(row.compressedBytes / (1024 * 1024)).toFixed(0)} MB compressed`)
+                    .map((row) => formatCompressedModelSize(_, row.name, (row.compressedBytes / (1024 * 1024)).toFixed(0)))
                     .join('\n'),
                 }
               : {
-                  title: 'Could not save the scene',
+                  title: _(msg`Could not save the scene`),
                   message: error instanceof Error ? error.message : String(error),
                   detail: null,
                 },
@@ -4973,7 +5029,7 @@ export default function Home() {
     }
 
     queueKickoff();
-  }, [performTopBarSaveScene]);
+  }, [_, performTopBarSaveScene]);
 
   const resolveSceneSaveNativePath = React.useCallback(async (): Promise<{
     cancelled: boolean;
@@ -5400,15 +5456,15 @@ export default function Home() {
       ? (selectedMaterialIdOverride ?? targetDevice.selectedMaterialId ?? '').trim()
       : ((selectedMaterialIdOverride ?? targetDevice.selectedMaterialId ?? '').trim() || '__local_profile__');
     if (!host) {
-      setPrintingSendStatusText('No printer IP address available for send operation.');
+      setPrintingSendStatusText(_(msg`No printer IP address available for send operation.`));
       return;
     }
     if (requiresRemoteMaterialSelection && !selectedMaterialId) {
-      setPrintingSendStatusText('Select a matching material profile before upload.');
+      setPrintingSendStatusText(_(msg`Select a matching material profile before upload.`));
       return;
     }
     if (requiresRemoteMaterialSelection && !selectedMaterialIdOverride && !isLayerHeightMatch(targetDevice.selectedMaterialLayerHeightMm ?? null)) {
-      setPrintingSendStatusText(`Selected material on this printer does not match sliced layer height ${slicedLayerHeightMm.toFixed(3)} mm.`);
+      setPrintingSendStatusText(formatLayerHeightMismatch(_, slicedLayerHeightMm.toFixed(3)));
       return;
     }
 
@@ -5442,8 +5498,8 @@ export default function Home() {
     setPrintingSendBusy(true);
     setPrintingSendProgress(0.01);
     setPrintingUploadDisplayProgress(0.01);
-    setPrintingSendStageText('Uploading Print Job…');
-    setPrintingSendStatusText('Uploading Print Job to Printer…');
+    setPrintingSendStageText(_(msg`Uploading Print Job…`));
+    setPrintingSendStatusText(_(msg`Uploading Print Job to Printer…`));
     setPrintingUploadTelemetry(null);
     setPrintingUploadDialogStage('uploading');
     setPrintingUploadDialogOpen(true);
@@ -5509,8 +5565,8 @@ export default function Home() {
               printingUploadProcessingHandoffTimeoutRef.current = window.setTimeout(() => {
                 printingUploadProcessingHandoffTimeoutRef.current = null;
                 setPrintingUploadDialogStage('processing');
-                setPrintingSendStageText('Processing on device…');
-                setPrintingSendStatusText(`Upload complete. ${activeNetworkUiAdapter.displayName} is processing file metadata…`);
+                setPrintingSendStageText(_(msg`Processing on device…`));
+                setPrintingSendStatusText(formatUploadCompleteProcessing(_, activeNetworkUiAdapter.displayName));
                 setPrintingUploadTelemetry(null);
                 setPrintingDeviceProcessingStartedAtMs(Date.now());
               }, 220);
@@ -5519,8 +5575,8 @@ export default function Home() {
                 window.clearTimeout(printingUploadProcessingHandoffTimeoutRef.current);
                 printingUploadProcessingHandoffTimeoutRef.current = null;
               }
-              setPrintingSendStatusText(`Send failed: ${update.error || update.message}`);
-              setPrintingSendStageText('Upload failed');
+              setPrintingSendStatusText(formatSendFailed(_, update.error || update.message));
+              setPrintingSendStageText(_(msg`Upload failed`));
               setPrintingUploadDialogStage('failed');
               setPrintingUploadTelemetry(null);
               setPrintingSendProgress(0);
@@ -5604,37 +5660,33 @@ export default function Home() {
       if (metadataReady) {
         setPrintingSendProgress(1);
         setPrintingUploadDisplayProgress(1);
-        setPrintingSendStageText('Ready to print');
+        setPrintingSendStageText(_(msg`Ready to print`));
         setPrintingUploadDialogStage('ready');
         setPrintingDeviceProcessingStartedAtMs(null);
         setPrintingUploadTelemetry(null);
-        setPrintingSendStatusText(
-          `Import complete${resolvedPlateId ? ` • Plate #${resolvedPlateId}` : ''}. Click Print Now when ready.`,
-        );
+        setPrintingSendStatusText(formatImportComplete(_, resolvedPlateId));
       } else {
         setPrintingSendProgress(1);
         setPrintingUploadDisplayProgress(1);
-        setPrintingSendStageText('Device still processing');
+        setPrintingSendStageText(_(msg`Device still processing`));
         setPrintingUploadDialogStage('failed');
         setPrintingDeviceProcessingStartedAtMs(null);
         setPrintingUploadTelemetry(null);
-        setPrintingSendStatusText(
-          `Upload complete${resolvedPlateId ? ` • Plate #${resolvedPlateId}` : ''}. Device is still processing metadata after waiting.`,
-        );
+        setPrintingSendStatusText(formatUploadStillProcessing(_, resolvedPlateId));
       }
     } catch (error) {
       if (printingUploadProcessingHandoffTimeoutRef.current !== null) {
         window.clearTimeout(printingUploadProcessingHandoffTimeoutRef.current);
         printingUploadProcessingHandoffTimeoutRef.current = null;
       }
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = error instanceof Error ? error.message : _(msg`Unknown error`);
       const canceled = printingSendCancelRequestedRef.current || /cancel|abort/i.test(message);
       if (canceled) {
-        setPrintingSendStatusText('Upload canceled. You can retry when ready.');
-        setPrintingSendStageText('Upload canceled');
+        setPrintingSendStatusText(_(msg`Upload canceled. You can retry when ready.`));
+        setPrintingSendStageText(_(msg`Upload canceled`));
       } else {
-        setPrintingSendStatusText(`Send failed: ${message}`);
-        setPrintingSendStageText('Upload failed');
+        setPrintingSendStatusText(formatSendFailed(_, message));
+        setPrintingSendStageText(_(msg`Upload failed`));
       }
       setPrintingUploadDialogStage('failed');
       setPrintingDeviceProcessingStartedAtMs(null);
@@ -5646,6 +5698,7 @@ export default function Home() {
       printingSendCancelRequestedRef.current = false;
     }
   }, [
+    _,
     activeNetworkUiAdapter,
     activePrinterProfile,
     isLayerHeightMatch,
@@ -5660,13 +5713,13 @@ export default function Home() {
     if (!printingArtifact || !activePrinterProfile) return;
     if (!activeNetworkUiAdapter) return;
     if (printableConnectedPrinterFleet.length === 0) {
-      setPrintingSendStatusText('No connected printer is available for upload.');
+      setPrintingSendStatusText(_(msg`No connected printer is available for upload.`));
       return;
     }
 
     const selectedTarget = printingTargetDevice ?? printableConnectedPrinterFleet[0] ?? null;
     if (!selectedTarget) {
-      setPrintingSendStatusText('No connected printer is available for upload.');
+      setPrintingSendStatusText(_(msg`No connected printer is available for upload.`));
       return;
     }
 
@@ -5678,6 +5731,7 @@ export default function Home() {
 
     await performSendToPrinter(selectedTarget);
   }, [
+    _,
     activeNetworkUiAdapter,
     activePrinterProfile,
     isLayerHeightMatch,
@@ -5692,8 +5746,8 @@ export default function Home() {
     if (!printingSendBusy) return;
 
     printingSendCancelRequestedRef.current = true;
-    setPrintingSendStageText('Canceling upload…');
-    setPrintingSendStatusText('Canceling upload…');
+    setPrintingSendStageText(_(msg`Canceling upload…`));
+    setPrintingSendStatusText(_(msg`Canceling upload…`));
 
     if (activeNetworkUiAdapter?.pluginId === 'athena') {
       void import('../../plugins/athena/network')
@@ -5706,7 +5760,7 @@ export default function Home() {
           // Ignore; cooperative cancellation checks still stop follow-up work.
         });
     }
-  }, [activeNetworkUiAdapter?.pluginId, printingSendBusy]);
+  }, [_, activeNetworkUiAdapter?.pluginId, printingSendBusy]);
 
   const handlePrintNow = React.useCallback(async () => {
     if (!activePrinterProfile || !printingTargetDevice) return;
@@ -5717,12 +5771,12 @@ export default function Home() {
     const host = (printingTargetDevice.ipAddress || activePrinterProfile.network?.ipAddress || '').trim();
     const port = printingTargetDevice.port || 80;
     if (!host) {
-      setPrintingSendStatusText('No printer IP address available for Print Now.');
+      setPrintingSendStatusText(_(msg`No printer IP address available for Print Now.`));
       return;
     }
 
     setPrintingPrintNowBusy(true);
-    setPrintingSendStageText('Starting print…');
+    setPrintingSendStageText(_(msg`Starting print…`));
     setPrintingUploadDialogStage('starting');
     setPrintingDeviceProcessingStartedAtMs(null);
 
@@ -5737,26 +5791,26 @@ export default function Home() {
 
       const payload = await readJsonObject(response);
       if (response.ok && payload?.ok === true) {
-        setPrintingSendStageText('Print started');
+        setPrintingSendStageText(_(msg`Print started`));
         setPrintingUploadDialogStage('started');
-        setPrintingSendStatusText(`Print started successfully${printingReadyPlateId ? ` • Plate #${printingReadyPlateId}` : ''}.`);
+        setPrintingSendStatusText(formatPrintStarted(_, printingReadyPlateId));
         setPrintingUploadDialogOpen(false);
         openPrintingMonitorForTargetDevice(printingTargetDevice.id);
       } else {
         const reason = typeof payload?.error === 'string' ? payload.error : `HTTP ${response.status}`;
-        setPrintingSendStageText('Start print failed');
+        setPrintingSendStageText(_(msg`Start print failed`));
         setPrintingUploadDialogStage('failed');
-        setPrintingSendStatusText(`Print start failed: ${reason}`);
+        setPrintingSendStatusText(formatPrintStartFailed(_, reason));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setPrintingSendStageText('Start print failed');
+      const message = error instanceof Error ? error.message : _(msg`Unknown error`);
+      setPrintingSendStageText(_(msg`Start print failed`));
       setPrintingUploadDialogStage('failed');
-      setPrintingSendStatusText(`Print start failed: ${message}`);
+      setPrintingSendStatusText(formatPrintStartFailed(_, message));
     } finally {
       setPrintingPrintNowBusy(false);
     }
-  }, [activePrinterProfile, openPrintingMonitorForTargetDevice, printingMonitoringAdapter.operations, printingMonitoringAdapter.pluginId, printingReadyPlateId, printingTargetDevice]);
+  }, [_, activePrinterProfile, openPrintingMonitorForTargetDevice, printingMonitoringAdapter.operations, printingMonitoringAdapter.pluginId, printingReadyPlateId, printingTargetDevice]);
 
 
 
@@ -6427,6 +6481,7 @@ export default function Home() {
               );
               applyJointSplitKnotRemaps(knotRemaps);
               updateSupportEntity(owner.typeId, updated);
+              // i18n-ignore: undo-history description, only shown in the history debug modal
               pushSupportEditHistory(`Create ${descriptor.singular} joint`, beforeSnapshot, captureSupportEditSnapshot());
             }
           }
@@ -6697,13 +6752,13 @@ export default function Home() {
 
   const formatDebugVec3 = React.useCallback((v: THREE.Vector3 | null | undefined) => {
     if (!v) return 'n/a';
-    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN');
+    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN'); // i18n-ignore: debug readout
     return `${f(v.x)}, ${f(v.y)}, ${f(v.z)}`;
   }, []);
 
   const formatDebugVec3Like = React.useCallback((v: { x: number; y: number; z: number } | null | undefined) => {
     if (!v) return 'n/a';
-    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN');
+    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN'); // i18n-ignore: debug readout
     return `${f(v.x)}, ${f(v.y)}, ${f(v.z)}`;
   }, []);
 
@@ -8326,34 +8381,37 @@ export default function Home() {
     const hasHoles = holeIds.length > 0;
     const hasHollowing = hollowIds.length > 0;
     if (unappliedModifierPromptPurpose === 'supports') {
-      const what = hasHoles && hasHollowing
-        ? 'hole punches and hollowing'
-        : (hasHoles ? 'hole punches' : 'hollowing');
-      const verb = hasHoles && !hasHollowing
-        ? 'Hole punches are'
-        : (hasHollowing && !hasHoles ? 'Hollowing is' : 'Holes and hollowing are');
+      // Whole sentences per case: spliced fragments cannot be reordered by a translation.
+      const subtitle = hasHoles && hasHollowing
+        ? _(msg`Some models have unapplied hole punches and hollowing`)
+        : (hasHoles ? _(msg`Some models have unapplied hole punches`) : _(msg`Some models have unapplied hollowing`));
+      const bakedLater = hasHoles && !hasHollowing
+        ? _(msg`Supports are generated against the mesh as it stands. Hole punches are only baked in later, so a support generated now can land inside a hole that does not exist yet.`)
+        : (hasHollowing && !hasHoles
+          ? _(msg`Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet.`)
+          : _(msg`Supports are generated against the mesh as it stands. Holes and hollowing are only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet.`));
       return {
-        title: 'Unapplied Changes',
-        subtitle: `Some models have unapplied ${what}`,
+        title: _(msg`Unapplied Changes`),
+        subtitle,
         paragraphs: [
-          `Supports are generated against the mesh as it stands. ${verb} only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet.`,
+          bakedLater,
           hasHoles
-            ? 'Apply the holes to every visible model, or open the Hollow tool to review and apply them per model.'
-            : 'Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh.',
+            ? _(msg`Apply the holes to every visible model, or open the Hollow tool to review and apply them per model.`)
+            : _(msg`Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh.`),
         ],
         showApplyAll: hasHoles,
       };
     }
     return {
-      title: 'Unapplied Holes',
-      subtitle: 'Some models have unapplied hole punches',
+      title: _(msg`Unapplied Holes`),
+      subtitle: _(msg`Some models have unapplied hole punches`),
       paragraphs: [
-        'One or more models have hole punches that haven\u2019t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output.',
-        'Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually.',
+        _(msg`One or more models have hole punches that haven’t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output.`),
+        _(msg`Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually.`),
       ],
       showApplyAll: true,
     };
-  }, [getVisibleModelIdsWithUnappliedModifiers, unappliedModifierPromptPurpose]);
+  }, [_, getVisibleModelIdsWithUnappliedModifiers, unappliedModifierPromptPurpose]);
 
   // Generate Supports: stop for unapplied holes / hollowing first, then run
   // against whatever the user chose.
@@ -11519,10 +11577,10 @@ export default function Home() {
 
       {islandsPoc.scanning && !autoSupportDrivingScan && (
         <BlockingOverlay
-          title="Analyzing Model Islands & Minima"
-          details={['Slicing and analysis in progress...']}
-          elapsed={<>Elapsed: {islandsPoc.elapsedLabel}</>}
-          footnote="Processing 1 model"
+          title={_(msg`Analyzing Model Islands & Minima`)}
+          details={[_(msg`Slicing and analysis in progress...`)]}
+          elapsed={formatElapsedLabel(_, islandsPoc.elapsedLabel)}
+          footnote={_(msg`Processing 1 model`)}
           zIndexClassName="z-[121]"
         >
           <ScanProgressBar progress={islandsPoc.scanProgress} />
@@ -11531,10 +11589,10 @@ export default function Home() {
 
       {autoSupportBusy && (
         <BlockingOverlay
-          title="Generating Supports"
-          details={[islandsPoc.scanning ? 'Scanning islands & minima…' : 'Placing and bracing supports…']}
-          elapsed={islandsPoc.scanning ? <>Elapsed: {islandsPoc.elapsedLabel}</> : <OrientElapsed />}
-          footnote="Processing 1 model"
+          title={_(msg`Generating Supports`)}
+          details={[islandsPoc.scanning ? _(msg`Scanning islands & minima…`) : _(msg`Placing and bracing supports…`)]}
+          elapsed={islandsPoc.scanning ? formatElapsedLabel(_, islandsPoc.elapsedLabel) : <OrientElapsed />}
+          footnote={_(msg`Processing 1 model`)}
           zIndexClassName="z-[122]"
         >
           <ScanProgressBar progress={islandsPoc.scanning ? islandsPoc.scanProgress : autoSupportProgress} />
@@ -11542,8 +11600,8 @@ export default function Home() {
       )}
       {orientationBusy && (
         <BlockingOverlay
-          title="Orienting Model"
-          details={['Sweeping orientations…']}
+          title={_(msg`Orienting Model`)}
+          details={[_(msg`Sweeping orientations…`)]}
           elapsed={<OrientElapsed />}
           progress={null}
           zIndexClassName="z-[123]"
@@ -11552,8 +11610,8 @@ export default function Home() {
 
       {isExporting && (
         <BlockingOverlay
-          title="Exporting…"
-          details={['Writing mesh geometry and support data to file…']}
+          title={_(msg`Exporting…`)}
+          details={[_(msg`Writing mesh geometry and support data to file…`)]}
           progress={null}
           zIndexClassName="z-[120]"
         />
@@ -11653,8 +11711,8 @@ export default function Home() {
           >
             <Gamepad2 className="h-4 w-4 flex-shrink-0" />
             <span className="flex-1 leading-snug">
-              New input device detected.<br />
-              <span style={{ fontWeight: 400, opacity: 0.8 }}>Go to Settings → 3D Mouse to configure or block it.</span>
+              {_(msg`New input device detected.`)}<br />
+              <span style={{ fontWeight: 400, opacity: 0.8 }}>{_(msg`Go to Settings → 3D Mouse to configure or block it.`)}</span>
             </span>
             <button
               type="button"
@@ -11662,7 +11720,7 @@ export default function Home() {
               className="flex-shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold"
               style={{ background: 'color-mix(in srgb, #f59e0b, transparent 80%)', color: 'var(--text-strong)' }}
             >
-              Dismiss
+              {_(msg`Dismiss`)}
             </button>
           </Toast>
         </ToastViewport>
@@ -11672,8 +11730,8 @@ export default function Home() {
         <ToastViewport zIndex={125} offset="1.25rem">
           <Toast tone="info" visible={true} className="flex items-center gap-2">
             {stage === 'awaitingSproutTip'
-              ? "Leaf Fanning Active: Click model to sprout leaf"
-              : "Leaf Fanning: Click a support shaft to lock anchor knot"}
+              ? _(msg`Leaf Fanning Active: Click model to sprout leaf`)
+              : _(msg`Leaf Fanning: Click a support shaft to lock anchor knot`)}
           </Toast>
         </ToastViewport>
       )}

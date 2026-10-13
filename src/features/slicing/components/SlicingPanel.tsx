@@ -1899,6 +1899,7 @@ export function SlicingPanel({
 
     setIsSlicingZip(true);
     setCurrentPhase('Preparing');
+    // i18n-ignore: sliceStatus is never rendered
     setSliceStatus('Preparing');
     setProgressDone(0);
     setProgressTotal(1);
@@ -2104,6 +2105,7 @@ export function SlicingPanel({
       });
 
       setCurrentPhase('Encoding');
+      // i18n-ignore: sliceStatus is never rendered
       setSliceStatus('Encoding');
 
       const runEndMs = performance.now();
@@ -2154,6 +2156,7 @@ export function SlicingPanel({
       }));
 
       setCurrentPhase('Ready');
+      // i18n-ignore: sliceStatus is never rendered
       setSliceStatus(`Generated ${result.outputFormat} via native Rust backend.`);
       // A batch reaches "finished" once, at the end: one plate of several is not the run's end,
       // and the modal would otherwise announce every plate but the last.
@@ -2188,6 +2191,7 @@ export function SlicingPanel({
     } catch (error) {
       if ((error as { name?: string } | null)?.name === 'AbortError') {
         setCurrentPhase('Cancelled');
+        // i18n-ignore: sliceStatus is never rendered
         setSliceStatus('Cancelled');
         setSlicingModalStage('cancelled');
       } else {
@@ -2212,6 +2216,7 @@ export function SlicingPanel({
       // is also when the app switches to the printing workspace.
       if (slicingSucceeded && !batch) {
         setCurrentPhase('Opening');
+        // i18n-ignore: sliceStatus is never rendered
         setSliceStatus('Opening');
         onSlicingFinished?.({ totalLayers: Math.max(completedTotalLayers, completedTotalLayersFromResult, 1) });
       }
@@ -2291,6 +2296,7 @@ export function SlicingPanel({
   const handleCancelSlicing = useCallback(() => {
     if (!isSlicingZip) return;
     setCurrentPhase('Cancelling');
+    // i18n-ignore: sliceStatus is never rendered
     setSliceStatus('Cancelling');
     slicingAbortControllerRef.current?.abort();
   }, [isSlicingZip]);
@@ -2470,7 +2476,7 @@ export function SlicingPanel({
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}><Trans>Engine</Trans></div>
                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {slicerEngineVersion ? `v${slicerEngineVersion}` : 'Slicer V3'}
+                  {slicerEngineVersion ? `v${slicerEngineVersion}` : 'Slicer V3' /* i18n-ignore: product name */}
                 </div>
               </div>
             </div>
@@ -2895,7 +2901,7 @@ export function SlicingPanel({
                 onClick={() => setIsMaterialAaEditorOpen(false)}
                 className="!h-8 !px-3 !py-0 text-xs rounded-full"
               >
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button
                 variant="secondary"
@@ -2985,7 +2991,7 @@ export function SlicingPanel({
                   onClick={() => setIsSessionAaOverrideOpen(false)}
                   className="!h-8 !px-3 !py-0 text-xs rounded-full"
                 >
-                  Cancel
+                  <Trans>Cancel</Trans>
                 </Button>
                 <Button
                   variant="secondary"
@@ -3172,13 +3178,13 @@ export function SlicingPanel({
 
       <StructuredDialogModal
         open={showOutOfBoundsWarningModal}
-        ariaLabel="Out-of-bounds models will be excluded"
+        ariaLabel={_(msg`Out-of-bounds models will be excluded`)}
         title={<Trans>Models Outside Build Volume</Trans>}
         subtitle={<Trans>Only printable models will be sliced</Trans>}
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
         zIndexClassName="z-[130]"
-        closeAriaLabel="Close modal"
+        closeAriaLabel={_(msg`Close modal`)}
         onClose={() => settleOutOfBoundsSliceConfirmation(false)}
         onBackdropClick={() => settleOutOfBoundsSliceConfirmation(false)}
         actions={(
@@ -3212,12 +3218,12 @@ export function SlicingPanel({
 
       <StructuredDialogModal
         open={overwriteCollisionCount > 0}
-        ariaLabel="Files will be overwritten"
+        ariaLabel={_(msg`Files will be overwritten`)}
         title={<Trans>Overwrite Existing Files?</Trans>}
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
         zIndexClassName="z-[130]"
-        closeAriaLabel="Close modal"
+        closeAriaLabel={_(msg`Close modal`)}
         onClose={() => settleOverwriteConfirmation(false)}
         onBackdropClick={() => settleOverwriteConfirmation(false)}
         actions={(

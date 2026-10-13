@@ -2,6 +2,9 @@
 
 import React from 'react';
 import { CheckCircle2, ExternalLink, FolderOpen } from 'lucide-react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { Button } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 
@@ -21,6 +24,7 @@ export function SliceCompletedModal({
   slicingTimeMs,
   onOpenInUvTools,
 }: SliceCompletedModalProps) {
+  const { _ } = useLingui();
   const [openDirectoryError, setOpenDirectoryError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -36,8 +40,8 @@ export function SliceCompletedModal({
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('reveal_in_file_manager', { path: filePath });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? 'Failed to open directory.');
-      setOpenDirectoryError(message || 'Failed to open directory.');
+      const message = error instanceof Error ? error.message : String(error ?? _(msg`Failed to open directory.`));
+      setOpenDirectoryError(message || _(msg`Failed to open directory.`));
       console.error('Failed to open directory:', error);
     }
   };
@@ -51,13 +55,13 @@ export function SliceCompletedModal({
   return (
     <StructuredDialogModal
       open={isOpen}
-      ariaLabel="Slicing completed"
-      title="Slicing Finished"
+      ariaLabel={_(msg`Slicing completed`)}
+      title={_(msg`Slicing Finished`)}
       icon={<CheckCircle2 className="h-4 w-4" />}
       iconTone="accent"
       zIndexClassName="z-[130]"
       maxWidthClassName="max-w-md"
-      closeAriaLabel="Close slicing finished modal"
+      closeAriaLabel={_(msg`Close slicing finished modal`)}
       onClose={onClose}
       onBackdropClick={onClose}
       actions={onOpenInUvTools ? (
@@ -69,7 +73,7 @@ export function SliceCompletedModal({
             className="inline-flex items-center justify-center gap-1.5 disabled:opacity-45"
           >
             <ExternalLink className="w-4 h-4" />
-            Open in UVTools
+            <Trans>Open in UVTools</Trans>
           </Button>
           <Button
             variant="tinted-accent"
@@ -78,13 +82,13 @@ export function SliceCompletedModal({
             className="inline-flex items-center justify-center gap-1.5 disabled:opacity-45"
           >
             <FolderOpen className="w-4 h-4" />
-            Open Directory
+            <Trans>Open Directory</Trans>
           </Button>
         </>
       ) : (
         <>
           <Button variant="secondary" onClick={onClose}>
-            Close
+            <Trans>Close</Trans>
           </Button>
           <Button
             variant="tinted-accent"
@@ -93,7 +97,7 @@ export function SliceCompletedModal({
             className="inline-flex items-center justify-center gap-1.5 disabled:opacity-45"
           >
             <FolderOpen className="w-4 h-4" />
-            Open Directory
+            <Trans>Open Directory</Trans>
           </Button>
         </>
       )}
@@ -103,7 +107,7 @@ export function SliceCompletedModal({
         style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
       >
         <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-          File Location
+          <Trans>File Location</Trans>
         </div>
         <div
           className="text-sm font-mono break-all"
@@ -117,7 +121,7 @@ export function SliceCompletedModal({
       {slicingTimeMs !== null && (
         <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
           <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-            Slicing Time
+            <Trans>Slicing Time</Trans>
           </div>
           <div className="text-sm font-semibold mt-1" style={{ color: 'var(--text-strong)' }}>
             {formatTime(slicingTimeMs)}

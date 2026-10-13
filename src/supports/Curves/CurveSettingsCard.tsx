@@ -155,7 +155,7 @@ export function CurveSettingsCard({ embedded = false }: { embedded?: boolean }) 
         }
     };
 
-    const selectedLabel = category === 'segment' ? 'Segment curve' : 'Joint curve';
+    const selectedLabel = category === 'segment' ? _(msg`Segment curve`) : _(msg`Joint curve`);
     const selectedDisplay = selectedSegmentId || selectedId;
 
     const content = (

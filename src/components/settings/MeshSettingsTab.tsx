@@ -2,6 +2,9 @@
 
 import React from 'react';
 import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
+import { Trans } from '@lingui/react/macro';
 import { MATCAP_OPTIONS, MESH_SHADER_OPTIONS, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
 import { HexColorPicker } from 'react-colorful';
 import { MeshShaderPreviewSlot } from '@/components/settings/meshSettings/MeshShaderPreviewSlot';
@@ -61,6 +64,18 @@ type MeshSettingsTabProps = {
   defaultMeshSelectionColor: string;
   defaultMeshHoverColor: string;
 };
+type Translate = (descriptor: MessageDescriptor) => string;
+
+// Interpolating messages stay at module scope: React Compiler renames the locals they
+// read inside a component, which desyncs the ids from the compiled catalog.
+function formatHeatmapColorLabel(translate: Translate, index: number): string {
+  return translate(msg({ message: `Heatmap ${index}`, comment: 'Short label of one overhang heatmap color stop, numbered from 1.' }));
+}
+
+function formatHeatmapColorTitle(translate: Translate, index: number): string {
+  return translate(msg`Heatmap Color ${index}`);
+}
+
 export function MeshSettingsTab({
   configuredShaderType,
   onConfiguredShaderTypeChange,
@@ -182,10 +197,10 @@ export function MeshSettingsTab({
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
-              Shader &amp; Preview
+              <Trans>Shader &amp; Preview</Trans>
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Pick the shader type to configure here, and tune the mesh color. The camera dropdown chooses what the viewport renders.
+              <Trans>Pick the shader type to configure here, and tune the mesh color. The camera dropdown chooses what the viewport renders.</Trans>
             </p>
           </div>
         </div>
@@ -193,7 +208,7 @@ export function MeshSettingsTab({
         <div className="grid grid-cols-2 gap-2 mb-2">
           <div className="rounded-md border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
             <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
-              Shader Type
+              <Trans>Shader Type</Trans>
             </label>
             <Select
               value={configuredShaderType}
@@ -208,16 +223,16 @@ export function MeshSettingsTab({
 
           <div className="rounded-md border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
             <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
-              Preview Model
+              <Trans>Preview Model</Trans>
             </label>
             <Select
               value={previewModel}
               onChange={(e) => setPreviewModel(e.target.value)}
               className="w-full !h-8"
             >
-              <option value="cube">Cube</option>
-              <option value="sphere">Sphere</option>
-              <option value="knot">Knot</option>
+              <option value="cube">{_(msg`Cube`)}</option>
+              <option value="sphere">{_(msg`Sphere`)}</option>
+              <option value="knot">{_(msg({ message: 'Knot', comment: 'A torus-knot preview shape.' }))}</option>
               {stlPreviewModels.map((m) => (
                 <option key={m.file} value={`stl:/mesh-preview-models/${m.file}`}>{m.label}</option>
               ))}
@@ -254,7 +269,7 @@ export function MeshSettingsTab({
           >
             <div className="flex items-center gap-1.5">
               <label className="text-xs font-medium whitespace-nowrap shrink-0" style={{ color: 'var(--text-muted)' }}>
-                {activeColorIndex === 0 ? 'Mesh Color' : `Heatmap ${activeColorIndex}`}
+                {activeColorIndex === 0 ? _(msg`Mesh Color`) : formatHeatmapColorLabel(_, activeColorIndex)}
               </label>
               <Input
                 type="text"
@@ -284,7 +299,7 @@ export function MeshSettingsTab({
                     borderColor: activeColorIndex === 0 ? 'var(--text-strong)' : 'var(--border-strong)',
                     boxShadow: activeColorIndex === 0 ? '0 0 0 1px var(--accent)' : 'none',
                   }}
-                  title="Mesh Color"
+                  title={_(msg`Mesh Color`)}
                 />
                 <div className="w-px h-4 mx-0.5 shrink-0" style={{ background: 'var(--border-subtle)' }} />
                 {heatmapColors.map((color, idx) => (
@@ -298,7 +313,7 @@ export function MeshSettingsTab({
                       borderColor: activeColorIndex === idx + 1 ? 'var(--text-strong)' : 'var(--border-strong)',
                       boxShadow: activeColorIndex === idx + 1 ? '0 0 0 1px var(--accent)' : 'none',
                     }}
-                    title={`Heatmap Color ${idx + 1}`}
+                    title={formatHeatmapColorTitle(_, idx + 1)}
                   />
                 ))}
               </div>
@@ -312,7 +327,7 @@ export function MeshSettingsTab({
               <div className="h-px flex-1" style={{ background: 'var(--border-subtle)' }} />
               <span className="flex items-center gap-1.5 text-xs font-semibold shrink-0" style={{ color: 'var(--text-muted)' }}>
                 <SlidersHorizontal className="h-3 w-3" />
-                Rendering Options
+                <Trans>Rendering Options</Trans>
               </span>
               <div className="h-px flex-1" style={{ background: 'var(--border-subtle)' }} />
             </div>
@@ -321,7 +336,7 @@ export function MeshSettingsTab({
             {configuredShaderType === 'matcap' && (
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                  Matcap Style
+                  <Trans>Matcap Style</Trans>
                 </label>
                 <Select
                   value={matcapVariant}
@@ -339,16 +354,16 @@ export function MeshSettingsTab({
               <SettingRow
                 bordered
                 className="col-span-2"
-                label="Vertex Colors"
-                description="Sample per-vertex color data when available."
+                label={_(msg`Vertex Colors`)}
+                description={_(msg`Sample per-vertex color data when available.`)}
               >
                 <SegmentedControl
-                  label="Vertex Colors"
+                  label={_(msg`Vertex Colors`)}
                   value={flatUseVertexColors ? 'on' : 'off'}
                   onChange={(next) => onFlatUseVertexColorsChange(next === 'on')}
                   options={[
-                    { value: 'off', label: 'OFF' },
-                    { value: 'on', label: 'ON' },
+                    { value: 'off', label: _(msg`OFF`) },
+                    { value: 'on', label: _(msg`ON`) },
                   ]}
                 />
               </SettingRow>
@@ -357,7 +372,7 @@ export function MeshSettingsTab({
             {showRoughness && (
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Roughness</span>
+                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Roughness</Trans></span>
                   <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{materialRoughness.toFixed(2)}</span>
                 </div>
                 <input
@@ -373,7 +388,7 @@ export function MeshSettingsTab({
             {showLighting && (
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Lightness</span>
+                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Lightness</Trans></span>
                   <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{lightness.toFixed(2)}</span>
                 </div>
                 <input
@@ -388,7 +403,7 @@ export function MeshSettingsTab({
             {showLighting && (
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Contrast</span>
+                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Contrast</Trans></span>
                   <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{contrast.toFixed(2)}</span>
                 </div>
                 <input
@@ -403,7 +418,7 @@ export function MeshSettingsTab({
             {showBakedAo && (
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Ambient Occlusion</span>
+                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Ambient Occlusion</Trans></span>
                   <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{bakedAoIntensity.toFixed(2)}</span>
                 </div>
                 <input
@@ -418,7 +433,7 @@ export function MeshSettingsTab({
             {configuredShaderType === 'xray' && (
               <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}>X-Ray Opacity</span>
+                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>X-Ray Opacity</Trans></span>
                   <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{xrayOpacity.toFixed(2)}</span>
                 </div>
                 <input
@@ -434,7 +449,7 @@ export function MeshSettingsTab({
               <>
                 <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                   <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Min Overhang</span>
+                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Min Overhang</Trans></span>
                     <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{heatmapMinAngle}°</span>
                   </div>
                   <input
@@ -446,7 +461,7 @@ export function MeshSettingsTab({
                 </div>
                 <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                   <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}>Max Overhang</span>
+                    <span className="font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Max Overhang</Trans></span>
                     <span className="font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{heatmapMaxAngle}°</span>
                   </div>
                   <input
@@ -477,11 +492,13 @@ export function MeshSettingsTab({
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
-              Selection &amp; Hover
+              <Trans>Selection &amp; Hover</Trans>
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              How selected and hovered models are emphasized throughout the app. These two colors come from the
-              current theme — editing them here changes the theme, exactly like UI &amp; Theme › Mesh Highlights.
+              <Trans>
+                How selected and hovered models are emphasized throughout the app. These two colors come from the
+                current theme — editing them here changes the theme, exactly like UI &amp; Theme › Mesh Highlights.
+              </Trans>
             </p>
           </div>
         </div>
@@ -490,13 +507,13 @@ export function MeshSettingsTab({
           <div className="min-w-0 space-y-2">
             <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
               <div className="flex items-center justify-between mb-2">
-                <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Colors</div>
+                <div className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}><Trans>Colors</Trans></div>
                 <Button
                   variant="secondary"
                   size="auto"
                   onClick={handleResetColors}
-                  title="Reset colors to default"
-                  aria-label="Reset selection and hover colors to default"
+                  title={_(msg`Reset colors to default`)}
+                  aria-label={_(msg`Reset selection and hover colors to default`)}
                   className="!h-6 !w-6 !p-0 inline-flex shrink-0 items-center justify-center rounded-md"
                 >
                   <RotateCcw className="h-3 w-3" />
@@ -504,7 +521,7 @@ export function MeshSettingsTab({
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Selection Color</div>
+                  <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Selection Color</Trans></div>
                   <div className="flex items-center gap-2">
                     <ColorSwatchInput
                       value={meshSelectionColor}
@@ -521,7 +538,7 @@ export function MeshSettingsTab({
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Hover Color</div>
+                  <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}><Trans>Hover Color</Trans></div>
                   <div className="flex items-center gap-2">
                     <ColorSwatchInput
                       value={meshHoverColor}
@@ -541,11 +558,11 @@ export function MeshSettingsTab({
             </div>
 
             <div className="rounded-md border px-2.5 py-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
-              <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-strong)' }}>Tint Intensity</div>
+              <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-strong)' }}><Trans>Tint Intensity</Trans></div>
               <div className="space-y-2">
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span style={{ color: 'var(--text-muted)' }}>Hover</span>
+                    <span style={{ color: 'var(--text-muted)' }}><Trans context="Tint intensity">Hover</Trans></span>
                     <span className="tabular-nums" style={{ color: 'var(--text-strong)' }}>{hoverTintStrength.toFixed(2)}</span>
                   </div>
                   <input
@@ -557,7 +574,7 @@ export function MeshSettingsTab({
                 </div>
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span style={{ color: 'var(--text-muted)' }}>Selected</span>
+                    <span style={{ color: 'var(--text-muted)' }}><Trans context="Tint intensity">Selected</Trans></span>
                     <span className="tabular-nums" style={{ color: 'var(--text-strong)' }}>{selectedTintStrength.toFixed(2)}</span>
                   </div>
                   <input
@@ -583,7 +600,7 @@ export function MeshSettingsTab({
               }}
             >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>Selection Preview</span>
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}><Trans>Selection Preview</Trans></span>
               <span
                 className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors"
                 style={
@@ -607,10 +624,10 @@ export function MeshSettingsTab({
                 }
               >
                 {isPreviewSelected
-                  ? 'selected'
+                  ? _(msg({ message: 'selected', context: 'Preview state' }))
                   : isPreviewHovered
-                    ? 'hovered'
-                    : 'idle'}
+                    ? _(msg({ message: 'hovered', context: 'Preview state' }))
+                    : _(msg({ message: 'idle', context: 'Preview state' }))}
               </span>
             </div>
             <div className="flex-1 min-h-0">

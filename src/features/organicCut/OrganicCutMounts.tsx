@@ -9,6 +9,8 @@ import { OrganicCutTool } from './OrganicCutTool';
 import { OrganicCutTenonGizmo } from './OrganicCutTenonGizmo';
 import type { OrganicCutSession } from './useOrganicCutSession';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 /**
  * What every cut mount needs from the scene, and all it needs: which models are
@@ -124,6 +126,7 @@ export function OrganicCutOverlay({
   session,
   toolActive,
 }: SessionProp & { toolActive: boolean }) {
+  const { _ } = useLingui();
   const { contextMenu } = session;
   return (
     <>
@@ -131,7 +134,7 @@ export function OrganicCutOverlay({
         position={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
         onAction={session.onContextMenuAction}
         onClose={session.closeContextMenu}
-        title={contextMenu?.kind === 'delete' ? 'Waypoint' : 'Cut Seam'}
+        title={contextMenu?.kind === 'delete' ? _(msg`Waypoint`) : _(msg`Cut Seam`)}
         items={
           contextMenu?.kind === 'delete'
             ? [ORGANIC_CUT_DELETE_WAYPOINT_ITEM]
