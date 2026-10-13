@@ -372,9 +372,8 @@
 ### [cleanup] Unreachable files, in whole subtrees — L · medium risk
 - Where: `npx knip --no-progress --include files`. `knip.json` already declares
   the entry points knip cannot see, so what it lists is a candidate, not noise.
-- What: chiefly whole subtrees — `src/components/models/`,
-  `src/supports/interaction/shared/placement/preview/` — plus strays such as
-  `BackupsSettingsTab.tsx` (replaced by `LocalBackupsSettingsTab`).
+- What: chiefly whole subtrees such as `src/components/models/`, plus strays
+  such as `BackupsSettingsTab.tsx` (replaced by `LocalBackupsSettingsTab`).
 - Why: directories that read as live architecture and compile to nothing.
 - Careful: knip lists files, not directories — count what is still live in a
   directory before calling it dead. A manual script that shows up gets
