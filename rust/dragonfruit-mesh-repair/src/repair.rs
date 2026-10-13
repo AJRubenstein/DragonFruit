@@ -376,18 +376,29 @@ pub fn repair_with_progress(
     // Without a boolean union we cannot tell the two apart any other way, and the reference
     // has one. Where it is not sure, this stage leaves the geometry alone.
     let volume = before_inner.signed_volume().abs();
-    let moved = (mesh.signed_volume() - before_inner.signed_volume()).abs() > volume * 1e-6;
+    let delta = (mesh.signed_volume() - before_inner.signed_volume()).abs();
+    let moved = delta > volume * 1e-6;
     let refused = removed > 0 && moved;
+    let openness = crate::evaluate::evaluate(&before_inner).bad_edges;
     if refused {
         mesh = before_inner;
     }
+    let removed_report = removed;
     let removed = if refused { 0 } else { removed };
+    // The volume proxy is unsound on a mesh that is not watertight: an open component has no
+    // meaningful signed volume, so `moved` is noise there and the refusal carries no information.
+    // The count and the delta are reported either way so a refusal can be judged rather than
+    // taken on faith.
     stage!(
         "remove_inner_faces",
         removed,
         Some(if refused {
-            "refused: the faces inside enclose a cavity, and removing them would fill it"
-                .to_string()
+            format!(
+                "refused: {removed_report} face(s) inside, and removing them moves the volume by {:.4}% of {:.1}; input has {openness} boundary edge(s), so that volume is {}",
+                if volume > 0.0 { delta / volume * 100.0 } else { 0.0 },
+                volume,
+                if openness > 0 { "not a real volume" } else { "well defined" }
+            )
         } else {
             format!("{removed} face(s) inside another component")
         }),
@@ -1098,6 +1109,24 @@ fn compute_interior_face_flags_against_other_components(
 /// (thousands of overlapping shells from 3D scanning, etc.).
 ///
 /// Returns `(removed_triangles, removed_component_count)`.
+/// Whether one component's own edges are each used by exactly two of its faces. A component with
+/// an edge used once is open, holds no volume, and removing it cannot fill anything. Needing no
+/// positions, this costs one edge map over the component's faces.
+fn component_is_closed(mesh: &IndexedMesh, comps: &[u32], comp: u32) -> bool {
+    let mut edges: ahash::AHashMap<(u32, u32), u32> = ahash::AHashMap::new();
+    for (fi, tri) in mesh.triangles.iter().enumerate() {
+        if comps[fi] != comp {
+            continue;
+        }
+        for k in 0..3 {
+            let (a, b) = (tri[k], tri[(k + 1) % 3]);
+            let key = if a < b { (a, b) } else { (b, a) };
+            *edges.entry(key).or_insert(0) += 1;
+        }
+    }
+    edges.values().all(|&n| n == 2)
+}
+
 fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
     if mesh.triangles.len() < 4 {
         return (0, 0);
@@ -1123,11 +1152,19 @@ fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
     // noisy near tangential overlaps or in locally messy scan geometry.
     const INTERIOR_RATIO_NUM: usize = 19;
     const INTERIOR_RATIO_DEN: usize = 20;
+    // Only closed components. A cavity is a closed component inside another, and removing it
+    // fills a void. A buried sheet is open and carries no volume, so removing it moves nothing.
+    // This is the discriminator the volume test downstream was standing in for, and the volume
+    // is a bad stand-in on a mesh that is not watertight: on the worm file 2,975 boundary edges
+    // leave the signed volume meaningless and the removal trips a 0.589% move that is not a
+    // cavity being filled, it is arithmetic on an open surface.
     let remove_set: AHashSet<u32> = (0..n_comps as u32)
         .filter(|&c| {
             let tot = comp_total[c as usize];
             let int = comp_interior[c as usize];
-            tot > 0 && int * INTERIOR_RATIO_DEN >= tot * INTERIOR_RATIO_NUM
+            tot > 0
+                && int * INTERIOR_RATIO_DEN >= tot * INTERIOR_RATIO_NUM
+                && component_is_closed(mesh, &comps, c)
         })
         .collect();
 
@@ -1211,15 +1248,37 @@ fn cull_repeated_vertex_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
 /// different object from the one that went in. On the reported file the cull alone removed
 /// 995 faces and left seven boundary edges that were not there, with the weld refusing and
 /// reporting nothing.
+///
+/// So the rims it opens are filled before it is judged. Removing a face that stood twice leaves its
+/// neighbours unpaired, which is a hole where a doubled wall was rather than an opening somebody
+/// designed, and filling it is the other half of the same repair. Measured on the worm model, the
+/// cull alone turns 3,515 non-manifold edges into 2,000 and the boundary 1,454 into 2,226, and was
+/// refused for it; with the fill the same removal has somewhere to go.
 fn cull_duplicate_and_zero_area_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
     let before = mesh.clone();
     let health = crate::evaluate::evaluate(&before);
     let removed = cull_degenerate_and_duplicate(mesh);
+    let mut filled = 0;
+    if removed > 0 {
+        // No cap, for the same reason the split fills its rims uncapped: these are not holes in the
+        // mesh as it arrived, they are what the removal exposed.
+        filled = crate::holes::holes_all(mesh, usize::MAX);
+        // And the rims meet at pinches, which the fill skips by design because a pinched loop is not
+        // a simple cycle. Splitting the pinch makes those loops simple, which is the same recipe the
+        // split uses on its own rims.
+        let pinches = crate::topology_passes::split_pinched_vertices(mesh);
+        if pinches > 0 {
+            filled += crate::holes::holes_all(mesh, usize::MAX);
+        }
+        if filled > 0 {
+            let _ = unify_winding(mesh);
+        }
+    }
     if removed > 0 && crate::evaluate::evaluate(mesh).worse_than(&health) {
         *mesh = before;
         return (0, true);
     }
-    (removed, false)
+    (removed + filled, false)
 }
 
 fn stitch_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, usize, bool) {
@@ -3862,6 +3921,33 @@ mod cones_shell_analysis {
 #[cfg(test)]
 mod orientability_tests {
     use super::*;
+
+    /// A cavity is a closed component inside another, and a buried sheet is open. The cull used
+    /// the signed volume as a stand-in for that, which is unsound the moment the mesh is not
+    /// watertight: on the worm file the volume of an open surface moved 0.589% and tripped the
+    /// refusal on nothing. Closeness is the property, so closeness is what the cull tests.
+    #[test]
+    fn only_a_closed_component_is_a_cavity() {
+        let positions = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        ];
+        let sealed = IndexedMesh {
+            positions: positions.clone(),
+            triangles: vec![[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]],
+        };
+        let comps = vec![0u32; 4];
+        assert!(component_is_closed(&sealed, &comps, 0));
+
+        // The same shell with one face missing: three of its edges are used once.
+        let open = IndexedMesh {
+            positions,
+            triangles: vec![[0, 1, 2], [0, 1, 3], [0, 2, 3]],
+        };
+        assert!(!component_is_closed(&open, &comps[..3], 0));
+    }
     use crate::test_fixtures::unit_cube;
 
     /// A band with a half twist: non-orientable, and open along its two rims.

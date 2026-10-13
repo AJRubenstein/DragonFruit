@@ -322,6 +322,15 @@ outer surface with a boolean union. There is no union here, so `cull_interior_co
 removes a face only when it sits inside *another component*, where removing it provably
 cannot open the outer shell.
 
+The component it removes has to be **closed**. A cavity is a closed component inside another, and
+removing it fills a void; a buried sheet is open, carries no volume, and removing it moves nothing.
+That used to be tested by watching the signed volume, which is a stand-in that stops working the
+moment the mesh is not watertight: on the worm file 2,975 boundary edges leave the volume
+meaningless, and the removal tripped a 0.589% move that was arithmetic on an open surface rather
+than a cavity being filled. Closeness is the property the guard is really about, so closeness is
+what it tests now, by requiring every edge of the component to be used by exactly two of its faces.
+The volume check stays as a second bound, and in this reduced domain the volume it reads is real.
+
 The upgrade you would reach for is a per-face test: sample both sides of a face along its
 normal, count ray crossings, and a face separates inside from outside exactly when the
 two sides disagree. It was written and measured, and it does not hold up. Three
