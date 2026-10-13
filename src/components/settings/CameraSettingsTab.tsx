@@ -69,6 +69,7 @@ export function CameraSettingsTab({
   higherContrastModelEdges = false,
   onHigherContrastModelEdgesChange,
 }: CameraSettingsTabProps) {
+  const { _ } = useLingui();
   const fmt = useLocaleFormat();
   const [activeWorkspace, setActiveWorkspace] = React.useState<SupportMode>('prepare');
   const usingGlobalScope = cameraScope === 'global';
@@ -346,7 +347,7 @@ export function CameraSettingsTab({
                   <div className="space-y-0.5">
                     <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
                       <span>Pan acceleration</span>
-                      <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(cameraTrackpadPanAcceleration, 2)}x</span>
+                      <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(cameraTrackpadPanAcceleration, 2, 'times')}</span>
                     </label>
                     <input
                       type="range"
@@ -362,7 +363,7 @@ export function CameraSettingsTab({
                   <div className="space-y-0.5">
                     <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
                       <span>Orbit acceleration</span>
-                      <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(cameraTrackpadOrbitAcceleration, 2)}x</span>
+                      <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(cameraTrackpadOrbitAcceleration, 2, 'times')}</span>
                     </label>
                     <input
                       type="range"
@@ -378,7 +379,7 @@ export function CameraSettingsTab({
                   <div className="space-y-0.5">
                     <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
                       <span>Zoom acceleration</span>
-                      <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(cameraTrackpadZoomAcceleration, 2)}x</span>
+                      <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(cameraTrackpadZoomAcceleration, 2, 'times')}</span>
                     </label>
                     <input
                       type="range"

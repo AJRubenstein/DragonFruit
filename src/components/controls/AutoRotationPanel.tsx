@@ -258,7 +258,7 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
             <div className="flex flex-col gap-1">
               <label className="ui-meta flex justify-between">
                 <span>{_(BRUSH_SIZE)}</span>
-                <span>{fmt.fixed(brushSizeMm, 1)} mm</span>
+                <span>{fmt.quantity(brushSizeMm, 1, 'mm')}</span>
               </label>
               <input
                 type="range"

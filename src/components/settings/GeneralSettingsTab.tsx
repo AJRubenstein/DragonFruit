@@ -31,6 +31,7 @@ import {
   setSupportPlacementHelpEnabled,
   subscribeSupportPlacementHelp,
 } from '@/components/settings/supportPlacementPreferences';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 interface GeneralSettingsTabProps {
   floatingLayoutPersistence: boolean;
@@ -56,6 +57,7 @@ export function GeneralSettingsTab({
   onLanguageChange,
 }: GeneralSettingsTabProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [layoutDump, setLayoutDump] = React.useState<string>('');
   const [dumpStatus, setDumpStatus] = React.useState<string | null>(null);
   const rootsLockedByLineRaft = importDefaults.raftBottomMode === 'line';
@@ -207,7 +209,7 @@ export function GeneralSettingsTab({
             <SelectDropdown<string>
               value={isCustomScale ? 'custom' : String(uiScale)}
               options={[
-                ...UI_SCALE_PRESETS.map((preset) => ({ value: String(preset), label: `${Math.round(preset * 100)}%` })),
+                ...UI_SCALE_PRESETS.map((preset) => ({ value: String(preset), label: fmt.quantity(preset * 100, 0, 'percent') })),
                 { value: 'custom', label: 'Custom' },
               ]}
               onChange={handleUiScaleChange}

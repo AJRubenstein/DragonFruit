@@ -527,13 +527,13 @@ export function ModelStatsCard({
 
               <span><Trans>Layer profile:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>
-                {effectiveLayerHeightMm != null ? `${Math.round(effectiveLayerHeightMm * 1000)} μm` : '-'}
+                {effectiveLayerHeightMm != null ? fmt.quantity(effectiveLayerHeightMm * 1000, 0, 'um') : '-'}
               </span>
 
               <span><Trans>Exposure:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>
                 {effectiveNormalExposureSec != null
-                  ? `${fmt.fixed(effectiveNormalExposureSec, 1)}s • ${fmt.fixed(effectiveBottomExposureSec ?? effectiveNormalExposureSec, 1)}s`
+                  ? `${fmt.quantity(effectiveNormalExposureSec, 1, 's')} • ${fmt.quantity(effectiveBottomExposureSec ?? effectiveNormalExposureSec, 1, 's')}`
                   : '-'}
               </span>
 
@@ -551,7 +551,7 @@ export function ModelStatsCard({
               <span><Trans comment='Row label on the printer card: estimated resin volume. Keep it terse — the label column is narrow.'>Est. resin:</Trans></span>
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>
                 {estimatedResinLabelOverride ?? (estimatedResinMl != null
-                  ? `${fmt.fixed(estimatedResinMl, 2)} ml${estimatedResinCost ? ` (${estimatedResinCost})` : ''}`
+                  ? `${fmt.quantity(estimatedResinMl, 2, 'ml')}${estimatedResinCost ? ` (${estimatedResinCost})` : ''}`
                   : '-')}
               </span>
 
@@ -594,7 +594,7 @@ export function ModelStatsCard({
               <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model?.geometry.meshDefects?.nativeRepairReport?.post.component_count ?? '-'}</span>
 
               <span><Trans>Height:</Trans></span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? `${fmt.fixed(heightMm, 2)} mm` : '-'}</span>
+              <span className="min-w-0 truncate" style={{ color: 'var(--text-strong)' }}>{model ? fmt.quantity(heightMm, 2, 'mm') : '-'}</span>
             </div>
 
             {model?.geometry.meshDefects?.hasDefects && (

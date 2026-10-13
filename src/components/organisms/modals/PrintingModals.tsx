@@ -713,7 +713,7 @@ export function PrintingModals({
               </div>
               {requiresRemoteMaterialSelectionForUpload && !isPreSliceTargetPicker && (
                 <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  <Trans>Target layer height: <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(slicedLayerHeightMm, 3)} mm</span></Trans>
+                  <Trans>Target layer height: <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(slicedLayerHeightMm, 3, 'mm')}</span></Trans>
                 </div>
               )}
 
@@ -850,7 +850,7 @@ export function PrintingModals({
                                     </div>
                                     {material.layerHeightMm != null && (
                                       <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                        {fmt.fixed(material.layerHeightMm, 3)} mm
+                                        {fmt.quantity(material.layerHeightMm, 3, 'mm')}
                                       </div>
                                     )}
                                     {isSelectedMaterial && (
@@ -1078,7 +1078,7 @@ export function PrintingModals({
                     : _(msg`Transfer progress`)}
                 </span>
                 <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {printingDialogIsIndeterminate ? '—' : `${fmt.fixed(printingDialogProgressPercent, 0)}%`}
+                  {printingDialogIsIndeterminate ? '—' : fmt.quantity(printingDialogProgressPercent, 0, 'percent')}
                 </span>
               </div>
 
@@ -1561,7 +1561,7 @@ export function PrintingModals({
                               <div className="text-[10px] flex justify-between" style={{ color: 'var(--text-muted)' }}>
                                 <span>{formatLayerProgress(_, displayLayerText)}</span>
                                 <span className="font-semibold" style={{ color: hasActivePrint ? progressTextColor : 'var(--text-muted)' }}>
-                                  {hasActivePrint && displayProgressPct != null ? `${fmt.fixed(displayProgressPct, 0)}%` : '-'}
+                                  {hasActivePrint && displayProgressPct != null ? fmt.quantity(displayProgressPct, 0, 'percent') : '-'}
                                 </span>
                               </div>
                             </div>
@@ -1902,7 +1902,7 @@ export function PrintingModals({
                         />
                       </div>
                       <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        Progress {printingMonitorDisplayProgressPct != null ? `${fmt.fixed(printingMonitorDisplayProgressPct, 1)}%` : '—'}
+                        Progress {printingMonitorDisplayProgressPct != null ? fmt.quantity(printingMonitorDisplayProgressPct, 1, 'percent') : '—'}
                       </div>
                     </>
                   ) : (

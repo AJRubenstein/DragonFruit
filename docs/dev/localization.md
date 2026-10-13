@@ -101,3 +101,35 @@ of precedence:
 The language switcher under Settings > General changes the locale live via
 `loadLocale()` and persists the choice, so it overrides the env var and
 detection on subsequent loads.
+
+## Numbers and units
+
+`toFixed` and bare `String(n)` always print `.` as the decimal separator, and a
+unit written next to them never reaches the catalog. Displayed numbers go
+through `useLocaleFormat()` (`src/hooks/useLocaleFormat.ts`) instead, which
+returns an `fmt` object bound to the active locale and catalog:
+
+- `fmt.fixed(value, digits)` is the locale-aware `toFixed`; `fmt.number(value,
+  options?)` takes any `Intl.NumberFormat` options (`src/utils/localeNumber.ts`).
+- `fmt.quantity(value, digits, unit)` formats and places the number in the
+  unit's catalog message; `fmt.unit(unit, text)` places a number formatted some
+  other way (`src/utils/unitFormatting.ts`). There is one message per unit
+  (`'{value} mm'`, `'{value}%'`, `'{value}K'`, …), so translators choose the
+  symbol and where the number sits ("28 %", "28,03 мм"). Add a unit to
+  `UNIT_MESSAGES`, with a translator comment, rather than writing one next to a
+  number.
+
+```tsx
+const fmt = useLocaleFormat();
+return <span>{fmt.quantity(heightMm, 2, 'mm')}</span>;
+```
+
+Helpers outside components take `fmt` as an argument rather than reading the
+global `i18n`: React Compiler memoizes a call on the values it can see, and
+`fmt` changes identity on a language switch, which is what recomputes the
+output. Put `fmt` in hook dependency lists where you used to put the locale.
+
+Only for display. Input values, CSS, cache keys, serialization, file names and
+logs keep `toFixed`, which stays parseable. Tests for code that uses
+`unitFormatting.ts` run under `npm run test:dom` (`*.dom-test.tsx`), the runner
+that compiles the Lingui macro — see `src/utils/__tests__/unitFormatting.dom-test.tsx`.

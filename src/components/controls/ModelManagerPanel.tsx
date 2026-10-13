@@ -34,7 +34,7 @@ import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
-import type { LocaleFormat } from '@/utils/localeNumber';
+import type { UnitFormat } from '@/utils/unitFormatting';
 import { ContextMenu, type ContextMenuEntry } from '@/components/ui/ContextMenu';
 
 type SelectMode = 'single' | 'toggle' | 'add';
@@ -48,7 +48,7 @@ type Translate = (descriptor: MessageDescriptor, values?: Record<string, unknown
  * the placeholders raw in production — the same reason page.tsx keeps its
  * formatters out here.
  */
-function formatModelInfoTooltip(translate: Translate, fmt: LocaleFormat, model: LoadedModel): string {
+function formatModelInfoTooltip(translate: Translate, fmt: UnitFormat, model: LoadedModel): string {
   const polygons = translate(msg`${plural(model.polygonCount, { one: '# polygon', other: '# polygons' })}`);
   const size = formatFileSize(model.fileSizeBytes, fmt);
   return size ? translate(msg`${size} · ${polygons}`) : polygons;

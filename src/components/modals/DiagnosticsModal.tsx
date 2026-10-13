@@ -18,7 +18,7 @@ import {
   type DiagnosticsBenchmarkStressProfile,
 } from '@/components/modals/diagnosticsBenchmarkEvents';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
-import type { LocaleFormat } from '@/utils/localeNumber';
+import type { UnitFormat } from '@/utils/unitFormatting';
 
 type DiagnosticsModalProps = {
   isOpen: boolean;
@@ -83,32 +83,32 @@ const GRAPH_WINDOW_SECONDS = 120;
 const SAMPLE_INTERVAL_MS = 250;
 const MAX_GRAPH_POINTS = Math.floor((GRAPH_WINDOW_SECONDS * 1000) / SAMPLE_INTERVAL_MS);
 
-function formatBytes(bytes: number | null, fmt: LocaleFormat): string {
+function formatBytes(bytes: number | null, fmt: UnitFormat): string {
   if (bytes == null || !Number.isFinite(bytes)) return 'N/A';
   const abs = Math.max(0, bytes);
   const KB = 1024;
   const MB = KB * 1024;
   const GB = MB * 1024;
 
-  if (abs >= GB) return `${fmt.fixed(abs / GB, 2)} GB`;
-  if (abs >= MB) return `${fmt.fixed(abs / MB, 2)} MB`;
-  if (abs >= KB) return `${fmt.fixed(abs / KB, 1)} KB`;
-  return `${fmt.fixed(abs, 0)} B`;
+  if (abs >= GB) return fmt.quantity(abs / GB, 2, 'GB');
+  if (abs >= MB) return fmt.quantity(abs / MB, 2, 'MB');
+  if (abs >= KB) return fmt.quantity(abs / KB, 1, 'KB');
+  return fmt.quantity(abs, 0, 'B');
 }
 
-function formatPercent(value: number | null, fmt: LocaleFormat): string {
+function formatPercent(value: number | null, fmt: UnitFormat): string {
   if (value == null || !Number.isFinite(value)) return 'N/A';
-  return `${fmt.fixed(value * 100, 1)}%`;
+  return fmt.quantity(value * 100, 1, 'percent');
 }
 
-function formatMs(value: number | null | undefined, fmt: LocaleFormat, digits = 2): string {
+function formatMs(value: number | null | undefined, fmt: UnitFormat, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return 'N/A';
-  return `${fmt.fixed(value, digits)} ms`;
+  return fmt.quantity(value, digits, 'ms');
 }
 
-function formatFps(value: number | null | undefined, fmt: LocaleFormat, digits = 1): string {
+function formatFps(value: number | null | undefined, fmt: UnitFormat, digits = 1): string {
   if (value == null || !Number.isFinite(value)) return 'N/A';
-  return `${fmt.fixed(value, digits)} fps`;
+  return fmt.quantity(value, digits, 'fps');
 }
 
 function computeSupportDiagnostics(): SupportDiagnosticsStats {
@@ -449,7 +449,7 @@ export function DiagnosticsModal({
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Frame Time</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(stats.frameTimeMs, 2)} ms</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.quantity(stats.frameTimeMs, 2, 'ms')}</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Used JS Heap</div>
@@ -461,7 +461,7 @@ export function DiagnosticsModal({
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>CPU Usage (est.)</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(stats.cpuUsageEstimate, 0)}%</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.quantity(stats.cpuUsageEstimate, 0, 'percent')}</div>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Support Segments</div>
@@ -473,7 +473,7 @@ export function DiagnosticsModal({
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Picking Avg</div>
-              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(stats.supportStats.pickingAvgMs, 3)} ms</div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.quantity(stats.supportStats.pickingAvgMs, 3, 'ms')}</div>
             </div>
           </div>
 
@@ -553,7 +553,7 @@ export function DiagnosticsModal({
                   <div className="rounded-md border px-2.5 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
                     <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Run Duration</div>
                     <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                      {fmt.fixed(benchmarkResult.totalDurationMs / 1000, 2)}s
+                      {fmt.quantity(benchmarkResult.totalDurationMs / 1000, 2, 's')}
                     </div>
                     <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                       Camera feel: {benchmarkResult.cameraFeelPreset} • Stress: {benchmarkResult.stressProfile}
@@ -579,9 +579,9 @@ export function DiagnosticsModal({
                           <td className="px-2 py-1.5" style={{ color: 'var(--text-strong)' }}>{phase.phase}</td>
                           <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(phase.stats.fpsAvg, 1)}</td>
                           <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{fmt.fixed(phase.stats.fpsMin, 1)}</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-strong)' }}>{fmt.fixed(phase.stats.frameTimeAvgMs, 2)} ms</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{fmt.fixed(phase.stats.frameTimeP95Ms, 2)} ms</td>
-                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{fmt.fixed(phase.stats.frameTimeMaxMs, 2)} ms</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-strong)' }}>{fmt.quantity(phase.stats.frameTimeAvgMs, 2, 'ms')}</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{fmt.quantity(phase.stats.frameTimeP95Ms, 2, 'ms')}</td>
+                          <td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{fmt.quantity(phase.stats.frameTimeMaxMs, 2, 'ms')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -655,10 +655,10 @@ export function DiagnosticsModal({
                 <div>Support Registered: <span style={{ color: 'var(--text-strong)' }}>{fmt.number(stats.supportStats.pickingRegisteredSupportRelated)}</span></div>
                 <div>Visible Pick Objects: <span style={{ color: 'var(--text-strong)' }}>{fmt.number(stats.supportStats.pickingVisibleObjects)}</span></div>
                 <div>Cached Pick Objects: <span style={{ color: 'var(--text-strong)' }}>{fmt.number(stats.supportStats.pickingCachedObjects)}</span></div>
-                <div>Pick Avg: <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(stats.supportStats.pickingAvgMs, 3)} ms</span></div>
-                <div>Pick Last: <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(stats.supportStats.pickingLastMs, 3)} ms</span></div>
-                <div>Sync Cache Avg: <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(stats.supportStats.pickingSyncAvgMs, 3)} ms</span></div>
-                <div>Pick Rate: <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(stats.supportStats.pickingPicksPerSecond, 1)} /s</span></div>
+                <div>Pick Avg: <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(stats.supportStats.pickingAvgMs, 3, 'ms')}</span></div>
+                <div>Pick Last: <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(stats.supportStats.pickingLastMs, 3, 'ms')}</span></div>
+                <div>Sync Cache Avg: <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(stats.supportStats.pickingSyncAvgMs, 3, 'ms')}</span></div>
+                <div>Pick Rate: <span style={{ color: 'var(--text-strong)' }}>{fmt.quantity(stats.supportStats.pickingPicksPerSecond, 1, 'perSecond')}</span></div>
               </div>
             </div>
           </div>

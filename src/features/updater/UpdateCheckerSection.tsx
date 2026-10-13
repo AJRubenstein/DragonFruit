@@ -27,15 +27,15 @@ import {
   formatUpdateVersionReady,
 } from '@/features/updater/updaterMessages';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
-import type { LocaleFormat } from '@/utils/localeNumber';
+import type { UnitFormat } from '@/utils/unitFormatting';
 
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatBytes(bytes: number, fmt: LocaleFormat): string {
-  if (bytes < 1024) return `${fmt.fixed(bytes, 0)} B`;
-  if (bytes < 1024 * 1024) return `${fmt.fixed(bytes / 1024, 1)} KB`;
-  return `${fmt.fixed(bytes / (1024 * 1024), 1)} MB`;
+function formatBytes(bytes: number, fmt: UnitFormat): string {
+  if (bytes < 1024) return fmt.quantity(bytes, 0, 'B');
+  if (bytes < 1024 * 1024) return fmt.quantity(bytes / 1024, 1, 'KB');
+  return fmt.quantity(bytes / (1024 * 1024), 1, 'MB');
 }
 
 async function openExternal(url: string): Promise<void> {
