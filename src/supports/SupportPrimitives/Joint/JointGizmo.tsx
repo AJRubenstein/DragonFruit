@@ -14,6 +14,7 @@ import { clearSupportDragPreview, emitSupportDragPreview, setJointInteractionLoc
 import { commitJointDragSupport, computeJointDragSupportPreview, publishJointDragSupportPreview, type JointDragSupport } from './jointDragController';
 import { resolveShaftAnchor } from '../Knot/segmentEndpoints';
 import { resolveDraggedContacts } from './resolveDraggedContacts';
+import { moveJointLabel } from '@/supports/history/supportHistoryLabels';
 
 export function JointGizmo() {
     const MOVE_DELTA_EPS_SQ = 1e-12;
@@ -251,8 +252,7 @@ export function JointGizmo() {
                 if (applied) {
                     pushSupportHistory({
                         type: descriptor!.historyUpdate,
-                        // i18n-ignore: undo-history description, only shown in the history debug modal
-                        description: `Move ${descriptor!.singular} joint`,
+                        description: moveJointLabel(descriptor!.id),
                         // The payload cast keeps the per-action payload map the
                         // single source of truth, as the delete path does: the
                         // action is the type's own, chosen at runtime.
@@ -272,8 +272,7 @@ export function JointGizmo() {
             if (committed) commitJointDragSupport(owner.typeId, committed as never);
 
             pushSupportEditHistory(
-                // i18n-ignore: undo-history description, only shown in the history debug modal
-                `Move ${getSupportTypeDescriptor(owner.typeId).singular} joint`,
+                moveJointLabel(owner.typeId),
                 initialEditSnapshotRef.current,
                 captureSupportEditSnapshot(),
             );

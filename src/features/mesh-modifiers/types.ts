@@ -1,3 +1,4 @@
+import type { MessageDescriptor } from '@lingui/core';
 export type MeshModifierHollowMode = 'cavity' | 'infill' | 'shell_open_face';
 export type MeshModifierInfillMode = 'lattice' | 'pillar';
 export type MeshModifierOpenFace = 'x_min' | 'x_max' | 'y_min' | 'y_max' | 'z_min' | 'z_max';
@@ -62,6 +63,6 @@ export type ModelMeshModifiers = {
  * description on the same model into one step, for fields that report every keystroke.
  */
 export type ModelMeshModifiersHistoryOptions = {
-  historyDescription: string;
+  historyDescription: MessageDescriptor;
   merge?: boolean;
 };

@@ -44,6 +44,14 @@ import type {
   HollowingSourceEntry,
   CavityGeometryEntry,
 } from '@/features/hollowing/hollowingPreviewTypes';
+import {
+  CAVITY_HOLLOWING_LABEL,
+  CLEAR_HOLLOWING_LABEL,
+  HOLLOWING_SETTINGS_LABEL,
+  INFILL_HOLLOWING_LABEL,
+  RESET_HOLLOWING_LABEL,
+  SHELL_HOLLOWING_LABEL,
+} from '@/features/scene/sceneHistoryLabels';
 
 type SceneManager = ReturnType<typeof useSceneCollectionManager>;
 type TransformManager = ReturnType<typeof useTransformManager>;
@@ -411,14 +419,14 @@ export function useHollowingManager({
         if (previousBaked) beforeModifiers.hollowing = previousBaked;
 
         const modeLabel = hollowingState.mode === 'shell_open_face'
-          ? 'Shell Hollowing'
+          ? SHELL_HOLLOWING_LABEL
           : hollowingState.mode === 'infill'
-            ? 'Infill Hollowing'
-            : 'Cavity Hollowing';
+            ? INFILL_HOLLOWING_LABEL
+            : CAVITY_HOLLOWING_LABEL;
         const replaced = scene.replaceModelGeometry(
           activeModel.id,
           nextGeometry,
-          `${modeLabel} (${result.report.outputTriangleCount.toLocaleString()} tris)`,
+          modeLabel,
           { meshModifiersBefore: beforeModifiers, meshModifiersAfter: nextModifiers },
         );
         if (!replaced) {
@@ -487,7 +495,7 @@ export function useHollowingManager({
     delete nextModifiers.hollowing;
 
     const restoredGeometry = sourceEntry.geometry.clone();
-    const restored = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Reset Hollowing', {
+    const restored = scene.replaceModelGeometry(activeModel.id, restoredGeometry, RESET_HOLLOWING_LABEL, {
       meshModifiersAfter: nextModifiers,
     });
     if (!restored) {
@@ -532,7 +540,7 @@ export function useHollowingManager({
     delete nextModifiers.hollowing;
 
     const restoredGeometry = sourceEntry.geometry.clone();
-    const restored = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Clear Hollowing', {
+    const restored = scene.replaceModelGeometry(activeModel.id, restoredGeometry, CLEAR_HOLLOWING_LABEL, {
       meshModifiersAfter: nextModifiers,
     });
     if (!restored) {
@@ -612,7 +620,7 @@ export function useHollowingManager({
         openFace: next.openFace,
         openFaceSelected: nextShellOpenFaceSelected,
       },
-    }, { historyDescription: 'Hollowing Settings', merge: true });
+    }, { historyDescription: HOLLOWING_SETTINGS_LABEL, merge: true });
   }, [blockedHollowVoxelIndices, hollowingState.mode, hollowingState.openFace, hollowingState.voxelSizeMm, isShellOpenFaceSelected, deps.current.persistActiveModelModifiers, rememberBakedHollowing, scene.activeModel]);
 
   const isHollowingApplied = React.useMemo(() => {
@@ -708,7 +716,6 @@ export function useHollowingManager({
     if (modelId) {
       pushHollowingHistory({
         type: HOLLOWING_BLOCKERS_EDIT,
-        description: 'Edit Solid Areas',
         payload: { modelId, before: [...previousIndices], after: nextIndices },
       });
     }

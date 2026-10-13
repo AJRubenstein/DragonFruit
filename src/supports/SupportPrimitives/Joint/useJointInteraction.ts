@@ -22,6 +22,7 @@ import {
 import { commitJointDragSupport, computeJointDragSupportPreview, JOINT_DRAG_COMMIT_TYPES, JOINT_DRAG_HOSTED_SHAFT_TYPES, publishJointDragSupportPreview, shouldCommitJointDrag } from './jointDragController';
 import { subscribeSupportInteractionReset } from '../../interaction/supportInteractionReset';
 import { setPickRayFromCamera } from '@/components/scene/camera/pickRay';
+import { moveJointLabel } from '@/supports/history/supportHistoryLabels';
 
 /**
  * Hook to handle joint interaction (dragging/moving).
@@ -515,7 +516,7 @@ export function useJointInteraction(enabled: boolean = true) {
                 if (currentSupport) {
                     pushSupportHistory({
                         type: endDescriptor.historyUpdate,
-                        description: `Move ${endDescriptor.singular} joint`,
+                        description: moveJointLabel(endDescriptor.id),
                         payload: {
                             before: initialOwnHistorySnapshot.current,
                             after: cloneTrunk(currentSupport as Trunk),
@@ -528,7 +529,7 @@ export function useJointInteraction(enabled: boolean = true) {
             if (initialEditSnapshotRef.current && activeSupport.current
                 && !getSupportTypeDescriptor(activeSupport.current.typeId).ownsEditHistoryEntry) {
                 pushSupportEditHistory(
-                    `Move ${getSupportTypeDescriptor(activeSupport.current.typeId).singular} joint`,
+                    moveJointLabel(activeSupport.current.typeId),
                     initialEditSnapshotRef.current,
                     captureSupportEditSnapshot(),
                 );

@@ -28,6 +28,7 @@ import { resolveSupportPlacementHotkeyBindings } from '@/supports/interaction/sh
 import { resolveSupportPlacementRouting, routeModelPlacementHit, BRACE_PLACEMENT_OWNER, BRANCH_FAMILY_PLACEMENT_OWNER, DEFAULT_PLACEMENT_TYPE_ID, KICKSTAND_PLACEMENT_OWNER, LEAF_PLACEMENT_OWNER } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementRouting';
 import type { SupportModelPlacementHandlers, SupportModelPlacementOwner } from '@/supports/interaction/shared/placement/hotkeys/supportPlacementHotkeyTypes';
 import { isKeyPressedSync } from '@/hotkeys/hotkeyStore';
+import { deleteJointLabel, deleteSupportsLabel } from '@/supports/history/supportHistoryLabels';
 
 interface SupportInteractionOptions {
   mode: SupportMode;
@@ -228,10 +229,9 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
         // understands.
         const descriptor = getSupportTypeDescriptor(result.typeId);
         if (recordHistory && descriptor.historyUpdate) {
-          const description = `Delete ${descriptor.singular} joint`;
           pushSupportHistory({
             type: descriptor.historyUpdate,
-            description,
+            description: deleteJointLabel(descriptor.id),
             payload: { before: result.before, after: result.after } as never,
           });
         }
@@ -335,7 +335,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
 
           pushSupportHistory({
             type: SUPPORT_AUTO_BRACE_REPLACE,
-            description: `Delete ${multiSelectedIds.length} supports`,
+            description: deleteSupportsLabel(multiSelectedIds.length),
             payload: {
               before: beforeSupportSnapshot,
               after: afterSupportSnapshot,

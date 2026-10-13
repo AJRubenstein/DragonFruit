@@ -91,7 +91,7 @@ test('undo restores a branch-joint move pushed via pushSupportEditHistory (defer
         })),
     };
     updateSupportEntity('trunk', moved);
-    pushSupportEditHistory('Move branch joint', before, captureSupportEditSnapshot());
+    pushSupportEditHistory({ id: 'Move branch joint' }, before, captureSupportEditSnapshot());
 
     // The push is deferred to idle; wait for the flush (setTimeout fallback).
     await new Promise((resolve) => setTimeout(resolve, 50));

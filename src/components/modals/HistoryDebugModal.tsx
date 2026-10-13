@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useLingui } from '@lingui/react';
 import { X } from 'lucide-react';
 import { IconButton } from '@/components/atoms';
 import type { HistoryDebugEvent } from '@/history/types';
@@ -44,6 +45,7 @@ export function HistoryDebugModal({
   onClearUndoRedoStacks,
   onClearAll,
 }: HistoryDebugModalProps) {
+  const { _ } = useLingui();
   useEscapeToClose(isOpen, onClose);
 
   const historyDebugEventsNewestFirst = React.useMemo(
@@ -324,7 +326,7 @@ export function HistoryDebugModal({
 
                       {(event.actionType || event.actionDescription) ? (
                         <div className="mt-1 text-xs leading-tight" style={{ color: 'var(--text-strong)' }}>
-                          <span className="font-semibold">{formatHistoryLabel(event.actionDescription || event.actionType || '')}</span>
+                          <span className="font-semibold">{event.actionDescription ? _(event.actionDescription) : formatHistoryLabel(event.actionType ?? '')}</span>
                           {event.actionDescription && event.actionType ? (
                             <span style={{ color: 'var(--text-muted)' }}> · {formatHistoryLabel(event.actionType)}</span>
                           ) : null}

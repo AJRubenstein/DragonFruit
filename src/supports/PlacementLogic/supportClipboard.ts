@@ -1,3 +1,4 @@
+import type { MessageDescriptor } from '@lingui/core';
 import * as THREE from 'three';
 import { buildSupportDeltaTransform, getSnapshot, setSnapshot, transformSupportRecord, type SupportDeltaTransform } from '@/supports/state';
 import type { Knot, Roots, Segment, SupportState, Vec3 } from '@/supports/types';
@@ -10,6 +11,7 @@ import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { v4 as uuidv4 } from 'uuid';
 import { clonePlainData } from '@/utils/plainDataClone';
 import { MODEL_ID_COLLECTION_KEYS, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportCollectionKey, type SupportTypeDescriptor } from '@/supports/supportTypeRegistry';
+import { PASTE_SUPPORTS_LABEL } from '@/supports/history/supportHistoryLabels';
 
 /**
  * One array per collection, keyed off the registry.
@@ -566,7 +568,7 @@ export function pasteModelSupports(
   targets: readonly SupportPasteTarget[],
   options?: {
     recordHistory?: boolean;
-    historyDescription?: string;
+    historyDescription?: MessageDescriptor;
   },
 ): number {
   const before = captureSupportEditSnapshot();
@@ -596,7 +598,7 @@ export function pasteModelSupports(
 
   const shouldRecordHistory = options?.recordHistory ?? true;
   if (shouldRecordHistory) {
-    pushSupportEditHistory(options?.historyDescription ?? 'Paste supports', before, captureSupportEditSnapshot());
+    pushSupportEditHistory(options?.historyDescription ?? PASTE_SUPPORTS_LABEL, before, captureSupportEditSnapshot());
   }
   return pastedCount;
 }
@@ -608,7 +610,7 @@ export function pasteModelSupportsFromClipboard(
   targetTransform: { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 },
   options?: {
     recordHistory?: boolean;
-    historyDescription?: string;
+    historyDescription?: MessageDescriptor;
   },
 ): number {
   if (!payload || !targetModelId) return 0;

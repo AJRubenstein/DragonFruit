@@ -7,11 +7,11 @@
     "node": ">=22.23.2 <23"
   },
   "scripts": {
-    "bench:import-postprocess": "node --import tsx scripts/bench-import-postprocess.ts",
-    "bench:auto-supports": "node --import tsx scripts/bench-auto-supports.ts",
-    "bench:duplicate-confirm": "node --import tsx scripts/bench-duplicate-confirm.ts",
-    "bench:support-drag": "node --import tsx scripts/support-drag-perf.ts",
-    "bench:voxl-tick": "node --max-old-space-size=8192 --import tsx scripts/bench-voxl-tick.ts",
+    "bench:import-postprocess": "node --import tsx --import ./scripts/test-unit/register.mjs scripts/bench-import-postprocess.ts",
+    "bench:auto-supports": "node --import tsx --import ./scripts/test-unit/register.mjs scripts/bench-auto-supports.ts",
+    "bench:duplicate-confirm": "node --import tsx --import ./scripts/test-unit/register.mjs scripts/bench-duplicate-confirm.ts",
+    "bench:support-drag": "node --import tsx --import ./scripts/test-unit/register.mjs scripts/support-drag-perf.ts",
+    "bench:voxl-tick": "node --max-old-space-size=8192 --import tsx --import ./scripts/test-unit/register.mjs scripts/bench-voxl-tick.ts",
     "profile:df": "node scripts/df-cdp.mjs",
     "build": "next build",
     "build:tauri": "next build && node scripts/prepare-tauri-frontend.mjs",

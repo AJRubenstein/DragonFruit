@@ -8,6 +8,7 @@ import {
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../history/supportEditHistory';
 import { setSupportPlacementGuideZ } from '@/components/scene/SceneCanvas/supportPlacementGuideStore';
 import { getSupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
+import { moveTipLabel } from '@/supports/history/supportHistoryLabels';
 
 /**
  * The lifecycle around dragging a support's contact tip.
@@ -93,7 +94,7 @@ export function useContactDiskDragSession<TPreview>(
                     handlersRef.current.onCommit(previewRef.current);
                     if (beforeRef.current) {
                         pushSupportEditHistory(
-                            `Move ${getSupportTypeDescriptor(typeId).singular} tip`,
+                            moveTipLabel(typeId),
                             beforeRef.current,
                             captureSupportEditSnapshot(),
                         );
