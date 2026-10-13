@@ -2896,6 +2896,11 @@ fn retessellate_unsatisfiable(mesh: &mut IndexedMesh) -> usize {
     let before_positions = mesh.positions.clone();
     let parts_before = triangle_components(mesh).iter().max().copied().unwrap_or(0) + 1;
     let volume_before = mesh.signed_volume();
+    // The deletion opens a hole and the fill is meant to close it. Both classes are captured, because
+    // a fill that fails leaves those faces missing and the mesh worse than it started: on corbu that
+    // produced a cavity and the move was still accepted.
+    let boundary_before = topo.edges.values().filter(|info| info.faces.len() == 1).count();
+    let non_manifold_before = topo.non_manifold_edges().len();
 
     mesh.triangles = mesh
         .triangles
@@ -2908,11 +2913,16 @@ fn retessellate_unsatisfiable(mesh: &mut IndexedMesh) -> usize {
     // one decision that can be refused as a whole.
     let filled = crate::holes::holes_all(mesh, usize::MAX);
 
+    let after = Topology::build(mesh);
     let parts_after = triangle_components(mesh).iter().max().copied().unwrap_or(0) + 1;
     let volume_after = mesh.signed_volume();
-    let winding_after = Topology::build(mesh).inconsistent_edges();
+    let winding_after = after.inconsistent_edges();
+    let boundary_after = after.edges.values().filter(|info| info.faces.len() == 1).count();
+    let non_manifold_after = after.non_manifold_edges().len();
     let acceptable = parts_after <= parts_before
         && winding_after < conflicts.len()
+        && boundary_after <= boundary_before
+        && non_manifold_after <= non_manifold_before
         && (volume_after - volume_before).abs() <= volume_before.abs() * 0.01;
     if !acceptable {
         mesh.triangles = before_triangles;
