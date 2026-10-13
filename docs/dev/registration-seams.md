@@ -51,14 +51,12 @@ choosing a number, because the middle of the range is occupied:
 | 30 | Delete selected models in prepare mode | `src/app/page.tsx` |
 | 20 | "Select all models" deletion | `src/app/page.tsx` |
 | 10 | Delete the active model | `src/features/scene/useSceneCollectionManager.ts` |
-| 10 | Dispose a blob URL | `src/features/scene/useSceneManager.ts` |
 
 **Ties fall back to registration order.** Dispatch keeps a winner only when
 `entry.priority > winner.priority` — strictly greater — and the registry is an
 insertion-ordered `Set`, so on an equal priority the *first* registration wins.
-The two claimants at `10` above are both gated on prepare mode and differ only
-in their predicates; do not add a third at that number expecting a defined
-outcome. Pick a distinct priority instead.
+Do not share a number with an existing claimant expecting a defined outcome;
+pick a distinct priority instead.
 
 Delete is deliberately **not** history-tied: every Cut edit is pushed to the app
 history, so the normal global undo/redo inverts it.

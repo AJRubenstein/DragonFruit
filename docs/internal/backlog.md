@@ -227,16 +227,15 @@
 ### [refactor] Consolidate toasts into a queue with one lifetime — M · medium risk
 - Where: src/features/notifications/useEditorToasts.ts (12 useState + 11 timer
   refs for six toasts), src/components/organisms/NotificationStack.tsx (literal
-  z-indexes and a hardcoded offset conditional), src/components/ui/SupportToasts.tsx
-  (a second path, no timer), plus inline `<ToastViewport>` uses such as
-  AutoBracingSettingsCard.tsx (a third).
+  z-indexes and a hardcoded offset conditional), plus inline `<ToastViewport>`
+  uses such as AutoBracingSettingsCard.tsx (a second path).
 - What: replace the repeated fade/clear timer pair with a module store holding a
   queue and one timer — `pushToast({ tone, text, durationMs })` — and let the
   stack compute its own offsets instead of a two-case conditional.
 - Why: adding one message today is five steps across four files plus a judgement
   call about overlap, and the durations are per-toast literals (2200/2600,
-  3800/4500, duration-400). Three independent paths means three behaviours for
-  the same UI element.
+  3800/4500, duration-400). Two independent paths means two behaviours for the
+  same UI element.
 - Careful: `Toast`/`ToastViewport` are already shared and fine — this is about
   what drives them. The save toast has three pieces of state, not two (a
   minimum-visible-time animation), so it is the one that constrains the API.
@@ -330,9 +329,8 @@
   Confirm with an exact 180° rotation on each axis, and with a drag crossing 180°
   continuously.
 
-### [cleanup] Dead symbols in SlicingPanel and the backups tabs — S · low risk
-- Where: src/features/slicing/components/SlicingPanel.tsx and
-  src/components/settings/BackupsSettingsTab.tsx. Regenerate with
+### [cleanup] Dead symbols in SlicingPanel — S · low risk
+- Where: src/features/slicing/components/SlicingPanel.tsx. Regenerate with
   `npx eslint <file>` — don't trust a frozen listing.
 - What: `sliceStatus` is a useState written by seven call sites and never read;
   `formatDuration`, `fetchStatus`, `activePrinter`, `activeMaterial` and a
@@ -369,3 +367,45 @@
   choice is pinned by `orphanValidation.test.ts`, so that is a decision, not a
   rename.
 - Context: docs/dev/auto-supports.md § "Orphan validation after resize".
+
+### [cleanup] Unreachable files — M · medium risk
+- Where: `npx knip --no-progress --include files`. `knip.json` already declares
+  the entry points knip cannot see, so what it lists is a candidate, not noise.
+- What: strays, no longer whole subtrees — components and hooks nothing mounts
+  (`BackupsSettingsTab.tsx`, replaced by `LocalBackupsSettingsTab`), barrel
+  `index.ts` files nobody imports, fixtures no test loads, undocumented scripts.
+- Why: dead code still draws upkeep — sweeps translated and restyled a stale
+  copy of RaftSettingsCard before anyone noticed nothing mounted it.
+- Keep, do not re-investigate: `BackupsSettingsTab.tsx` is the GitHub backup UI,
+  parked while #30 may revive it; `loadVoxlFixture.ts` feeds the export goldens
+  that live outside the repo in `lysdiag/`.
+- Careful: knip lists files, not directories — count what is still live in a
+  directory before calling it dead. A manual script that shows up gets
+  documented and added to `entry`, or deleted — never widen `entry` to `scripts/**`.
+
+### [cleanup] Unused runtime dependencies — S · low risk
+- Where: package.json; `npx knip --no-progress --include dependencies`.
+- What: `@react-three/postprocessing`, `manifold-3d` and the JS
+  `@tauri-apps/plugin-updater` have no importer.
+- Why: install weight and supply-chain surface for nothing.
+- Careful: the updater itself stays — `src-tauri/src/updater_channel.rs` drives
+  the `tauri-plugin-updater` crate directly; only the npm package is unused.
+
+### [cleanup] Unused exports and exported types — L · low risk
+- Where: `npx knip --no-progress --include exports,types,duplicates`.
+- What: a few hundred exports and types nobody imports, plus `export X` next to
+  `export default X` duplicates.
+- Why: a public surface that is not one misleads whoever reads the module.
+- Careful: do it after the files entry — each deleted file orphans exports
+  elsewhere, so this listing moves with it.
+
+### [toolchain] Type-aware ESLint on the code that is actually alive — M · medium risk
+- Where: eslint.config.mjs (no `projectService`, so every type-aware rule is off).
+- What: enable `projectService` and `@typescript-eslint/no-unnecessary-condition`
+  over live code only — it flags always-false guards, which is the shape dead
+  code takes once the variable feeding it stops being assigned.
+- Why: it catches this class statically. A dead `if (url) URL.revokeObjectURL(url)`
+  survived review and `tsc`; only deleting the variable exposed it.
+- Careful: scope it to what knip says is reachable, and see the existing
+  `src/hotkeys` entry — lint cannot go into CI until a scope reaches zero. The
+  workable order is clear one scope, then gate that scope with `--max-warnings 0`.
