@@ -2527,10 +2527,6 @@ export default function Home() {
       // Remesh is not wired yet. It sits in the flyout greyed out so the shape of the repair menu is
       // settled before the pass behind it exists.
       'remesh' as const,
-      // Undo Repairs needs the file read back, and the webview cannot read a filesystem path — a
-      // `file://` fetch is refused at the security boundary. It needs a native command that loads a
-      // path and stages it, the way `mesh_repair_from_path` loads before it repairs.
-      'undo-repairs' as const,
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
@@ -6527,6 +6523,15 @@ export default function Home() {
               setPrintingEstimatedResinMl(nextTotal);
             }
           }
+        }
+        break;
+      }
+      case 'undo-repairs': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          closeEditorContextMenu();
+          void scene.undoRepairsInPlace(targetId);
+          return;
         }
         break;
       }

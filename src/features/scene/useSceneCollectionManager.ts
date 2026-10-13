@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import * as THREE from 'three';
 import { refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
+import { loadMeshFromPath } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import {
   DYNAMIC_PLATE_ORDERING,
@@ -55,6 +57,7 @@ import {
   importLabelScenes,
   importLabelSplittingSupports,
   importLabelVoxlScene,
+  reportRestoredModel,
 } from '@/features/scene/sceneImportMessages';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
@@ -6559,6 +6562,49 @@ export function useSceneCollectionManager(options?: {
   }, [pushSceneSnapshotHistory]);
 
   /**
+   * Put a model back to how it arrived, by loading its file again.
+   *
+   * A repair leaves no copy of what it replaced, so undo re-reads the source and lets the import
+   * path do what it did the first time. The file goes through Rust: the webview refuses a `file://`
+   * fetch. Only the geometry is swapped, so the model keeps its transform and does not move.
+   */
+  const undoRepairsInPlace = useCallback(async (modelId: string) => {
+    const model = models.find((entry) => entry.id === modelId);
+    const sourcePath = model?.sourcePath?.trim();
+    if (!model || !sourcePath) {
+      emitSceneImportReport(_(msg`No source file to restore this model from.`), 'warning');
+      return false;
+    }
+    try {
+      const positions = await loadMeshFromPath(sourcePath);
+      if (!positions || positions.length === 0) {
+        throw new Error('the file produced no geometry');
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const reloaded = await processGeometry(geometry, {
+        center: false,
+        nativeProcessingMode: shouldAutoRepairSceneImports() ? 'auto' : 'none',
+      });
+      const posAttr = reloaded.geometry.getAttribute('position') as THREE.BufferAttribute | null;
+      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      setModels(prev => prev.map(entry =>
+        entry.id === modelId ? { ...entry, geometry: reloaded, polygonCount } : entry
+      ));
+      // The repair is gone, so the menu must stop offering it and the report it left.
+      setManuallyRepairedModelIds(prev => prev.filter((id) => id !== modelId));
+      setMeshRepairReports([]);
+      setPendingMeshRepairReports([]);
+      emitSceneImportReport(reportRestoredModel(model.name, _), 'success');
+      return true;
+    } catch (error) {
+      console.error('[undoRepairsInPlace] Reload failed:', error);
+      emitSceneImportReport(_(msg`Could not restore the model.`), 'error');
+      return false;
+    }
+  }, [_, emitSceneImportReport, models, shouldAutoRepairSceneImports]);
+
+  /**
    * Re-runs the full native repair pipeline on an already-loaded model's
    * geometry and swaps the result back in-place.  Intended for the manual
    * "Repair Mesh" context-menu action.
@@ -7326,6 +7372,7 @@ export function useSceneCollectionManager(options?: {
     meshRepairReportPresentation,
     openPendingMeshRepairReports,
     openMeshRepairReportForModel,
+    undoRepairsInPlace,
     manuallyRepairedModelIds,
     dismissMeshRepairReports,
     sceneImportPlacementPrompt,

@@ -74,7 +74,7 @@ msgstr ""
 msgid "{deltaMin} min"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:93
+#: src/features/scene/sceneImportMessages.ts:103
 msgid "{done}/{total} processed"
 msgstr ""
 
@@ -91,7 +91,7 @@ msgstr ""
 msgid "{hours} h {paddedMinutes} min"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:89
+#: src/features/scene/sceneImportMessages.ts:99
 msgid "{index}/{total}: {fileName}"
 msgstr ""
 
@@ -435,7 +435,7 @@ msgstr ""
 msgid "Apply this preset to the auto-support settings"
 msgstr ""
 
-#: src/app/page.tsx:11648
+#: src/app/page.tsx:11653
 msgid "Are you sure you want to remove every model from the plate?"
 msgstr ""
 
@@ -554,15 +554,15 @@ msgstr ""
 msgid "Auto-Repair Scenes"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:101
+#: src/features/scene/sceneImportMessages.ts:111
 msgid "Auto-Repairing {fileName}"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:123
+#: src/features/scene/sceneImportMessages.ts:133
 msgid "Auto-Repairing Mesh {index}/{total}"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:151
+#: src/features/scene/sceneImportMessages.ts:161
 msgid "Auto-Repairing Mesh {index}/{total}: {modelName}"
 msgstr ""
 
@@ -923,7 +923,7 @@ msgstr ""
 msgid "Can't open this scene"
 msgstr ""
 
-#: src/app/page.tsx:11609
+#: src/app/page.tsx:11614
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 #: src/components/controls/AutoSupportPanel.tsx:652
@@ -1058,15 +1058,15 @@ msgstr ""
 msgid "Chooses raft bottom mode for imported supports."
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:109
+#: src/features/scene/sceneImportMessages.ts:119
 msgid "Classifying {fileName}"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:131
+#: src/features/scene/sceneImportMessages.ts:141
 msgid "Classifying Mesh {index}/{total}"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:169
+#: src/features/scene/sceneImportMessages.ts:179
 msgid "Classifying Mesh {index}/{total}: {modelName}"
 msgstr ""
 
@@ -1100,12 +1100,12 @@ msgstr ""
 
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
-#: src/app/page.tsx:10901
+#: src/app/page.tsx:10906
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1773
 msgid "Clear build plate"
 msgstr ""
 
-#: src/app/page.tsx:11598
+#: src/app/page.tsx:11603
 msgid "Clear Build Plate?"
 msgstr ""
 
@@ -1113,7 +1113,7 @@ msgstr ""
 msgid "Clear Override"
 msgstr ""
 
-#: src/app/page.tsx:11639
+#: src/app/page.tsx:11644
 msgid "Clear Plate"
 msgstr ""
 
@@ -1148,7 +1148,7 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: src/app/page.tsx:11604
+#: src/app/page.tsx:11609
 msgid "Close clear-plate confirmation"
 msgstr ""
 
@@ -1309,7 +1309,7 @@ msgstr ""
 msgid "Configure Networking Later"
 msgstr ""
 
-#: src/app/page.tsx:11597
+#: src/app/page.tsx:11602
 msgid "Confirm clearing the build plate"
 msgstr ""
 
@@ -1317,7 +1317,7 @@ msgstr ""
 msgid "Confirm delete snapshot"
 msgstr ""
 
-#: src/app/page.tsx:11596
+#: src/app/page.tsx:11601
 msgid "Confirm deleting the plate"
 msgstr ""
 
@@ -1415,7 +1415,7 @@ msgstr ""
 msgid "Contoured regions"
 msgstr ""
 
-#: src/app/page.tsx:8666
+#: src/app/page.tsx:8671
 msgid "Converting support data and model metadata"
 msgstr ""
 
@@ -1452,6 +1452,10 @@ msgstr ""
 #: src/components/layout/EmptySceneState.tsx:412
 #: src/components/layout/EmptySceneState.tsx:415
 msgid "Could not reopen this file from cache."
+msgstr ""
+
+#: src/features/scene/useSceneCollectionManager.ts:6602
+msgid "Could not restore the model."
 msgstr ""
 
 #. {reason} is a technical filesystem error, passed through untranslated.
@@ -1667,7 +1671,7 @@ msgstr ""
 msgid "Delete model"
 msgstr ""
 
-#: src/app/page.tsx:11639
+#: src/app/page.tsx:11644
 #: src/components/controls/ModelManagerPanel.tsx:476
 #: src/components/controls/ModelManagerPanel.tsx:758
 #: src/components/controls/ModelManagerPanel.tsx:779
@@ -1705,11 +1709,11 @@ msgid "Delete this model's existing supports and place the new ones"
 msgstr ""
 
 #. Tooltip on the bin beside the build plate when the plate can go: it removes the bed and the models standing on it. Undo brings them back.
-#: src/app/page.tsx:10900
+#: src/app/page.tsx:10905
 msgid "Delete this plate"
 msgstr ""
 
-#: src/app/page.tsx:11598
+#: src/app/page.tsx:11603
 #: src/components/controls/ModelManagerPanel.tsx:759
 msgid "Delete this plate?"
 msgstr ""
@@ -1920,7 +1924,7 @@ msgstr ""
 msgid "Drop supported files"
 msgstr ""
 
-#: src/app/page.tsx:10846
+#: src/app/page.tsx:10851
 msgid "Drop supported files to import"
 msgstr ""
 
@@ -2302,11 +2306,11 @@ msgstr ""
 msgid "Finalize and export output"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:80
+#: src/features/scene/sceneImportMessages.ts:90
 msgid "Finalizing Model…"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:76
+#: src/features/scene/sceneImportMessages.ts:86
 msgid "Finalizing…"
 msgstr ""
 
@@ -2742,15 +2746,15 @@ msgstr ""
 msgid "Inspect sliced layers before printing"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:105
+#: src/features/scene/sceneImportMessages.ts:115
 msgid "Inspecting {fileName}"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:127
+#: src/features/scene/sceneImportMessages.ts:137
 msgid "Inspecting Mesh {index}/{total}"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:160
+#: src/features/scene/sceneImportMessages.ts:170
 msgid "Inspecting Mesh {index}/{total}: {modelName}"
 msgstr ""
 
@@ -2998,7 +3002,7 @@ msgstr ""
 msgid "Length"
 msgstr ""
 
-#: src/app/page.tsx:8706
+#: src/app/page.tsx:8711
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr ""
 
@@ -3063,7 +3067,7 @@ msgstr ""
 msgid "Load vendor profile plugins"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:97
+#: src/features/scene/sceneImportMessages.ts:107
 msgid "Loading {fileName}"
 msgstr ""
 
@@ -3080,7 +3084,7 @@ msgstr ""
 msgid "Loading Mesh Files…"
 msgstr ""
 
-#: src/app/page.tsx:8656
+#: src/app/page.tsx:8661
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr ""
@@ -3089,9 +3093,9 @@ msgstr ""
 msgid "Loading remote material…"
 msgstr ""
 
-#: src/app/page.tsx:4859
-#: src/app/page.tsx:8656
-#: src/app/page.tsx:8665
+#: src/app/page.tsx:4855
+#: src/app/page.tsx:8661
+#: src/app/page.tsx:8670
 msgid "Loading Scene…"
 msgstr ""
 
@@ -3395,7 +3399,7 @@ msgstr ""
 msgid "Mode"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:142
+#: src/features/scene/sceneImportMessages.ts:152
 msgid "Model {index}/{total}: {modelName}"
 msgstr ""
 
@@ -3695,6 +3699,10 @@ msgstr ""
 msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
 msgstr ""
 
+#: src/features/scene/useSceneCollectionManager.ts:6575
+msgid "No source file to restore this model from."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:100
 msgid "No supports needed for an empty scene."
 msgstr ""
@@ -3964,7 +3972,7 @@ msgstr ""
 msgid "Opening"
 msgstr ""
 
-#: src/app/page.tsx:8703
+#: src/app/page.tsx:8708
 msgid "Opening scene…"
 msgstr ""
 
@@ -4136,7 +4144,7 @@ msgstr ""
 msgid "Please hang tight while we prepare your scene."
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:182
+#: src/features/scene/sceneImportMessages.ts:192
 msgid "Please use: {extensions}"
 msgstr ""
 
@@ -4172,7 +4180,7 @@ msgstr ""
 msgid "Preparing {done}/{total}"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:72
+#: src/features/scene/sceneImportMessages.ts:82
 msgid "Preparing Geometry…"
 msgstr ""
 
@@ -4376,7 +4384,7 @@ msgstr ""
 msgid "Re-slice required after profile change"
 msgstr ""
 
-#: src/app/page.tsx:4860
+#: src/app/page.tsx:4856
 msgid "Reading autosaved scene…"
 msgstr ""
 
@@ -4397,7 +4405,7 @@ msgstr ""
 msgid "Recent files"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:117
+#: src/features/scene/sceneImportMessages.ts:127
 msgid "Recombining model and support geometry…"
 msgstr ""
 
@@ -4683,8 +4691,8 @@ msgstr ""
 msgid "Restore Factory Defaults?"
 msgstr ""
 
-#: src/app/page.tsx:4891
-#: src/app/page.tsx:4902
+#: src/app/page.tsx:4887
+#: src/app/page.tsx:4898
 msgid "Restore Failed"
 msgstr ""
 
@@ -4702,6 +4710,10 @@ msgstr ""
 
 #: src/components/layout/TopBar.tsx:1119
 msgid "Restore window"
+msgstr ""
+
+#: src/features/scene/sceneImportMessages.ts:78
+msgid "Restored {modelName}"
 msgstr ""
 
 #: src/features/updater/UpdateCheckerSection.tsx:480
@@ -5093,7 +5105,7 @@ msgstr ""
 msgid "Separate"
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:113
+#: src/features/scene/sceneImportMessages.ts:123
 msgid "Separating model and support geometry…"
 msgstr ""
 
@@ -5552,7 +5564,7 @@ msgstr ""
 msgid "Support would collide with the model geometry."
 msgstr ""
 
-#: src/features/scene/sceneImportMessages.ts:178
+#: src/features/scene/sceneImportMessages.ts:188
 msgid "Supported: {extensions}"
 msgstr ""
 
@@ -5651,12 +5663,12 @@ msgstr ""
 msgid "Tension"
 msgstr ""
 
-#: src/app/page.tsx:4904
+#: src/app/page.tsx:4900
 msgid "The autosave recovery file could not be found."
 msgstr ""
 
-#: src/app/page.tsx:4892
-#: src/app/page.tsx:4905
+#: src/app/page.tsx:4888
+#: src/app/page.tsx:4901
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr ""
 
@@ -5700,7 +5712,7 @@ msgstr ""
 msgid "The inputs and factors the last run sized the supports with"
 msgstr ""
 
-#: src/app/page.tsx:11647
+#: src/app/page.tsx:11652
 msgid "The models on this plate are deleted with it."
 msgstr ""
 
@@ -5770,7 +5782,7 @@ msgstr ""
 msgid "The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you save."
 msgstr ""
 
-#: src/app/page.tsx:4893
+#: src/app/page.tsx:4889
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr ""
 
@@ -6003,7 +6015,7 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
-#: src/app/page.tsx:11601
+#: src/app/page.tsx:11606
 msgid "Undo brings the models back"
 msgstr ""
 
@@ -6049,7 +6061,7 @@ msgstr ""
 msgid "Unlock build plate"
 msgstr ""
 
-#: src/app/page.tsx:11670
+#: src/app/page.tsx:11675
 msgid "Unlock it to add or move models."
 msgstr ""
 
@@ -6075,7 +6087,7 @@ msgstr ""
 msgid "Unsaved Scene Found"
 msgstr ""
 
-#: src/app/page.tsx:10846
+#: src/app/page.tsx:10851
 msgid "Unsupported file format"
 msgstr ""
 

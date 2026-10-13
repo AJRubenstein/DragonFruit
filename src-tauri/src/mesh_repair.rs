@@ -473,6 +473,28 @@ pub async fn mesh_repair_from_path(
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
 }
 
+/// Loads a mesh from a path and stages it, repairing nothing.
+///
+/// The webview refuses a `file://` fetch at the security boundary, so a model's file cannot be read
+/// back from the UI directly. This is the first half of [`mesh_repair_from_path`] on its own, for
+/// putting a model back to how it arrived.
+#[tauri::command]
+pub async fn mesh_load_from_path(file_path: String) -> Result<(), String> {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!(
+            "mesh_load_from_path: not found: {}",
+            path.display()
+        ));
+    }
+    let mesh = tauri::async_runtime::spawn_blocking(move || {
+        io::load_mesh_from_path(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("load task panicked: {e}"))??;
+    replace_staging_with_mesh(&mesh)
+}
+
 /// Repairs in flight, by progress token.
 ///
 /// A cancel flips the flag and the repair reads it at its next stage boundary, so a

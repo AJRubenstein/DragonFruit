@@ -267,6 +267,19 @@ export async function repairFromPath(
 }
 
 /**
+ * Loads a mesh from a file path and returns its positions, repairing nothing.
+ *
+ * The webview refuses a `file://` fetch, so a path goes through Rust the way `repairFromPath` does
+ * and stops before the repair. Used to put a model back to how it arrived.
+ */
+export async function loadMeshFromPath(filePath: string): Promise<Float32Array | null> {
+  const core = await loadTauriCore();
+  if (!core) return null;
+  await core.invoke<void>('mesh_load_from_path', { filePath });
+  return readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+}
+
+/**
  * Uploads a geometry to the Rust staging buffer and runs analysis only —
  * no repair is performed and the staged buffer retains the original positions.
  * Returns null if not running under Tauri.

@@ -4565,6 +4565,7 @@ fn main() {
             mesh_refine::refine_mesh_soup,
             mesh_repair::mesh_analyze_staged,
             mesh_repair::mesh_repair_from_path,
+            mesh_repair::mesh_load_from_path,
             mesh_repair::mesh_repair_staged,
             mesh_repair::mesh_repair_cancel,
             mesh_repair::mesh_classify_staged,
