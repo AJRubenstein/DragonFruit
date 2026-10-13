@@ -15,7 +15,7 @@
     "description": "Detecting and repairing broken meshes: holes, non-manifold edges, flipped normals, self-intersections, decimation; broken meshes that go unnoticed or unwarned, repair results that are wrong, repair that fails."
   },
   "ui": {
-    "description": "Interface problems not owned by a specific feature: menus and context menus themselves, keyboard shortcut handling, drag and drop, mouse/trackpad/SpaceMouse input, the 3D viewport and camera, panels and layout, translations. When the tool or panel of a specific feature misbehaves, that feature's area applies instead."
+    "description": "Interface problems not owned by a specific feature: menus and context menus themselves, keyboard shortcut handling, drag and drop, mouse/trackpad/SpaceMouse input, the 3D viewport and camera, panels and layout, translations. Also two cross-cutting behaviours that are always ui, in addition to the area of the action involved: multi-model selection (an action that should apply to every selected model but only reaches some of them), and undo/redo (actions missing from the undo history, or undo restoring the wrong state). Otherwise, when the tool or panel of a specific feature misbehaves, that feature's area applies instead."
   },
   "scene tools": {
     "description": "Tools that act on the models in the scene: selecting them (one, several, all), moving, rotating, scaling, mirroring, lifting or dropping, duplicating, copying, cutting, pasting and deleting them, arranging them on the build plate, measuring them; whether from the gizmo, the Modify panel, the context menu or a shortcut. Includes actions that only reach part of a multi-selection. Cutting a model into pieces belongs to cuts instead."
