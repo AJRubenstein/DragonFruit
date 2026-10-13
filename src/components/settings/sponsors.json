@@ -9,6 +9,15 @@
     "totalAmountDonated": 400
   },
   {
+    "name": "KCast",
+    "profile": "https://opencollective.com/incognito-511b471d",
+    "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/9d3d5d53-be83-4892-a5e9-7b81735ced93/IMG_6181.jpg",
+    "website": null,
+    "role": "BACKER",
+    "tier": null,
+    "totalAmountDonated": 300
+  },
+  {
     "name": "Atlas 3DSS",
     "profile": "https://opencollective.com/atlas-3dss",
     "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/f479abfb-3b76-4f3f-87c1-9e6f7bfe29b8/_AtlasLogo_Large.png",
@@ -99,6 +108,15 @@
     "totalAmountDonated": 15
   },
   {
+    "name": "Viznoman",
+    "profile": "https://opencollective.com/viznoman",
+    "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/b023bcba-1115-4154-aa3c-8991af9ebc6f/Smug%20man%20face%20icon.jpg",
+    "website": null,
+    "role": "BACKER",
+    "tier": "Contributor",
+    "totalAmountDonated": 15
+  },
+  {
     "name": "Cunabula",
     "profile": "https://opencollective.com/cunabula",
     "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/17078813-f0be-4bda-9c18-ee637e971fd3/CP_Icon_250.png",
@@ -114,7 +132,7 @@
     "website": null,
     "role": "BACKER",
     "tier": "Backer",
-    "totalAmountDonated": 5
+    "totalAmountDonated": 10
   },
   {
     "name": "Sin",
