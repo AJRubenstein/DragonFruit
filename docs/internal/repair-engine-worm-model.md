@@ -59,20 +59,28 @@ makes step four impossible by construction.
 One thing not yet tried: the **union runs before the split** in the pipeline order, deliberately, and
 that order was chosen on other files. Running it on the split's output is the dead end above.
 
-## Measured since: the union itself is the problem
+## Measured since: the union is not the problem
 
-The fragmentation is not ours. Taking this file's components and feeding each to
-`Manifold::from_mesh_f32` directly:
+The first measurement said Manifold shatters this file's solids, and it was wrong. It called
+`Manifold::batch_union` on the raw components, and the pass does not do that:
+`union_closed_components` keeps every component Manifold refuses and recombines it, so the net
+effect is small.
 
-- **391 components, 348 accepted, 43 refused outright.**
-- Unioning the 348 accepted: **306,624 triangles out of 187k, and 1,892 components.**
+The real numbers, from the pipeline:
 
-A union of disjoint solids should return roughly what went in, and 1,892 is five times the 348. So
-Manifold takes these solids, accepts them, and shatters them. The pipeline's own union note (parts
-302 to 1,986, triangles +33%) is that number relayed, not a fault in our acceptance test.
+| | union | parts | surface |
+|---|---|---|---|
+| COOKIE_b4 | accepted | 233 to 37 | -14.16% |
+| corbu | accepted | 8 to 12 | -0.01% |
+| the worm | refused | 302 to 1986 | -6.31% |
 
-That means the boolean path is unusable on this file's solids, and every refusal downstream is
-correct. Repairing it needs a boolean that survives tangled input, or a re-export.
+The union *does* lose surface on the subset it accepts, and that loss is legitimate: it counts a
+shared interior once instead of twice, which is the point of merging solids. COOKIE_b4's 14% buys
+the merge that makes that file fully repaired, so a surface bound is the wrong guard to add here. It
+was written, measured against this table, and reverted, because it refuses the one union that works.
+
+The worm is refused on parts, 302 to 1,986 against an allowance of about 317, which is the right
+reason and catches it already.
 
 ## Related
 
