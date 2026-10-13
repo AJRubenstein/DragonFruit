@@ -1211,15 +1211,37 @@ fn cull_repeated_vertex_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
 /// different object from the one that went in. On the reported file the cull alone removed
 /// 995 faces and left seven boundary edges that were not there, with the weld refusing and
 /// reporting nothing.
+///
+/// So the rims it opens are filled before it is judged. Removing a face that stood twice leaves its
+/// neighbours unpaired, which is a hole where a doubled wall was rather than an opening somebody
+/// designed, and filling it is the other half of the same repair. Measured on the worm model, the
+/// cull alone turns 3,515 non-manifold edges into 2,000 and the boundary 1,454 into 2,226, and was
+/// refused for it; with the fill the same removal has somewhere to go.
 fn cull_duplicate_and_zero_area_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
     let before = mesh.clone();
     let health = crate::evaluate::evaluate(&before);
     let removed = cull_degenerate_and_duplicate(mesh);
+    let mut filled = 0;
+    if removed > 0 {
+        // No cap, for the same reason the split fills its rims uncapped: these are not holes in the
+        // mesh as it arrived, they are what the removal exposed.
+        filled = crate::holes::holes_all(mesh, usize::MAX);
+        // And the rims meet at pinches, which the fill skips by design because a pinched loop is not
+        // a simple cycle. Splitting the pinch makes those loops simple, which is the same recipe the
+        // split uses on its own rims.
+        let pinches = crate::topology_passes::split_pinched_vertices(mesh);
+        if pinches > 0 {
+            filled += crate::holes::holes_all(mesh, usize::MAX);
+        }
+        if filled > 0 {
+            let _ = unify_winding(mesh);
+        }
+    }
     if removed > 0 && crate::evaluate::evaluate(mesh).worse_than(&health) {
         *mesh = before;
         return (0, true);
     }
-    (removed, false)
+    (removed + filled, false)
 }
 
 fn stitch_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, usize, bool) {
