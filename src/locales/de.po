@@ -680,12 +680,9 @@ msgstr ""
 #: src/components/layout/EmptySceneState.tsx:533
 #: src/components/layout/OnboardingPrinterLibrary.tsx:414
 #: src/components/printers/PrinterVariantPickerModal.tsx:707
+#: src/components/settings/FleetManagement.tsx:269
 msgid "Add printer"
 msgstr "Drucker hinzufügen"
-
-#: src/components/settings/FleetManagement.tsx:269
-msgid "Add Printer"
-msgstr ""
 
 #: src/supports/history/supportHistoryLabels.ts:18
 msgctxt "Undo history entry"
@@ -2685,6 +2682,7 @@ msgid "Delete plate #{plateId}"
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
 #: src/supports/Settings/components/PresetSelector.tsx:857
 msgid "Delete preset"
 msgstr ""
@@ -2705,10 +2703,6 @@ msgstr ""
 #: src/features/scene/sceneHistoryLabels.ts:144
 msgctxt "Undo history entry"
 msgid "Delete supports of {modelName}"
-msgstr ""
-
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
-msgid "Delete the preset"
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:609
@@ -2929,11 +2923,8 @@ msgid "Double-click to lock this waypoint from snapping."
 msgstr ""
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:217
-msgid "Downloading update"
-msgstr ""
-
 #: src/features/updater/UpdateCheckerSection.tsx:311
-msgid "Downloading Update"
+msgid "Downloading update"
 msgstr ""
 
 #. Tool rail label. The tool that drags and places models on the plate. Deliberately "Drag" rather than "Arrange": the app uses "Arrange" elsewhere for arranging the whole plate, and Spanish distinguishes the two.
@@ -6857,6 +6848,7 @@ msgid "Repair Again"
 msgstr ""
 
 #: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:357
 msgid "Repair Complete"
 msgstr ""
 
@@ -6868,15 +6860,8 @@ msgstr ""
 msgid "Repair failed: {message}"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:357
-msgid "Repair finished"
-msgstr ""
-
-#: src/components/scene/MeshRepairReportModal.tsx:357
-msgid "Repair incomplete"
-msgstr ""
-
 #: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:357
 msgid "Repair Incomplete"
 msgstr ""
 
@@ -9078,11 +9063,8 @@ msgid "Update Available!"
 msgstr ""
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:229
-msgid "Update failed"
-msgstr ""
-
 #: src/features/updater/UpdateCheckerSection.tsx:464
-msgid "Update Failed"
+msgid "Update failed"
 msgstr ""
 
 #: src/features/updater/UpdateCheckerSection.tsx:374

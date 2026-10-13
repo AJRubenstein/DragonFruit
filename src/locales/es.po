@@ -680,11 +680,8 @@ msgstr "Añadir la placa {plateNumber}"
 #: src/components/layout/EmptySceneState.tsx:533
 #: src/components/layout/OnboardingPrinterLibrary.tsx:414
 #: src/components/printers/PrinterVariantPickerModal.tsx:707
-msgid "Add printer"
-msgstr "Añadir impresora"
-
 #: src/components/settings/FleetManagement.tsx:269
-msgid "Add Printer"
+msgid "Add printer"
 msgstr "Añadir impresora"
 
 #: src/supports/history/supportHistoryLabels.ts:18
@@ -2685,6 +2682,7 @@ msgid "Delete plate #{plateId}"
 msgstr "Eliminar la placa n.º {plateId}"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
 #: src/supports/Settings/components/PresetSelector.tsx:857
 msgid "Delete preset"
 msgstr "Eliminar el preajuste"
@@ -2706,10 +2704,6 @@ msgstr "Eliminar la instantánea"
 msgctxt "Undo history entry"
 msgid "Delete supports of {modelName}"
 msgstr "Eliminar los soportes de {modelName}"
-
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
-msgid "Delete the preset"
-msgstr "Eliminar el preajuste"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:609
 msgid "Delete the selected preset"
@@ -2929,11 +2923,8 @@ msgid "Double-click to lock this waypoint from snapping."
 msgstr "Haz doble clic para bloquear este punto y que el ajuste no lo mueva."
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:217
-msgid "Downloading update"
-msgstr "Descargando la actualización"
-
 #: src/features/updater/UpdateCheckerSection.tsx:311
-msgid "Downloading Update"
+msgid "Downloading update"
 msgstr "Descargando la actualización"
 
 #. Tool rail label. The tool that drags and places models on the plate. Deliberately "Drag" rather than "Arrange": the app uses "Arrange" elsewhere for arranging the whole plate, and Spanish distinguishes the two.
@@ -6858,6 +6849,7 @@ msgid "Repair Again"
 msgstr "Reparar de nuevo"
 
 #: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:357
 msgid "Repair Complete"
 msgstr "Reparación completada"
 
@@ -6869,15 +6861,8 @@ msgstr "Falló la reparación de {modelName}: {message}"
 msgid "Repair failed: {message}"
 msgstr "Falló la reparación: {message}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:357
-msgid "Repair finished"
-msgstr "Reparación terminada"
-
-#: src/components/scene/MeshRepairReportModal.tsx:357
-msgid "Repair incomplete"
-msgstr "Reparación incompleta"
-
 #: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:357
 msgid "Repair Incomplete"
 msgstr "Reparación incompleta"
 
@@ -6887,7 +6872,7 @@ msgstr "Reparar malla"
 
 #: src/components/controls/ModelManagerPanel.tsx:498
 msgid "Repair mesh…"
-msgstr "Reparar la malla…"
+msgstr "Reparar malla…"
 
 #: src/components/modals/ManifoldWarningModal.tsx:46
 msgid "Repair Now"
@@ -6918,7 +6903,7 @@ msgstr "{modelName} reparado."
 #: src/components/organisms/modals/MeshRepairModals.tsx:274
 #: src/components/organisms/modals/MeshRepairModals.tsx:290
 msgid "Repairing Mesh"
-msgstr "Reparando la malla"
+msgstr "Reparando malla"
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:382
 msgid "Repairing…"
@@ -9079,11 +9064,8 @@ msgid "Update Available!"
 msgstr "¡Actualización disponible!"
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:229
-msgid "Update failed"
-msgstr "Actualización fallida"
-
 #: src/features/updater/UpdateCheckerSection.tsx:464
-msgid "Update Failed"
+msgid "Update failed"
 msgstr "La actualización ha fallado"
 
 #: src/features/updater/UpdateCheckerSection.tsx:374

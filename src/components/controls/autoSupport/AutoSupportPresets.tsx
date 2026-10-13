@@ -676,7 +676,7 @@ export function AutoSupportSettingsFooterActions({
                 background: 'color-mix(in srgb, var(--danger), var(--surface-1) 88%)',
                 color: 'var(--danger)',
               }}
-              title={_(msg`Delete the preset`)}
+              title={_(msg`Delete preset`)}
             >
               {_(msg`Delete`)}
             </Button>

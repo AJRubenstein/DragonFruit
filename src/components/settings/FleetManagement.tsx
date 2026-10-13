@@ -266,7 +266,7 @@ export function FleetManagement({
                 style={{ color: 'var(--accent-secondary)' }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                <Trans>Add Printer</Trans>
+                <Trans>Add printer</Trans>
               </Button>
             ) : (
               managedPrinters.length > 0 && (

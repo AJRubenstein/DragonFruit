@@ -680,12 +680,9 @@ msgstr "Add plate {plateNumber}"
 #: src/components/layout/EmptySceneState.tsx:533
 #: src/components/layout/OnboardingPrinterLibrary.tsx:414
 #: src/components/printers/PrinterVariantPickerModal.tsx:707
+#: src/components/settings/FleetManagement.tsx:269
 msgid "Add printer"
 msgstr "Add printer"
-
-#: src/components/settings/FleetManagement.tsx:269
-msgid "Add Printer"
-msgstr "Add Printer"
 
 #: src/supports/history/supportHistoryLabels.ts:18
 msgctxt "Undo history entry"
@@ -2685,6 +2682,7 @@ msgid "Delete plate #{plateId}"
 msgstr "Delete plate #{plateId}"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
 #: src/supports/Settings/components/PresetSelector.tsx:857
 msgid "Delete preset"
 msgstr "Delete preset"
@@ -2706,10 +2704,6 @@ msgstr "Delete snapshot"
 msgctxt "Undo history entry"
 msgid "Delete supports of {modelName}"
 msgstr "Delete supports of {modelName}"
-
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
-msgid "Delete the preset"
-msgstr "Delete the preset"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:609
 msgid "Delete the selected preset"
@@ -2929,12 +2923,9 @@ msgid "Double-click to lock this waypoint from snapping."
 msgstr "Double-click to lock this waypoint from snapping."
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:217
+#: src/features/updater/UpdateCheckerSection.tsx:311
 msgid "Downloading update"
 msgstr "Downloading update"
-
-#: src/features/updater/UpdateCheckerSection.tsx:311
-msgid "Downloading Update"
-msgstr "Downloading Update"
 
 #. Tool rail label. The tool that drags and places models on the plate. Deliberately "Drag" rather than "Arrange": the app uses "Arrange" elsewhere for arranging the whole plate, and Spanish distinguishes the two.
 #: src/components/controls/toolRailEntries.ts:49
@@ -6858,6 +6849,7 @@ msgid "Repair Again"
 msgstr "Repair Again"
 
 #: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:357
 msgid "Repair Complete"
 msgstr "Repair Complete"
 
@@ -6869,15 +6861,8 @@ msgstr "Repair failed for {modelName}: {message}"
 msgid "Repair failed: {message}"
 msgstr "Repair failed: {message}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:357
-msgid "Repair finished"
-msgstr "Repair finished"
-
-#: src/components/scene/MeshRepairReportModal.tsx:357
-msgid "Repair incomplete"
-msgstr "Repair incomplete"
-
 #: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:357
 msgid "Repair Incomplete"
 msgstr "Repair Incomplete"
 
@@ -9079,12 +9064,9 @@ msgid "Update Available!"
 msgstr "Update Available!"
 
 #: src/features/updater/GlobalUpdateIndicator.tsx:229
+#: src/features/updater/UpdateCheckerSection.tsx:464
 msgid "Update failed"
 msgstr "Update failed"
-
-#: src/features/updater/UpdateCheckerSection.tsx:464
-msgid "Update Failed"
-msgstr "Update Failed"
 
 #: src/features/updater/UpdateCheckerSection.tsx:374
 msgid "Update installed. DragonFruit will restart."
