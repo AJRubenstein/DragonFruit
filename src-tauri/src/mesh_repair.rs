@@ -425,7 +425,7 @@ fn release_cancel(token: Option<&String>) {
 fn progress_sink(
     token: Option<String>,
     cancel: Option<Arc<AtomicBool>>,
-    app: tauri::AppHandle,
+    app: crate::DragonFruitAppHandle,
 ) -> impl FnMut(&str, usize) -> bool + Send + 'static {
     move |name: &str, index: usize| {
         if let Some(token) = token.as_deref() {
@@ -446,7 +446,7 @@ pub async fn mesh_repair_from_path(
     file_path: String,
     options_json: String,
     progress_token: Option<String>,
-    app: tauri::AppHandle,
+    app: crate::DragonFruitAppHandle,
 ) -> Result<String, String> {
     let path = PathBuf::from(&file_path);
     if !path.exists() {
@@ -524,7 +524,7 @@ pub async fn mesh_repair_cancel(progress_token: String) -> Result<bool, String> 
 pub async fn mesh_repair_staged(
     options_json: String,
     progress_token: Option<String>,
-    app: tauri::AppHandle,
+    app: crate::DragonFruitAppHandle,
 ) -> Result<String, String> {
     let options = parse_options(&options_json)?;
     let bytes = read_staging_bytes()?;
