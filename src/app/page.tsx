@@ -6556,7 +6556,6 @@ export default function Home() {
               );
               applyJointSplitKnotRemaps(knotRemaps);
               updateSupportEntity(owner.typeId, updated);
-              // i18n-ignore: undo-history description, only shown in the history debug modal
               pushSupportEditHistory(createJointLabel(descriptor.id), beforeSnapshot, captureSupportEditSnapshot());
             }
           }
