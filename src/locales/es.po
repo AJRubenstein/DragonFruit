@@ -3924,7 +3924,7 @@ msgstr "¡Únete a la Open Resin Alliance!"
 
 #: src/components/scene/repairProgressMessages.ts:20
 msgid "Joining loose edges"
-msgstr "Uniendo bordes sueltos"
+msgstr "Uniendo aristas sueltas"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:496
 msgid "Joint Clearance"
@@ -5043,7 +5043,7 @@ msgstr "Todavía no hay instantáneas. Usa «Copiar ahora» para crear la primer
 
 #: src/features/scene/useSceneCollectionManager.ts:7020
 msgid "No source file to restore this model from."
-msgstr "No hay archivo de origen del que restaurar este modelo."
+msgstr "No hay un archivo de origen desde el que restaurar este modelo."
 
 #: src/components/layout/EmptySceneState.tsx:102
 msgid "No supports needed for an empty scene."
@@ -5496,7 +5496,7 @@ msgstr "Pinta zonas vetadas para los soportes. Un contacto bloqueado se rechaza 
 
 #: src/components/modals/ManifoldWarningModal.tsx:52
 msgid "Parts of this mesh are not closed — edges are left open, faces cross through each other, or surfaces do not quite meet. Slicing and support placement expect a sealed solid, so defects can reach the print without showing up here first."
-msgstr "Algunas partes de esta malla no están cerradas: hay aristas abiertas, caras que se cruzan entre sí o superficies que no llegan a unirse. El laminado y la colocación de soportes esperan un sólido sellado, así que los defectos pueden llegar a la impresión sin aparecer antes aquí."
+msgstr "Algunas partes de esta malla no están cerradas: hay aristas abiertas, caras que se cruzan entre sí o superficies que no llegan a unirse. El laminado y la colocación de soportes necesitan un sólido cerrado, así que los defectos pueden llegar a la impresión sin que se vean antes aquí."
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:81
 msgid "Passes that run after placement — how much one trunk may carry, and the coverage the gap-filler must reach"
@@ -6255,7 +6255,7 @@ msgstr "Eliminando caras duplicadas de nuevo"
 
 #: src/components/scene/repairProgressMessages.ts:30
 msgid "Removing faces inside the model"
-msgstr "Eliminando caras dentro del modelo"
+msgstr "Eliminando las caras interiores del modelo"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:378
 #: src/features/slicing/components/LutCurveEditor.tsx:1314
@@ -6534,7 +6534,7 @@ msgstr "Restaurar ventana"
 
 #: src/features/scene/sceneImportMessages.ts:78
 msgid "Restored {modelName}"
-msgstr "Restaurado {modelName}"
+msgstr "{modelName} restaurado"
 
 #: src/components/organisms/modals/PrintingModals.tsx:1969
 msgid "Resume"
@@ -7116,7 +7116,7 @@ msgstr "Separando la geometría del modelo y la de los soportes…"
 
 #: src/components/scene/repairProgressMessages.ts:33
 msgid "Separating model and supports"
-msgstr "Separando modelo y soportes"
+msgstr "Separando el modelo de los soportes"
 
 #: src/components/scene/repairProgressMessages.ts:26
 msgid "Separating surfaces that overlap"
@@ -7971,7 +7971,7 @@ msgstr "la impresora para la que se creó esta escena"
 
 #: src/components/modals/ManifoldWarningModal.tsx:59
 msgid "The red-striped areas in the viewport mark the parts that failed validation."
-msgstr "Las zonas rayadas en rojo de la vista marcan las partes que no superaron la validación."
+msgstr "Las zonas con rayas rojas en la vista marcan las partes que no han superado la validación."
 
 #: src/components/layout/EmptySceneState.tsx:81
 msgid "The resin is ready. Are you?"
@@ -8157,7 +8157,7 @@ msgstr "Esto restablecerá <0>Detalle</0>, <1>Estructura</1> y <2>Anclaje</2> a 
 
 #: src/components/scene/repairProgressMessages.ts:32
 msgid "Tidying up"
-msgstr "Ajustes finales"
+msgstr "Dando los últimos retoques"
 
 #: src/components/layout/EmptySceneState.tsx:73
 msgid "Time to make something real."
