@@ -372,12 +372,12 @@
 ### [cleanup] Unreachable files, in whole subtrees — L · medium risk
 - Where: `npx knip --no-progress --include files`. `knip.json` already declares
   the entry points knip cannot see, so what it lists is a candidate, not noise.
-- What: chiefly whole subtrees — `src/supports/Rafts/Crenelated/geometry/`,
-  `src/components/models/`,
+- What: chiefly whole subtrees — `src/components/models/`,
   `src/supports/interaction/shared/placement/preview/` — plus strays such as
   `BackupsSettingsTab.tsx` (replaced by `LocalBackupsSettingsTab`).
 - Why: directories that read as live architecture and compile to nothing.
-- Careful: delete subtree by subtree. A manual script that shows up gets
+- Careful: knip lists files, not directories — count what is still live in a
+  directory before calling it dead. A manual script that shows up gets
   documented and added to `entry`, or deleted — never widen `entry` to `scripts/**`.
 
 ### [cleanup] Unused runtime dependencies — S · low risk
