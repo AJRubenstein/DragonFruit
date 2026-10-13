@@ -1308,7 +1308,7 @@ export default function Home() {
   // Column on the left edge or bar under the app bar; Settings and the rail's own
   // context menu both write the preference and announce it. The fold animation
   // itself lives in `ToolRail`, which measures the entries as the layout lands.
-  const [toolLayout, setToolLayoutState] = React.useState<ToolLayout>('vertical');
+  const [toolLayout, setToolLayoutState] = React.useState<ToolLayout>('horizontal');
   React.useEffect(() => {
     setToolLayoutState(getToolLayout());
 
@@ -8732,6 +8732,24 @@ export default function Home() {
     ? _(msg`Letting DragonFruit finish its startup animation before loading your scene.`)
     : importOverlayState.detail;
 
+  // An empty scene has nothing to list, so the list is hidden outright. Otherwise
+  // the bar always shows it — there is no room beside it for the list to hide into
+  // and no tile to bring it back — and only the column can hide it.
+  const modelsPanelShown = !showEmptySceneDialog && (modelsPanelVisible || toolLayout === 'horizontal');
+  // The bar passes no toggle, so the rail builds no Models entry there. The stored
+  // preference is left untouched, so switching back to the column restores whatever
+  // the user last chose.
+  const modelsRailToggle = toolLayout === 'vertical'
+    ? {
+      modelsPanelVisible,
+      onToggleModelsPanel: () => {
+        const next = !modelsPanelVisible;
+        setModelsPanelVisible(next);
+        setModelsPanelVisibleEnabled(next);
+      },
+    }
+    : {};
+
   const renderId = useRef(0);
   const postRotateLiftScheduledRef = useRef(false);
   renderId.current++;
@@ -10566,7 +10584,7 @@ export default function Home() {
               arrange: arrange,
               organicCut: organicCut,
               outsidePlateModelIds: outsidePlateModelIds,
-              modelsPanelVisible: modelsPanelVisible,
+              modelsPanelVisible: modelsPanelShown,
               modelsPanelCollapsible: toolLayout === 'horizontal',
               handleModelSelection: handleModelSelection,
               handleModelRangeSelection: handleModelRangeSelection,
@@ -10678,7 +10696,7 @@ export default function Home() {
               handleOpenModelSupportsInfo={handleOpenModelSupportsInfo}
               handleAddModels={() => { void handleOpenMeshDialog(); }}
               dimmed={showEmptySceneDialog || importOverlayState.active}
-              hidden={!modelsPanelVisible}
+              hidden={!modelsPanelShown}
               collapsible={toolLayout === 'horizontal'}
               bottomClearancePx={modelStatsBottomClearancePx}
             />
@@ -11249,12 +11267,7 @@ export default function Home() {
                   setTransformModeWithMirrorFinalize('select');
                 }
               },
-              modelsPanelVisible,
-              onToggleModelsPanel: () => {
-                const next = !modelsPanelVisible;
-                setModelsPanelVisible(next);
-                setModelsPanelVisibleEnabled(next);
-              },
+              ...modelsRailToggle,
               hollowingActive: transformMgr.transformMode === 'hollowing',
               onSelectHollowing: () => setTransformModeWithMirrorFinalize('hollowing'),
               viewMode: supportDisplaySettings.navigationDiscsOnly ? 'lines' : 'full',
@@ -11269,12 +11282,7 @@ export default function Home() {
               mode: transformMgr.transformMode,
               onModeChange: setTransformModeWithMirrorFinalize,
               onModeHover: handleToolRailHover,
-              modelsPanelVisible,
-              onToggleModelsPanel: () => {
-                const next = !modelsPanelVisible;
-                setModelsPanelVisible(next);
-                setModelsPanelVisibleEnabled(next);
-              },
+              ...modelsRailToggle,
             })}
           layout={toolLayout}
           onLayoutChange={setToolLayout}
