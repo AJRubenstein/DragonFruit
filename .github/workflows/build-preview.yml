@@ -559,7 +559,7 @@ jobs:
       # fetch caches live in `.next/cache`, and restoring that across runs is worth
       # a minute or two of each frontend build.
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'next.config.ts', 'tsconfig.json') }}
@@ -763,7 +763,7 @@ jobs:
       # fetch caches live in `.next/cache`, and restoring that across runs is worth
       # a minute or two of each frontend build.
       - name: Cache Next.js build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'next.config.ts', 'tsconfig.json') }}
