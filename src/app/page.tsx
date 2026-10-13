@@ -721,6 +721,8 @@ export default function Home() {
   // the batch does not pop additional modals.
   const warnedManifoldModelIdsRef = React.useRef<Set<string>>(new Set());
   const [showManifoldWarning, setShowManifoldWarning] = React.useState(false);
+  // The model the warning's Repair Now button repairs: the first flagged one.
+  const [manifoldWarningModelId, setManifoldWarningModelId] = React.useState<string | null>(null);
   // Restarting the timer on every refusal means holding the lock and clicking about
   // keeps one toast on screen rather than stacking them.
   notifyPlateLockedRef.current = (plateId) => {
@@ -748,6 +750,7 @@ export default function Home() {
     const hasUnwarned = flagged.some((model) => !warnedManifoldModelIdsRef.current.has(model.id));
     if (!hasUnwarned) return;
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
+    setManifoldWarningModelId(flagged[0].id);
     setShowManifoldWarning(true);
   }, [scene.models]);
 
@@ -1279,6 +1282,9 @@ export default function Home() {
     point: { x: number; y: number; z: number };
   } | null>(null);
   const [manualRepairModelId, setManualRepairModelId] = React.useState<string | null>(null);
+  // `autoStartRepair` marks a repair that must begin on its own — the manifold warning's
+  // Repair Now — instead of waiting in the Repair Mesh dialog for a second confirmation.
+  const [autoStartRepair, setAutoStartRepair] = React.useState(false);
   const [isManualRepairing, setIsManualRepairing] = React.useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = React.useState(false);
   const [isSliceMetricsDebugOpen, setIsSliceMetricsDebugOpen] = React.useState(false);
@@ -5818,6 +5824,7 @@ export default function Home() {
   }, [scene]);
 
   const handleRepairModel = React.useCallback((modelId: string) => {
+    setAutoStartRepair(false);
     setManualRepairModelId(modelId);
   }, []);
 
@@ -6548,7 +6555,7 @@ export default function Home() {
         const targetId = scene.activeModelId;
         if (targetId) {
           closeEditorContextMenu();
-          setManualRepairModelId(targetId);
+          handleRepairModel(targetId);
           return;
         }
         break;
@@ -11518,13 +11525,22 @@ export default function Home() {
 
       <ManifoldWarningModal
         isOpen={showManifoldWarning}
-        onAcknowledge={() => setShowManifoldWarning(false)}
+        onDismiss={() => setShowManifoldWarning(false)}
+        onRepairNow={() => {
+          setShowManifoldWarning(false);
+          if (!manifoldWarningModelId) return;
+          // Straight into the repair: the Repair Mesh dialog opens already running.
+          setAutoStartRepair(true);
+          setManualRepairModelId(manifoldWarningModelId);
+        }}
       />
 
 
       <MeshRepairModals
         isManualRepairing={isManualRepairing}
         manualRepairModelId={manualRepairModelId}
+        autoStartRepair={autoStartRepair}
+        setAutoStartRepair={setAutoStartRepair}
         scene={scene}
         setIsManualRepairing={setIsManualRepairing}
         setManualRepairModelId={setManualRepairModelId}

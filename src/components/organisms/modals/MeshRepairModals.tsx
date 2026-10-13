@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { AlertTriangle, Wrench, X } from 'lucide-react';
 import { Button, IconButton, IconChip, Spinner } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
@@ -86,6 +87,9 @@ function RepairProgressPanel({
 export type MeshRepairModalsProps = {
   isManualRepairing: boolean;
   manualRepairModelId: string | null;
+  /** A repair that must begin as soon as its model is set, without the dialog's own confirm step. */
+  autoStartRepair: boolean;
+  setAutoStartRepair: React.Dispatch<React.SetStateAction<boolean>>;
   scene: ReturnType<typeof useSceneCollectionManager>;
   setIsManualRepairing: React.Dispatch<React.SetStateAction<boolean>>;
   setManualRepairModelId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -97,6 +101,8 @@ export type MeshRepairModalsProps = {
 export function MeshRepairModals({
   isManualRepairing,
   manualRepairModelId,
+  autoStartRepair,
+  setAutoStartRepair,
   scene,
   setIsManualRepairing,
   setManualRepairModelId,
@@ -115,6 +121,43 @@ export function MeshRepairModals({
     const timer = window.setInterval(() => setTick(performance.now()), 100);
     return () => window.clearInterval(timer);
   }, [isManualRepairing]);
+
+  const runRepair = React.useCallback(() => {
+    const id = manualRepairModelId;
+    if (!id) return;
+    setIsManualRepairing(true);
+    setCancelling(false);
+    setManualRepair({ startedAt: performance.now(), stage: null, stages: [] });
+    void scene.repairModelInPlace(id, {
+      onToken: setRepairToken,
+      onProgress: (progress) => setManualRepair((previous) => (
+        previous
+          ? { ...previous, stage: progress, stages: [...previous.stages, progress] }
+          : previous
+      )),
+    }).finally(() => {
+      setIsManualRepairing(false);
+      setManualRepairModelId(null);
+      setManualRepair(null);
+      setRepairToken(null);
+      setCancelling(false);
+    });
+  }, [manualRepairModelId, scene, setIsManualRepairing, setManualRepairModelId]);
+
+  // Repair Now: the model arrives with the flag already set, so the repair starts here rather
+  // than waiting for a click on a Repair button the user has effectively already pressed.
+  const autoStartedModelIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!autoStartRepair || !manualRepairModelId) return;
+    if (autoStartedModelIdRef.current === manualRepairModelId) return;
+    autoStartedModelIdRef.current = manualRepairModelId;
+    runRepair();
+  }, [autoStartRepair, manualRepairModelId, runRepair]);
+
+  // Every way out of the dialog clears the flag, so the next repair opened by hand waits.
+  React.useEffect(() => {
+    if (manualRepairModelId === null) setAutoStartRepair(false);
+  }, [manualRepairModelId, setAutoStartRepair]);
 
   // Escape mirrors the backdrop click: it cannot leave mid-repair.
   useEscapeToClose(
@@ -188,7 +231,7 @@ export function MeshRepairModals({
               }}
               role="dialog"
               aria-modal="true"
-              aria-label={_(msg`Repair Mesh`)}
+              aria-label={autoStartRepair ? _(msg`Repairing mesh`) : _(msg`Repair Mesh`)}
             >
               <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div className="flex min-w-0 items-center gap-3">
@@ -204,10 +247,12 @@ export function MeshRepairModals({
 
                   <div className="min-w-0 pr-2">
                     <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                      {_(msg`Repair Mesh`)}
+                      {autoStartRepair ? _(msg`Repairing Mesh`) : _(msg`Repair Mesh`)}
                     </h2>
                     <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                      {_(msg`Fixes geometry issues before you keep working.`)}
+                      {autoStartRepair
+                        ? _(msg`Fixing geometry issues.`)
+                        : _(msg`Fixes geometry issues before you keep working.`)}
                     </p>
                   </div>
                 </div>
@@ -258,13 +303,14 @@ export function MeshRepairModals({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className={autoStartRepair ? 'pt-1' : 'grid grid-cols-2 gap-2 pt-1'}>
                   <Button
                     variant="secondary"
-                    className="w-full"
-                    disabled={isManualRepairing}
+                    className="w-full inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
+                    disabled={cancelling}
                     onClick={() => {
-                      if (isManualRepairing && repairToken) {
+                      if (isManualRepairing) {
+                        if (!repairToken) return;
                         // Stops at the next stage boundary, so the mesh it leaves is
                         // one the pipeline finished a pass on.
                         setCancelling(true);
@@ -274,38 +320,24 @@ export function MeshRepairModals({
                       setManualRepairModelId(null);
                     }}
                   >
-                    {isManualRepairing ? 'Stop' : 'Keep Original'}
-                  </Button>
-                  <Button
-                    variant="tinted-accent"
-                    className="w-full inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
-                    disabled={isManualRepairing}
-                    onClick={() => {
-                      const id = manualRepairModelId;
-                      setIsManualRepairing(true);
-                      setCancelling(false);
-                      setManualRepair({ startedAt: performance.now(), stage: null, stages: [] });
-                      void scene.repairModelInPlace(id, {
-                        onToken: setRepairToken,
-                        onProgress: (progress) => setManualRepair((previous) => (
-                          previous
-                            ? { ...previous, stage: progress, stages: [...previous.stages, progress] }
-                            : previous
-                        )),
-                      }).finally(() => {
-                        setIsManualRepairing(false);
-                        setManualRepairModelId(null);
-                        setManualRepair(null);
-                        setRepairToken(null);
-                        setCancelling(false);
-                      });
-                    }}
-                  >
-                    {isManualRepairing
-                      ? <><Spinner size="sm" />Repairing…</>
-                      : <><Wrench className="h-3.5 w-3.5" />Repair</>
+                    {cancelling
+                      ? <><Spinner size="sm" /><Trans>Stopping…</Trans></>
+                      : isManualRepairing ? <Trans>Stop</Trans> : <Trans>Keep Original</Trans>
                     }
                   </Button>
+                  {!autoStartRepair && (
+                    <Button
+                      variant="tinted-accent"
+                      className="w-full inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      disabled={isManualRepairing}
+                      onClick={runRepair}
+                    >
+                      {isManualRepairing
+                        ? <><Spinner size="sm" /><Trans>Repairing…</Trans></>
+                        : <><Wrench className="h-3.5 w-3.5" /><Trans>Repair</Trans></>
+                      }
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

@@ -321,7 +321,7 @@ msgstr ""
 msgid "Add contacts along the edge or corner a pose bears on, so a leaning part is held against toppling and peel (default on)"
 msgstr ""
 
-#: src/app/page.tsx:2459
+#: src/app/page.tsx:2465
 msgid "Add joint"
 msgstr "Pridať Kĺb"
 
@@ -440,7 +440,7 @@ msgstr ""
 msgid "Apply this preset to the auto-support settings"
 msgstr ""
 
-#: src/app/page.tsx:11653
+#: src/app/page.tsx:11669
 msgid "Are you sure you want to remove every model from the plate?"
 msgstr ""
 
@@ -547,7 +547,7 @@ msgstr ""
 msgid "Auto-Lift ON"
 msgstr ""
 
-#: src/app/page.tsx:2479
+#: src/app/page.tsx:2485
 #: src/components/settings/GeneralSettingsTab.tsx:498
 #: src/components/settings/GeneralSettingsTab.tsx:502
 #: src/components/ui/EditorContextMenu.tsx:118
@@ -655,7 +655,7 @@ msgstr ""
 msgid "Autosave idle delay"
 msgstr ""
 
-#: src/app/page.tsx:1143
+#: src/app/page.tsx:1146
 msgid "Autosave is not working"
 msgstr ""
 
@@ -928,7 +928,7 @@ msgstr ""
 msgid "Can't open this scene"
 msgstr ""
 
-#: src/app/page.tsx:11614
+#: src/app/page.tsx:11630
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 #: src/components/controls/AutoSupportPanel.tsx:652
@@ -1105,12 +1105,12 @@ msgstr ""
 
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
-#: src/app/page.tsx:10906
+#: src/app/page.tsx:10913
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1773
 msgid "Clear build plate"
 msgstr ""
 
-#: src/app/page.tsx:11603
+#: src/app/page.tsx:11619
 msgid "Clear Build Plate?"
 msgstr ""
 
@@ -1118,7 +1118,7 @@ msgstr ""
 msgid "Clear Override"
 msgstr ""
 
-#: src/app/page.tsx:11644
+#: src/app/page.tsx:11660
 msgid "Clear Plate"
 msgstr ""
 
@@ -1153,7 +1153,7 @@ msgstr ""
 msgid "Close"
 msgstr "Zatvoriť"
 
-#: src/app/page.tsx:11609
+#: src/app/page.tsx:11625
 msgid "Close clear-plate confirmation"
 msgstr ""
 
@@ -1314,7 +1314,7 @@ msgstr ""
 msgid "Configure Networking Later"
 msgstr ""
 
-#: src/app/page.tsx:11602
+#: src/app/page.tsx:11618
 msgid "Confirm clearing the build plate"
 msgstr ""
 
@@ -1322,7 +1322,7 @@ msgstr ""
 msgid "Confirm delete snapshot"
 msgstr ""
 
-#: src/app/page.tsx:11601
+#: src/app/page.tsx:11617
 msgid "Confirm deleting the plate"
 msgstr ""
 
@@ -1420,7 +1420,7 @@ msgstr ""
 msgid "Contoured regions"
 msgstr ""
 
-#: src/app/page.tsx:8671
+#: src/app/page.tsx:8678
 msgid "Converting support data and model metadata"
 msgstr ""
 
@@ -1676,7 +1676,7 @@ msgstr ""
 msgid "Delete model"
 msgstr ""
 
-#: src/app/page.tsx:11644
+#: src/app/page.tsx:11660
 #: src/components/controls/ModelManagerPanel.tsx:476
 #: src/components/controls/ModelManagerPanel.tsx:758
 #: src/components/controls/ModelManagerPanel.tsx:779
@@ -1714,11 +1714,11 @@ msgid "Delete this model's existing supports and place the new ones"
 msgstr ""
 
 #. Tooltip on the bin beside the build plate when the plate can go: it removes the bed and the models standing on it. Undo brings them back.
-#: src/app/page.tsx:10905
+#: src/app/page.tsx:10912
 msgid "Delete this plate"
 msgstr ""
 
-#: src/app/page.tsx:11603
+#: src/app/page.tsx:11619
 #: src/components/controls/ModelManagerPanel.tsx:759
 msgid "Delete this plate?"
 msgstr ""
@@ -1819,6 +1819,7 @@ msgstr ""
 msgid "Discovered Printers"
 msgstr ""
 
+#: src/components/modals/ManifoldWarningModal.tsx:38
 #: src/features/updater/GlobalUpdateIndicator.tsx:234
 msgid "Dismiss"
 msgstr ""
@@ -1929,7 +1930,7 @@ msgstr ""
 msgid "Drop supported files"
 msgstr "Hoď podporované súbory"
 
-#: src/app/page.tsx:10851
+#: src/app/page.tsx:10858
 msgid "Drop supported files to import"
 msgstr ""
 
@@ -1971,7 +1972,7 @@ msgstr ""
 msgid "Edit printer profile"
 msgstr ""
 
-#: src/app/page.tsx:2465
+#: src/app/page.tsx:2471
 msgid "Editor"
 msgstr "Editor"
 
@@ -2344,8 +2345,12 @@ msgctxt "Plate ordering mode: a fixed number of beds per row."
 msgid "Fixed"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:210
+#: src/components/organisms/modals/MeshRepairModals.tsx:255
 msgid "Fixes geometry issues before you keep working."
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:254
+msgid "Fixing geometry issues."
 msgstr ""
 
 #: src/features/organicCut/OrganicCutPanel.tsx:448
@@ -2886,6 +2891,10 @@ msgstr ""
 msgid "Keep going without a printer. You can add one later."
 msgstr "Pokračuj bez tlačiarne. Môžeš ju pridať neskôr."
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:324
+msgid "Keep Original"
+msgstr ""
+
 #: src/components/controls/AutoSupportPanel.tsx:650
 msgid "Keep the existing supports and do nothing"
 msgstr ""
@@ -3008,7 +3017,7 @@ msgstr ""
 msgid "Length"
 msgstr ""
 
-#: src/app/page.tsx:8711
+#: src/app/page.tsx:8718
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr ""
 
@@ -3090,7 +3099,7 @@ msgstr ""
 msgid "Loading Mesh Files…"
 msgstr ""
 
-#: src/app/page.tsx:8661
+#: src/app/page.tsx:8668
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr ""
@@ -3099,9 +3108,9 @@ msgstr ""
 msgid "Loading remote material…"
 msgstr ""
 
-#: src/app/page.tsx:4855
-#: src/app/page.tsx:8661
-#: src/app/page.tsx:8670
+#: src/app/page.tsx:4861
+#: src/app/page.tsx:8668
+#: src/app/page.tsx:8677
 msgid "Loading Scene…"
 msgstr ""
 
@@ -3334,6 +3343,11 @@ msgstr ""
 #: src/features/shaders/mesh/types.ts:45
 msgid "Mesh"
 msgstr "Mesh"
+
+#: src/components/modals/ManifoldWarningModal.tsx:26
+#: src/components/modals/ManifoldWarningModal.tsx:27
+msgid "Mesh Issue detected"
+msgstr ""
 
 #. Badge label next to the number of meshes this export writes. Rendered uppercase; keep it to one short word.
 #: src/features/export/components/ExportPanel.tsx:568
@@ -3593,7 +3607,7 @@ msgstr ""
 msgid "No active printer"
 msgstr "Žiadne aktívne tlačiarne"
 
-#: src/app/page.tsx:1147
+#: src/app/page.tsx:1150
 msgid "No autosave has succeeded this session. Save your project manually."
 msgstr ""
 
@@ -3978,7 +3992,7 @@ msgstr "Otvoriť scénu…"
 msgid "Opening"
 msgstr ""
 
-#: src/app/page.tsx:8708
+#: src/app/page.tsx:8715
 msgid "Opening scene…"
 msgstr ""
 
@@ -4062,6 +4076,10 @@ msgstr ""
 
 #: src/components/controls/AutoRotationPanel.tsx:76
 msgid "Paint nogo areas for supports. Blocked contact is refused when generating supports and avoided when orienting."
+msgstr ""
+
+#: src/components/modals/ManifoldWarningModal.tsx:52
+msgid "Parts of this mesh are not closed — edges are left open, faces cross through each other, or surfaces do not quite meet. Slicing and support placement expect a sealed solid, so defects can reach the print without showing up here first."
 msgstr ""
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:81
@@ -4390,7 +4408,7 @@ msgstr ""
 msgid "Re-slice required after profile change"
 msgstr "Znovu nasekanie je potrebné po zmene v profile"
 
-#: src/app/page.tsx:4856
+#: src/app/page.tsx:4862
 msgid "Reading autosaved scene…"
 msgstr ""
 
@@ -4479,7 +4497,7 @@ msgstr ""
 msgid "Remember window positions"
 msgstr ""
 
-#: src/app/page.tsx:2480
+#: src/app/page.tsx:2486
 #: src/components/ui/EditorContextMenu.tsx:119
 msgid "Remesh"
 msgstr ""
@@ -4589,16 +4607,17 @@ msgstr ""
 msgid "Reopen {0}"
 msgstr "Znovu otvoriť {0}"
 
+#: src/components/organisms/modals/MeshRepairModals.tsx:336
 #: src/components/ui/EditorContextMenu.tsx:114
 msgid "Repair"
 msgstr "Opraviť"
 
-#: src/app/page.tsx:2479
+#: src/app/page.tsx:2485
 msgid "Repair Again"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:191
-#: src/components/organisms/modals/MeshRepairModals.tsx:207
+#: src/components/organisms/modals/MeshRepairModals.tsx:234
+#: src/components/organisms/modals/MeshRepairModals.tsx:250
 msgid "Repair Mesh"
 msgstr ""
 
@@ -4606,11 +4625,27 @@ msgstr ""
 msgid "Repair mesh…"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:75
+#: src/components/modals/ManifoldWarningModal.tsx:46
+msgid "Repair Now"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:76
 msgid "Repair progress"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:242
+#: src/components/organisms/modals/MeshRepairModals.tsx:234
+msgid "Repairing mesh"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:250
+msgid "Repairing Mesh"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:335
+msgid "Repairing…"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:287
 msgid "Repairs holes, broken surfaces, and other mesh problems."
 msgstr ""
 
@@ -4697,8 +4732,8 @@ msgstr ""
 msgid "Restore Factory Defaults?"
 msgstr ""
 
-#: src/app/page.tsx:4887
-#: src/app/page.tsx:4898
+#: src/app/page.tsx:4893
+#: src/app/page.tsx:4904
 msgid "Restore Failed"
 msgstr ""
 
@@ -5246,7 +5281,7 @@ msgstr ""
 msgid "Show plate-contact islands"
 msgstr ""
 
-#: src/app/page.tsx:2485
+#: src/app/page.tsx:2491
 msgid "Show Report"
 msgstr ""
 
@@ -5503,8 +5538,16 @@ msgstr ""
 msgid "STL size:"
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:55
+#: src/components/organisms/modals/MeshRepairModals.tsx:324
+msgid "Stop"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:56
 msgid "Stopping at the end of this step…"
+msgstr ""
+
+#: src/components/organisms/modals/MeshRepairModals.tsx:323
+msgid "Stopping…"
 msgstr ""
 
 #. Support preset for general use. Shown on a narrow card next to "Detail" and "Anchor".
@@ -5574,7 +5617,7 @@ msgstr ""
 msgid "Supported: {extensions}"
 msgstr ""
 
-#: src/app/page.tsx:2465
+#: src/app/page.tsx:2471
 #: src/components/ui/EditorContextMenu.tsx:126
 msgid "Supports"
 msgstr "Podpery"
@@ -5669,16 +5712,16 @@ msgstr ""
 msgid "Tension"
 msgstr ""
 
-#: src/app/page.tsx:4900
+#: src/app/page.tsx:4906
 msgid "The autosave recovery file could not be found."
 msgstr ""
 
-#: src/app/page.tsx:4888
-#: src/app/page.tsx:4901
+#: src/app/page.tsx:4894
+#: src/app/page.tsx:4907
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr ""
 
-#: src/app/page.tsx:1144
+#: src/app/page.tsx:1147
 msgid "The background recovery save failed repeatedly."
 msgstr ""
 
@@ -5718,7 +5761,7 @@ msgstr ""
 msgid "The inputs and factors the last run sized the supports with"
 msgstr ""
 
-#: src/app/page.tsx:11652
+#: src/app/page.tsx:11668
 msgid "The models on this plate are deleted with it."
 msgstr ""
 
@@ -5780,6 +5823,10 @@ msgstr ""
 msgid "the printer this scene was built for"
 msgstr ""
 
+#: src/components/modals/ManifoldWarningModal.tsx:59
+msgid "The red-striped areas in the viewport mark the parts that failed validation."
+msgstr ""
+
 #: src/components/layout/EmptySceneState.tsx:79
 msgid "The resin is ready. Are you?"
 msgstr "Živica je pripravená. Si ty?"
@@ -5788,7 +5835,7 @@ msgstr "Živica je pripravená. Si ty?"
 msgid "The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you save."
 msgstr ""
 
-#: src/app/page.tsx:4889
+#: src/app/page.tsx:4895
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr ""
 
@@ -5867,6 +5914,10 @@ msgstr ""
 msgid "This is a built-in profile, so its fields are fixed. Duplicate it and edit the copy — custom settings belong in a custom profile."
 msgstr ""
 
+#: src/components/modals/ManifoldWarningModal.tsx:28
+msgid "This mesh isn't a valid solid"
+msgstr ""
+
 #: src/components/controls/AutoSupportPanel.tsx:640
 msgid "This model already has supports. How would you like to proceed?"
 msgstr ""
@@ -5936,7 +5987,7 @@ msgstr ""
 msgid "To recover it, open the scene in an older version of DragonFruit and save it again — the re-saved scene will open here."
 msgstr ""
 
-#: src/app/page.tsx:2454
+#: src/app/page.tsx:2460
 msgid "Toggle curve"
 msgstr "Prepnúť Krivku"
 
@@ -6021,11 +6072,11 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
-#: src/app/page.tsx:11606
+#: src/app/page.tsx:11622
 msgid "Undo brings the models back"
 msgstr ""
 
-#: src/app/page.tsx:2484
+#: src/app/page.tsx:2490
 msgid "Undo Repairs"
 msgstr ""
 
@@ -6067,7 +6118,7 @@ msgstr ""
 msgid "Unlock build plate"
 msgstr ""
 
-#: src/app/page.tsx:11675
+#: src/app/page.tsx:11691
 msgid "Unlock it to add or move models."
 msgstr ""
 
@@ -6093,7 +6144,7 @@ msgstr ""
 msgid "Unsaved Scene Found"
 msgstr ""
 
-#: src/app/page.tsx:10851
+#: src/app/page.tsx:10858
 msgid "Unsupported file format"
 msgstr ""
 
@@ -6462,6 +6513,10 @@ msgstr "Môžeš pokračovať v úprave profilov, ale bude potrebné znovu nasek
 
 #: src/components/settings/BackupsSettingsTab.tsx:949
 msgid "You can disconnect GitHub at any time. OAuth access is used only for repository checks and syncing backup files."
+msgstr ""
+
+#: src/components/modals/ManifoldWarningModal.tsx:64
+msgid "You can dismiss this and keep working, or repair the mesh now."
 msgstr ""
 
 #: src/components/controls/AutoSupportPanel.tsx:676
