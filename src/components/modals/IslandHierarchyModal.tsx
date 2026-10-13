@@ -5,6 +5,7 @@ import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import type { Island } from '@/volumeAnalysis/IslandScan/types';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { IconButton } from '@/components/atoms';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type IslandHierarchyModalProps = {
   islands: Island[];
@@ -109,13 +110,14 @@ type TreeNodeComponentProps = {
 };
 
 function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeComponentProps) {
+  const fmt = useLocaleFormat();
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
 
   const layerRange = `L${node.island.firstLayer}-${node.island.lastLayer}`;
-  const volume = node.island.volumeMm3?.toFixed(2) || '0.00';
+  const volume = fmt.fixed(node.island.volumeMm3 ?? 0, 2);
   const layerCount = node.island.lastLayer - node.island.firstLayer + 1;
-  const maxArea = node.island.maxAreaMm2?.toFixed(2) || '0.00';
+  const maxArea = fmt.fixed(node.island.maxAreaMm2 ?? 0, 2);
   const maxAreaLayer = node.island.maxAreaLayer ?? 0;
   const worldMaxAreaLayer = Math.round(maxAreaLayer + (zOffsetMm / layerHeightMm));
 

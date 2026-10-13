@@ -2,20 +2,22 @@
  * Utility functions for formatting mesh statistics and geometry display
  */
 
+import type { LocaleFormat } from './localeNumber';
+
 /**
  * Formats a polygon count to a compact display format
- * Examples: 1376686 -> "1.37M", 50000 -> "50K", 999 -> "999"
+ * Examples (en): 1376686 -> "1.38M", 50000 -> "50K", 999 -> "999"
  */
-export function formatPolygonCountCompact(count: number): string {
+export function formatPolygonCountCompact(count: number, fmt: LocaleFormat): string {
   if (count >= 1_000_000) {
     const millions = count / 1_000_000;
-    return `${millions.toFixed(millions >= 10 ? 0 : 2)}M`;
+    return `${fmt.fixed(millions, millions >= 10 ? 0 : 2)}M`;
   }
   if (count >= 1_000) {
     const thousands = count / 1_000;
-    return `${thousands.toFixed(thousands >= 10 ? 0 : 1)}K`;
+    return `${fmt.fixed(thousands, thousands >= 10 ? 0 : 1)}K`;
   }
-  return count.toString();
+  return fmt.fixed(count, 0);
 }
 
 /**
@@ -26,7 +28,7 @@ export function formatPolygonCountCompact(count: number): string {
  * Lifted from the model stats card, which had the only copy while two other
  * components kept their own — this is the one to call.
  */
-export function formatFileSize(bytes: number | null | undefined): string | null {
+export function formatFileSize(bytes: number | null | undefined, fmt: LocaleFormat): string | null {
   // Zero means "not known" rather than "empty": a path-backed import used to
   // report 0 for its size, and printing "0 B" for a mesh that plainly has bytes
   // is worse than printing nothing.
@@ -36,8 +38,8 @@ export function formatFileSize(bytes: number | null | undefined): string | null 
   const MB = KB * 1024;
   const GB = MB * 1024;
 
-  if (abs >= GB) return `${(abs / GB).toFixed(2)} GB`;
-  if (abs >= MB) return `${(abs / MB).toFixed(2)} MB`;
-  if (abs >= KB) return `${(abs / KB).toFixed(1)} KB`;
-  return `${abs.toFixed(0)} B`;
+  if (abs >= GB) return `${fmt.fixed(abs / GB, 2)} GB`;
+  if (abs >= MB) return `${fmt.fixed(abs / MB, 2)} MB`;
+  if (abs >= KB) return `${fmt.fixed(abs / KB, 1)} KB`;
+  return `${fmt.fixed(abs, 0)} B`;
 }

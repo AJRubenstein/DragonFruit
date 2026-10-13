@@ -33,6 +33,8 @@ import type { ScenePlate } from '@/features/scene/useSceneCollectionManager';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { LocaleFormat } from '@/utils/localeNumber';
 import { ContextMenu, type ContextMenuEntry } from '@/components/ui/ContextMenu';
 
 type SelectMode = 'single' | 'toggle' | 'add';
@@ -46,9 +48,9 @@ type Translate = (descriptor: MessageDescriptor, values?: Record<string, unknown
  * the placeholders raw in production — the same reason page.tsx keeps its
  * formatters out here.
  */
-function formatModelInfoTooltip(translate: Translate, model: LoadedModel): string {
+function formatModelInfoTooltip(translate: Translate, fmt: LocaleFormat, model: LoadedModel): string {
   const polygons = translate(msg`${plural(model.polygonCount, { one: '# polygon', other: '# polygons' })}`);
-  const size = formatFileSize(model.fileSizeBytes);
+  const size = formatFileSize(model.fileSizeBytes, fmt);
   return size ? translate(msg`${size} · ${polygons}`) : polygons;
 }
 
@@ -210,6 +212,7 @@ export function ModelManagerPanel({
   collapsible = true,
 }: ModelManagerPanelProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [collapseExpanded, setCollapseExpanded] = useFloatingPanelCollapse(true);
   // Where collapse is not offered the panel is pinned expanded. This has to be a
   // fallback, not a conjunction: `collapsible && collapseExpanded` reads false in
@@ -681,7 +684,7 @@ export function ModelManagerPanel({
 
                     <div className="flex items-center gap-0.5">
                       {onOpenSupportsInfo && (
-                        <Tooltip content={formatModelInfoTooltip(_, model)}>
+                        <Tooltip content={formatModelInfoTooltip(_, fmt, model)}>
                           <IconButton
                             variant="ghost"
                             size="sm"

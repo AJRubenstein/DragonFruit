@@ -61,6 +61,8 @@ import {
   type SavedCurve,
 } from './LutCurveEditor';
 import { useKeyPressed } from '@/hotkeys/hotkeyStore';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { LocaleFormat } from '@/utils/localeNumber';
 
 export type SliceIntent = 'file' | 'upload' | 'print' | 'preview' | 'uvtools';
 
@@ -257,11 +259,11 @@ function formatDuration(ms: number | null): string {
     .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function formatLayerRate(translate: Translate, layersPerSecond: number | null): string {
+function formatLayerRate(translate: Translate, fmt: LocaleFormat, layersPerSecond: number | null): string {
   if (layersPerSecond == null || !Number.isFinite(layersPerSecond)) return '—';
   const rate = layersPerSecond >= 100
     ? String(Math.round(layersPerSecond))
-    : layersPerSecond.toFixed(1);
+    : fmt.fixed(layersPerSecond, 1);
   return translate(msg`${rate} layers/s`);
 }
 
@@ -821,6 +823,7 @@ export function SlicingPanel({
   const sliceIntentAnchorRef = useRef<HTMLDivElement | null>(null);
   const [isSlicingZip, setIsSlicingZip] = useState(false);
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [sliceStatus, setSliceStatus] = useState('Idle');
   const [currentPhase, setCurrentPhase] = useState('Idle');
   const [progressDone, setProgressDone] = useState(0);
@@ -1361,8 +1364,8 @@ export function SlicingPanel({
     }
 
     const ml = totalMm3 / 1000;
-    return `${ml.toFixed(2)} mL`;
-  }, [estimatedVolumeLabelOverride, visibleModels]);
+    return `${fmt.fixed(ml, 2)} mL`;
+  }, [estimatedVolumeLabelOverride, visibleModels, fmt]);
 
   const effectiveLayerHeightMm = useMemo(() => {
     if (showRemoteOfflineLayerHeightOverride) {
@@ -2456,7 +2459,7 @@ export function SlicingPanel({
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}><Trans>Layer Height</Trans></div>
                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {effectiveLayerHeightMm != null ? `${effectiveLayerHeightMm.toFixed(3)} mm` : '—'}
+                  {effectiveLayerHeightMm != null ? `${fmt.fixed(effectiveLayerHeightMm, 3)} mm` : '—'}
                 </div>
               </div>
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
@@ -3102,7 +3105,7 @@ export function SlicingPanel({
                 {slicingModalStage === 'running' && liveLayersPerSec != null && (
                   <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                     <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Speed</Trans></div>
-                    <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatLayerRate(_, liveLayersPerSec)}</div>
+                    <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatLayerRate(_, fmt, liveLayersPerSec)}</div>
                   </div>
                 )}
               </div>

@@ -19,6 +19,7 @@ import { msg } from '@lingui/core/macro';
 import { ChevronDown } from 'lucide-react';
 import type { ForestReport, SizingDebugInfo } from '@/supports/autoSupport';
 import { AUTO_SUPPORT_SECTION_CARD } from './autoSupportPanelTabs';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 export type AutoSupportRunDiagnosticsProps = {
   /** The last run's inputs and factors. Nothing renders until a run produced one. */
@@ -34,6 +35,7 @@ export function AutoSupportRunDiagnostics({
   onShowForestReport,
 }: AutoSupportRunDiagnosticsProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [showSizingDebug, setShowSizingDebug] = React.useState(false);
 
   return (
@@ -56,21 +58,21 @@ export function AutoSupportRunDiagnostics({
           {showSizingDebug && (
             <div className="px-2.5 pb-2 space-y-1 text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
               <div className="flex justify-between border-t pt-1.5" style={{ borderColor: 'var(--border-subtle)' }}>
-                <span>{_(msg`Model volume`)}</span>{/* i18n-ignore: unit */}<span style={{ color: 'var(--text-strong)' }}>{(sizingDebug.modelVolumeMm3 / 1000).toFixed(1)} cm³</span>
+                <span>{_(msg`Model volume`)}</span>{/* i18n-ignore: unit */}<span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.modelVolumeMm3 / 1000, 1)} cm³</span>
               </div>
-              <div className="flex justify-between"><span>{_(msg`Est. weight`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.estimatedWeightG.toFixed(1)} g</span></div>
+              <div className="flex justify-between"><span>{_(msg`Est. weight`)}</span><span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.estimatedWeightG, 1)} g</span></div>
               <div className="flex justify-between"><span>{_(msg`Candidates`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.totalCandidates}</span></div>
-              <div className="flex justify-between"><span>{_(msg`Model size`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.modelSizeMm.toFixed(0)} mm</span></div>
-              <div className="flex justify-between"><span>{_(msg`Weight / support`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.weightPerSupportG.toFixed(2)} g</span></div>
-              <div className="flex justify-between"><span>{_(msg`Load share`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.loadShareG.toFixed(2)} g</span></div>
-              <div className="flex justify-between"><span>{_(msg`Sizing factors`)}</span><span style={{ color: 'var(--text-strong)' }}>×{sizingDebug.sizeFactor.toFixed(2)} size · ×{sizingDebug.loadFactor.toFixed(2)} load</span></div>
-              <div className="flex justify-between"><span>{_(msg`Avg island area`)}</span>{/* i18n-ignore: unit */}<span style={{ color: 'var(--text-strong)' }}>{sizingDebug.avgIslandAreaMm2.toFixed(2)} mm²</span></div>
+              <div className="flex justify-between"><span>{_(msg`Model size`)}</span><span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.modelSizeMm, 0)} mm</span></div>
+              <div className="flex justify-between"><span>{_(msg`Weight / support`)}</span><span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.weightPerSupportG, 2)} g</span></div>
+              <div className="flex justify-between"><span>{_(msg`Load share`)}</span><span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.loadShareG, 2)} g</span></div>
+              <div className="flex justify-between"><span>{_(msg`Sizing factors`)}</span><span style={{ color: 'var(--text-strong)' }}>×{fmt.fixed(sizingDebug.sizeFactor, 2)} size · ×{fmt.fixed(sizingDebug.loadFactor, 2)} load</span></div>
+              <div className="flex justify-between"><span>{_(msg`Avg island area`)}</span>{/* i18n-ignore: unit */}<span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.avgIslandAreaMm2, 2)} mm²</span></div>
               <div className="flex justify-between"><span>{_(msg`Standalone trunks`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.standaloneHosts}</span></div>
               <div className="flex justify-between"><span>{_(msg`Grid infill trunks`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.gridInfillHosts}</span></div>
               <div className="flex justify-between" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 2, marginTop: 2 }}>
-                <span>{_(msg`Shaft Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.shaftDiameterRange.min.toFixed(2)}–{sizingDebug.shaftDiameterRange.max.toFixed(2)} mm</span>
+                <span>{_(msg`Shaft Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.shaftDiameterRange.min, 2)}–{fmt.fixed(sizingDebug.shaftDiameterRange.max, 2)} mm</span>
               </div>
-              <div className="flex justify-between"><span>{_(msg`Tip Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{sizingDebug.tipContactRange.min.toFixed(2)}–{sizingDebug.tipContactRange.max.toFixed(2)} mm</span></div>
+              <div className="flex justify-between"><span>{_(msg`Tip Ø range`)}</span><span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(sizingDebug.tipContactRange.min, 2)}–{fmt.fixed(sizingDebug.tipContactRange.max, 2)} mm</span></div>
             </div>
           )}
         </div>
