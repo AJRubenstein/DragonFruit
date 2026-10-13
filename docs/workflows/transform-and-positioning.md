@@ -5,7 +5,7 @@ Use **Transform** in Prepare mode to position models before supports.
 ## 1) Enter Transform mode
 
 1. Switch to **Prepare**.
-2. In the tool rail on the left edge, choose **Transform**.
+2. In the tool rail under the app bar (or down the left edge, if the rail is parked there), choose **Transform**.
 3. Select the target model.
 
 ## 2) Move

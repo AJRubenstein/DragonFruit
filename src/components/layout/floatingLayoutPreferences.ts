@@ -71,9 +71,9 @@ export function setModelsPanelVisibleEnabled(enabled: boolean) {
 }
 
 export function getToolLayout(): ToolLayout {
-  if (typeof window === 'undefined') return 'vertical';
+  if (typeof window === 'undefined') return 'horizontal';
 
-  return window.localStorage.getItem(TOOL_LAYOUT_STORAGE_KEY) === 'horizontal' ? 'horizontal' : 'vertical';
+  return window.localStorage.getItem(TOOL_LAYOUT_STORAGE_KEY) === 'vertical' ? 'vertical' : 'horizontal';
 }
 
 export function setToolLayout(layout: ToolLayout) {

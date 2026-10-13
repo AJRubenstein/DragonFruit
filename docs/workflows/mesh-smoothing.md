@@ -5,7 +5,7 @@ Use **Brush** in Prepare mode to sculpt and clean local surface regions before s
 ## 1) Enter Brush mode
 
 1. Switch to **Prepare**.
-2. Choose **Brush** in the tool rail on the left edge.
+2. Choose **Brush** in the tool rail under the app bar (or down the left edge, if the rail is parked there).
 3. Select the model to edit.
 
 ## 2) Configure brush dynamics

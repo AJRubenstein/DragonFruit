@@ -1,32 +1,26 @@
 "use client";
 
 import React from 'react';
-import { createPortal } from 'react-dom';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import type { ToolLayout } from '@/components/layout/floatingLayoutPreferences';
 import { ContextMenu, type ContextMenuEntry } from '@/components/ui/ContextMenu';
-import { useOutsideDismiss } from '@/hooks/useOutsideDismiss';
-
-/** The docked column's width, also used to inset the floating panel stack. */
-export const TOOL_RAIL_WIDTH_PX = 74;
+import { Tooltip } from '@/components/ui/Tooltip';
 
 /**
- * One row of an entry's flyout. The labels stay descriptors so the rail keeps
- * the app's translation style, and `onSelect` stays with the caller that knows
- * what the option means.
+ * The square tile's side, in pixels. The Tailwind classes that size the tiles have
+ * to spell this number out — the scanner reads source text and does not evaluate
+ * constants — so change the classes and this together.
  */
-export type ToolRailMenuEntry = {
-  id: string;
-  label: MessageDescriptor;
-  /** Any SVG component: the rail's own drawn icons are options here too. */
-  icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  /** Lights the option's tile: for a list of mutually exclusive modes, the one in use. */
-  checked?: boolean;
-  onSelect: () => void;
-};
+const TILE_SIZE_PX = 54;
 
+/** The docked column's width — the tile plus its inset each side — also used to inset the floating panel stack. */
+export const TOOL_RAIL_WIDTH_PX = TILE_SIZE_PX + 12;
+
+/**
+ * One entry of the rail: a tile, its tooltip, and what a click does.
+ */
 export type ToolRailEntry = {
   id: string;
   label: MessageDescriptor;
@@ -34,19 +28,20 @@ export type ToolRailEntry = {
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   active: boolean;
   /**
+   * Wears the *other* recipe: the `off` one while `active`, the `on` one while not.
+   * For the Models toggle, whose tile is the way to undo what `active` names — the
+   * list is up, so the tile dims; the list is down, so it brightens and outlines.
+   * `active` still means what it says in `aria-pressed`.
+   */
+  invertLit?: boolean;
+  /**
    * Tool modes wear the primary hue, panels the secondary one — the same split
    * Prepare mode has between its eight tools and `Models`, and Support mode has
    * between its three panels.
    */
   tone: 'tool' | 'panel';
-  /** What clicking the entry does. Absent when it only opens a `menu`. */
+  /** What clicking the entry does. */
   onSelect?: () => void;
-  /**
-   * When present the entry opens this list instead of running `onSelect`, which
-   * is how an entry offers several variants of one thing (the support view
-   * modes) without spending a rail slot on each.
-   */
-  menu?: ToolRailMenuEntry[];
   /**
    * Renders the entry greyed and inert. For an entry whose feature depends on
    * something the scene may not have (interior view needs a hollowed model), so
@@ -88,11 +83,19 @@ export function HollowShellIcon(props: React.SVGProps<SVGSVGElement>) {
 }
 
 /**
- * The Interior view's icon: the hollowing tool's two squares, with the ink moved
- * to where the hollowing leaves it empty. `HollowShellIcon` fills the shell and
- * punches the cavity out; this fills the cavity and leaves the shell as an
- * outline. Same geometry, opposite side inked, so the pair reads as one idea
- * seen from two sides.
+ * The Interior view's icon: the hollowing tool's two squares with the shell
+ * broken into dots — the pattern is what the hollowing *removed*, so the outer
+ * wall reads as taken away and the filled inner square as the cavity left to
+ * look at. `HollowShellIcon` is the same idea from outside: one solid body with
+ * the cavity punched out of it.
+ *
+ * Dots rather than dashes. A dash pattern has to be phased against the rounded
+ * corners, and wherever a dash lands on one it bends through the arc, so the
+ * sides come out uneven and the long dashes read as though they join back up at
+ * icon size. A zero-length dash with a round cap is a dot: the same everywhere
+ * and legible down to the 28px the rail draws. The gap divides the outline's
+ * 71.7-unit perimeter into exactly 20, so the pattern closes with no seam where
+ * the path starts.
  */
 export function InteriorViewIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -101,11 +104,15 @@ export function InteriorViewIcon(props: React.SVGProps<SVGSVGElement>) {
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
+      strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
       {...props}
     >
-      <path d="M5 2.5h14a2.5 2.5 0 0 1 2.5 2.5v14a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V5A2.5 2.5 0 0 1 5 2.5Z" />
+      <path
+        d="M5 2.5h14a2.5 2.5 0 0 1 2.5 2.5v14a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V5A2.5 2.5 0 0 1 5 2.5Z"
+        strokeDasharray="0.01 3.585"
+      />
       <rect x="6.5" y="6.5" width="11" height="11" rx="1.4" fill="currentColor" stroke="none" />
     </svg>
   );
@@ -127,14 +134,21 @@ export function SolidSupportIcon(props: React.SVGProps<SVGSVGElement>) {
       aria-hidden="true"
       {...props}
     >
-      {/* The contact cone: a point at the model, its base exactly the member's
-          width so the two read as one tapered object rather than an arrowhead
-          stuck on a stick. */}
-      <path d="M2.4 2.4 8.6 5 6 8Z" fill="currentColor" stroke="none" />
-      {/* The member: a shorter run on the incline, then a longer drop to the
-          plate. Butt ends, so the foot stops at the plate instead of ending in a
-          blob; the join rounds the bend. */}
-      <path d="M7.3 6.5 11.6 10.1V21.2" strokeWidth={4} />
+      {/* The drawing sits in the left half of the box, because the skeleton was
+          traced against a plate line that is not drawn any more. The group
+          recentres it and grows it a tenth — the same transform its dashed twin
+          wears, so the pair stays one shape and the two tiles do not shift
+          against each other as the mode changes. */}
+      <g transform="translate(2.5 -1) scale(1.1)">
+        {/* The contact cone: a point at the model, its base exactly the member's
+            width so the two read as one tapered object rather than an arrowhead
+            stuck on a stick. */}
+        <path d="M2.4 2.4 8.6 5 6 8Z" fill="currentColor" stroke="none" />
+        {/* The member: a shorter run on the incline, then a longer drop to the
+            plate. Butt ends, so the foot stops at the plate instead of ending in a
+            blob; the join rounds the bend. */}
+        <path d="M7.3 6.5 11.6 10.1V21.2" strokeWidth={4} />
+      </g>
     </svg>
   );
 }
@@ -151,19 +165,23 @@ export function LineSupportIcon(props: React.SVGProps<SVGSVGElement>) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2.4}
+      strokeWidth={1.9}
       aria-hidden="true"
       {...props}
     >
-      {/* Butt caps on purpose: a round cap adds half the stroke width to each end
-          of a dash, and at these lengths that closes the gap and the shaft reads
-          as one solid line again. */}
-      <path d="M3.1 3 4.8 4.4" />
-      <path d="M6.5 5.9 8.2 7.3" />
-      <path d="M10 8.8 11.6 10.1" />
-      <path d="M11.6 10.1V12.3" />
-      <path d="M11.6 14.2V16.4" />
-      <path d="M11.6 18.3V20.5" />
+      {/* Same recentring and tenth-growth as `SolidSupportIcon`, so the two icons
+          stay aligned to the pixel instead of sliding as the mode changes. */}
+      <g transform="translate(2.5 -1) scale(1.1)">
+        {/* Butt caps on purpose: a round cap adds half the stroke width to each end
+            of a dash, and at these lengths that closes the gap and the shaft reads
+            as one solid line again. */}
+        <path d="M3.1 3 4.8 4.4" />
+        <path d="M6.5 5.9 8.2 7.3" />
+        <path d="M10 8.8 11.6 10.1" />
+        <path d="M11.6 10.1V12.3" />
+        <path d="M11.6 14.2V16.4" />
+        <path d="M11.6 18.3V20.5" />
+      </g>
     </svg>
   );
 }
@@ -234,6 +252,113 @@ export function CutSeamIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/**
+ * The On-Face tool's icon: the model as a cube seen corner-on, up off the plate,
+ * with an arrow settling it down onto the line. Lucide's `ArrowDownToLine` — the
+ * icon this replaces — is a plain arrow onto a rule, which reads as "download" or
+ * "drop to bottom" and says nothing about *which* face lands on the plate. Here
+ * the body, the plate and the motion are one picture: the diamond is a solid on
+ * its corner, the rule under it is the plate, and the arrow is the placement. The
+ * arrow sits clear of the diamond's lower-left edge so the two never merge into a
+ * blob at rail size.
+ */
+export function PlaceOnFaceIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {/* The solid, corner-on: an equilateral diamond filling the upper right. */}
+      <path d="M15.3 1.7 22.3 8.7 15.3 15.7 8.3 8.7Z" />
+      {/* The plate: edge to edge, so the model reads as landing on a surface
+          rather than resting on a tick mark. */}
+      <path d="M1.9 21.8h20.2" />
+      {/* The motion: a shaft down-left with an open head, held a clear step above
+          the plate and clear of the diamond's lower-left edge. */}
+      <path d="M8.3 12.6 3.2 17.7" />
+      <path d="M3.2 13.4v4.3h4.3" />
+    </svg>
+  );
+}
+
+/**
+ * The Islands tool's icon: a palm on its own island — the tool's picture of a
+ * detached region, and the shape the tool used to borrow from Lucide's
+ * `TreePalm` before it had to say *island* on its own.
+ *
+ * The palm is Lucide's `TreePalm` path data, scaled to 0.88 and dropped at
+ * (1.44, -0.1) so the trunk's foot lands on the island's crest. The numbers are
+ * baked in rather than left on a `<g transform>`: a transform would scale the
+ * stroke with the geometry, so the group would have to set its own width to keep
+ * the rail's 2, and a caller changing the width on the `<svg>` would then silently
+ * miss it. Scaling the coordinates leaves one stroke width for the whole icon —
+ * the same deal as every other icon in this file.
+ */
+export function IslandPalmIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {/* The island: one flat, wide hump, so the sand either side of the trunk
+          reads as land rather than as a stand the tree is planted on. */}
+      <path d="M2.6 21.46c2.4-1.5 5.4-2.2 9.4-2.2s6.9.7 9.4 2.2" />
+      {/* The palm, crown first: the two leaf fans, then the trunk down to the
+          foot that lands on the island's crest. */}
+      <path d="M12.88 6.94C12.88 4.511 10.715 2.54 8.04 2.54S3.2 4.511 3.2 6.94H4.96L5.84 6.06L6.72 6.94H10.24" />
+      <path d="M12.88 6.183A5.122 5.122 0 0 1 15.96 5.18C18.635 5.18 20.8 7.151 20.8 9.58H18.16L17.28 8.7L16.4 9.58H13.76" />
+      <path d="M6.623 8.445C4.731 10.337 4.599 13.258 6.315 14.983L10.046 11.243L10.662 10.627L11.287 10.002L13.153 8.137C11.437 6.412 8.515 6.553 6.623 8.445" />
+      <path d="M11.12 13.54C11.56 15.74 10.97 17.5 10.24 19.26H13.76C15.52 14.42 13.32 8.7 12.88 6.94" />
+    </svg>
+  );
+}
+
+/**
+ * The Automatic tool's icon: Lucide's `bot`, scaled up a touch.
+ *
+ * Lucide's glyphs sit in a 20-of-24-unit box so a wall of them reads evenly, but
+ * next to this rail's drawn icons that padding just makes the robot look small.
+ * The paths are Lucide's `bot` scaled 1.07 about the box centre, baked in — a
+ * `<g transform>` takes the stroke width with the geometry, and this keeps the
+ * rail's single 2-unit weight. The scale is bounded by the robot's ears, which
+ * already reach x=2 and x=22: 1.07 leaves 0.3 units either side, and much more
+ * clips them against the viewBox.
+ */
+export function AutoSupportIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M12 7.72V3.44H7.72" />
+      <rect width="17.12" height="12.84" x="3.44" y="7.72" rx="2.14" />
+      <path d="M1.3 14.14h2.14" />
+      <path d="M20.56 14.14h2.14" />
+      <path d="M15.21 13.07v2.14" />
+      <path d="M8.79 13.07v2.14" />
+    </svg>
+  );
+}
+
 /**
  * The two states an entry can be in, for one hue. Both tones take this same
  * recipe, so the rail reads as one set of controls and a hue change can never
@@ -272,6 +397,13 @@ const DISABLED_STYLES: React.CSSProperties = {
   opacity: 0.45,
 };
 
+// Only colours and the hover brightness are transitioned. `transition-all` also
+// watched width and transform, so the layout swap made the browser tween the
+// entry's own box (a column entry is a scrollbar narrower than `w-[54px]`, and
+// the scrollbar goes away in the bar) at the same time as the fold animation was
+// driving transform — two engines animating one property is the glitch.
+const TILE_BASE = 'flex h-[54px] items-center justify-center rounded-[5.5px] border transition-[color,background-color,border-color,filter,box-shadow] duration-150 hover:brightness-110';
+
 /**
  * The tool rail: a list of entries, in two layouts chosen in Settings and driven
  * by `ToolLayout` — a column down the left edge, or a bar centred under the app
@@ -288,15 +420,8 @@ const DISABLED_STYLES: React.CSSProperties = {
 export function ToolRail({ entries, layout, onLayoutChange }: ToolRailProps) {
   const { _ } = useLingui();
   const [menuPosition, setMenuPosition] = React.useState<{ x: number; y: number } | null>(null);
-  const [entryMenu, setEntryMenu] = React.useState<{ entry: ToolRailEntry; position: { x: number; y: number } } | null>(null);
   const [isFolding, setIsFolding] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const entryMenuRef = React.useRef<HTMLDivElement | null>(null);
-  const hoverCloseTimerRef = React.useRef<number | null>(null);
-  // Outside pointer down, Escape, resize and scroll — the same lifecycle the
-  // layout menu gets from `ContextMenu`. The flyout is its own ignore target, so
-  // choosing an option is not a dismissal.
-  useOutsideDismiss(entryMenu !== null, () => setEntryMenu(null), { ignoreRef: entryMenuRef });
   const entryRectsRef = React.useRef<Array<DOMRect>>([]);
   const previousLayoutRef = React.useRef(layout);
 
@@ -306,7 +431,7 @@ export function ToolRail({ entries, layout, onLayoutChange }: ToolRailProps) {
   // back up to the column.
   //
   // The rail is a scroll container, so `isFolding` lifts the clip for the length
-  // of the flight: a turned entry is wider than the 68px column and would
+  // of the flight: a turned entry is wider than the 54px column and would
   // otherwise be cut off against its own box.
   React.useLayoutEffect(() => {
     const container = containerRef.current;
@@ -367,64 +492,19 @@ export function ToolRail({ entries, layout, onLayoutChange }: ToolRailProps) {
   // a trip to Settings.
   const openLayoutMenu = (event: React.MouseEvent) => {
     event.preventDefault();
-    setEntryMenu(null);
     setMenuPosition({ x: event.clientX, y: event.clientY });
   };
-
-  // A left click on an entry that carries a menu opens it beside the entry —
-  // right of the column, below the bar — the way the layout menu opens where the
-  // pointer asked for it.
-  const openEntryMenuFor = (entry: ToolRailEntry, element: HTMLElement) => {
-    const rect = element.getBoundingClientRect();
-    const count = entry.menu?.length ?? 1;
-    // The tiles are 62px wide with a 6px gap, the same as the bar's own tiles.
-    const rowWidth = count * 62 + (count - 1) * 6;
-    setMenuPosition(null);
-    setEntryMenu({
-      entry,
-      // Both layouts spread the list sideways: right of the tile in the column,
-      // below and centred on it in the bar. Only where it starts changes.
-      position: layout === 'vertical'
-        ? { x: Math.min(rect.right + 6, window.innerWidth - rowWidth - 8), y: rect.top }
-        : {
-          x: Math.min(Math.max(8, rect.left + rect.width / 2 - rowWidth / 2), window.innerWidth - rowWidth - 8),
-          y: rect.bottom + 6,
-        },
-    });
-  };
-
-  // Hovering is how the list is meant to be read, so entering the tile opens it
-  // and a short grace period on leaving keeps it open while the pointer crosses
-  // the gap into the flyout.
-  const cancelHoverClose = () => {
-    if (hoverCloseTimerRef.current !== null) {
-      window.clearTimeout(hoverCloseTimerRef.current);
-      hoverCloseTimerRef.current = null;
-    }
-  };
-  const scheduleHoverClose = () => {
-    cancelHoverClose();
-    hoverCloseTimerRef.current = window.setTimeout(() => setEntryMenu(null), 220);
-  };
-  React.useEffect(() => cancelHoverClose, []);
 
   const layoutMenuEntries: ContextMenuEntry[] = [
     { id: 'vertical', label: _(msg`Vertical`), checked: layout === 'vertical' },
     { id: 'horizontal', label: _(msg`Horizontal`), checked: layout === 'horizontal' },
   ];
 
-  // Only colours and the hover brightness are transitioned. `transition-all` also
-  // watched width and transform, so the layout swap made the browser tween the
-  // entry's own box (a column entry is a scrollbar narrower than `w-[68px]`, and
-  // the scrollbar goes away in the bar) at the same time as the fold animation was
-  // driving transform — two engines animating one property is the glitch.
-  const entryClass = `flex h-[62px] flex-col items-center justify-center gap-1.5 rounded-[5.5px] border px-1 text-[11px] font-semibold leading-tight transition-[color,background-color,border-color,filter,box-shadow] duration-150 hover:brightness-110 ${layout === 'vertical' ? 'w-full' : 'w-[62px] shrink-0'}`;
-
   return (
     <div
       ref={containerRef}
       className={`${layout === 'vertical'
-        ? 'fixed left-1.5 top-[var(--topbar-height)] bottom-0 z-40 flex w-[62px] flex-col items-stretch gap-1.5 overflow-y-auto py-1.5 custom-scrollbar pointer-events-auto'
+        ? 'fixed left-1.5 top-[var(--topbar-height)] bottom-0 z-40 flex w-[54px] flex-col items-stretch gap-1.5 overflow-y-auto py-1.5 custom-scrollbar pointer-events-auto'
         : 'fixed left-1/2 top-[calc(var(--topbar-height)+4px)] z-40 flex -translate-x-1/2 flex-row items-stretch gap-1.5 overflow-x-auto px-1.5 custom-scrollbar pointer-events-auto'}${isFolding ? ' !overflow-visible' : ''}`}
       data-no-drag="true"
       data-no-window-drag="true"
@@ -435,58 +515,62 @@ export function ToolRail({ entries, layout, onLayoutChange }: ToolRailProps) {
       {entries.map((entry) => {
         const Icon = entry.icon;
         const styles = entry.tone === 'panel' ? PANEL_STYLES : TOOL_STYLES;
-        const iconColor = entry.tone === 'panel'
-          ? 'var(--accent-secondary)'
-          : entry.active ? 'var(--accent)' : 'var(--text-muted)';
+        // Which recipe the tile wears. `invertLit` flips only this, never `active`.
+        const lit = entry.invertLit === true ? !entry.active : entry.active;
+        const iconColor = !lit
+          ? 'var(--text-muted)'
+          : entry.tone === 'panel' ? 'var(--accent-secondary)' : 'var(--accent)';
         const separation = entry.separated === 'below'
           ? (layout === 'vertical' ? ' mb-3' : ' mr-3')
           : entry.separated === 'above'
             ? (layout === 'vertical' ? ' mt-3' : ' ml-3')
             : '';
-        const hasMenu = (entry.menu?.length ?? 0) > 0;
-        const isMenuOpen = entryMenu?.entry.id === entry.id;
         const isDisabled = entry.disabled === true;
+        // Where the tile sits in the rail and which side takes the group gap. The
+        // tooltip's wrapper carries it, so the tile and its hint are one flex child.
+        const geometry = `${layout === 'vertical' ? 'w-full' : 'w-[54px] shrink-0'}${separation}`;
 
         return (
-          <button
+          <Tooltip
             key={entry.id}
-            type="button"
-            data-rail-entry="true"
-            disabled={isDisabled}
-            onClick={hasMenu
-              ? (event) => {
-                cancelHoverClose();
-                if (entryMenu?.entry.id !== entry.id) openEntryMenuFor(entry, event.currentTarget);
-              }
-              : entry.onSelect}
-            onMouseEnter={isDisabled
-              ? undefined
-              : hasMenu
-                ? (event) => {
-                  cancelHoverClose();
-                  openEntryMenuFor(entry, event.currentTarget);
-                }
-                : () => entry.onHover?.(true)}
-            onMouseLeave={isDisabled ? undefined : hasMenu ? scheduleHoverClose : () => entry.onHover?.(false)}
-            onFocus={hasMenu
-              ? (event) => {
-                cancelHoverClose();
-                openEntryMenuFor(entry, event.currentTarget);
-              }
-              : () => entry.onHover?.(true)}
-            onBlur={() => entry.onHover?.(false)}
-            onContextMenu={openLayoutMenu}
-            className={`${entryClass}${separation}${isDisabled ? ' cursor-not-allowed' : ''}`}
-            style={isDisabled ? DISABLED_STYLES : entry.active ? styles.on : styles.off}
-            title={_(entry.hint)}
-            aria-label={_(entry.hint)}
-            {...(hasMenu
-              ? { 'aria-haspopup': 'menu' as const, 'aria-expanded': isMenuOpen }
-              : { 'aria-pressed': entry.active })}
+            content={(
+              // The popover is a fixed width, so a centred short line over a longer
+              // one reads as a caption for it rather than hanging left.
+              <span className="block text-center">
+                {_(entry.label)}
+                <span className="block" style={{ color: 'var(--text-muted)' }}>{_(entry.hint)}</span>
+              </span>
+            )}
+            // One box width for every tile rather than one sized per text, which is
+            // what made the longest hint's box look nothing like its neighbours.
+            // Narrow on purpose: the hint wraps instead of the box spreading.
+            width={140}
+            // Pinned under the tile rather than under the pointer: the box would
+            // otherwise slide around inside the tile and sit differently on every
+            // button. 8px clears the tile's own border. The column's tiles stack, so
+            // there the box goes beside the tile instead of over its neighbours.
+            anchor="trigger"
+            placement={layout === 'vertical' ? 'right' : 'below'}
+            offsetY={8}
+            wrapperClassName={geometry}
           >
-            <Icon className="h-6 w-6" style={{ color: isDisabled ? 'var(--text-muted)' : iconColor }} />
-            <span>{_(entry.label)}</span>
-          </button>
+            <button
+              type="button"
+              data-rail-entry="true"
+              disabled={isDisabled}
+              onClick={entry.onSelect}
+              onMouseEnter={isDisabled ? undefined : () => entry.onHover?.(true)}
+              onMouseLeave={isDisabled ? undefined : () => entry.onHover?.(false)}
+              onBlur={() => entry.onHover?.(false)}
+              onContextMenu={openLayoutMenu}
+              className={`${TILE_BASE} w-full${isDisabled ? ' cursor-not-allowed' : ''}`}
+              style={isDisabled ? DISABLED_STYLES : lit ? styles.on : styles.off}
+              aria-label={_(entry.label)}
+              aria-pressed={entry.active}
+            >
+              <Icon className="h-7 w-7" style={{ color: isDisabled ? 'var(--text-muted)' : iconColor }} />
+            </button>
+          </Tooltip>
         );
       })}
 
@@ -498,49 +582,6 @@ export function ToolRail({ entries, layout, onLayoutChange }: ToolRailProps) {
         title={_(msg`Tool layout`)}
         ariaLabel={_(msg`Tool layout`)}
       />
-
-      {/* An entry's own list, drawn as rail tiles rather than menu rows: the
-          options are variants of the entry itself, so they read as the same
-          control. It is portalled because the bar layout centres the rail with a
-          transform, and `position: fixed` inside a transformed ancestor resolves
-          against that ancestor rather than the viewport — the same reason
-          `ContextMenu` portals. */}
-      {entryMenu && createPortal(
-        <div
-          ref={entryMenuRef}
-          role="menu"
-          aria-label={_(entryMenu.entry.label)}
-          className="fixed z-[121] flex flex-row gap-1.5"
-          style={{ left: entryMenu.position.x, top: entryMenu.position.y }}
-          onMouseEnter={cancelHoverClose}
-          onMouseLeave={scheduleHoverClose}
-        >
-          {(entryMenu.entry.menu ?? []).map((option) => {
-            const OptionIcon = option.icon;
-            const optionIconColor = option.checked ? 'var(--accent-secondary)' : 'var(--text-muted)';
-
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={option.checked === true}
-                onClick={() => {
-                  setEntryMenu(null);
-                  option.onSelect();
-                }}
-                className={`${entryClass.replace('w-full', 'w-[62px]')} cursor-pointer`}
-                style={option.checked ? PANEL_STYLES.on : PANEL_STYLES.off}
-                title={_(option.label)}
-              >
-                {OptionIcon && <OptionIcon className="h-6 w-6" style={{ color: optionIconColor }} />}
-                <span>{_(option.label)}</span>
-              </button>
-            );
-          })}
-        </div>,
-        document.body,
-      )}
     </div>
   );
 }

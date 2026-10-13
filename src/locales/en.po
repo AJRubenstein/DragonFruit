@@ -483,7 +483,7 @@ msgid "Add joint"
 msgstr "Add joint"
 
 #. Tooltip on the plus in the Models panel header, which opens the mesh picker.
-#: src/components/controls/ModelManagerPanel.tsx:751
+#: src/components/controls/ModelManagerPanel.tsx:756
 msgid "Add models to the plate"
 msgstr "Add models to the plate"
 
@@ -585,7 +585,7 @@ msgstr "Ambient Occlusion"
 msgid "Analysis"
 msgstr "Analysis"
 
-#: src/app/page.tsx:11582
+#: src/app/page.tsx:11590
 msgid "Analyzing Model Islands & Minima"
 msgstr "Analyzing Model Islands & Minima"
 
@@ -682,7 +682,7 @@ msgstr "Applying..."
 msgid "Applying…"
 msgstr "Applying…"
 
-#: src/app/page.tsx:11677
+#: src/app/page.tsx:11685
 msgid "Are you sure you want to remove every model from the plate?"
 msgstr "Are you sure you want to remove every model from the plate?"
 
@@ -692,7 +692,7 @@ msgid "Area Σ {totalAreaLabel} • Min {minAreaLabel} • Max {maxAreaLabel}"
 msgstr "Area Σ {totalAreaLabel} • Min {minAreaLabel} • Max {maxAreaLabel}"
 
 #: src/components/controls/ArrangePanel.tsx:142
-#: src/components/controls/toolRailEntries.ts:58
+#: src/components/controls/toolRailEntries.ts:60
 msgid "Arrange"
 msgstr "Arrange"
 
@@ -721,7 +721,7 @@ msgid "Arrange model and transforms"
 msgstr "Arrange model and transforms"
 
 #. Tool rail entry. The tool that auto-packs the models onto the plate.
-#: src/components/controls/toolRailEntries.ts:58
+#: src/components/controls/toolRailEntries.ts:60
 msgid "Arrange models on the plate"
 msgstr "Arrange models on the plate"
 
@@ -747,7 +747,7 @@ msgstr "Arranging Models…"
 msgid "Arranging…"
 msgstr "Arranging…"
 
-#: src/components/controls/toolRailEntries.ts:57
+#: src/components/controls/toolRailEntries.ts:59
 msgid "Array copies across the plate"
 msgstr "Array copies across the plate"
 
@@ -814,7 +814,7 @@ msgid "Auto Orientation (Beta)"
 msgstr "Auto Orientation (Beta)"
 
 #. Tool rail entry in Support mode. Selecting it shows the Auto Supports panel, which generates supports.
-#: src/components/controls/toolRailEntries.ts:155
+#: src/components/controls/toolRailEntries.ts:169
 msgid "Auto support generation"
 msgstr "Auto support generation"
 
@@ -894,7 +894,7 @@ msgid "Auto-support settings"
 msgstr "Auto-support settings"
 
 #. Tool rail label in Support mode. Short for the Auto Supports panel, which generates supports automatically.
-#: src/components/controls/toolRailEntries.ts:154
+#: src/components/controls/toolRailEntries.ts:168
 msgid "Automatic"
 msgstr "Automatic"
 
@@ -1274,13 +1274,13 @@ msgstr "Camera view mode: {currentLabel}"
 msgid "Can't open this scene"
 msgstr "Can't open this scene"
 
-#: src/app/page.tsx:11638
+#: src/app/page.tsx:11646
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 #: src/components/controls/AutoSupportPanel.tsx:652
 #: src/components/controls/IslandScanCard.tsx:184
 #: src/components/controls/IslandsPanel.tsx:304
-#: src/components/controls/ModelManagerPanel.tsx:773
+#: src/components/controls/ModelManagerPanel.tsx:778
 #: src/components/organisms/modals/PrintingModals.tsx:661
 #: src/components/organisms/modals/PrintingModals.tsx:903
 #: src/components/organisms/modals/PrintingModals.tsx:1997
@@ -1524,12 +1524,12 @@ msgstr "Clear All failed. Check console for details."
 
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
-#: src/app/page.tsx:10930
+#: src/app/page.tsx:10948
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1772
 msgid "Clear build plate"
 msgstr "Clear build plate"
 
-#: src/app/page.tsx:11627
+#: src/app/page.tsx:11635
 msgid "Clear Build Plate?"
 msgstr "Clear Build Plate?"
 
@@ -1537,7 +1537,7 @@ msgstr "Clear Build Plate?"
 msgid "Clear Override"
 msgstr "Clear Override"
 
-#: src/app/page.tsx:11668
+#: src/app/page.tsx:11676
 msgid "Clear Plate"
 msgstr "Clear Plate"
 
@@ -1604,7 +1604,7 @@ msgstr "Client ID"
 msgid "Close"
 msgstr "Close"
 
-#: src/app/page.tsx:11633
+#: src/app/page.tsx:11641
 msgid "Close clear-plate confirmation"
 msgstr "Close clear-plate confirmation"
 
@@ -1632,7 +1632,7 @@ msgstr "Close DragonFruit now?"
 msgid "Close material anti-aliasing settings"
 msgstr "Close material anti-aliasing settings"
 
-#: src/components/controls/ModelManagerPanel.tsx:767
+#: src/components/controls/ModelManagerPanel.tsx:772
 #: src/components/modals/ObsoleteVoxlVersionModal.tsx:40
 #: src/components/modals/ScenePrinterMismatchModal.tsx:62
 #: src/features/slicing/components/SlicingPanel.tsx:3195
@@ -1763,8 +1763,8 @@ msgstr "Coincident"
 msgid "Collapse card"
 msgstr "Collapse card"
 
-#: src/components/controls/ModelManagerPanel.tsx:874
-#: src/components/controls/ModelManagerPanel.tsx:980
+#: src/components/controls/ModelManagerPanel.tsx:879
+#: src/components/controls/ModelManagerPanel.tsx:985
 msgid "Collapse folder"
 msgstr "Collapse folder"
 
@@ -1855,7 +1855,7 @@ msgstr "Confirm Cancel"
 msgid "Confirm cancel print"
 msgstr "Confirm cancel print"
 
-#: src/app/page.tsx:11626
+#: src/app/page.tsx:11634
 msgid "Confirm clearing the build plate"
 msgstr "Confirm clearing the build plate"
 
@@ -1875,7 +1875,7 @@ msgstr "Confirm delete recent file"
 msgid "Confirm delete snapshot"
 msgstr "Confirm delete snapshot"
 
-#: src/app/page.tsx:11625
+#: src/app/page.tsx:11633
 msgid "Confirm deleting the plate"
 msgstr "Confirm deleting the plate"
 
@@ -2101,7 +2101,7 @@ msgstr "Create a custom alpha response profile"
 msgid "Create a snapshot now and refresh history."
 msgstr "Create a snapshot now and refresh history."
 
-#: src/components/controls/toolRailEntries.ts:180
+#: src/components/controls/toolRailEntries.ts:214
 msgid "Create cavity or open-face shell"
 msgstr "Create cavity or open-face shell"
 
@@ -2376,10 +2376,10 @@ msgstr "Delete Curve Preset"
 msgid "Delete model"
 msgstr "Delete model"
 
-#: src/app/page.tsx:11668
+#: src/app/page.tsx:11676
 #: src/components/controls/ModelManagerPanel.tsx:479
-#: src/components/controls/ModelManagerPanel.tsx:761
-#: src/components/controls/ModelManagerPanel.tsx:782
+#: src/components/controls/ModelManagerPanel.tsx:766
+#: src/components/controls/ModelManagerPanel.tsx:787
 msgid "Delete plate"
 msgstr "Delete plate"
 
@@ -2430,12 +2430,12 @@ msgid "Delete this model's existing supports and place the new ones"
 msgstr "Delete this model's existing supports and place the new ones"
 
 #. Tooltip on the bin beside the build plate when the plate can go: it removes the bed and the models standing on it. Undo brings them back.
-#: src/app/page.tsx:10929
+#: src/app/page.tsx:10947
 msgid "Delete this plate"
 msgstr "Delete this plate"
 
-#: src/app/page.tsx:11627
-#: src/components/controls/ModelManagerPanel.tsx:762
+#: src/app/page.tsx:11635
+#: src/components/controls/ModelManagerPanel.tsx:767
 msgid "Delete this plate?"
 msgstr "Delete this plate?"
 
@@ -2555,7 +2555,7 @@ msgstr "Disconnected GitHub account."
 msgid "Discovered Printers"
 msgstr "Discovered Printers"
 
-#: src/app/page.tsx:11725
+#: src/app/page.tsx:11733
 #: src/components/scene/MeshRepairReportModal.tsx:219
 #: src/features/updater/GlobalUpdateIndicator.tsx:234
 msgid "Dismiss"
@@ -2630,7 +2630,7 @@ msgid "Downloading Update"
 msgstr "Downloading Update"
 
 #. Tool rail label. The tool that drags and places models on the plate. Deliberately "Drag" rather than "Arrange": the app uses "Arrange" elsewhere for arranging the whole plate, and Spanish distinguishes the two.
-#: src/components/controls/toolRailEntries.ts:47
+#: src/components/controls/toolRailEntries.ts:49
 msgid "Drag"
 msgstr "Drag"
 
@@ -2688,12 +2688,12 @@ msgstr "DragonFruit will try to fix common geometry issues before you keep worki
 msgid "Drop supported files"
 msgstr "Drop supported files"
 
-#: src/app/page.tsx:10875
+#: src/app/page.tsx:10893
 msgid "Drop supported files to import"
 msgstr "Drop supported files to import"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:391
-#: src/components/controls/toolRailEntries.ts:57
+#: src/components/controls/toolRailEntries.ts:59
 msgid "Duplicate"
 msgstr "Duplicate"
 
@@ -2756,7 +2756,7 @@ msgstr "Editor"
 msgid "Editor context menu"
 msgstr "Editor context menu"
 
-#: src/components/controls/ToolRail.tsx:433
+#: src/components/controls/ToolRail.tsx:513
 msgid "Editor tools"
 msgstr "Editor tools"
 
@@ -2912,8 +2912,8 @@ msgstr "Existing Supports Detected"
 msgid "Expand card"
 msgstr "Expand card"
 
-#: src/components/controls/ModelManagerPanel.tsx:874
-#: src/components/controls/ModelManagerPanel.tsx:980
+#: src/components/controls/ModelManagerPanel.tsx:879
+#: src/components/controls/ModelManagerPanel.tsx:985
 msgid "Expand folder"
 msgstr "Expand folder"
 
@@ -2996,7 +2996,7 @@ msgstr "Export selected curve"
 msgid "Export the selected preset as a JSON file"
 msgstr "Export the selected preset as a JSON file"
 
-#: src/app/page.tsx:11615
+#: src/app/page.tsx:11623
 #: src/features/export/components/ExportPanel.tsx:761
 msgid "Exporting…"
 msgstr "Exporting…"
@@ -3270,11 +3270,6 @@ msgstr "Front Right"
 msgid "Frustum"
 msgstr "Frustum"
 
-#. Support view mode. Every support member is drawn as a solid mesh.
-#: src/components/controls/toolRailEntries.ts:211
-msgid "Full"
-msgstr "Full"
-
 #: src/components/controls/ArrangePanel.tsx:267
 msgctxt "Arrange array spacing"
 msgid "Gap"
@@ -3314,7 +3309,7 @@ msgstr "Generate Supports"
 msgid "Generate supports automatically on scan"
 msgstr "Generate supports automatically on scan"
 
-#: src/app/page.tsx:11594
+#: src/app/page.tsx:11602
 msgid "Generating Supports"
 msgstr "Generating Supports"
 
@@ -3343,7 +3338,7 @@ msgstr "Give this build plate a name"
 msgid "Go back to the settings dialog"
 msgstr "Go back to the settings dialog"
 
-#: src/app/page.tsx:11717
+#: src/app/page.tsx:11725
 msgid "Go to Settings → 3D Mouse to configure or block it."
 msgstr "Go to Settings → 3D Mouse to configure or block it."
 
@@ -3499,12 +3494,12 @@ msgid "Hole Punching"
 msgstr "Hole Punching"
 
 #. Tool rail label in Support mode. One word, like the other tool names: opens the hollowing tool (shell the model, add drainage holes).
-#: src/components/controls/toolRailEntries.ts:179
+#: src/components/controls/toolRailEntries.ts:213
 msgid "Hollow"
 msgstr "Hollow"
 
 #. Tool rail entry in Support mode, shown greyed when the model has no cavity yet.
-#: src/components/controls/toolRailEntries.ts:230
+#: src/components/controls/toolRailEntries.ts:226
 msgid "Hollow the model first to look inside it"
 msgstr "Hollow the model first to look inside it"
 
@@ -3512,7 +3507,7 @@ msgstr "Hollow the model first to look inside it"
 msgid "Hollowing"
 msgstr "Hollowing"
 
-#: src/components/controls/ToolRail.tsx:413
+#: src/components/controls/ToolRail.tsx:500
 msgid "Horizontal"
 msgstr "Horizontal"
 
@@ -3574,8 +3569,8 @@ msgstr "How strongly flat density grows with region area — large shallow ceili
 msgid "How the part is held against toppling and peel — self-support angle, stabilization anchors and minima reinforcement"
 msgstr "How the part is held against toppling and peel — self-support angle, stabilization anchors and minima reinforcement"
 
-#. Tool rail entry in Support mode. Opens a menu of view modes rather than toggling on its own.
-#: src/components/controls/toolRailEntries.ts:198
+#. Tool rail entry in Support mode. A toggle: lit means the line view, unlit the solid one.
+#: src/components/controls/toolRailEntries.ts:236
 msgid "How the support forest is drawn"
 msgstr "How the support forest is drawn"
 
@@ -3835,10 +3830,10 @@ msgstr "Interface language"
 msgid "Interface scale"
 msgstr "Interface scale"
 
-#. Tool rail label in Support mode. Toggles looking inside a hollowed model instead of at its outside. One word, to fit the rail.
-#: src/components/controls/toolRailEntries.ts:227
-msgid "Interior"
-msgstr "Interior"
+#. Tool rail label in Support mode. Toggles looking inside a hollowed model instead of at its outside.
+#: src/components/controls/toolRailEntries.ts:223
+msgid "Interior View"
+msgstr "Interior View"
 
 #: src/features/hole-punching/HolePunchPanel.tsx:105
 msgid "Interior View Mode"
@@ -3870,7 +3865,7 @@ msgstr "Island Voxels"
 
 #. Tool rail label in Support mode. Short for the Islands panel, which scans the model for unsupported islands.
 #: src/components/controls/IslandsPanel.tsx:140
-#: src/components/controls/toolRailEntries.ts:148
+#: src/components/controls/toolRailEntries.ts:163
 msgid "Islands"
 msgstr "Islands"
 
@@ -4076,11 +4071,11 @@ msgstr "Layers:"
 msgid "Layout Mode"
 msgstr "Layout Mode"
 
-#: src/app/page.tsx:11735
+#: src/app/page.tsx:11743
 msgid "Leaf Fanning Active: Click model to sprout leaf"
 msgstr "Leaf Fanning Active: Click model to sprout leaf"
 
-#: src/app/page.tsx:11736
+#: src/app/page.tsx:11744
 msgid "Leaf Fanning: Click a support shaft to lock anchor knot"
 msgstr "Leaf Fanning: Click a support shaft to lock anchor knot"
 
@@ -4141,11 +4136,6 @@ msgstr "Line Height"
 #: src/supports/Settings/components/RaftSettingsCard.tsx:167
 msgid "Line Width"
 msgstr "Line Width"
-
-#. Support view mode. Contact discs stay solid and every other member is drawn as a line, which keeps a dense support forest readable.
-#: src/components/controls/toolRailEntries.ts:218
-msgid "Lines"
-msgstr "Lines"
 
 #: src/features/organicCut/OrganicCutPanel.tsx:672
 msgid "Link width and depth together so the dome keeps its shape."
@@ -4323,7 +4313,7 @@ msgid "Logical Volumes: Show Ownership Leaves Only"
 msgstr "Logical Volumes: Show Ownership Leaves Only"
 
 #. Tool rail entry in Support mode, enabled once the model has been hollowed.
-#: src/components/controls/toolRailEntries.ts:229
+#: src/components/controls/toolRailEntries.ts:225
 msgid "Look inside the hollow, at the cavity and its drain holes"
 msgstr "Look inside the hollow, at the cavity and its drain holes"
 
@@ -4379,7 +4369,7 @@ msgstr "Managed Printers"
 
 #. Tool rail label in Support mode. Short for the manual support settings panel (tip, shaft, roots, bracing).
 #: src/components/controls/ArrangePanel.tsx:176
-#: src/components/controls/toolRailEntries.ts:160
+#: src/components/controls/toolRailEntries.ts:173
 #: src/components/printers/SetupMethodChooser.tsx:28
 #: src/features/hole-punching/HolePunchPanel.tsx:135
 msgid "Manual"
@@ -4612,11 +4602,11 @@ msgstr "Minutes between automatic local backups."
 msgid "Minutes between automatic sync attempts."
 msgstr "Minutes between automatic sync attempts."
 
-#: src/components/controls/toolRailEntries.ts:55
+#: src/components/controls/toolRailEntries.ts:57
 msgid "Mirror"
 msgstr "Mirror"
 
-#: src/components/controls/toolRailEntries.ts:55
+#: src/components/controls/toolRailEntries.ts:57
 msgid "Mirror across X, Y, or Z"
 msgstr "Mirror across X, Y, or Z"
 
@@ -4677,14 +4667,14 @@ msgstr "Model-Scale Sizing"
 
 #. Section heading of the models context menu. Rendered uppercase.
 #. Title of the panel listing every model loaded into the scene.
-#: src/components/controls/ModelManagerPanel.tsx:741
-#: src/components/controls/ModelManagerPanel.tsx:1020
-#: src/components/controls/toolRailEntries.ts:66
-#: src/components/controls/toolRailEntries.ts:169
+#: src/components/controls/ModelManagerPanel.tsx:745
+#: src/components/controls/ModelManagerPanel.tsx:1025
+#: src/components/controls/toolRailEntries.ts:71
+#: src/components/controls/toolRailEntries.ts:196
 msgid "Models"
 msgstr "Models"
 
-#: src/components/controls/ModelManagerPanel.tsx:1021
+#: src/components/controls/ModelManagerPanel.tsx:1026
 msgid "Models context menu"
 msgstr "Models context menu"
 
@@ -4714,7 +4704,7 @@ msgstr "Mortise (near faces)"
 msgid "Mortise edges"
 msgstr "Mortise edges"
 
-#: src/components/controls/toolRailEntries.ts:47
+#: src/components/controls/toolRailEntries.ts:49
 msgid "Move and place models on the plate"
 msgstr "Move and place models on the plate"
 
@@ -4722,7 +4712,7 @@ msgstr "Move and place models on the plate"
 msgid "Move Slot"
 msgstr "Move Slot"
 
-#: src/components/controls/toolRailEntries.ts:48
+#: src/components/controls/toolRailEntries.ts:50
 msgid "Move, rotate, and scale"
 msgstr "Move, rotate, and scale"
 
@@ -4802,7 +4792,7 @@ msgstr "Never"
 msgid "New Curve"
 msgstr "New Curve"
 
-#: src/app/page.tsx:11716
+#: src/app/page.tsx:11724
 msgid "New input device detected."
 msgstr "New input device detected."
 
@@ -4947,7 +4937,7 @@ msgstr "No meshes loaded yet. Import a model first, then return to Slicing."
 msgid "No model selected"
 msgstr "No model selected"
 
-#: src/components/controls/ModelManagerPanel.tsx:800
+#: src/components/controls/ModelManagerPanel.tsx:805
 msgid "No models loaded"
 msgstr "No models loaded"
 
@@ -5214,7 +5204,7 @@ msgid "ON (Required)"
 msgstr "ON (Required)"
 
 #. Tool rail label. Short for "lay the model flat on a selected face"; keep it terse so the rail entry stays one line.
-#: src/components/controls/toolRailEntries.ts:51
+#: src/components/controls/toolRailEntries.ts:53
 msgid "On-Face"
 msgstr "On-Face"
 
@@ -5362,7 +5352,7 @@ msgstr "Opening scene…"
 msgid "Optional details if you want them."
 msgstr "Optional details if you want them."
 
-#: src/components/controls/toolRailEntries.ts:52
+#: src/components/controls/toolRailEntries.ts:54
 msgid "Orient flat against plate"
 msgstr "Orient flat against plate"
 
@@ -5370,7 +5360,7 @@ msgstr "Orient flat against plate"
 msgid "Orient Model"
 msgstr "Orient Model"
 
-#: src/app/page.tsx:11605
+#: src/app/page.tsx:11613
 msgid "Orienting Model"
 msgstr "Orienting Model"
 
@@ -5555,7 +5545,7 @@ msgstr "Placement Anchor"
 msgid "Placement message."
 msgstr "Placement message."
 
-#: src/app/page.tsx:11595
+#: src/app/page.tsx:11603
 msgid "Placing and bracing supports…"
 msgstr "Placing and bracing supports…"
 
@@ -5585,7 +5575,7 @@ msgstr "Plate behaviour across several beds"
 msgid "Plate Mode"
 msgstr "Plate Mode"
 
-#: src/components/controls/ModelManagerPanel.tsx:918
+#: src/components/controls/ModelManagerPanel.tsx:923
 msgid "Plate name"
 msgstr "Plate name"
 
@@ -5927,8 +5917,8 @@ msgid "Processing {count, plural, one {# model} other {# models}}"
 msgstr "Processing {count, plural, one {# model} other {# models}}"
 
 #: src/app/page.tsx:1809
-#: src/app/page.tsx:11585
-#: src/app/page.tsx:11597
+#: src/app/page.tsx:11593
+#: src/app/page.tsx:11605
 msgid "Processing 1 model"
 msgstr "Processing 1 model"
 
@@ -6223,7 +6213,7 @@ msgid "Rename Curve Profile"
 msgstr "Rename Curve Profile"
 
 #: src/components/controls/ModelManagerPanel.tsx:489
-#: src/components/controls/ModelManagerPanel.tsx:943
+#: src/components/controls/ModelManagerPanel.tsx:948
 msgid "Rename folder"
 msgstr "Rename folder"
 
@@ -6358,10 +6348,6 @@ msgstr "Required for self-compiled builds that do not ship with backup OAuth env
 msgid "Reset"
 msgstr "Reset"
 
-#: src/components/layout/FloatingPanelStack.tsx:1809
-msgid "Reset all windows layout"
-msgstr "Reset all windows layout"
-
 #: src/components/settings/MeshSettingsTab.tsx:517
 msgid "Reset colors to default"
 msgstr "Reset colors to default"
@@ -6373,6 +6359,10 @@ msgstr "Reset cut settings to defaults"
 #: src/components/controls/IslandsPanel.tsx:499
 msgid "Reset defaults"
 msgstr "Reset defaults"
+
+#: src/components/layout/FloatingPanelStack.tsx:1810
+msgid "Reset Layout"
+msgstr "Reset Layout"
 
 #: src/components/settings/GeneralSettingsTab.tsx:343
 msgid "Reset saved window layout"
@@ -6387,9 +6377,9 @@ msgstr "Reset selection and hover colors to default"
 msgid "Reset stream slot"
 msgstr "Reset stream slot"
 
-#: src/components/layout/FloatingPanelStack.tsx:1808
-msgid "Reset this window"
-msgstr "Reset this window"
+#: src/components/layout/FloatingPanelStack.tsx:1809
+msgid "Reset Window"
+msgstr "Reset Window"
 
 #: src/components/organisms/modals/PrintingModals.tsx:2097
 #: src/components/organisms/modals/PrintingModals.tsx:2280
@@ -6724,7 +6714,7 @@ msgid "Scan Settings"
 msgstr "Scan Settings"
 
 #. Tool rail entry in Support mode. Selecting it shows the Islands panel.
-#: src/components/controls/toolRailEntries.ts:149
+#: src/components/controls/toolRailEntries.ts:164
 msgid "Scan the model for unsupported islands"
 msgstr "Scan the model for unsupported islands"
 
@@ -6736,7 +6726,7 @@ msgstr "Scan the model to detect unsupported islands"
 msgid "Scanning for Supports…"
 msgstr "Scanning for Supports…"
 
-#: src/app/page.tsx:11595
+#: src/app/page.tsx:11603
 msgid "Scanning islands & minima…"
 msgstr "Scanning islands & minima…"
 
@@ -6797,7 +6787,7 @@ msgstr "Scene mood overlay in thumbnail"
 msgid "Scene was hollowed before export"
 msgstr "Scene was hollowed before export"
 
-#: src/components/controls/toolRailEntries.ts:60
+#: src/components/controls/toolRailEntries.ts:62
 msgid "Sculpt and smooth surface"
 msgstr "Sculpt and smooth surface"
 
@@ -7184,8 +7174,8 @@ msgstr "Show Nodes In Voxels"
 
 #. Tool rail entry that toggles the model list panel on the left. The list is the panel titled "Models".
 #. Tool rail entry that toggles the model list panel on the left. The list is the panel titled "Models".
-#: src/components/controls/toolRailEntries.ts:67
-#: src/components/controls/toolRailEntries.ts:170
+#: src/components/controls/toolRailEntries.ts:72
+#: src/components/controls/toolRailEntries.ts:197
 msgid "Show or hide the model list"
 msgstr "Show or hide the model list"
 
@@ -7299,7 +7289,7 @@ msgstr "Sliced Layers"
 msgid "Slicing"
 msgstr "Slicing"
 
-#: src/app/page.tsx:11583
+#: src/app/page.tsx:11591
 msgid "Slicing and analysis in progress..."
 msgstr "Slicing and analysis in progress..."
 
@@ -7344,7 +7334,7 @@ msgid "Slot {slot}"
 msgstr "Slot {slot}"
 
 #. Tool rail label in Prepare mode. The tool brushes and smooths local surface regions.
-#: src/components/controls/toolRailEntries.ts:60
+#: src/components/controls/toolRailEntries.ts:62
 #: src/features/slicing/components/SlicingPanel.tsx:785
 msgid "Smooth"
 msgstr "Smooth"
@@ -7416,7 +7406,7 @@ msgstr "Sphere"
 
 #. Title of the panel that splits one model along a drawn seam. The tool rail calls this tool Split; keep the two identical.
 #. Tool rail label in Prepare mode. Splits the model along a drawn seam.
-#: src/components/controls/toolRailEntries.ts:59
+#: src/components/controls/toolRailEntries.ts:61
 #: src/features/organicCut/OrganicCutPanel.tsx:392
 msgid "Split"
 msgstr "Split"
@@ -7430,7 +7420,7 @@ msgstr "Split along a curved seam that follows your drawn loop (zero-thickness m
 msgid "Split supports"
 msgstr "Split supports"
 
-#: src/components/controls/toolRailEntries.ts:59
+#: src/components/controls/toolRailEntries.ts:61
 msgid "Split the model along a drawn seam"
 msgstr "Split the model along a drawn seam"
 
@@ -7603,7 +7593,7 @@ msgid "Support placement is outside the build volume."
 msgstr "Support placement is outside the build volume."
 
 #. Tool rail entry in Support mode. Selecting it shows the support parameter sidebar (tip, shaft, roots, bracing).
-#: src/components/controls/toolRailEntries.ts:161
+#: src/components/controls/toolRailEntries.ts:174
 msgid "Support settings and presets"
 msgstr "Support settings and presets"
 
@@ -7656,7 +7646,7 @@ msgstr "Suspiciously empty in here."
 msgid "Swap which cut half receives the tenon and which receives the mortise."
 msgstr "Swap which cut half receives the tenon and which receives the mortise."
 
-#: src/app/page.tsx:11606
+#: src/app/page.tsx:11614
 msgid "Sweeping orientations…"
 msgstr "Sweeping orientations…"
 
@@ -7816,12 +7806,12 @@ msgstr "The hole carved in the other half."
 msgid "The inputs and factors the last run sized the supports with"
 msgstr "The inputs and factors the last run sized the supports with"
 
-#: src/app/page.tsx:11676
+#: src/app/page.tsx:11684
 msgid "The models on this plate are deleted with it."
 msgstr "The models on this plate are deleted with it."
 
 #. The count is how many models stand on the plate being deleted.
-#: src/components/controls/ModelManagerPanel.tsx:788
+#: src/components/controls/ModelManagerPanel.tsx:793
 msgid "The models on this plate are deleted with it. Undo brings them back."
 msgstr "The models on this plate are deleted with it. Undo brings them back."
 
@@ -8112,8 +8102,8 @@ msgstr "Toggle linked width and depth"
 msgid "Too close to an existing support."
 msgstr "Too close to an existing support."
 
-#: src/components/controls/ToolRail.tsx:498
-#: src/components/controls/ToolRail.tsx:499
+#: src/components/controls/ToolRail.tsx:582
+#: src/components/controls/ToolRail.tsx:583
 msgid "Tool layout"
 msgstr "Tool layout"
 
@@ -8152,7 +8142,7 @@ msgstr "Transfer progress"
 msgid "Transferred"
 msgstr "Transferred"
 
-#: src/components/controls/toolRailEntries.ts:48
+#: src/components/controls/toolRailEntries.ts:50
 msgid "Transform"
 msgstr "Transform"
 
@@ -8199,7 +8189,7 @@ msgstr "Unapplied Holes"
 msgid "Unavailable"
 msgstr "Unavailable"
 
-#: src/app/page.tsx:11630
+#: src/app/page.tsx:11638
 msgid "Undo brings the models back"
 msgstr "Undo brings the models back"
 
@@ -8258,7 +8248,7 @@ msgstr "Unlink X and Y"
 msgid "Unlock build plate"
 msgstr "Unlock build plate"
 
-#: src/app/page.tsx:11699
+#: src/app/page.tsx:11707
 msgid "Unlock it to add or move models."
 msgstr "Unlock it to add or move models."
 
@@ -8292,7 +8282,7 @@ msgstr "Unsaved Scene Changes"
 msgid "Unsaved Scene Found"
 msgstr "Unsaved Scene Found"
 
-#: src/app/page.tsx:10875
+#: src/app/page.tsx:10893
 msgid "Unsupported file format"
 msgstr "Unsupported file format"
 
@@ -8507,7 +8497,7 @@ msgstr "Version info and project details"
 msgid "Vertex Colors"
 msgstr "Vertex Colors"
 
-#: src/components/controls/ToolRail.tsx:412
+#: src/components/controls/ToolRail.tsx:499
 msgid "Vertical"
 msgstr "Vertical"
 
@@ -8528,6 +8518,11 @@ msgstr "View island hierarchy tree"
 #: src/components/layout/TopBar.tsx:1056
 msgid "View mode"
 msgstr "View mode"
+
+#. Tool rail label in Support mode. Toggles the support display between everything drawn solid and contact discs with line members.
+#: src/components/controls/toolRailEntries.ts:235
+msgid "View Mode"
+msgstr "View Mode"
 
 #: src/features/updater/UpdateCheckerSection.tsx:238
 msgid "View on GitHub"
@@ -8553,11 +8548,6 @@ msgstr "View, restore, or delete older snapshots from disk."
 #: src/components/settings/BackupsSettingsTab.tsx:1254
 msgid "View, restore, or delete older snapshots from your private repository."
 msgstr "View, restore, or delete older snapshots from your private repository."
-
-#. Tool rail label in Support mode. Opens the support display modes: everything drawn solid, or contact discs with line members.
-#: src/components/controls/toolRailEntries.ts:197
-msgid "Visibility"
-msgstr "Visibility"
 
 #: src/components/controls/IslandVoxelControls.tsx:127
 msgid "Visualizes isolated grid-aligned islands."
@@ -8734,12 +8724,12 @@ msgid "Why so empty?"
 msgstr "Why so empty?"
 
 #. Heading of the floating panel right-click menu that resets panel positions.
-#: src/components/layout/FloatingPanelStack.tsx:1817
+#: src/components/layout/FloatingPanelStack.tsx:1818
 msgid "Window"
 msgstr "Window"
 
 #. Accessible name of the floating panel right-click menu that resets panel positions.
-#: src/components/layout/FloatingPanelStack.tsx:1818
+#: src/components/layout/FloatingPanelStack.tsx:1819
 msgid "Window context menu"
 msgstr "Window context menu"
 
@@ -8773,7 +8763,7 @@ msgstr "Write these settings to the auto-support settings"
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr "Write these settings, and overwrite the selected preset with them"
 
-#: src/app/page.tsx:11616
+#: src/app/page.tsx:11624
 msgid "Writing mesh geometry and support data to file…"
 msgstr "Writing mesh geometry and support data to file…"
 

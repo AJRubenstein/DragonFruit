@@ -732,6 +732,10 @@ export function ModelManagerPanel({
       style={panelStyle}
     >
       <CardHeader
+        // Only the column layout is missing the collapse chevron, so there the title
+        // alone sets the header height and the 32px plus sat nearly flush with the
+        // top edge. `py-4` gives it the room the chevron gives the bar's header.
+        className={collapsible ? undefined : 'py-4'}
         left={(
           <>
             {collapsible && (
@@ -747,7 +751,8 @@ export function ModelManagerPanel({
           // says, line by line. The slot earns its keep as the way to add more.
           <IconButton
             onClick={onAddModels}
-            className="!p-0.5 !text-[var(--text-muted)] hover:!text-[var(--text-strong)] hover:!bg-[var(--surface-2)]"
+            size="sm"
+            className="!text-[var(--text-muted)] hover:!text-[var(--text-strong)] hover:!bg-[var(--surface-2)]"
             title={_(msg({ message: 'Add models to the plate', comment: 'Tooltip on the plus in the Models panel header, which opens the mesh picker.' }))}
           >
             <Plus className="h-3.5 w-3.5" />
