@@ -76,7 +76,6 @@ export function MeshRepairConfirmModal({ prompt, onRepair, onLoadAsIs, onCancelI
         <div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}><Trans>Analysis</Trans></div>
         <StatRow label={_(msg`Triangles`)} value={analysis.triangle_count} />
         <StatRow label={_(msg`Components`)} value={analysis.component_count} />
-        <StatRow label={_(msg`Self-intersections`)} value={analysis.self_intersections} />
         <StatRow label={_(msg`Non-manifold edges`)} value={analysis.non_manifold_edges} />
         <StatRow label={_(msg`Boundary loops`)} value={analysis.boundary_loops} />
       </div>

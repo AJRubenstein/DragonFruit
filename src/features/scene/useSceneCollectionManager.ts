@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import * as THREE from 'three';
 import { loadTauriCore, refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
-import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
+import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
+import { loadMeshFromPath } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import {
   DYNAMIC_PLATE_ORDERING,
@@ -58,6 +60,7 @@ import {
   importLabelScenes,
   importLabelSplittingSupports,
   importLabelVoxlScene,
+  reportRestoredModel,
 } from '@/features/scene/sceneImportMessages';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
@@ -1513,6 +1516,10 @@ export function useSceneCollectionManager(options?: {
   const [sceneImportHollowingPrompt, setSceneImportHollowingPrompt] = useState<SceneImportHollowingPrompt | null>(null);
   const [meshRepairConfirmPrompt, setMeshRepairConfirmPrompt] = useState<MeshRepairConfirmPrompt | null>(null);
   const [meshRepairReports, setMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
+  // Which models the user repaired here, as opposed to the import pass repairing them at load.
+  // Every imported model carries a `nativeRepairReport`, so that field alone cannot say whether the
+  // repair menu should offer "Auto-Repair Again" and the report.
+  const [manuallyRepairedModelIds, setManuallyRepairedModelIds] = useState<string[]>([]);
   const [meshRepairReportPresentation, setMeshRepairReportPresentation] = useState<MeshRepairReportPresentation>('default');
   const [pendingMeshRepairReports, setPendingMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
   const sceneImportReportTimeoutRef = useRef<number | null>(null);
@@ -1608,6 +1615,21 @@ export function useSceneCollectionManager(options?: {
     }
     setPrinterMismatch(null);
   }, [printerMismatch]);
+
+  /**
+   * Show the report a model already carries, from its recorded repair.
+   *
+   * The record lives on the model (`meshDefects.nativeRepairReport`) and survives everything the
+   * scene does to it, so a model repaired earlier in the session can still say what was done.
+   */
+  const openMeshRepairReportForModel = useCallback((modelId: string) => {
+    const model = models.find((entry) => entry.id === modelId);
+    const report = model?.geometry.meshDefects?.nativeRepairReport;
+    if (!model || !report) return;
+    // The same dialog a repair just showed: the wins, the follow-up notes and the technical details.
+    setMeshRepairReportPresentation('optimistic');
+    setMeshRepairReports([{ id: `model-${modelId}`, modelName: model.name, report }]);
+  }, [models]);
 
   const openPendingMeshRepairReports = useCallback(() => {
     if (pendingMeshRepairReports.length === 0) {
@@ -4213,6 +4235,7 @@ export function useSceneCollectionManager(options?: {
         likely_support_geometry: true,
         residual_issues: [],
         fully_repaired: true,
+        cancelled: false,
         total_ms: 0,
       },
     };
@@ -4437,6 +4460,7 @@ export function useSceneCollectionManager(options?: {
           model_triangle_count: modelTriangleCount,
           residual_issues: [],
           fully_repaired: true,
+          cancelled: false,
           total_ms: 0,
         },
       };
@@ -6983,11 +7007,57 @@ export function useSceneCollectionManager(options?: {
   }, [pushSceneSnapshotHistory]);
 
   /**
+   * Put a model back to how it arrived, by loading its file again.
+   *
+   * A repair leaves no copy of what it replaced, so undo re-reads the source and lets the import
+   * path do what it did the first time. The file goes through Rust: the webview refuses a `file://`
+   * fetch. Only the geometry is swapped, so the model keeps its transform and does not move.
+   */
+  const undoRepairsInPlace = useCallback(async (modelId: string) => {
+    const model = models.find((entry) => entry.id === modelId);
+    const sourcePath = model?.sourcePath?.trim();
+    if (!model || !sourcePath) {
+      emitSceneImportReport(_(msg`No source file to restore this model from.`), 'warning');
+      return false;
+    }
+    try {
+      const positions = await loadMeshFromPath(sourcePath);
+      if (!positions || positions.length === 0) {
+        throw new Error('the file produced no geometry');
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const reloaded = await processGeometry(geometry, {
+        center: false,
+        nativeProcessingMode: shouldAutoRepairSceneImports() ? 'auto' : 'none',
+      });
+      const posAttr = reloaded.geometry.getAttribute('position') as THREE.BufferAttribute | null;
+      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      setModels(prev => prev.map(entry =>
+        entry.id === modelId ? { ...entry, geometry: reloaded, polygonCount } : entry
+      ));
+      // The repair is gone, so the menu must stop offering it and the report it left.
+      setManuallyRepairedModelIds(prev => prev.filter((id) => id !== modelId));
+      setMeshRepairReports([]);
+      setPendingMeshRepairReports([]);
+      emitSceneImportReport(reportRestoredModel(model.name, _), 'success');
+      return true;
+    } catch (error) {
+      console.error('[undoRepairsInPlace] Reload failed:', error);
+      emitSceneImportReport(_(msg`Could not restore the model.`), 'error');
+      return false;
+    }
+  }, [_, emitSceneImportReport, models, shouldAutoRepairSceneImports]);
+
+  /**
    * Re-runs the full native repair pipeline on an already-loaded model's
    * geometry and swaps the result back in-place.  Intended for the manual
    * "Repair Mesh" context-menu action.
    */
-  const repairModelInPlace = useCallback(async (modelId: string): Promise<boolean> => {
+  const repairModelInPlace = useCallback(async (
+    modelId: string,
+    repairProgressSink?: MeshRepairProgressSink,
+  ): Promise<boolean> => {
     const model = modelsRef.current.find(m => m.id === modelId);
     if (!model) return false;
     try {
@@ -6995,7 +7065,20 @@ export function useSceneCollectionManager(options?: {
         center: false,
         nativeProcessingMode: 'repair',
         assumeSupportGeometry: model.isSupportGeometry,
+        repairProgressSink,
+        // The file it came from, so the repair reads it through the same loader the
+        // import did instead of uploading a triangle soup and re-deriving every vertex.
+        sourcePath: model.sourcePath ?? undefined,
       });
+
+      // A cancelled repair stopped where it was asked to, and the mesh it hands back
+      // is a partly repaired one. Applying it would replace the model with something
+      // the caller did not ask for, so the model is left alone and the report says so.
+      if (processed.meshDefects?.nativeRepairReport?.cancelled) {
+        emitSceneImportReport('Repair cancelled. The model is unchanged.', 'warning');
+        return false;
+      }
+
       const polygonCount = processed.geometry.getAttribute('position')
         ? countTriangles(processed.geometry)
         : model.polygonCount;
@@ -7010,6 +7093,7 @@ export function useSceneCollectionManager(options?: {
       setModels(nextModels);
       const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
       pushSceneSnapshotHistory(before, after, `Repair ${model.name}`, modelId);
+      setManuallyRepairedModelIds(prev => (prev.includes(modelId) ? prev : [...prev, modelId]));
 
       if (repairReport) {
         const reportEntry: MeshRepairReportEntry = {
@@ -7739,6 +7823,9 @@ export function useSceneCollectionManager(options?: {
     meshRepairReports,
     meshRepairReportPresentation,
     openPendingMeshRepairReports,
+    openMeshRepairReportForModel,
+    undoRepairsInPlace,
+    manuallyRepairedModelIds,
     dismissMeshRepairReports,
     sceneImportPlacementPrompt,
     resolveSceneImportPlacementPrompt,

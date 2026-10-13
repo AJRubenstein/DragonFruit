@@ -9,7 +9,7 @@ import { detectIsIOS } from '@/hooks/usePlatform';
 import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
-import { AlertTriangle, CheckCircle2, ChevronDown, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
 import { SceneCanvas } from '@/components/scene/SceneCanvas';
 import { SceneOverlays } from '@/components/organisms/scene/SceneOverlays';
 import { FloatingPanelStack } from '@/components/layout/FloatingPanelStack';
@@ -112,7 +112,7 @@ import type { MirrorAxis } from '@/features/mirror/types';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPlayer';
 import { BlockingOverlay, Button, IconButton, Toast, ToastViewport } from '@/components/atoms';
-import { EditorContextMenu, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { EditorContextMenu, MENU_ITEMS, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
@@ -778,6 +778,8 @@ export default function Home() {
   // the batch does not pop additional modals.
   const warnedManifoldModelIdsRef = React.useRef<Set<string>>(new Set());
   const [showManifoldWarning, setShowManifoldWarning] = React.useState(false);
+  // The model the warning's Repair Now button repairs: the first flagged one.
+  const [manifoldWarningModelId, setManifoldWarningModelId] = React.useState<string | null>(null);
   // Restarting the timer on every refusal means holding the lock and clicking about
   // keeps one toast on screen rather than stacking them.
   notifyPlateLockedRef.current = (plateId) => {
@@ -805,6 +807,7 @@ export default function Home() {
     const hasUnwarned = flagged.some((model) => !warnedManifoldModelIdsRef.current.has(model.id));
     if (!hasUnwarned) return;
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
+    setManifoldWarningModelId(flagged[0].id);
     setShowManifoldWarning(true);
   }, [scene.models]);
 
@@ -1332,6 +1335,9 @@ export default function Home() {
     point: { x: number; y: number; z: number };
   } | null>(null);
   const [manualRepairModelId, setManualRepairModelId] = React.useState<string | null>(null);
+  // `autoStartRepair` marks a repair that must begin on its own — the manifold warning's
+  // Repair Now — instead of waiting in the Repair Mesh dialog for a second confirmation.
+  const [autoStartRepair, setAutoStartRepair] = React.useState(false);
   const [isManualRepairing, setIsManualRepairing] = React.useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = React.useState(false);
   const [isSliceMetricsDebugOpen, setIsSliceMetricsDebugOpen] = React.useState(false);
@@ -2517,7 +2523,33 @@ export default function Home() {
   }, []);
 
   const editorContextMenuTitle = scene.mode === 'support' ? _(msg`Supports`) : _(msg`Editor`);
-  const editorContextMenuItems = scene.mode === 'support' ? supportContextMenuItems : undefined;
+  // Only a repair run from this menu offers "Auto-Repair Again" and the report: the import pass
+  // repairs every model at load, so the report it leaves behind cannot be the signal.
+  const editorContextMenuItems = React.useMemo(() => {
+    if (scene.mode === 'support') {
+      return supportContextMenuItems;
+    }
+    const repaired = !!scene.activeModelId
+      && scene.manuallyRepairedModelIds.includes(scene.activeModelId);
+    return MENU_ITEMS.map((item) =>
+      item.id === 'repair-menu' && 'children' in item
+        ? {
+            ...item,
+            children: [
+              { id: 'repair' as const, label: repaired ? msg`Repair Again` : msg`Auto-Repair`, icon: Wrench },
+              { id: 'remesh' as const, label: msg`Remesh`, icon: RefreshCw },
+              // The second group only exists once there is a repair to undo or report on.
+              ...(repaired
+                ? [
+                    { id: 'undo-repairs' as const, label: msg`Undo Repairs`, icon: Undo2, startsGroup: true },
+                    { id: 'show-repair-report' as const, label: msg`Show Report`, icon: ClipboardList },
+                  ]
+                : []),
+            ],
+          }
+        : item,
+    );
+  }, [scene.mode, scene.activeModelId, scene.manuallyRepairedModelIds, supportContextMenuItems]);
   const editorContextMenuDisabledActions = React.useMemo(() => {
     if (scene.mode === 'support') {
       return [
@@ -2552,6 +2584,9 @@ export default function Home() {
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
       ...(!canMergeSupports ? (['merge-supports'] as const) : []),
+      // Remesh is not wired yet. It sits in the flyout greyed out so the shape of the repair menu is
+      // settled before the pass behind it exists.
+      'remesh' as const,
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
@@ -5843,6 +5878,7 @@ export default function Home() {
   }, [scene]);
 
   const handleRepairModel = React.useCallback((modelId: string) => {
+    setAutoStartRepair(false);
     setManualRepairModelId(modelId);
   }, []);
 
@@ -6552,11 +6588,29 @@ export default function Home() {
         }
         break;
       }
+      case 'undo-repairs': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          closeEditorContextMenu();
+          void scene.undoRepairsInPlace(targetId);
+          return;
+        }
+        break;
+      }
+      case 'show-repair-report': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          closeEditorContextMenu();
+          scene.openMeshRepairReportForModel(targetId);
+          return;
+        }
+        break;
+      }
       case 'repair': {
         const targetId = scene.activeModelId;
         if (targetId) {
           closeEditorContextMenu();
-          setManualRepairModelId(targetId);
+          handleRepairModel(targetId);
           return;
         }
         break;
@@ -11550,13 +11604,22 @@ export default function Home() {
 
       <ManifoldWarningModal
         isOpen={showManifoldWarning}
-        onAcknowledge={() => setShowManifoldWarning(false)}
+        onDismiss={() => setShowManifoldWarning(false)}
+        onRepairNow={() => {
+          setShowManifoldWarning(false);
+          if (!manifoldWarningModelId) return;
+          // Straight into the repair: the Repair Mesh dialog opens already running.
+          setAutoStartRepair(true);
+          setManualRepairModelId(manifoldWarningModelId);
+        }}
       />
 
 
       <MeshRepairModals
         isManualRepairing={isManualRepairing}
         manualRepairModelId={manualRepairModelId}
+        autoStartRepair={autoStartRepair}
+        setAutoStartRepair={setAutoStartRepair}
         scene={scene}
         setIsManualRepairing={setIsManualRepairing}
         setManualRepairModelId={setManualRepairModelId}

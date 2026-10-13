@@ -6,10 +6,10 @@ use std::path::Path;
 use crate::core::mesh::IndexedMesh;
 use crate::MeshRepairError;
 
-pub mod stl;
 pub mod obj;
-pub mod three_mf;
 pub mod staged;
+pub mod stl;
+pub mod three_mf;
 
 /// Dispatch by extension. Caller is responsible for pointing at a real
 /// mesh file; for in-memory staged buffers, use [`staged::load_positions_le`].
@@ -105,7 +105,9 @@ pub const DEFAULT_MERGE_EPSILON: f32 = 1e-5;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dragonfruit_mesh_core::refine::{longest_edge, refinement_budget, MAX_EDGE_DIAGONAL_FRACTION};
+    use dragonfruit_mesh_core::refine::{
+        longest_edge, refinement_budget, MAX_EDGE_DIAGONAL_FRACTION,
+    };
 
     fn box_soup(min: [f32; 3], max: [f32; 3]) -> Vec<f32> {
         let c = [

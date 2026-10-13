@@ -270,6 +270,58 @@ impl IndexedMesh {
         }
     }
 
+    /// Map every vertex to the first vertex sharing its exact position. STL
+    /// stores no vertex identity, so any re-read of the same bytes welds these
+    /// together; this makes in-memory checks agree with that re-read.
+    pub fn position_weld_ids(&self) -> Vec<u32> {
+        // -0.0 and 0.0 are one position to a value comparison, so normalise the
+        // key rather than hashing the raw bits.
+        let key = |p: Vec3| {
+            let n = |v: f32| if v == 0.0 { 0.0f32 } else { v };
+            [
+                n(p.x).to_bits(),
+                n(p.y).to_bits(),
+                n(p.z).to_bits(),
+            ]
+        };
+        let mut map: ahash::AHashMap<[u32; 3], u32> =
+            ahash::AHashMap::with_capacity(self.positions.len());
+        let mut ids = Vec::with_capacity(self.positions.len());
+        for p in &self.positions {
+            let next = map.len() as u32;
+            ids.push(*map.entry(key(*p)).or_insert(next));
+        }
+        ids
+    }
+
+    /// Merge vertices at identical positions, keeping the first of each group,
+    /// and return how many were removed.
+    pub fn weld_by_position(&mut self) -> usize {
+        let ids = self.position_weld_ids();
+        let mut group = vec![u32::MAX; self.positions.len()];
+        let mut renumbered = vec![0u32; self.positions.len()];
+        let mut kept: Vec<Vec3> = Vec::with_capacity(self.positions.len());
+        for (v, &id) in ids.iter().enumerate() {
+            let slot = &mut group[id as usize];
+            if *slot == u32::MAX {
+                *slot = kept.len() as u32;
+                kept.push(self.positions[v]);
+            }
+            renumbered[v] = *slot;
+        }
+        if kept.len() == self.positions.len() {
+            return 0;
+        }
+        for tri in self.triangles.iter_mut() {
+            for v in tri.iter_mut() {
+                *v = renumbered[*v as usize];
+            }
+        }
+        let removed = self.positions.len() - kept.len();
+        self.positions = kept;
+        removed
+    }
+
     /// Signed volume via divergence theorem. Positive = outward-oriented
     /// watertight mesh; negative = inverted; near-zero = non-closed / paired.
     pub fn signed_volume(&self) -> f64 {

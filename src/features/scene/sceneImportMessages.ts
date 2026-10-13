@@ -68,6 +68,16 @@ export function importDetailPreparing(done: number, total: number, translate: Tr
   return translate(msg`Preparing ${done}/${total}`);
 }
 
+/**
+ * "Restored poussin.stl." — reported once a model's own file has been loaded back over it.
+ *
+ * Here rather than beside its caller for the reason at the top of this file: the name interpolates,
+ * and an interpolation written inside the scene hook loses its message id to React Compiler.
+ */
+export function reportRestoredModel(modelName: string, translate: Translate): string {
+  return translate(msg`Restored ${modelName}`);
+}
+
 export function importDetailPreparingGeometry(translate: Translate): string {
   return translate(msg`Preparing Geometry…`);
 }

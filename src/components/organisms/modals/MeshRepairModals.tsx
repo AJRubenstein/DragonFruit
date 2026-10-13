@@ -1,17 +1,95 @@
-import { AlertTriangle, Wrench, X } from 'lucide-react';
+import * as React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { AlertTriangle, Wrench, X } from 'lucide-react';
 import { Button, IconButton, IconChip, Spinner } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
+import { translateRepairStage } from '@/components/scene/repairProgressMessages';
 import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
+import { cancelMeshRepair } from '@/utils/meshRepair';
+import type { MeshRepairProgress } from '@/utils/meshRepair';
+
+/** A manual repair in flight: when it started, and what it has reported. */
+type ManualRepairState = {
+  startedAt: number;
+  stage: MeshRepairProgress | null;
+  stages: MeshRepairProgress[];
+};
+
+/**
+ * How full the progress bar is, 0..1.
+ *
+ * The stage count is not known in advance: the pipeline branches on what it finds in
+ * the mesh, so a percentage of the stages would be invented. A saturating function of
+ * the count always moves and never claims the work is nearly done, which is the honest
+ * thing to show when the total is unknown.
+ */
+function repairProgressFraction(state: ManualRepairState): number {
+  if (!state.stage) return 0.06;
+  return 0.1 + 0.8 * (1 - Math.exp(-state.stages.length / 6));
+}
+
+/** `0:04.2`, which is a duration a person reads at a glance. */
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, ms) / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${minutes}:${seconds.toFixed(1).padStart(4, '0')}`;
+}
+
+/** The bar, the stage it is on, and how long it has been going. */
+function RepairProgressPanel({
+  state,
+  elapsedMs,
+  cancelling,
+}: {
+  state: ManualRepairState;
+  elapsedMs: number;
+  cancelling: boolean;
+}) {
+  const { _ } = useLingui();
+  const stageLabel = cancelling
+    ? _(msg`Stopping at the end of this step…`)
+    : translateRepairStage(state.stage?.name, _);
+
+  return (
+    <div className="space-y-3">
+      <div className="mx-1.5 flex items-baseline justify-between gap-3">
+        <div className="min-w-0 truncate text-[11px] font-medium" style={{ color: 'var(--text-strong)' }}>
+          {stageLabel}
+        </div>
+        <div className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+          {formatElapsed(elapsedMs)}
+        </div>
+      </div>
+
+      {/* The row and the bar share one inset: the stage name and the elapsed time are set in from the
+          dialog edge by the same amount the bar is, so the three of them line up. */}
+      <div
+        className="mx-1.5 h-1.5 overflow-hidden rounded-full"
+        style={{ background: 'var(--surface-2)' }}
+        role="progressbar"
+        aria-label={_(msg`Repair progress`)}
+      >
+        <div
+          className="h-full rounded-full transition-[width] duration-300 ease-out"
+          style={{ width: `${Math.round(repairProgressFraction(state) * 100)}%`, background: '#d97706' }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export type MeshRepairModalsProps = {
   isManualRepairing: boolean;
   manualRepairModelId: string | null;
+  /** A repair that must begin as soon as its model is set, without the dialog's own confirm step. */
+  autoStartRepair: boolean;
+  setAutoStartRepair: React.Dispatch<React.SetStateAction<boolean>>;
   scene: ReturnType<typeof useSceneCollectionManager>;
   setIsManualRepairing: React.Dispatch<React.SetStateAction<boolean>>;
   setManualRepairModelId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -23,6 +101,8 @@ export type MeshRepairModalsProps = {
 export function MeshRepairModals({
   isManualRepairing,
   manualRepairModelId,
+  autoStartRepair,
+  setAutoStartRepair,
   scene,
   setIsManualRepairing,
   setManualRepairModelId,
@@ -30,6 +110,55 @@ export function MeshRepairModals({
   showDamagedModelDialog,
 }: MeshRepairModalsProps) {
   const { _ } = useLingui();
+  const [manualRepair, setManualRepair] = React.useState<ManualRepairState | null>(null);
+  const [repairToken, setRepairToken] = React.useState<string | null>(null);
+  const [cancelling, setCancelling] = React.useState(false);
+  const [tick, setTick] = React.useState(0);
+
+  // The elapsed clock only runs while a repair does.
+  React.useEffect(() => {
+    if (!isManualRepairing) return undefined;
+    const timer = window.setInterval(() => setTick(performance.now()), 100);
+    return () => window.clearInterval(timer);
+  }, [isManualRepairing]);
+
+  const runRepair = React.useCallback(() => {
+    const id = manualRepairModelId;
+    if (!id) return;
+    setIsManualRepairing(true);
+    setCancelling(false);
+    setManualRepair({ startedAt: performance.now(), stage: null, stages: [] });
+    void scene.repairModelInPlace(id, {
+      onToken: setRepairToken,
+      onProgress: (progress) => setManualRepair((previous) => (
+        previous
+          ? { ...previous, stage: progress, stages: [...previous.stages, progress] }
+          : previous
+      )),
+    }).finally(() => {
+      setIsManualRepairing(false);
+      setManualRepairModelId(null);
+      setManualRepair(null);
+      setRepairToken(null);
+      setCancelling(false);
+    });
+  }, [manualRepairModelId, scene, setIsManualRepairing, setManualRepairModelId]);
+
+  // Repair Now: the model arrives with the flag already set, so the repair starts here rather
+  // than waiting for a click on a Repair button the user has effectively already pressed.
+  const autoStartedModelIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!autoStartRepair || !manualRepairModelId) return;
+    if (autoStartedModelIdRef.current === manualRepairModelId) return;
+    autoStartedModelIdRef.current = manualRepairModelId;
+    runRepair();
+  }, [autoStartRepair, manualRepairModelId, runRepair]);
+
+  // Every way out of the dialog clears the flag, so the next repair opened by hand waits.
+  React.useEffect(() => {
+    if (manualRepairModelId === null) setAutoStartRepair(false);
+  }, [manualRepairModelId, setAutoStartRepair]);
+
   // Escape mirrors the backdrop click: it cannot leave mid-repair.
   useEscapeToClose(
     manualRepairModelId !== null,
@@ -106,7 +235,7 @@ export function MeshRepairModals({
               }}
               role="dialog"
               aria-modal="true"
-              aria-label={_(msg`Repair mesh`)}
+              aria-label={autoStartRepair ? _(msg`Repairing Mesh`) : _(msg`Repair Mesh`)}
             >
               <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div className="flex min-w-0 items-center gap-3">
@@ -122,10 +251,12 @@ export function MeshRepairModals({
 
                   <div className="min-w-0 pr-2">
                     <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                      <Trans>Repair this mesh?</Trans>
+                      {autoStartRepair ? _(msg`Repairing Mesh`) : _(msg`Repair Mesh`)}
                     </h2>
                     <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                      <Trans>DragonFruit will try to fix common geometry issues before you keep working.</Trans>
+                      {autoStartRepair
+                        ? _(msg`Fixing geometry issues.`)
+                        : _(msg`Fixes geometry issues before you keep working.`)}
                     </p>
                   </div>
                 </div>
@@ -149,9 +280,17 @@ export function MeshRepairModals({
                   </div>
                 </div>
 
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  <Trans>Repair can help with holes, broken surfaces, and other mesh problems that may lead to slicing or print issues.</Trans>
-                </p>
+                {manualRepair ? (
+                  <RepairProgressPanel
+                    state={manualRepair}
+                    elapsedMs={Math.max(0, tick - manualRepair.startedAt)}
+                    cancelling={cancelling}
+                  />
+                ) : (
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {_(msg`Repairs holes, broken surfaces, and other mesh problems.`)}
+                  </p>
+                )}
 
                 <div
                   className="rounded-md border px-3 py-2"
@@ -168,33 +307,41 @@ export function MeshRepairModals({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className={autoStartRepair ? 'pt-1' : 'grid grid-cols-2 gap-2 pt-1'}>
                   <Button
                     variant="secondary"
-                    className="w-full"
-                    disabled={isManualRepairing}
-                    onClick={() => setManualRepairModelId(null)}
-                  >
-                    <Trans>Keep Original</Trans>
-                  </Button>
-                  <Button
-                    variant="tinted-accent"
                     className="w-full inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
-                    disabled={isManualRepairing}
+                    disabled={cancelling}
                     onClick={() => {
-                      const id = manualRepairModelId;
-                      setIsManualRepairing(true);
-                      void scene.repairModelInPlace(id).finally(() => {
-                        setIsManualRepairing(false);
-                        setManualRepairModelId(null);
-                      });
+                      if (isManualRepairing) {
+                        if (!repairToken) return;
+                        // Stops at the next stage boundary, so the mesh it leaves is
+                        // one the pipeline finished a pass on.
+                        setCancelling(true);
+                        void cancelMeshRepair(repairToken);
+                        return;
+                      }
+                      setManualRepairModelId(null);
                     }}
                   >
-                    {isManualRepairing
-                      ? <><Spinner size="sm" /><Trans>Repairing…</Trans></>
-                      : <><Wrench className="h-3.5 w-3.5" /><Trans>Repair</Trans></>
+                    {cancelling
+                      ? <><Spinner size="sm" /><Trans>Stopping…</Trans></>
+                      : isManualRepairing ? <Trans>Stop</Trans> : <Trans>Keep Original</Trans>
                     }
                   </Button>
+                  {!autoStartRepair && (
+                    <Button
+                      variant="tinted-accent"
+                      className="w-full inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      disabled={isManualRepairing}
+                      onClick={runRepair}
+                    >
+                      {isManualRepairing
+                        ? <><Spinner size="sm" /><Trans>Repairing…</Trans></>
+                        : <><Wrench className="h-3.5 w-3.5" /><Trans>Repair</Trans></>
+                      }
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

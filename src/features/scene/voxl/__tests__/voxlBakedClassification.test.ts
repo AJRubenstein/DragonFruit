@@ -49,6 +49,7 @@ function classification(modelTriangleCount: number | null): MeshHealthReport {
     model_manifold_status: null,
     residual_issues: [],
     fully_repaired: true,
+    cancelled: false,
     total_ms: 3.5,
   };
 }

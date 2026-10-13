@@ -58,6 +58,7 @@ test('splitSupports assigns isSupportGeometry: false to model and isSupportGeome
           likely_support_geometry: false,
           residual_issues: [],
           fully_repaired: true,
+          cancelled: false,
           total_ms: 0,
           model_triangle_count: 1,
         },

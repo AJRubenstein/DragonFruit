@@ -18,8 +18,10 @@ import {
   classifyFromGeometry,
   isHeavyRepair,
   repairFromGeometry,
+  repairFromPath,
   type MeshAnalysisJson,
   type MeshHealthReport,
+  type MeshRepairProgressSink,
 } from '@/utils/meshRepair';
 
 export type MeshDefects = {
@@ -130,6 +132,21 @@ export interface ProcessGeometryOptions {
    * @internal
    */
   assumeSupportGeometry?: boolean;
+  /**
+   * Hears each repair stage as it starts, and receives the run's token so the
+   * caller can cancel it. Ignored when the geometry does not go through the
+   * native repair.
+   */
+  repairProgressSink?: MeshRepairProgressSink;
+  /**
+   * The file this geometry came from, when it came from one.
+   *
+   * With a path the repair reads the file through the native loader, which is the same
+   * path the import took: it classifies the mesh at load, refines what needs it, and
+   * keeps the file's own indexing. Without one the geometry is expanded to a triangle
+   * soup and staged, which costs an upload and re-derives every vertex.
+   */
+  sourcePath?: string;
   /** Skip nonessential analysis for a native reduced-detail preview. @internal */
   _isNativePreview?: boolean;
   /** Model section boundary offset extracted directly from the DFMX binary IPC header. @internal */
@@ -412,9 +429,12 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
         : {};
       const runClassify = options._classifyFromGeometry ?? classifyFromGeometry;
       const runRepair = options._repairFromGeometry ?? repairFromGeometry;
+      const useLoaderPath = !options._repairFromGeometry && Boolean(options.sourcePath);
       const result = classifyOnly
         ? await runClassify(geometry, repairOpts)
-        : await runRepair(geometry, repairOpts);
+        : useLoaderPath
+          ? await repairFromPath(options.sourcePath!, repairOpts, options.repairProgressSink)
+          : await runRepair(geometry, repairOpts, options.repairProgressSink);
       if (result) {
         let effectiveResult = result;
         let usedFallbackClassification = false;

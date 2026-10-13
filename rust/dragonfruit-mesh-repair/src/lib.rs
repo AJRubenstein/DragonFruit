@@ -12,11 +12,18 @@ pub mod arrangement;
 /// users) without rewriting every import.
 pub use dragonfruit_mesh_core as core;
 pub mod decimation_config;
+pub mod evaluate;
+pub mod holes;
+pub mod topology_passes;
 pub mod hollowing;
 pub mod io;
 pub mod repair;
 pub mod report;
+pub mod shells;
+pub mod shrink_wrap;
 pub mod stl_budget;
+#[cfg(test)]
+mod test_fixtures;
 
 pub use crate::analysis::{analyze, minimal_analysis, MeshAnalysis};
 pub use crate::core::mesh::{IndexedMesh, Vec3};
@@ -26,10 +33,11 @@ pub use crate::hollowing::{
     HollowSession, OpenFace,
 };
 pub use crate::repair::{
-    classify_support_split, decimate_sections_to_budget, repair, ClassificationOutcome, RepairOptions,
-    RepairOutcome, SectionDecimationOutcome,
+    classify_support_split, decimate_sections_to_budget, repair, repair_with_progress,
+    ClassificationOutcome, RepairOptions, RepairOutcome, SectionDecimationOutcome,
 };
 pub use crate::report::MeshHealthReport;
+pub use crate::shrink_wrap::{shrink_wrap, ShrinkWrapOptions, ShrinkWrapOutcome, ShrinkWrapReport};
 pub use crate::stl_budget::{compute_triangle_budget, TriangleBudget};
 
 use std::path::Path;

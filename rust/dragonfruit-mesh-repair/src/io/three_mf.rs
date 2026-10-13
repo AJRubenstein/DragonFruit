@@ -32,8 +32,13 @@ use crate::MeshRepairError;
 #[derive(Default)]
 struct Object {
     mesh: Option<IndexedMesh>,
-    /// `(objectid, local transform)` per `<component>`.
-    components: Vec<(String, Affine)>,
+    /// `(objectid, local transform, part path)` per `<component>`.
+    ///
+    /// The third field is the production extension's `p:path`, and it is not decorative: a
+    /// component may name a separate model part inside the same archive instead of an object in
+    /// this file. BambuStudio and OrcaSlicer write every export that way, so without it their
+    /// files fail resolution outright — which is what `object 1 referenced but not defined` was.
+    components: Vec<(String, Affine, Option<String>)>,
 }
 
 /// Object resources in document order, addressable by id.
@@ -109,11 +114,17 @@ impl Affine {
 
     fn apply(&self, p: Vec3) -> Vec3 {
         Vec3::new(
-            self.linear[0][0] * p.x + self.linear[0][1] * p.y + self.linear[0][2] * p.z
+            self.linear[0][0] * p.x
+                + self.linear[0][1] * p.y
+                + self.linear[0][2] * p.z
                 + self.translation[0],
-            self.linear[1][0] * p.x + self.linear[1][1] * p.y + self.linear[1][2] * p.z
+            self.linear[1][0] * p.x
+                + self.linear[1][1] * p.y
+                + self.linear[1][2] * p.z
                 + self.translation[1],
-            self.linear[2][0] * p.x + self.linear[2][1] * p.y + self.linear[2][2] * p.z
+            self.linear[2][0] * p.x
+                + self.linear[2][1] * p.y
+                + self.linear[2][2] * p.z
                 + self.translation[2],
         )
     }
@@ -121,9 +132,11 @@ impl Affine {
 
 /// Parse a 3MF and return one `IndexedMesh` per body, transforms baked.
 pub fn load_bodies(path: &Path) -> Result<Vec<IndexedMesh>, MeshRepairError> {
-    let xml = read_model_xml(path)?;
-    let objects = parse_objects(&xml)?;
-    let build = parse_build(&xml)?;
+    let (primary, parts) = read_models(path)?;
+    let objects = parts
+        .get(&normalize_part_name(&primary))
+        .ok_or_else(|| MeshRepairError::Parse("3MF: no .model entry".into()))?;
+    let build = parse_build(&read_model_xml(path)?)?;
 
     let roots: Vec<(String, Affine)> = if build.is_empty() {
         // A file with no usable `<build>` section still describes geometry;
@@ -146,7 +159,7 @@ pub fn load_bodies(path: &Path) -> Result<Vec<IndexedMesh>, MeshRepairError> {
 
     let mut bodies = Vec::new();
     for (id, transform) in roots {
-        expand_body(&objects, &id, transform, 0, &mut bodies)?;
+        expand_body(objects, &parts, &id, transform, 0, &mut bodies)?;
     }
     if bodies.is_empty() {
         return Err(MeshRepairError::Parse(
@@ -181,6 +194,7 @@ const MAX_COMPONENT_DEPTH: usize = 64;
 
 fn expand_body(
     objects: &ObjectTable,
+    parts: &HashMap<String, ObjectTable>,
     id: &str,
     world: Affine,
     depth: usize,
@@ -196,9 +210,18 @@ fn expand_body(
     })?;
 
     if !object.components.is_empty() {
-        for (child_id, child_transform) in &object.components {
+        for (child_id, child_transform, child_path) in &object.components {
+            // Which table the id resolves against follows the path, not the file the reference
+            // was written in. A part's own components resolve against the part.
+            let child_objects = match child_path {
+                Some(path) => parts.get(&normalize_part_name(path)).ok_or_else(|| {
+                    MeshRepairError::Parse(format!("3MF: component path {path} is not in the archive"))
+                })?,
+                None => objects,
+            };
             expand_body(
-                objects,
+                child_objects,
+                parts,
                 child_id,
                 Affine::compose(world, *child_transform),
                 depth + 1,
@@ -245,6 +268,51 @@ fn read_model_xml(path: &Path) -> Result<String, MeshRepairError> {
     Ok(xml)
 }
 
+/// Every `.model` entry in the archive, parsed, keyed by normalized entry name, plus the name of
+/// the primary model.
+///
+/// The parts exist because of the production extension: a component may point at
+/// `/3D/Objects/object_1.model` instead of at an object in `3dmodel.model`, which is how
+/// BambuStudio and OrcaSlicer write every export. The primary is still the first `.model` entry,
+/// so a single-model file resolves exactly as it did before.
+fn read_models(path: &Path) -> Result<(String, HashMap<String, ObjectTable>), MeshRepairError> {
+    let file = File::open(path)?;
+    let mut zip = zip::ZipArchive::new(file)
+        .map_err(|e| MeshRepairError::Parse(format!("3MF zip open: {e}")))?;
+
+    let mut primary: Option<String> = None;
+    let mut tables: HashMap<String, ObjectTable> = HashMap::new();
+    for i in 0..zip.len() {
+        let name = {
+            let entry = zip
+                .by_index(i)
+                .map_err(|e| MeshRepairError::Parse(format!("3MF zip entry: {e}")))?;
+            entry.name().to_string()
+        };
+        if !name.to_ascii_lowercase().ends_with(".model") {
+            continue;
+        }
+        if primary.is_none() {
+            primary = Some(name.clone());
+        }
+        let mut xml = String::new();
+        zip.by_name(&name)
+            .map_err(|e| MeshRepairError::Parse(format!("3MF read model: {e}")))?
+            .read_to_string(&mut xml)?;
+        tables.insert(normalize_part_name(&name), parse_objects(&xml)?);
+    }
+    let primary = primary.ok_or_else(|| MeshRepairError::Parse("3MF: no .model entry".into()))?;
+    Ok((primary, tables))
+}
+
+/// A `p:path` and a zip entry name differ by a leading slash, and the case the two use is not
+/// guaranteed to match.
+fn normalize_part_name(name: &str) -> String {
+    name.trim_start_matches('/')
+        .replace('\\', "/")
+        .to_ascii_lowercase()
+}
+
 fn parse_objects(xml: &str) -> Result<ObjectTable, MeshRepairError> {
     let mut table = ObjectTable::default();
     let mut cursor = 0;
@@ -254,9 +322,8 @@ fn parse_objects(xml: &str) -> Result<ObjectTable, MeshRepairError> {
         let id = parse_attr_str(&xml[open..open_end], "id")
             .ok_or_else(|| MeshRepairError::Parse("3MF: <object> without id".into()))?
             .to_string();
-        let close = find_element(xml, open_end, "</object").ok_or_else(|| {
-            MeshRepairError::Parse(format!("3MF: unterminated object {id}"))
-        })?;
+        let close = find_element(xml, open_end, "</object")
+            .ok_or_else(|| MeshRepairError::Parse(format!("3MF: unterminated object {id}")))?;
         table.insert(id, parse_object_block(&xml[open_end..close])?);
         cursor = close;
     }
@@ -267,18 +334,16 @@ fn parse_object_block(block: &str) -> Result<Object, MeshRepairError> {
     let mut object = Object::default();
 
     if let Some(open) = find_element(block, 0, "<mesh") {
-        let close = find_element(block, open, "</mesh").ok_or_else(|| {
-            MeshRepairError::Parse("3MF: unterminated <mesh>".into())
-        })?;
+        let close = find_element(block, open, "</mesh")
+            .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <mesh>".into()))?;
         let open_end = tag_end(block, open)
             .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <mesh>".into()))?;
         object.mesh = parse_mesh_block(&block[open_end..close])?;
     }
 
     if let Some(open) = find_element(block, 0, "<components") {
-        let close = find_element(block, open, "</components").ok_or_else(|| {
-            MeshRepairError::Parse("3MF: unterminated <components>".into())
-        })?;
+        let close = find_element(block, open, "</components")
+            .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <components>".into()))?;
         let open_end = tag_end(block, open)
             .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <components>".into()))?;
         object.components = parse_components_block(&block[open_end..close])?;
@@ -309,9 +374,8 @@ fn parse_mesh_block(block: &str) -> Result<Option<IndexedMesh>, MeshRepairError>
             .ok_or_else(|| MeshRepairError::Parse("3MF: unterminated <triangle>".into()))?;
         let tag = &block[at..end];
         let index = |name: &str| -> Result<u32, MeshRepairError> {
-            parse_attr_u32(tag, name).ok_or_else(|| {
-                MeshRepairError::Parse(format!("3MF: <triangle> missing {name}"))
-            })
+            parse_attr_u32(tag, name)
+                .ok_or_else(|| MeshRepairError::Parse(format!("3MF: <triangle> missing {name}")))
         };
         triangles.push([index("v1")?, index("v2")?, index("v3")?]);
         cursor = end;
@@ -332,7 +396,7 @@ fn parse_mesh_block(block: &str) -> Result<Option<IndexedMesh>, MeshRepairError>
     }))
 }
 
-fn parse_components_block(block: &str) -> Result<Vec<(String, Affine)>, MeshRepairError> {
+fn parse_components_block(block: &str) -> Result<Vec<(String, Affine, Option<String>)>, MeshRepairError> {
     let mut components = Vec::new();
     let mut cursor = 0;
     while let Some(at) = find_element(block, cursor, "<component") {
@@ -343,6 +407,7 @@ fn parse_components_block(block: &str) -> Result<Vec<(String, Affine)>, MeshRepa
             components.push((
                 id.to_string(),
                 parse_transform(tag)?.unwrap_or(Affine::IDENTITY),
+                parse_attr_str(tag, "p:path").map(str::to_string),
             ));
         }
         cursor = end;
@@ -484,12 +549,84 @@ mod tests {
         ));
         let file = File::create(&path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        let options = zip::write::FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let options =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
         zip.start_file("3D/3dmodel.model", options).unwrap();
         zip.write_all(model_xml.as_bytes()).unwrap();
         zip.finish().unwrap();
         path
+    }
+
+    /// A 3MF whose geometry lives in separate model parts, the way BambuStudio and OrcaSlicer
+    /// write every export: the main model holds only `<component p:path="..."/>` references.
+    fn write_3mf_parts(entries: &[(&str, &str)]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "df-3mf-parts-{}-{}.3mf",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, xml) in entries {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(xml.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    /// A component that names a part must be resolved inside that part. BambuStudio and
+    /// OrcaSlicer put each object in `3D/Objects/object_N.model` and reference it by `p:path`,
+    /// so a loader that only looks inside `3dmodel.model` rejects every one of their exports with
+    /// "object 1 referenced but not defined".
+    #[test]
+    fn production_extension_components_resolve_into_their_parts() {
+        let main = r#"<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+  <resources>
+    <object id="5" type="model">
+      <components>
+        <component p:path="/3D/Objects/object_1.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 10 0 0" />
+      </components>
+    </object>
+  </resources>
+  <build>
+    <item objectid="5" />
+  </build>
+</model>"#;
+        let part = r#"<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+  <resources>
+    <object id="1" type="model">
+      <mesh>
+        <vertices>
+          <vertex x="0" y="0" z="0" />
+          <vertex x="1" y="0" z="0" />
+          <vertex x="0" y="1" z="0" />
+        </vertices>
+        <triangles>
+          <triangle v1="0" v2="1" v3="2" />
+        </triangles>
+      </mesh>
+    </object>
+  </resources>
+</model>"#;
+        let path = write_3mf_parts(&[
+            ("3D/3dmodel.model", main),
+            ("3D/Objects/object_1.model", part),
+        ]);
+        let bodies = load_bodies(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(bodies.len(), 1, "the part resolves to one body");
+        assert_eq!(bodies[0].triangles.len(), 1);
+        // The component transform is composed onto the part's vertices, so the body lands at
+        // x=10 rather than at the origin.
+        assert!((bodies[0].positions[0].x - 10.0).abs() < 1e-6);
     }
 
     /// A unit triangle object instanced twice by build items with different
