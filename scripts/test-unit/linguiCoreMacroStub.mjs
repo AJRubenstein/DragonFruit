@@ -20,7 +20,11 @@ export function msg(descriptor, ...values) {
 
 export const t = msg;
 export const defineMessage = msg;
-export const plural = (value) => String(value);
-export const select = (value) => String(value);
+// English forms only: enough for a test to assert the rendered source text.
+export const plural = (value, forms = {}) => {
+  const form = forms[`=${value}`] ?? (value === 1 ? forms.one : undefined) ?? forms.other;
+  return form === undefined ? String(value) : String(form).replaceAll('#', String(value));
+};
+export const select = (value, forms = {}) => String(forms[value] ?? forms.other ?? value);
 export const selectOrdinal = (value) => String(value);
 export const ph = (value) => String(value);

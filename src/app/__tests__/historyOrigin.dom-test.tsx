@@ -53,7 +53,7 @@ async function dropCube(container: HTMLElement) {
 
 /** Where the page says the user is: the origin it stamps on a fresh entry. */
 function currentOrigin(): HistoryOrigin | undefined {
-  pushHistory({ type: PROBE, payload: null });
+  pushHistory({ type: PROBE, payload: null, description: { id: PROBE } });
   const origin = peekUndo()?.origin;
   clearHistory();
   return origin;
@@ -61,7 +61,7 @@ function currentOrigin(): HistoryOrigin | undefined {
 
 async function undoEntryFrom(origin: HistoryOrigin) {
   clearHistory();
-  pushHistory({ type: PROBE, payload: null, origin });
+  pushHistory({ type: PROBE, payload: null, description: { id: PROBE }, origin });
   undo();
   await wait(200);
 }

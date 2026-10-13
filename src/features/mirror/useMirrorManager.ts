@@ -13,6 +13,9 @@ import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import type { useTransformManager } from '@/features/transform/useTransformManager';
+import {
+  mirrorModelLabel,
+} from '@/features/scene/sceneHistoryLabels';
 
 type MirrorSession = {
   modelId: string;
@@ -90,7 +93,7 @@ export function useMirrorManager({
     finalizedTransform: ModelTransform,
     axisLabel: string,
   ) => {
-    scene.replaceModelGeometry(session.modelId, baked, `Mirror Model (${axisLabel})`, {
+    scene.replaceModelGeometry(session.modelId, baked, mirrorModelLabel(axisLabel), {
       // Z deletes the supports up front, behind its own confirmation.
       includeSupportState: !session.flips.z,
       transformAfter: finalizedTransform,

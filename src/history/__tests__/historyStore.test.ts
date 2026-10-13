@@ -11,7 +11,7 @@ import {
   getRedoCount,
 } from '../historyStore';
 
-const ACTION = { type: 'test:action', payload: { value: 1 } } as const;
+const ACTION = { type: 'test:action', payload: { value: 1 }, description: { id: 'test:action' } } as const;
 
 describe('historyStore', () => {
   const cleanups: Array<() => void> = [];
@@ -100,8 +100,8 @@ describe('historyStore', () => {
   it('does not let a declined entry block undo of entries beneath it', () => {
     register('good', () => true);
     register('bad', () => false);
-    pushHistory({ type: 'good', payload: {} });
-    pushHistory({ type: 'bad', payload: {} }); // now on top
+    pushHistory({ type: 'good', payload: {}, description: { id: 'good' } });
+    pushHistory({ type: 'bad', payload: {}, description: { id: 'bad' } }); // now on top
 
     undo(); // pops 'bad' → declined → discarded, not pushed back
     assert.equal(getUndoCount(), 1, 'the good entry is still reachable');

@@ -75,6 +75,7 @@ import { DEFAULT_RAFT_SETTINGS } from '../Rafts/Crenelated/RaftDefaults';
 import type { SidebarPanel } from './sidebarPanels';
 import { resetSupportSettingsScrollForTabChange } from './supportSidebarScroll';
 import { Trans } from '@lingui/react/macro';
+import { adjustSupportSettingsLabel } from '@/supports/history/supportHistoryLabels';
 
 const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners !bg-[var(--surface-0)]';
 const SECTION_CARD_STYLE: React.CSSProperties = {
@@ -129,10 +130,6 @@ function hasMeaningfulSupportEditChange(
     // Kickstands, their roots and their knots all live on SupportState, so
     // this comparison covers them.
     return JSON.stringify(beforeSupport) !== JSON.stringify(afterSupport);
-}
-
-function formatSupportKindLabel(kind: EditableSupportTarget['kind']): string {
-    return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
 }
 
 function Section({
@@ -397,8 +394,7 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
             const after = captureSupportEditSnapshot();
             if (hasMeaningfulSupportEditChange(before, after)) {
                 pushSupportEditHistory(
-                    // i18n-ignore: undo-history descriptions are internal, like every other pushSupportEditHistory call
-                    `Adjust ${formatSupportKindLabel(target.kind)} Settings`,
+                    adjustSupportSettingsLabel(target.kind),
                     before,
                     after,
                 );

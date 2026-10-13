@@ -293,7 +293,6 @@ import {
   undo,
 } from '@/history/historyStore';
 import type { HistoryDebugEvent, HistoryOrigin } from '@/history/types';
-import { formatHistoryLabel } from '@/history/formatHistoryLabel';
 import { getSavedCameraProjectionSettings, saveCameraProjectionSettings } from '@/components/settings/cameraProjectionPreferences';
 import {
   getSceneAutosaveSettingsServerSnapshot,
@@ -429,6 +428,18 @@ import type {
   ModelHollowingModifier,
   MeshModifierOpenFace,
 } from '@/features/mesh-modifiers/types';
+import { createJointLabel } from '@/supports/history/supportHistoryLabels';
+import {
+  APPLY_ORIENTATION_SUGGESTION_LABEL,
+  deleteSupportsForModelLabel,
+  deleteSupportsForModelsLabel,
+  HOLLOWING_SETTINGS_LABEL,
+  modelTransformLabel,
+  ORGANIC_CUT_LABEL,
+  rotateModelLabel,
+  selectionEditLabel,
+  type SelectionEditKind,
+} from '@/features/scene/sceneHistoryLabels';
 
 interface ShaftHoverDebugDetail {
   segmentId: string | null;
@@ -1010,7 +1021,7 @@ export default function Home() {
     modelId: string;
     before: ModelTransform;
     after?: ModelTransform;
-    description?: string;
+    description?: MessageDescriptor;
     supportBefore?: ReturnType<typeof getSupportSnapshot>;
     supportAfter?: ReturnType<typeof getSupportSnapshot>;
     /**
@@ -1021,7 +1032,8 @@ export default function Home() {
   } | null>(null);
   const pendingSelectionPositionHistoryRef = React.useRef<{
     targetIdsKey: string;
-    description: string;
+    targetCount: number;
+    kind: SelectionEditKind;
     beforeTransforms: Array<{ id: string; transform: ModelTransform }>;
     supportBefore: ReturnType<typeof getSupportSnapshot>;
   } | null>(null);
@@ -1039,7 +1051,7 @@ export default function Home() {
     modelId: string;
     before: ModelTransform;
     after: ModelTransform;
-    description: string;
+    description: MessageDescriptor;
   } | null>(null);
   const transformHistoryDebugRef = React.useRef<{
     lastResult:
@@ -1054,7 +1066,7 @@ export default function Home() {
       | 'skipped_model_missing';
     lastReason: string;
     lastModelId: string | null;
-    lastDescription: string | null;
+    lastDescription: MessageDescriptor | null;
     lastExpectedNonce: number | null;
     lastScheduledNonce: number | null;
     lastUndoCountBefore: number | null;
@@ -2209,7 +2221,7 @@ export default function Home() {
       },
       historyCommit: {
         pendingModelId: pendingHistory?.modelId ?? null,
-        pendingDescription: pendingHistory?.description ?? null,
+        pendingDescription: pendingHistory?.description ? _(pendingHistory.description) : null,
         pendingHasAfter: Boolean(pendingHistory?.after),
         pendingBeforeRotation: pendingHistory
           ? {
@@ -2234,7 +2246,7 @@ export default function Home() {
         lastResult: historyDebug.lastResult,
         lastReason: historyDebug.lastReason,
         lastModelId: historyDebug.lastModelId,
-        lastDescription: historyDebug.lastDescription,
+        lastDescription: historyDebug.lastDescription ? _(historyDebug.lastDescription) : null,
         lastExpectedNonce: historyDebug.lastExpectedNonce,
         lastScheduledNonce: historyDebug.lastScheduledNonce,
         lastUndoCountBefore: historyDebug.lastUndoCountBefore,
@@ -2244,7 +2256,7 @@ export default function Home() {
       },
       supportCounts: countSupportCollections(supportStateSnapshot),
     };
-  }, [scene.activeModelId, scene.models, supportDragGroupRef, supportStateSnapshot, transformDebugTick, transformMgr.transform]);
+  }, [_, scene.activeModelId, scene.models, supportDragGroupRef, supportStateSnapshot, transformDebugTick, transformMgr.transform]);
 
   const supportDebugStats = React.useMemo(() => {
     const snapTarget = bracePlacementSnapshot.snapTarget;
@@ -2434,7 +2446,7 @@ export default function Home() {
       after.position.z += transformMgr.liftDistance - lowestWorldZ;
     }
     scene.updateModelTransform(modelId, after);
-    scene.commitModelTransformHistory(modelId, before, after, 'Apply Orientation Suggestion');
+    scene.commitModelTransformHistory(modelId, before, after, APPLY_ORIENTATION_SUGGESTION_LABEL);
   }, [scene, transformMgr.liftDistance]);
 
   const handleConfirmDestructiveTransform = React.useCallback(() => {
@@ -2443,8 +2455,9 @@ export default function Home() {
 
     scene.deleteSupportsForModels(
       pending.modelIds,
-      // i18n-ignore: undo-history description, only shown in the history debug modal
-      `Delete Supports Before ${pending.operationLabel} ${pending.modelName}`,
+      pending.modelIds.length === 1
+        ? deleteSupportsForModelLabel(pending.modelName)
+        : deleteSupportsForModelsLabel(pending.modelIds.length),
     );
 
     setSupportRenderRefreshNonce((value) => value + 1);
@@ -6230,14 +6243,7 @@ export default function Home() {
   React.useEffect(() => setHistoryOriginProvider(() => historyOriginRef.current), []);
 
   React.useEffect(() => {
-    const fallbackDescription = (type: string) => {
-      if (type === 'scene_models_snapshot_apply') return 'Scene Change';
-      return formatHistoryLabel(type);
-    };
-
     const unsubscribe = subscribeHistoryOperations(({ direction, action }) => {
-      const sourceDescription = action.description?.trim() || fallbackDescription(action.type);
-      const description = formatHistoryLabel(sourceDescription);
 
       // Follow the stack back to where the edit was made: undoing a cut while the
       // Transform gizmo is up should put the Cut tool back, not silently reshape
@@ -6249,7 +6255,7 @@ export default function Home() {
       setGizmoResetNonce((value) => value + 1);
       setHistoryTransformResyncTick((value) => value + 1);
 
-      setHistoryActionToast({ id: Date.now(), text: description, direction });
+      setHistoryActionToast({ id: Date.now(), label: action.description, direction });
       setIsHistoryActionToastVisible(true);
 
       if (historyActionToastFadeTimeoutRef.current !== null) {
@@ -6551,7 +6557,7 @@ export default function Home() {
               applyJointSplitKnotRemaps(knotRemaps);
               updateSupportEntity(owner.typeId, updated);
               // i18n-ignore: undo-history description, only shown in the history debug modal
-              pushSupportEditHistory(`Create ${descriptor.singular} joint`, beforeSnapshot, captureSupportEditSnapshot());
+              pushSupportEditHistory(createJointLabel(descriptor.id), beforeSnapshot, captureSupportEditSnapshot());
             }
           }
         }
@@ -9047,7 +9053,7 @@ export default function Home() {
     }
 
     if (pendingTransformHistoryRef.current && targetModelId && pendingTransformHistoryRef.current.modelId === targetModelId) {
-      pendingTransformHistoryRef.current.description = `transform:${operation} ${targetModelName}`;
+      pendingTransformHistoryRef.current.description = modelTransformLabel(operation, targetModelName);
     }
 
     transformMgr.setIsTransforming(false);
@@ -9154,7 +9160,7 @@ export default function Home() {
           rotation: payload.after.rotation.clone(),
           scale: payload.after.scale.clone(),
         },
-        description: `transform:${payload.operation} ${targetModelName}`,
+        description: modelTransformLabel(payload.operation, targetModelName),
       };
       skipNextTransformEndCommitRef.current = null;
       return;
@@ -9175,7 +9181,7 @@ export default function Home() {
         rotation: payload.after.rotation.clone(),
         scale: payload.after.scale.clone(),
       };
-      existing.description = `transform:${payload.operation} ${targetModelName}`;
+      existing.description = modelTransformLabel(payload.operation, targetModelName);
     } else {
       const beforeSupportSnapshot = captureTransformSupportSnapshot();
       pendingTransformHistoryRef.current = {
@@ -9190,7 +9196,7 @@ export default function Home() {
           rotation: payload.after.rotation.clone(),
           scale: payload.after.scale.clone(),
         },
-        description: `transform:${payload.operation} ${targetModelName}`,
+        description: modelTransformLabel(payload.operation, targetModelName),
         supportBefore: beforeSupportSnapshot.support,
       };
     }
@@ -9300,7 +9306,7 @@ export default function Home() {
     const afterSupportSnapshot = captureTransformSupportSnapshot();
     scene.commitModelTransformsHistory(
       pending.beforeTransforms,
-      pending.description,
+      selectionEditLabel(pending.kind, pending.targetCount),
       {
         includeSupportState: true,
         supportBefore: pending.supportBefore,
@@ -9350,10 +9356,10 @@ export default function Home() {
    * models without history, and the step closes on blur. A different selection or a different
    * kind of edit closes the open step first.
    */
-  const ensurePendingSelectionHistory = React.useCallback((targetIds: readonly string[], description: string) => {
+  const ensurePendingSelectionHistory = React.useCallback((targetIds: readonly string[], kind: SelectionEditKind) => {
     const targetIdsKey = targetIds.join('\0');
     const pending = pendingSelectionPositionHistoryRef.current;
-    if (pending && (pending.targetIdsKey !== targetIdsKey || pending.description !== description)) {
+    if (pending && (pending.targetIdsKey !== targetIdsKey || pending.kind !== kind)) {
       commitPendingSelectionPositionHistory();
     }
     if (pendingSelectionPositionHistoryRef.current) return;
@@ -9362,7 +9368,8 @@ export default function Home() {
     const beforeSupportSnapshot = captureTransformSupportSnapshot();
     pendingSelectionPositionHistoryRef.current = {
       targetIdsKey,
-      description,
+      targetCount: targetIds.length,
+      kind,
       beforeTransforms: scene.models.map((model) => ({
         id: model.id,
         transform: {
@@ -9403,7 +9410,7 @@ export default function Home() {
     const targetIds = getSelectionTargetIds();
     if (targetIds.length === 0) return;
 
-    ensurePendingSelectionHistory(targetIds, 'Move Selected Models');
+    ensurePendingSelectionHistory(targetIds, 'move');
     applySelectionPositionUpdates(buildSelectionPositionUpdates(
       scene.models,
       targetIds,
@@ -9421,7 +9428,7 @@ export default function Home() {
     const hasDestructiveRotate = Math.abs(x - current.x) > EPS || Math.abs(y - current.y) > EPS;
     if (hasDestructiveRotate && !requestDestructiveTransformSupportDeletion('Rotate X/Y', targetIds)) return;
 
-    ensurePendingSelectionHistory(targetIds, 'Rotate Selected Models');
+    ensurePendingSelectionHistory(targetIds, 'rotate');
     applySelectionPositionUpdates(rotateSelectionFromActive(
       getPendingSelectionStartEntries(targetIds),
       activeModel.id,
@@ -9440,12 +9447,12 @@ export default function Home() {
 
   /** Closes the panel's open undo step, seating the models first after a rotation or a scale. */
   const handleSelectionTransformCommit = React.useCallback(() => {
-    const description = pendingSelectionPositionHistoryRef.current?.description;
-    if (description !== 'Rotate Selected Models' && description !== 'Scale Selected Models') {
+    const kind = pendingSelectionPositionHistoryRef.current?.kind;
+    if (kind !== 'rotate' && kind !== 'scale') {
       commitPendingSelectionPositionHistory();
       return;
     }
-    if (description === 'Rotate Selected Models') islands.clearScanData();
+    if (kind === 'rotate') islands.clearScanData();
     const targetIds = getSelectionTargetIds();
     applySelectionPositionUpdates(
       seatSelectionOnPlate(getSelectionTransformEntries(targetIds)),
@@ -9474,7 +9481,7 @@ export default function Home() {
     if (!hasScaleChange || x <= 0 || y <= 0 || z <= 0) return;
     if (!requestDestructiveTransformSupportDeletion('Scale XYZ', targetIds)) return;
 
-    ensurePendingSelectionHistory(targetIds, 'Scale Selected Models');
+    ensurePendingSelectionHistory(targetIds, 'scale');
     applySelectionPositionUpdates(scaleSelectionFromActive(
       getPendingSelectionStartEntries(targetIds),
       activeModel.id,
@@ -9667,7 +9674,7 @@ export default function Home() {
           rotation: scene.activeModel.transform.rotation.clone(),
           scale: scene.activeModel.transform.scale.clone(),
         },
-        description: `transform:${operation} ${targetModelName}`,
+        description: modelTransformLabel(operation, targetModelName),
         supportBefore: captureTransformSupportSnapshot().support,
       };
     }
@@ -9699,13 +9706,13 @@ export default function Home() {
               scale: transformMgr.transform.scale.clone(),
             }
           : undefined,
-        description: `transform:${operation} ${targetModelName}`,
+        description: modelTransformLabel(operation, targetModelName),
         supportBefore: beforeSupportSnapshot.support,
       };
       return;
     }
 
-    pendingTransformHistoryRef.current.description = `transform:${operation} ${targetModelName}`;
+    pendingTransformHistoryRef.current.description = modelTransformLabel(operation, targetModelName);
     if (isFiniteTransform(transformMgr.transform)) {
       pendingTransformHistoryRef.current.after = {
         position: transformMgr.transform.position.clone(),
@@ -9736,7 +9743,7 @@ export default function Home() {
     const targetModelId = scene.activeModelId;
     const targetModelName = (scene.activeModel?.name ?? targetModelId ?? 'Model').trim();
     if (pendingTransformHistoryRef.current && targetModelId && pendingTransformHistoryRef.current.modelId === targetModelId) {
-      pendingTransformHistoryRef.current.description = `transform:rotate ${targetModelName}`;
+      pendingTransformHistoryRef.current.description = rotateModelLabel(targetModelName);
       if (isFiniteTransform(transformMgr.transform)) {
         pendingTransformHistoryRef.current.after = {
           position: transformMgr.transform.position.clone(),
@@ -10448,7 +10455,7 @@ export default function Home() {
         openFace: next.openFace,
         openFaceSelected: next.mode === 'shell_open_face' ? false : true,
       },
-    }, { historyDescription: 'Hollowing Settings' });
+    }, { historyDescription: HOLLOWING_SETTINGS_LABEL });
   }, [defaultHollowingState, hollowingState, pendingBlockerResetState, persistActiveModelModifiers, scene.activeModel]);
 
 
@@ -10725,7 +10732,7 @@ export default function Home() {
       }
       // ONE atomic split — replacing + adding as separate calls races on stale
       // state and deletes a piece. A multi-loop cut may hand us >2 parts.
-      const newIds = scene.splitModelIntoParts(target.id, parts, 'Organic Cut');
+      const newIds = scene.splitModelIntoParts(target.id, parts, ORGANIC_CUT_LABEL);
       console.info(`[organicCut] commitParts OK | parts=${parts.length} newModelIds=${newIds?.join(',') ?? 'null'}`);
       return newIds != null;
     }, [scene]),

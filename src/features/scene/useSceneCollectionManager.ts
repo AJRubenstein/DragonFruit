@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import * as THREE from 'three';
 import { loadTauriCore, refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
@@ -70,6 +71,38 @@ import {
   repairFailedMessage,
   repairStoppedMessage,
 } from '@/features/scene/meshRepairMessages';
+import {
+  addPlateLabel,
+  colorModelLabel,
+  DELETE_MODELS_AND_PLATES_LABEL,
+  deleteModelLabel,
+  deleteModelsLabel,
+  deletePlateLabel,
+  deleteSupportsForModelLabel,
+  deleteSupportsForModelsLabel,
+  duplicateModelLabel,
+  duplicateModelsLabel,
+  hideModelLabel,
+  linkModelsLabel,
+  MARK_AS_MODEL_LABEL,
+  MARK_AS_SUPPORT_LABEL,
+  mergeSupportsLabel,
+  pasteModelLabel,
+  pasteModelsLabel,
+  renameLabel,
+  repairModelLabel,
+  repairModelsLabel,
+  SCENE_CHANGE_LABEL,
+  showModelLabel,
+  SLICE_SCENE_LABEL,
+  splitModelLabel,
+  splitSupportsLabel,
+  SWITCH_PRINTER_LABEL,
+  switchPrinterLabel,
+  transformModelLabel,
+  transformModelsLabel,
+  unlinkModelsLabel,
+} from '@/features/scene/sceneHistoryLabels';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
 import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
@@ -225,11 +258,14 @@ type SceneHistoryPayloadMap = {
   [SCENE_MODELS_SNAPSHOT_APPLY]: SceneSnapshotPayload;
   [SCENE_SLICED]: Record<string, never>;
 };
-const sceneHistory = createTypedHistory<SceneHistoryPayloadMap>();
+const sceneHistory = createTypedHistory<SceneHistoryPayloadMap>({
+  [SCENE_MODELS_SNAPSHOT_APPLY]: SCENE_CHANGE_LABEL,
+  [SCENE_SLICED]: SLICE_SCENE_LABEL,
+});
 
 /** Push the post-slice marker used to detect edits made after a slice. */
 export function pushSceneSlicedMarker(): void {
-  sceneHistory.push({ type: SCENE_SLICED, description: 'Scene sliced for printing', payload: {} });
+  sceneHistory.push({ type: SCENE_SLICED, payload: {} });
 }
 
 type SceneSnapshot = {
@@ -2272,7 +2308,7 @@ export function useSceneCollectionManager(options?: {
     };
   }, [applySceneSnapshot]);
 
-  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: string, modelId?: string) => {
+  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: MessageDescriptor, modelId?: string) => {
     const key = storeSceneSnapshotPair({ before, after });
     sceneHistory.push({
       type: SCENE_MODELS_SNAPSHOT_APPLY,
@@ -3136,7 +3172,7 @@ export function useSceneCollectionManager(options?: {
     id: string,
     beforeTransform: ModelTransform,
     afterTransform: ModelTransform,
-    description?: string,
+    description?: MessageDescriptor,
     supportSnapshotOptions?: TransformHistorySupportSnapshotOptions & {
       /**
        * Set when the same gesture created the plate the model landed on. The bed
@@ -3213,13 +3249,13 @@ export function useSceneCollectionManager(options?: {
       ...(spawn ? { plates: platesRef.current, activePlateId: activePlateIdRef.current } : {}),
     });
     const targetModelName = targetModel.name ?? id;
-    pushSceneSnapshotHistory(before, after, description ?? `Transform Model ${targetModelName}`);
+    pushSceneSnapshotHistory(before, after, description ?? transformModelLabel(targetModelName));
     return true;
   }, [pushSceneSnapshotHistory]);
 
   const commitModelTransformsHistory = useCallback((
     beforeTransforms: Array<{ id: string; transform: ModelTransform }>,
-    description?: string,
+    description?: MessageDescriptor,
     supportSnapshotOptions?: TransformHistorySupportSnapshotOptions,
   ) => {
     const currentModels = modelsRef.current;
@@ -3255,7 +3291,7 @@ export function useSceneCollectionManager(options?: {
       includeSupportState: includeSupportHistory,
       supportStateOverride: supportSnapshotOptions?.supportAfter,
     });
-    pushSceneSnapshotHistory(before, after, description ?? 'Update Model Transforms');
+    pushSceneSnapshotHistory(before, after, description ?? transformModelsLabel(beforeTransforms.length));
     return true;
   }, [pushSceneSnapshotHistory]);
 
@@ -3418,7 +3454,7 @@ export function useSceneCollectionManager(options?: {
             }
           : {}),
       });
-      pushSceneSnapshotHistory(before, after, updates.length === 1 ? 'Update Model Transform' : 'Update Model Transforms');
+      pushSceneSnapshotHistory(before, after, transformModelsLabel(updates.length));
     }
 
     return {
@@ -3431,7 +3467,7 @@ export function useSceneCollectionManager(options?: {
   const replaceModelGeometry = useCallback((
     id: string,
     nextBufferGeometry: THREE.BufferGeometry,
-    historyDescription: string,
+    historyDescription: MessageDescriptor,
     options?: {
       includeSupportState?: boolean;
       deferPostProcessing?: boolean;
@@ -3577,7 +3613,7 @@ export function useSceneCollectionManager(options?: {
     bufferGeometry: THREE.BufferGeometry,
     baseModelId: string,
     name: string,
-    historyDescription: string,
+    historyDescription: MessageDescriptor,
   ): string | null => {
     const currentModels = modelsRef.current;
     const base = currentModels.find((m) => m.id === baseModelId);
@@ -3657,7 +3693,7 @@ export function useSceneCollectionManager(options?: {
   const splitModelIntoParts = useCallback((
     sourceId: string,
     partGeometries: THREE.BufferGeometry[],
-    historyDescription: string,
+    historyDescription: MessageDescriptor,
   ): string[] | null => {
     const currentModels = modelsRef.current;
     const source = currentModels.find((m) => m.id === sourceId);
@@ -3974,10 +4010,10 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `${visible ? 'Show' : 'Hide'} ${target.name}`);
+    pushSceneSnapshotHistory(before, after, visible ? showModelLabel(target.name) : hideModelLabel(target.name));
   }, [pushSceneSnapshotHistory]);
 
-  const lastModifierHistoryRef = useRef<{ key: string; modelId: string; description: string; at: number } | null>(null);
+  const lastModifierHistoryRef = useRef<{ key: string; modelId: string; description: MessageDescriptor; at: number } | null>(null);
 
   /**
    * Stores a model's mesh modifiers. With `historyDescription` the change is an undo step: the
@@ -4003,7 +4039,7 @@ export function useSceneCollectionManager(options?: {
       const mergeInto = options?.merge
         && last
         && last.modelId === id
-        && last.description === description
+        && last.description.id === description.id
         && now - last.at <= MODIFIER_HISTORY_MERGE_WINDOW_MS
         && top?.type === SCENE_MODELS_SNAPSHOT_APPLY
         && (top.payload as SceneSnapshotPayload | undefined)?.key === last.key
@@ -4058,7 +4094,7 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `Rename ${target.name}`);
+    pushSceneSnapshotHistory(before, after, renameLabel(target.name));
   }, [pushSceneSnapshotHistory]);
 
   const groupModels = useCallback((modelIds: string[], groupName?: string) => {
@@ -4164,7 +4200,7 @@ export function useSceneCollectionManager(options?: {
     setSelectedModelIds(newIds);
 
     const after = captureSceneSnapshot(nextModels, newIds[0], newIds);
-    pushSceneSnapshotHistory(before, after, `Split ${source.name}`);
+    pushSceneSnapshotHistory(before, after, splitModelLabel(source.name));
   }, [pushSceneSnapshotHistory]);
 
   /** Splits a model that has a classified model/support triangle split
@@ -4324,7 +4360,7 @@ export function useSceneCollectionManager(options?: {
       [modelModel.id, supportModel.id],
       { includeSupportState: true },
     );
-    pushSceneSnapshotHistory(before, after, `Split Supports from ${source.name}`);
+    pushSceneSnapshotHistory(before, after, splitSupportsLabel(source.name));
     } catch (e) {
       console.error(e);
       emitSceneImportReport('Failed to split supports', 'error');
@@ -4526,7 +4562,7 @@ export function useSceneCollectionManager(options?: {
         [mergedModel.id],
         { includeSupportState: true },
       );
-      pushSceneSnapshotHistory(before, after, `Merge Supports for ${mergedModel.name}`);
+      pushSceneSnapshotHistory(before, after, mergeSupportsLabel(mergedModel.name));
     } catch (e) {
       console.error(e);
       emitSceneImportReport('Failed to merge supports', 'error');
@@ -4607,7 +4643,7 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `Rename ${members[0].groupName ?? trimmed}`);
+    pushSceneSnapshotHistory(before, after, renameLabel(members[0].groupName ?? trimmed));
   }, [pushSceneSnapshotHistory]);
 
   const selectGroup = useCallback((groupId: string, mode: 'single' | 'add' = 'single') => {
@@ -4767,8 +4803,8 @@ export function useSceneCollectionManager(options?: {
         includeSupportState: includeSupportHistory,
       });
       const deletedLabel = existing.length === 1
-        ? `Delete Model ${existing[0].name}`
-        : `Delete ${existing.length} Models`;
+        ? deleteModelLabel(existing[0].name)
+        : deleteModelsLabel(existing.length);
       pushSceneSnapshotHistory(before, after, deletedLabel);
     }
 
@@ -4779,7 +4815,7 @@ export function useSceneCollectionManager(options?: {
     void deleteModels([id]);
   }, [deleteModels]);
 
-  const deleteSupportsForModels = useCallback((idsInput: string[], description?: string) => {
+  const deleteSupportsForModels = useCallback((idsInput: string[], description?: MessageDescriptor) => {
     const ids = new Set(idsInput);
     if (ids.size === 0) return 0;
 
@@ -4810,8 +4846,8 @@ export function useSceneCollectionManager(options?: {
 
     const after = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, { includeSupportState: true });
     const defaultDescription = targetIds.length === 1
-      ? `Delete Supports for Model ${currentModels.find((m) => m.id === targetIds[0])?.name ?? targetIds[0]}`
-      : `Delete Supports for ${targetIds.length} Models`;
+      ? deleteSupportsForModelLabel(currentModels.find((m) => m.id === targetIds[0])?.name ?? targetIds[0])
+      : deleteSupportsForModelsLabel(targetIds.length);
 
     pushSceneSnapshotHistory(before, after, description ?? defaultDescription);
     return totalRemovedSupports;
@@ -4942,7 +4978,7 @@ export function useSceneCollectionManager(options?: {
         supportStateOverride: supportStateBefore,
       });
       const after = captureSceneSnapshot(nextModels, id, [id], { includeSupportState: true });
-      pushSceneSnapshotHistory(before, after, `Paste Model ${first.name}`);
+      pushSceneSnapshotHistory(before, after, pasteModelLabel(first.name));
     });
 
     return id;
@@ -5476,7 +5512,7 @@ export function useSceneCollectionManager(options?: {
             ? { plates: reserved.plates, activePlateId: activePlateIdRef.current }
             : {}),
         });
-        pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? 'Paste Model' : `Paste ${createdIds.length} Models`);
+        pushSceneSnapshotHistory(before, after, pasteModelsLabel(createdIds.length));
       });
     }
 
@@ -5606,7 +5642,7 @@ export function useSceneCollectionManager(options?: {
               }
             : {}),
         });
-        pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? `Duplicate Model ${source.name}` : `Duplicate ${createdIds.length} Models`);
+        pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? duplicateModelLabel(source.name) : duplicateModelsLabel(createdIds.length));
       }
     } finally {
       endSupportStateBatch();
@@ -6921,7 +6957,7 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `Color ${target.name}`);
+    pushSceneSnapshotHistory(before, after, colorModelLabel(target.name));
   }, [activeModelId, pushSceneSnapshotHistory]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
@@ -6951,7 +6987,7 @@ export function useSceneCollectionManager(options?: {
     pushSceneSnapshotHistory(
       before,
       after,
-      isSupport ? 'Mark as Support' : 'Mark as Model',
+      isSupport ? MARK_AS_SUPPORT_LABEL : MARK_AS_MODEL_LABEL,
     );
   }, [activeModelId, models, pushSceneSnapshotHistory, selectedModelIds]);
 
@@ -6978,7 +7014,7 @@ export function useSceneCollectionManager(options?: {
 
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
-    pushSceneSnapshotHistory(before, after, `Link ${targetModels.length} Models`);
+    pushSceneSnapshotHistory(before, after, linkModelsLabel(targetModels.length));
   }, [pushSceneSnapshotHistory]);
 
   const unlinkModels = useCallback((idsInput: string[]) => {
@@ -7016,7 +7052,7 @@ export function useSceneCollectionManager(options?: {
 
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
-    pushSceneSnapshotHistory(before, after, `Unlink ${targetModels.length} Models`);
+    pushSceneSnapshotHistory(before, after, unlinkModelsLabel(targetModels.length));
   }, [pushSceneSnapshotHistory]);
 
   /**
@@ -7155,7 +7191,7 @@ export function useSceneCollectionManager(options?: {
     pushSceneSnapshotHistory(
       before,
       after,
-      repaired.size === 1 ? `Repair ${repairedNames[0]}` : `Repair ${repaired.size} Models`,
+      repaired.size === 1 ? repairModelLabel(repairedNames[0]) : repairModelsLabel(repaired.size),
       repaired.size === 1 ? onlyRepairedId : undefined,
     );
     setManuallyRepairedModelIds(prev => [...prev, ...[...repaired.keys()].filter(id => !prev.includes(id))]);
@@ -7458,7 +7494,7 @@ export function useSceneCollectionManager(options?: {
         activePlateId: activePlateIdRef.current,
         printerProfileId: current.printerId,
       }),
-      activePrinterProfile ? `Switch to ${activePrinterProfile.name}` : 'Switch Printer',
+      activePrinterProfile ? switchPrinterLabel(activePrinterProfile.name) : SWITCH_PRINTER_LABEL,
     );
   }, [
     activePrinterProfile,
@@ -7523,7 +7559,7 @@ export function useSceneCollectionManager(options?: {
       plates: next,
       activePlateId: activePlateIdRef.current,
     });
-    pushSceneSnapshotHistory(before, after, `Add Plate ${next.length}`);
+    pushSceneSnapshotHistory(before, after, addPlateLabel(next.length));
     return plate.id;
   }, [modelsShiftedForRelaidPlates, pushSceneSnapshotHistory]);
 
@@ -7729,7 +7765,7 @@ export function useSceneCollectionManager(options?: {
         plates: remaining,
         activePlateId: nextActivePlateId,
       });
-      pushSceneSnapshotHistory(before, after, `Delete Plate ${current.findIndex((plate) => plate.id === plateId) + 1}`);
+      pushSceneSnapshotHistory(before, after, deletePlateLabel(current.findIndex((plate) => plate.id === plateId) + 1));
     });
 
     return true;
@@ -7785,7 +7821,7 @@ export function useSceneCollectionManager(options?: {
       plates: remaining,
       activePlateId: firstPlateId,
     });
-    pushSceneSnapshotHistory(before, after, 'Delete Models and Plates');
+    pushSceneSnapshotHistory(before, after, DELETE_MODELS_AND_PLATES_LABEL);
   }, [deleteModels, pushSceneSnapshotHistory, waitForUiYield]);
 
   /**

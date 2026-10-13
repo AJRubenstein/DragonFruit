@@ -8,6 +8,7 @@ import { updateCurveTension, removeCurveAtJoint, updateSegmentTension, removeSeg
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../history/supportEditHistory';
 import { Button } from '@/components/atoms';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import { ADJUST_CURVE_BIAS_LABEL, ADJUST_CURVE_TENSION_LABEL, REMOVE_CURVE_LABEL } from '@/supports/history/supportHistoryLabels';
 
 type CurveSelectionState = {
     selectedId: string;
@@ -115,7 +116,7 @@ export function CurveSettingsCard({ embedded = false }: { embedded?: boolean }) 
                 newTrunk = updateCurveTension(selectedTrunk, selectedId!, val, root);
             }
             updateSupportEntity(newTrunk);
-            pushSupportEditHistory('Adjust curve tension', before, captureSupportEditSnapshot());
+            pushSupportEditHistory(ADJUST_CURVE_TENSION_LABEL, before, captureSupportEditSnapshot());
         }
     };
 
@@ -139,7 +140,7 @@ export function CurveSettingsCard({ embedded = false }: { embedded?: boolean }) 
                 }
             }
             updateSupportEntity(newTrunk);
-            pushSupportEditHistory('Adjust curve bias', before, captureSupportEditSnapshot());
+            pushSupportEditHistory(ADJUST_CURVE_BIAS_LABEL, before, captureSupportEditSnapshot());
         }
     };
 
@@ -153,7 +154,7 @@ export function CurveSettingsCard({ embedded = false }: { embedded?: boolean }) 
                 newTrunk = removeCurveAtJoint(selectedTrunk, selectedId!);
             }
             updateSupportEntity(newTrunk);
-            pushSupportEditHistory('Remove curve', before, captureSupportEditSnapshot());
+            pushSupportEditHistory(REMOVE_CURVE_LABEL, before, captureSupportEditSnapshot());
         }
     };
 

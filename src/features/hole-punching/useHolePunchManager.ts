@@ -29,6 +29,17 @@ import { buildGeometryVersionKey, disposeHollowPreviewCacheEntry } from '@/featu
 import type { HollowPreviewCacheEntry, HollowingSourceEntry } from '@/features/hollowing/hollowingPreviewTypes';
 import { punchFromCapturedSource, stagePunchSource, type PunchOptions } from '@/utils/meshPunching';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
+import {
+  ADD_HOLE_LABEL,
+  DELETE_HOLE_LABEL,
+  EDIT_HOLE_LABEL,
+  MOVE_HOLE_LABEL,
+  PICK_OPEN_FACE_LABEL,
+  PUNCH_HOLES_LABEL,
+  REMOVE_HOLE_PUNCHING_LABEL,
+  RESET_HOLE_PUNCHING_LABEL,
+  ROTATE_HOLE_LABEL,
+} from '@/features/scene/sceneHistoryLabels';
 
 const HOLE_PUNCH_OUTSIDE_PROTRUSION_MM = 3;
 const HOLE_PUNCH_DEPTH_OFFSET_FROM_SHELL_MM = 1;
@@ -492,7 +503,7 @@ export function useHolePunchManager({
           openFace: nextHollowingState.openFace,
           openFaceSelected: true,
         },
-      }, { historyDescription: 'Pick Open Face' });
+      }, { historyDescription: PICK_OPEN_FACE_LABEL });
       return;
     }
 
@@ -507,7 +518,7 @@ export function useHolePunchManager({
     const nextPlacements = [...holePunchPlacementsRef.current, placement];
     holePunchPlacementsRef.current = nextPlacements;
     setHolePunchPlacements(nextPlacements);
-    persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: 'Add Hole' });
+    persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: ADD_HOLE_LABEL });
     setSelectedHolePunchPlacementIds([]);
     setHoveredHolePunchPlacementId(null);
     setHolePunchHoverPlacement(null);
@@ -636,7 +647,7 @@ export function useHolePunchManager({
     suppressHolePunchClickPlacementIdRef.current = placementId;
     const activeModel = scene.activeModel;
     if (activeModel) {
-      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: 'Move Hole' });
+      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: MOVE_HOLE_LABEL });
     }
   }, [persistHolePunchPlacementsForModel, scene.activeModel]);
 
@@ -730,7 +741,7 @@ export function useHolePunchManager({
     holePunchGizmoDragRef.current = null;
     const activeModel = scene.activeModel;
     if (activeModel) {
-      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: 'Move Hole' });
+      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: MOVE_HOLE_LABEL });
     }
   }, [persistHolePunchPlacementsForModel, scene.activeModel]);
 
@@ -794,7 +805,7 @@ export function useHolePunchManager({
     holePunchGizmoRotateRef.current = null;
     const activeModel = scene.activeModel;
     if (activeModel) {
-      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: 'Rotate Hole' });
+      persistHolePunchPlacementsForModel(activeModel, holePunchPlacementsRef.current, { historyDescription: ROTATE_HOLE_LABEL });
     }
   }, [persistHolePunchPlacementsForModel, scene.activeModel]);
 
@@ -835,7 +846,7 @@ export function useHolePunchManager({
       let replaced = false;
       if (restored) {
         const restoredGeometry = restored.clone();
-        replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Hole Punching (Removed)', {
+        replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, REMOVE_HOLE_PUNCHING_LABEL, {
           meshModifiersAfter: clearedModifiers,
         });
         if (!replaced) {
@@ -853,10 +864,10 @@ export function useHolePunchManager({
         }
       }
       if (!replaced) {
-        persistActiveModelModifiers(clearedModifiers, { historyDescription: 'Delete Hole' });
+        persistActiveModelModifiers(clearedModifiers, { historyDescription: DELETE_HOLE_LABEL });
       }
     } else {
-      persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: 'Delete Hole' });
+      persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: DELETE_HOLE_LABEL });
     }
   }, [holePunchPlacements, persistActiveModelModifiers, persistHolePunchPlacementsForModel, scene, selectedHolePunchPlacementIds]);
 
@@ -908,7 +919,7 @@ export function useHolePunchManager({
 
     const activeModel = scene.activeModel;
     if (activeModel) {
-      persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: 'Edit Hole', merge: true });
+      persistHolePunchPlacementsForModel(activeModel, nextPlacements, { historyDescription: EDIT_HOLE_LABEL, merge: true });
     }
   }, [
     canUseAutoHolePunchDepth,
@@ -941,7 +952,7 @@ export function useHolePunchManager({
     let replaced = false;
     if (restored) {
       const restoredGeometry = restored.clone();
-      replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Reset Hole Punching', {
+      replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, RESET_HOLE_PUNCHING_LABEL, {
         meshModifiersAfter: resetModifiers,
       });
       if (!replaced) {
@@ -950,7 +961,7 @@ export function useHolePunchManager({
       restored.dispose();
     }
     if (!replaced) {
-      persistActiveModelModifiers(resetModifiers, { historyDescription: 'Reset Hole Punching' });
+      persistActiveModelModifiers(resetModifiers, { historyDescription: RESET_HOLE_PUNCHING_LABEL });
     }
 
     // Pre-punch geometry was restored — invalidate the hollowing source cache
@@ -1049,7 +1060,7 @@ export function useHolePunchManager({
         let replaced = false;
         if (restored) {
           const restoredGeometry = restored.clone();
-          replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, 'Hole Punching (Removed)', {
+          replaced = scene.replaceModelGeometry(activeModel.id, restoredGeometry, REMOVE_HOLE_PUNCHING_LABEL, {
             meshModifiersAfter: removedModifiers,
           });
           if (!replaced) {
@@ -1058,7 +1069,7 @@ export function useHolePunchManager({
           restored.dispose();
         }
         if (!replaced) {
-          persistActiveModelModifiers(removedModifiers, { historyDescription: 'Hole Punching (Removed)' });
+          persistActiveModelModifiers(removedModifiers, { historyDescription: REMOVE_HOLE_PUNCHING_LABEL });
         }
 
         // Pre-punch geometry was restored — clear the hollowing cache so the
@@ -1236,7 +1247,7 @@ export function useHolePunchManager({
         const replaced = scene.replaceModelGeometry(
           activeModel.id,
           nextGeometry,
-          `Hole Punching (${result.report.outputTriangleCount.toLocaleString()} tris)`,
+          PUNCH_HOLES_LABEL,
           {
             meshModifiersAfter: {
               ...(activeModel.meshModifiers ?? {}),
