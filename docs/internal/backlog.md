@@ -376,6 +376,9 @@
   `index.ts` files nobody imports, fixtures no test loads, undocumented scripts.
 - Why: dead code still draws upkeep — sweeps translated and restyled a stale
   copy of RaftSettingsCard before anyone noticed nothing mounted it.
+- Keep, do not re-investigate: `BackupsSettingsTab.tsx` is the GitHub backup UI,
+  parked while #30 may revive it; `loadVoxlFixture.ts` feeds the export goldens
+  that live outside the repo in `lysdiag/`.
 - Careful: knip lists files, not directories — count what is still live in a
   directory before calling it dead. A manual script that shows up gets
   documented and added to `entry`, or deleted — never widen `entry` to `scripts/**`.
