@@ -4231,7 +4231,7 @@ msgstr "Escala de la interfaz"
 #. Tool rail label in Support mode. Toggles looking inside a hollowed model instead of at its outside.
 #: src/components/controls/toolRailEntries.ts:223
 msgid "Interior View"
-msgstr ""
+msgstr "Vista interior"
 
 #: src/features/hole-punching/HolePunchPanel.tsx:105
 msgid "Interior View Mode"
@@ -7043,7 +7043,7 @@ msgstr "Restablecer el vaciado"
 
 #: src/components/layout/FloatingPanelStack.tsx:1810
 msgid "Reset Layout"
-msgstr ""
+msgstr "Restablecer disposición"
 
 #: src/app/page.tsx:9501
 #: src/components/controls/TransformControls.tsx:440
@@ -7070,7 +7070,7 @@ msgstr "Restablecer la emisión"
 
 #: src/components/layout/FloatingPanelStack.tsx:1809
 msgid "Reset Window"
-msgstr ""
+msgstr "Restablecer ventana"
 
 #: src/components/organisms/modals/PrintingModals.tsx:2097
 #: src/components/organisms/modals/PrintingModals.tsx:2280
@@ -9343,7 +9343,7 @@ msgstr "Modo de vista"
 #. Tool rail label in Support mode. Toggles the support display between everything drawn solid and contact discs with line members.
 #: src/components/controls/toolRailEntries.ts:235
 msgid "View Mode"
-msgstr ""
+msgstr "Modo de vista"
 
 #: src/features/updater/UpdateCheckerSection.tsx:238
 msgid "View on GitHub"
