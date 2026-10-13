@@ -2745,7 +2745,7 @@ msgstr "Eliminar esta placa"
 #: src/app/page.tsx:11907
 #: src/components/controls/ModelManagerPanel.tsx:767
 msgid "Delete this plate?"
-msgstr "¿Eliminar esta plata?"
+msgstr "¿Eliminar esta placa?"
 
 #: src/components/ui/EditorContextMenu.tsx:97
 msgid "Delete waypoint"
