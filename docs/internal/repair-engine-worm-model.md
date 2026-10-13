@@ -82,6 +82,23 @@ was written, measured against this table, and reverted, because it refuses the o
 The worm is refused on parts, 302 to 1,986 against an allowance of about 317, which is the right
 reason and catches it already.
 
+## The inner-face refusal does not matter here, and the guard was unsound
+
+`remove_inner_faces` refuses on this file, and the reason is worth stating because it was wrong.
+The count is 38 faces, a genuinely closed shell buried in the model, so the refusal is correct: the
+shell encloses about 127 cubic units and removing it would fill that void.
+
+What was wrong is how the guard decided. It watched the signed volume, standing in for "a cavity is
+closed and a buried sheet is open", and on this input 2,975 boundary edges make the signed volume
+meaningless. It tripped on a 0.589% move that was arithmetic on an open surface, not a cavity. The
+cull now requires the component to be **closed** before it is a candidate at all, which is the
+property being tested rather than a proxy for it, and the volume it reads afterwards is a real
+volume. Measured: the six reference files are unchanged, corbu takes 18 closed interior faces it is
+free to remove, and 73 tests pass.
+
+38 faces against 302 parts and 1,999 non-manifold edges also answers the original question: this
+refusal is not what stands between the file and a repair. Those faces are not part of the tangle.
+
 ## Related
 
 - `../../docs/dev/mesh-repair-passes.md` — the published pass set and the guards
