@@ -75,7 +75,7 @@ import {
   subscribeToAutoSupportPresets,
   type AutoSupportPreset,
 } from '@/supports/Settings/autoSupportPresets';
-import { translateAutoSupportPresetName } from '@/supports/Settings/autoSupportPresetMessages';
+import { formatAutoSupportPresetCopyName, translateAutoSupportPresetName } from '@/supports/Settings/autoSupportPresetMessages';
 import {
   getSettings,
   subscribeToSettings,
@@ -379,7 +379,9 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
         </Button>
         <Button
           onClick={() => {
-            if (activeId) duplicateAutoSupportPreset(activeId);
+            if (activeId && activePreset) {
+              duplicateAutoSupportPreset(activeId, formatAutoSupportPresetCopyName(activePreset, _));
+            }
           }}
           disabled={!activeId}
           variant="secondary"

@@ -34,3 +34,9 @@ export function translateAutoSupportPresetName(preset: AutoSupportPreset, transl
   const descriptor = BUILT_IN_NAMES[preset.id];
   return descriptor ? translate(descriptor) : preset.name;
 }
+
+/** The name Duplicate gives a copy: the source's shown name, so a built-in's copy is in the user's language. */
+export function formatAutoSupportPresetCopyName(preset: AutoSupportPreset, translate: Translate): string {
+  const presetName = translateAutoSupportPresetName(preset, translate);
+  return translate(msg({ message: `${presetName} copy`, context: 'Name of a duplicated auto-support preset' }));
+}

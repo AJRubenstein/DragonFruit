@@ -62,6 +62,14 @@ import {
   importLabelVoxlScene,
   reportRestoredModel,
 } from '@/features/scene/sceneImportMessages';
+import { duplicatedModelName, pastedModelName } from '@/features/scene/modelCopyNames';
+import {
+  repairCancelledMessage,
+  repairedModelsMessage,
+  repairFailedForModelMessage,
+  repairFailedMessage,
+  repairStoppedMessage,
+} from '@/features/scene/meshRepairMessages';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
 import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
@@ -1058,6 +1066,11 @@ export type MeshRepairReportEntry = {
   modelName: string;
   report: MeshHealthReport;
 };
+
+/** A repair run's progress sink, told also when each model of the run starts. */
+export interface ModelsRepairProgressSink extends MeshRepairProgressSink {
+  onModelStart?: (modelId: string, index: number, total: number) => void;
+}
 
 type MeshRepairReportPresentation = 'default' | 'optimistic';
 
@@ -4886,7 +4899,7 @@ export function useSceneCollectionManager(options?: {
     const id = uuidv4();
     const pastedModel: LoadedModel = {
       id,
-      name: `${first.name} Copy`,
+      name: pastedModelName(first.name, _),
       fileUrl: '',
       fileSizeBytes: first.fileSizeBytes,
       geometry: pastedGeometry,
@@ -4933,7 +4946,7 @@ export function useSceneCollectionManager(options?: {
     });
 
     return id;
-  }, [activeModelId, cloneGeometryWithBounds, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [_, activeModelId, cloneGeometryWithBounds, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   const pasteCopiedModelsAutoArrange = useCallback((spacingMm = 5) => {
     if (modelClipboard.length === 0) return [] as string[];
@@ -5395,7 +5408,7 @@ export function useSceneCollectionManager(options?: {
 
       return {
         id,
-        name: `${entry.name} Copy`,
+        name: pastedModelName(entry.name, _),
         fileUrl: '',
         fileSizeBytes: entry.fileSizeBytes,
         geometry,
@@ -5468,7 +5481,7 @@ export function useSceneCollectionManager(options?: {
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
+  }, [_, activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
 
   const duplicateModelWithTransforms = useCallback((
     sourceId: string,
@@ -5509,7 +5522,7 @@ export function useSceneCollectionManager(options?: {
 
       return {
         id,
-        name: `${source.name} Copy ${index + 1}`,
+        name: duplicatedModelName(source.name, index + 1, _),
         groupId: resolvedGroupId,
         groupName: resolvedGroupName,
         fileUrl: source.fileUrl,
@@ -5601,7 +5614,7 @@ export function useSceneCollectionManager(options?: {
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [_, activeModelId, cloneGeometryWithBounds, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   // LYS Import (1-step) — dispatched via plugin registry
 
@@ -7050,75 +7063,116 @@ export function useSceneCollectionManager(options?: {
   }, [_, emitSceneImportReport, models, shouldAutoRepairSceneImports]);
 
   /**
-   * Re-runs the full native repair pipeline on an already-loaded model's
-   * geometry and swaps the result back in-place.  Intended for the manual
-   * "Repair Mesh" context-menu action.
+   * Re-runs the full native repair pipeline on each model in turn and swaps every result in as
+   * one undo step. Intended for the manual "Repair Mesh" action, on one model or a selection.
+   * The reports of every model that had one are shown together; a model that fails is reported
+   * and the rest still run. A cancel stops the run on the model it lands on: the models already
+   * finished keep their repair, the one in progress is left alone. Resolves true when every
+   * model was repaired.
    */
-  const repairModelInPlace = useCallback(async (
-    modelId: string,
-    repairProgressSink?: MeshRepairProgressSink,
+  const repairModelsInPlace = useCallback(async (
+    modelIds: readonly string[],
+    repairProgressSink?: ModelsRepairProgressSink,
   ): Promise<boolean> => {
-    const model = modelsRef.current.find(m => m.id === modelId);
-    if (!model) return false;
-    try {
-      const processed = await processGeometry(model.geometry.geometry, {
-        center: false,
-        nativeProcessingMode: 'repair',
-        assumeSupportGeometry: model.isSupportGeometry,
-        repairProgressSink,
-        // The file it came from, so the repair reads it through the same loader the
-        // import did instead of uploading a triangle soup and re-deriving every vertex.
-        sourcePath: model.sourcePath ?? undefined,
-      });
+    const repaired = new Map<string, { geometry: GeometryWithBounds; polygonCount: number }>();
+    const reportEntries: MeshRepairReportEntry[] = [];
+    const repairedNames: string[] = [];
+    let allRepaired = true;
+    let cancelled = false;
 
-      // A cancelled repair stopped where it was asked to, and the mesh it hands back
-      // is a partly repaired one. Applying it would replace the model with something
-      // the caller did not ask for, so the model is left alone and the report says so.
-      if (processed.meshDefects?.nativeRepairReport?.cancelled) {
-        emitSceneImportReport('Repair cancelled. The model is unchanged.', 'warning');
-        return false;
+    for (const [index, modelId] of modelIds.entries()) {
+      const model = modelsRef.current.find(m => m.id === modelId);
+      if (!model) {
+        allRepaired = false;
+        continue;
       }
+      repairProgressSink?.onModelStart?.(modelId, index, modelIds.length);
+      try {
+        const processed = await processGeometry(model.geometry.geometry, {
+          center: false,
+          nativeProcessingMode: 'repair',
+          assumeSupportGeometry: model.isSupportGeometry,
+          repairProgressSink,
+          // The file it came from, so the repair reads it through the same loader the
+          // import did instead of uploading a triangle soup and re-deriving every vertex.
+          sourcePath: model.sourcePath ?? undefined,
+        });
 
-      const polygonCount = processed.geometry.getAttribute('position')
-        ? countTriangles(processed.geometry)
-        : model.polygonCount;
-      const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
+        // A cancelled repair stopped where it was asked to, and the mesh it hands back
+        // is a partly repaired one. Applying it would replace the model with something
+        // the caller did not ask for, so the model is left alone and the run ends here.
+        if (processed.meshDefects?.nativeRepairReport?.cancelled) {
+          cancelled = true;
+          allRepaired = false;
+          break;
+        }
 
-      // The repair awaited, so the scene it lands in is the current one, not the one it started from.
-      const currentModels = modelsRef.current;
-      const nextModels = currentModels.map(m =>
-        m.id === modelId ? { ...m, geometry: processed, polygonCount } : m
-      );
-      const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
-      setModels(nextModels);
-      const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-      pushSceneSnapshotHistory(before, after, `Repair ${model.name}`, modelId);
-      setManuallyRepairedModelIds(prev => (prev.includes(modelId) ? prev : [...prev, modelId]));
+        const polygonCount = processed.geometry.getAttribute('position')
+          ? countTriangles(processed.geometry)
+          : model.polygonCount;
+        const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
 
-      if (repairReport) {
-        const reportEntry: MeshRepairReportEntry = {
-          id: modelId,
-          modelName: model.name,
-          report: repairReport,
-        };
-        setPendingMeshRepairReports([]);
-        clearSceneImportReport();
-        setMeshRepairReportPresentation('optimistic');
-        setMeshRepairReports([reportEntry]);
-      } else {
-        setPendingMeshRepairReports([]);
-        emitSceneImportReport(`Repaired ${model.name}.`, 'success');
+        repaired.set(modelId, { geometry: processed, polygonCount });
+        repairedNames.push(model.name);
+        if (repairReport) {
+          reportEntries.push({ id: modelId, modelName: model.name, report: repairReport });
+        }
+      } catch (err) {
+        console.error('[repairModelsInPlace] Repair failed:', err);
+        allRepaired = false;
+        const message = err instanceof Error ? err.message : String(err);
+        emitSceneImportReport(
+          modelIds.length === 1
+            ? repairFailedMessage(message, _)
+            : repairFailedForModelMessage(model.name, message, _),
+          'error',
+          { durationMs: 6_000 },
+        );
       }
+    }
 
-      return true;
-    } catch (err) {
-      console.error('[repairModelInPlace] Repair failed:', err);
-      setPendingMeshRepairReports([]);
-      const message = err instanceof Error ? err.message : String(err);
-      emitSceneImportReport(`Repair failed: ${message}`, 'error', { durationMs: 6_000 });
+    setPendingMeshRepairReports([]);
+    if (repaired.size === 0) {
+      if (cancelled) {
+        emitSceneImportReport(
+          repairCancelledMessage(modelIds.length, _),
+          'warning',
+        );
+      }
       return false;
     }
-  }, [clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
+
+    // The repairs awaited, so the scene they land in is the current one, not the one they started from.
+    const currentModels = modelsRef.current;
+    const nextModels = currentModels.map(m => {
+      const result = repaired.get(m.id);
+      return result ? { ...m, geometry: result.geometry, polygonCount: result.polygonCount } : m;
+    });
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    const [onlyRepairedId] = repaired.keys();
+    pushSceneSnapshotHistory(
+      before,
+      after,
+      repaired.size === 1 ? `Repair ${repairedNames[0]}` : `Repair ${repaired.size} Models`,
+      repaired.size === 1 ? onlyRepairedId : undefined,
+    );
+    setManuallyRepairedModelIds(prev => [...prev, ...[...repaired.keys()].filter(id => !prev.includes(id))]);
+
+    if (reportEntries.length > 0) {
+      clearSceneImportReport();
+      setMeshRepairReportPresentation('optimistic');
+      setMeshRepairReports(reportEntries);
+    }
+    if (cancelled) {
+      emitSceneImportReport(repairStoppedMessage(repaired.size, modelIds.length, _), 'warning');
+    } else if (reportEntries.length === 0 && allRepaired) {
+      emitSceneImportReport(repairedModelsMessage(repairedNames, _), 'success');
+    }
+
+    return allRepaired;
+  }, [_, clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -7835,7 +7889,7 @@ export function useSceneCollectionManager(options?: {
     resolveSceneImportHollowingPrompt,
     meshRepairConfirmPrompt,
     resolveMeshRepairConfirmPrompt,
-    repairModelInPlace,
+    repairModelsInPlace,
     recentOpenedFiles,
     reopenRecentOpenedFile,
     clearRecentOpenedFiles,

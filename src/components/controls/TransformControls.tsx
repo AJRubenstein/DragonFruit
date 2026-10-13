@@ -4,6 +4,7 @@ import { NumberInput } from '@/components/ui/NumberInput';
 import { Button, Card, CardHeader } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
+import type { SelectionRotationMode } from '@/features/scene/selectionTransform';
 
 interface SectionHeaderProps {
   title: string;
@@ -31,6 +32,9 @@ interface TransformControlsProps {
   onRotationChange: (x: number, y: number, z: number) => void;
   onResetRotation: () => void;
   onRotationComplete?: () => void;
+  /** Set only while several models are selected: whether they turn as one block or each in place. */
+  selectionRotationMode?: SelectionRotationMode;
+  onSelectionRotationModeChange?: (mode: SelectionRotationMode) => void;
   
   // Scale
   scale: THREE.Vector3;
@@ -66,6 +70,8 @@ export function TransformControls({
   onRotationChange,
   onResetRotation,
   onRotationComplete,
+  selectionRotationMode,
+  onSelectionRotationModeChange,
   scale,
   onScaleChange,
   onResetScale,
@@ -349,7 +355,19 @@ export function TransformControls({
           {/* ROTATE SECTION */}
           <div className="rounded-md border p-2" style={rotateCardStyle}>
             <div className="flex items-center">
-              <div className="flex-1" />
+              <div className="flex-1 flex justify-start">
+                {selectionRotationMode && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectionRotationModeChange?.(selectionRotationMode === 'group' ? 'individual' : 'group')}
+                    title="Rotate the selection as one block around its centre; turn off to rotate each model in place"
+                    className={toggleButtonClass}
+                    style={toggleButtonStyle(selectionRotationMode === 'group')}
+                  >
+                    Group
+                  </button>
+                )}
+              </div>
               <SectionHeader title="Rotate" />
               <div className="flex-1 flex justify-end">
                 {renderLocalSpaceToggle()}

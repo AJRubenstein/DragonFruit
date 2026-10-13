@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, X, Wrench, ClipboardCopy, ChevronDown, ChevronRight } from 'lucide-react';
+import { CheckCircle2, XCircle, X, Wrench, ClipboardCopy, ChevronDown, ChevronRight } from 'lucide-react';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { Button, IconButton } from '@/components/atoms';
 import type { MeshRepairReportEntry } from '@/features/scene/useSceneCollectionManager';
@@ -10,6 +10,73 @@ import type { MessageDescriptor } from '@lingui/core';
 import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
+
+/**
+ * A status glyph in a tinted square, drawn as one SVG.
+ *
+ * With a fractional UI scale, CEF snaps a CSS border to device pixels but paints an icon
+ * inside it at its fractional position, so the two drift up to a pixel apart. Drawing
+ * the frame and the glyph in one coordinate system makes them scale together.
+ */
+function ToneBadge({
+  glyph,
+  accent,
+  color,
+  size,
+  glyphSize,
+  radius,
+}: {
+  glyph: 'ok' | 'warning' | 'failed';
+  accent: string;
+  color: string;
+  size: number;
+  glyphSize: number;
+  radius: number;
+}) {
+  // The lucide glyphs are drawn on a 24-unit grid.
+  const inset = (size - glyphSize) / 2;
+  return (
+    <svg
+      className="shrink-0"
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      fill="none"
+      aria-hidden="true"
+      style={{ color }}
+    >
+      <rect
+        x="0.5"
+        y="0.5"
+        width={size - 1}
+        height={size - 1}
+        rx={radius - 0.5}
+        fill={`color-mix(in srgb, ${accent}, var(--surface-1) 85%)`}
+        stroke={`color-mix(in srgb, ${accent}, var(--border-subtle) 50%)`}
+      />
+      <g
+        transform={`translate(${inset} ${inset}) scale(${glyphSize / 24})`}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {glyph === 'warning' ? (
+          <>
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </>
+        ) : (
+          <>
+            <circle cx="12" cy="12" r="10" />
+            {glyph === 'ok' ? <path d="m9 12 2 2 4-4" /> : <path d="m15 9-6 6M9 9l6 6" />}
+          </>
+        )}
+      </g>
+    </svg>
+  );
+}
 
 type Props = {
   reports: MeshRepairReportEntry[];
@@ -31,6 +98,46 @@ type Translate = (descriptor: MessageDescriptor) => string;
 
 // Module level on purpose: React Compiler renames locals inside components
 // before the Lingui macro derives the message id.
+function formatBatchSubtitle(
+  translate: Translate,
+  count: number,
+  duration: string,
+  repaired: number,
+  residual: number,
+): string {
+  return translate(msg`${plural(count, { one: '# mesh', other: '# meshes' })} · ${duration} · ${repaired} clean · ${residual} with issues`);
+}
+
+function formatDeltaParts(pre: MeshAnalysisJson, post: MeshAnalysisJson, translate: Translate): string[] {
+  const trianglesBefore = pre.triangle_count.toLocaleString();
+  const trianglesAfter = post.triangle_count.toLocaleString();
+  const parts = [translate(msg({ message: `${trianglesBefore} → ${trianglesAfter} tris`, context: 'Mesh repair summary, triangle count' }))];
+  if (pre.non_manifold_edges !== post.non_manifold_edges) {
+    const edgesBefore = pre.non_manifold_edges;
+    const edgesAfter = post.non_manifold_edges;
+    parts.push(translate(msg({ message: `NME ${edgesBefore} → ${edgesAfter}`, context: 'Mesh repair summary; NME = non-manifold edges' })));
+  }
+  if (pre.boundary_loops !== post.boundary_loops) {
+    const holesBefore = pre.boundary_loops;
+    const holesAfter = post.boundary_loops;
+    parts.push(translate(msg({ message: `holes ${holesBefore} → ${holesAfter}`, context: 'Mesh repair summary' })));
+  }
+  if (pre.inconsistent_edges !== post.inconsistent_edges) {
+    const windingBefore = pre.inconsistent_edges;
+    const windingAfter = post.inconsistent_edges;
+    parts.push(translate(msg({ message: `winding ${windingBefore} → ${windingAfter}`, context: 'Mesh repair summary' })));
+  }
+  if (pre.self_intersections !== post.self_intersections) {
+    const intersectionsBefore = pre.self_intersections;
+    const intersectionsAfter = post.self_intersections;
+    parts.push(translate(msg({ message: `self-int ${intersectionsBefore} → ${intersectionsAfter}`, context: 'Mesh repair summary; self-intersections' })));
+  }
+  parts.push(post.is_watertight
+    ? translate(msg({ message: 'watertight', context: 'Mesh repair summary' }))
+    : translate(msg({ message: 'not watertight', context: 'Mesh repair summary' })));
+  return parts;
+}
+
 function summarizeRepairWins(report: MeshRepairReportEntry['report'], translate: Translate): string[] {
   const wins: string[] = [];
   const closedHoles = Math.max(0, report.pre.boundary_loops - report.post.boundary_loops);
@@ -107,7 +214,7 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
     ? reports[0].modelName
     : isSingle
       ? reports[0].modelName
-      : `${reports.length} meshes · ${formatMs(totals.totalMs)} · ${totals.repaired} clean · ${totals.residual} with issues`;
+      : formatBatchSubtitle(_, reports.length, formatMs(totals.totalMs), totals.repaired, totals.residual);
 
   // On the optimistic "Repair Complete" page, an unsuccessful repair (mesh still
   // not valid) is flagged with a red cross instead of the green check.
@@ -146,20 +253,14 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
       >
         <div className={headerClassName} style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="flex min-w-0 items-center gap-3">
-            <span
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border"
-              style={{
-                borderColor: `color-mix(in srgb, ${headerAccentColor}, var(--border-subtle) 50%)`,
-                background: `color-mix(in srgb, ${headerAccentColor}, var(--surface-1) 85%)`,
-                color: headerToneColor,
-              }}
-            >
-              {optimisticFailed
-                ? <XCircle className="h-4 w-4" />
-                : headerHasWarningTone
-                  ? <AlertTriangle className="h-4 w-4" />
-                  : <CheckCircle2 className="h-4 w-4" />}
-            </span>
+            <ToneBadge
+              glyph={optimisticFailed ? 'failed' : headerHasWarningTone ? 'warning' : 'ok'}
+              accent={headerAccentColor}
+              color={headerToneColor}
+              size={36}
+              glyphSize={16}
+              radius={10}
+            />
             <div className="min-w-0 pr-2">
               <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
                 {headerTitle}
@@ -502,16 +603,7 @@ function ReportCard({
         onClick={onToggle}
       >
         <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
-            style={{
-              borderColor: `color-mix(in srgb, ${toneColor}, var(--border-subtle) 50%)`,
-              background: `color-mix(in srgb, ${toneColor}, var(--surface-1) 85%)`,
-              color: toneColor,
-            }}
-          >
-            {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-          </span>
+          <ToneBadge glyph={ok ? 'ok' : 'warning'} accent={toneColor} color={toneColor} size={24} glyphSize={14} radius={6} />
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold leading-tight" style={{ color: 'var(--text-strong)' }} title={modelName}>
               {modelName}
@@ -574,26 +666,10 @@ function ReportCard({
   );
 }
 
-// i18n-ignore-start: compact technical readout (abbreviations), kept in English
 function DeltaLine({ pre, post }: { pre: MeshAnalysisJson; post: MeshAnalysisJson }) {
-  const parts: string[] = [];
-  parts.push(`${pre.triangle_count.toLocaleString()} → ${post.triangle_count.toLocaleString()} tris`);
-  if (pre.non_manifold_edges !== post.non_manifold_edges) {
-    parts.push(`NME ${pre.non_manifold_edges} → ${post.non_manifold_edges}`);
-  }
-  if (pre.boundary_loops !== post.boundary_loops) {
-    parts.push(`holes ${pre.boundary_loops} → ${post.boundary_loops}`);
-  }
-  if (pre.inconsistent_edges !== post.inconsistent_edges) {
-    parts.push(`winding ${pre.inconsistent_edges} → ${post.inconsistent_edges}`);
-  }
-  if (pre.self_intersections !== post.self_intersections) {
-    parts.push(`self-int ${pre.self_intersections} → ${post.self_intersections}`);
-  }
-  parts.push(post.is_watertight ? 'watertight' : 'not watertight');
-  return <>{parts.join(' · ')}</>;
+  const { _ } = useLingui();
+  return <>{formatDeltaParts(pre, post, _).join(' · ')}</>;
 }
-// i18n-ignore-end
 
 function AnalysisBlock({ title, analysis }: { title: string; analysis: MeshAnalysisJson }) {
   const { _ } = useLingui();
