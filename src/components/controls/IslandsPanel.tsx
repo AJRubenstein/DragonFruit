@@ -287,7 +287,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
       {/* Settings Modal */}
       <StructuredDialogModal
         open={showSettings}
-        ariaLabel={_(msg`Scan settings`)}
+        ariaLabel={_(msg`Scan Settings`)}
         title={_(msg`Scan Settings`)}
         subtitle={_(msg`Configure island detection parameters`)}
         iconTone="neutral"

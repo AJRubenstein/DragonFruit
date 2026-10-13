@@ -249,7 +249,7 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
         }}
         role="dialog"
         aria-modal="true"
-        aria-label={_(msg`Mesh repair report`)}
+        aria-label={_(msg`Mesh Repair Report`)}
       >
         <div className={headerClassName} style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="flex min-w-0 items-center gap-3">

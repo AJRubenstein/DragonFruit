@@ -450,7 +450,7 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
 
       <StructuredDialogModal
         open={nameDialog != null}
-        ariaLabel={nameDialog?.mode === 'create' ? _(msg`Create preset`) : _(msg`Rename preset`)}
+        ariaLabel={nameDialog?.mode === 'create' ? _(msg`Create preset`) : _(msg`Rename Preset`)}
         title={nameDialog?.mode === 'create' ? _(msg`New Preset`) : _(msg`Rename Preset`)}
         subtitle={nameDialog?.mode === 'create'
           ? _(msg`The current settings are saved under this name, and it becomes the selected preset.`)
