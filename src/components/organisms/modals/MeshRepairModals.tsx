@@ -235,7 +235,7 @@ export function MeshRepairModals({
               }}
               role="dialog"
               aria-modal="true"
-              aria-label={autoStartRepair ? _(msg`Repairing mesh`) : _(msg`Repair Mesh`)}
+              aria-label={autoStartRepair ? _(msg`Repairing Mesh`) : _(msg`Repair Mesh`)}
             >
               <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div className="flex min-w-0 items-center gap-3">

@@ -5496,7 +5496,7 @@ msgstr "Pinta zonas vetadas para los soportes. Un contacto bloqueado se rechaza 
 
 #: src/components/modals/ManifoldWarningModal.tsx:52
 msgid "Parts of this mesh are not closed — edges are left open, faces cross through each other, or surfaces do not quite meet. Slicing and support placement expect a sealed solid, so defects can reach the print without showing up here first."
-msgstr "Partes de esta malla no están cerradas: hay aristas abiertas, caras que se cruzan entre sí o superficies que no llegan a unirse. El laminado y la colocación de soportes esperan un sólido sellado, así que los defectos pueden llegar a la impresión sin aparecer antes aquí."
+msgstr "Algunas partes de esta malla no están cerradas: hay aristas abiertas, caras que se cruzan entre sí o superficies que no llegan a unirse. El laminado y la colocación de soportes esperan un sólido sellado, así que los defectos pueden llegar a la impresión sin aparecer antes aquí."
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:81
 msgid "Passes that run after placement — how much one trunk may carry, and the coverage the gap-filler must reach"
@@ -6377,9 +6377,6 @@ msgid "Repair steps"
 msgstr "Pasos de reparación"
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:238
-msgid "Repairing mesh"
-msgstr "Reparando la malla"
-
 #: src/components/organisms/modals/MeshRepairModals.tsx:254
 msgid "Repairing Mesh"
 msgstr "Reparando la malla"

@@ -6377,9 +6377,6 @@ msgid "Repair steps"
 msgstr "Repair steps"
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:238
-msgid "Repairing mesh"
-msgstr "Repairing mesh"
-
 #: src/components/organisms/modals/MeshRepairModals.tsx:254
 msgid "Repairing Mesh"
 msgstr "Repairing Mesh"
