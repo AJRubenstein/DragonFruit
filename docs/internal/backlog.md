@@ -227,16 +227,15 @@
 ### [refactor] Consolidate toasts into a queue with one lifetime — M · medium risk
 - Where: src/features/notifications/useEditorToasts.ts (12 useState + 11 timer
   refs for six toasts), src/components/organisms/NotificationStack.tsx (literal
-  z-indexes and a hardcoded offset conditional), src/components/ui/SupportToasts.tsx
-  (a second path, no timer), plus inline `<ToastViewport>` uses such as
-  AutoBracingSettingsCard.tsx (a third).
+  z-indexes and a hardcoded offset conditional), plus inline `<ToastViewport>`
+  uses such as AutoBracingSettingsCard.tsx (a second path).
 - What: replace the repeated fade/clear timer pair with a module store holding a
   queue and one timer — `pushToast({ tone, text, durationMs })` — and let the
   stack compute its own offsets instead of a two-case conditional.
 - Why: adding one message today is five steps across four files plus a judgement
   call about overlap, and the durations are per-toast literals (2200/2600,
-  3800/4500, duration-400). Three independent paths means three behaviours for
-  the same UI element.
+  3800/4500, duration-400). Two independent paths means two behaviours for the
+  same UI element.
 - Careful: `Toast`/`ToastViewport` are already shared and fine — this is about
   what drives them. The save toast has three pieces of state, not two (a
   minimum-visible-time animation), so it is the one that constrains the API.
