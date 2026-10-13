@@ -782,7 +782,7 @@ const AUTO_AA_PRESET_OPTIONS: ReadonlyArray<{
   { preset: 'raw', label: msg`Disabled`, desc: msg`Raw masks only.` },
   { preset: 'sharp', label: msg`Sharp`, desc: msg`Crisp text and details.` },
   { preset: 'balanced', label: msg`Balanced`, desc: msg`Printer-aware smoothing.` },
-  { preset: 'smooth', label: msg`Smooth`, desc: msg`Soft organic curves.` },
+  { preset: 'smooth', label: msg({ message: 'Smooth', context: 'Anti-aliasing preset' }), desc: msg`Soft organic curves.` },
 ];
 
 // AaAutoPreset is imported from autoAaPhysics.ts

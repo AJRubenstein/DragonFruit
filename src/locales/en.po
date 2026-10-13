@@ -27,11 +27,26 @@ msgstr "{0, plural, one {# island} other {# islands}}"
 msgid "{0, plural, one {# polygon} other {# polygons}}"
 msgstr "{0, plural, one {# polygon} other {# polygons}}"
 
+#. placeholder {0}: selectedLibraryPresetIds.size
+#: src/components/settings/ProfileSettingsModal.tsx:4780
+msgid "{0, plural, one {Add # printer} other {Add # printers}}"
+msgstr "{0, plural, one {Add # printer} other {Add # printers}}"
+
 #. placeholder {0}: scene.sceneImportHollowingPrompt.hollowedModelCount
 #. placeholder {1}: scene.sceneImportHollowingPrompt.modelCount
 #: src/components/organisms/modals/SceneFileModals.tsx:403
 msgid "{0} of {1, plural, one {# model carries an interior cavity.} other {# models carry an interior cavity.}}"
 msgstr "{0} of {1, plural, one {# model carries an interior cavity.} other {# models carry an interior cavity.}}"
+
+#. How many layers an island spans, shown in parentheses after its layer range.
+#: src/components/modals/IslandHierarchyModal.tsx:32
+msgid "{count, plural, one {(# layer)} other {(# layers)}}"
+msgstr "{count, plural, one {(# layer)} other {(# layers)}}"
+
+#. Badge on an island in the hierarchy: how many child islands merge into it.
+#: src/components/modals/IslandHierarchyModal.tsx:36
+msgid "{count, plural, one {# child} other {# children}}"
+msgstr "{count, plural, one {# child} other {# children}}"
 
 #. Badge counting the printers the network scan turned up.
 #: src/components/settings/FleetManagement.tsx:23
@@ -203,6 +218,7 @@ msgstr "{index}/{total}: {fileName}"
 
 #: src/components/controls/IslandOverlayControls.tsx:88
 #: src/components/controls/IslandVoxelControls.tsx:78
+#: src/components/controls/TerritoryVoxelControls.tsx:76
 msgid "{islandCount, plural, one {# island detected} other {# islands detected}}"
 msgstr "{islandCount, plural, one {# island detected} other {# islands detected}}"
 
@@ -242,6 +258,10 @@ msgstr "{modelName} Copy"
 msgctxt "Name of a duplicated model"
 msgid "{modelName} Copy {copyNumber}"
 msgstr "{modelName} Copy {copyNumber}"
+
+#: src/components/settings/SponsorsCarousel.tsx:55
+msgid "{name} — open sponsor profile"
+msgstr "{name} — open sponsor profile"
 
 #. One row of the per-model breakdown when a scene is too large to save.
 #: src/app/page.tsx:514
@@ -449,6 +469,18 @@ msgstr "{value}M"
 msgid "{value}x"
 msgstr "{value}x"
 
+#: src/components/modals/IslandHierarchyModal.tsx:117
+msgid "• Child islands merge upward into a parent node"
+msgstr "• Child islands merge upward into a parent node"
+
+#: src/components/modals/IslandHierarchyModal.tsx:116
+msgid "• Root islands have no parent (independent start)"
+msgstr "• Root islands have no parent (independent start)"
+
+#: src/components/modals/IslandHierarchyModal.tsx:118
+msgid "• Volume shows each island’s individual contribution"
+msgstr "• Volume shows each island’s individual contribution"
+
 #. Shown when the estimated print time rounds down to under one minute. Keep the "<" comparison symbol.
 #: src/features/printing/printingMonitorFormat.ts:25
 msgid "< 1 min"
@@ -570,7 +602,7 @@ msgstr "About"
 
 #. Badge next to the currently-selected printer in the fleet list (adjective describing the device, e.g. "the active one").
 #: src/components/controls/IslandListCard.tsx:129
-#: src/components/layout/TopBar.tsx:935
+#: src/components/layout/TopBar.tsx:937
 #: src/features/slicing/components/SlicingPanel.tsx:2694
 msgid "Active"
 msgstr "Active"
@@ -663,7 +695,7 @@ msgstr "Add leaf"
 msgid "Add models to the plate"
 msgstr "Add models to the plate"
 
-#: src/components/layout/EmptySceneState.tsx:561
+#: src/components/layout/EmptySceneState.tsx:566
 msgid "Add or switch printer anytime from the top bar."
 msgstr "Add or switch printer anytime from the top bar."
 
@@ -677,12 +709,23 @@ msgctxt "Undo history entry"
 msgid "Add plate {plateNumber}"
 msgstr "Add plate {plateNumber}"
 
-#: src/components/layout/EmptySceneState.tsx:533
+#: src/components/layout/EmptySceneState.tsx:538
 #: src/components/layout/OnboardingPrinterLibrary.tsx:414
 #: src/components/printers/PrinterVariantPickerModal.tsx:707
 #: src/components/settings/FleetManagement.tsx:269
+#: src/components/settings/PluginStudioModal.tsx:2101
+#: src/components/settings/ProfileSettingsModal.tsx:3585
+#: src/components/settings/ProfileSettingsModal.tsx:3648
 msgid "Add printer"
 msgstr "Add printer"
+
+#: src/components/settings/PluginStudioModal.tsx:2986
+msgid "Add printer variant"
+msgstr "Add printer variant"
+
+#: src/components/settings/ProfileSettingsModal.tsx:4781
+msgid "Add printers"
+msgstr "Add printers"
 
 #: src/supports/history/supportHistoryLabels.ts:18
 msgctxt "Undo history entry"
@@ -716,7 +759,7 @@ msgstr "Add waypoint here"
 msgid "Added"
 msgstr "Added"
 
-#: src/components/settings/UvToolsSettingsTab.tsx:113
+#: src/components/settings/UvToolsSettingsTab.tsx:130
 msgid "Adds a “Send to UVTools” option in the slicing panel."
 msgstr "Adds a “Send to UVTools” option in the slicing panel."
 
@@ -1057,6 +1100,10 @@ msgstr "Auto Supports (Beta) Settings"
 msgid "Auto-Arrange"
 msgstr "Auto-Arrange"
 
+#: src/components/settings/UvToolsSettingsTab.tsx:172
+msgid "Auto-Discover"
+msgstr "Auto-Discover"
+
 #. Toggle button sharing a narrow row with the preset dropdown. Keep it about as short as the English.
 #: src/components/controls/autoSupport/AutoSupportPresetRow.tsx:30
 msgid "Auto-Lift OFF"
@@ -1129,6 +1176,14 @@ msgstr "Automatic backups"
 #: src/features/experiments/experimentMessages.ts:25
 msgid "Automatic support generation from model analysis. Early access."
 msgstr "Automatic support generation from model analysis. Early access."
+
+#: src/components/settings/UvToolsSettingsTab.tsx:118
+msgid "Automatically open sliced print files in UVTools for further inspection and repair. After slicing, the file is sent directly to UVTools for analysis."
+msgstr "Automatically open sliced print files in UVTools for further inspection and repair. After slicing, the file is sent directly to UVTools for analysis."
+
+#: src/components/controls/TerritoryVoxelControls.tsx:124
+msgid "Automatically recalculates territory when toggled."
+msgstr "Automatically recalculates territory when toggled."
 
 #: src/components/settings/GeneralSettingsTab.tsx:518
 msgid "Automatically runs native mesh auto-repair for scene-file imports."
@@ -1204,8 +1259,9 @@ msgid "Avg island area"
 msgstr "Avg island area"
 
 #. View cube face (the side opposite Front), rendered uppercase inside a small 3D cube. Keep it as short as possible.
-#: src/components/layout/FirstRunOnboarding.tsx:278
+#: src/components/layout/FirstRunOnboarding.tsx:279
 #: src/components/layout/OnboardingPrinterLibrary.tsx:279
+#: src/components/modals/PrintingResliceModal.tsx:38
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1785
 msgid "Back"
 msgstr "Back"
@@ -1397,13 +1453,17 @@ msgstr "Bracing"
 msgid "Branches per Column"
 msgstr "Branches per Column"
 
-#: src/components/layout/FirstRunOnboarding.tsx:263
+#: src/components/layout/FirstRunOnboarding.tsx:264
 msgid "Bright surfaces for well-lit workspaces."
 msgstr "Bright surfaces for well-lit workspaces."
 
-#: src/components/layout/EmptySceneState.tsx:488
+#: src/components/layout/EmptySceneState.tsx:493
 msgid "Bring in a mesh or scene to start preparing, analyzing, supporting, and exporting your print."
 msgstr "Bring in a mesh or scene to start preparing, analyzing, supporting, and exporting your print."
+
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:101
+msgid "Brush"
+msgstr "Brush"
 
 #: src/components/controls/AutoRotationPanel.tsx:81
 #: src/components/controls/IslandOverlayControls.tsx:94
@@ -1480,7 +1540,7 @@ msgid "Bypassed"
 msgstr "Bypassed"
 
 #. Shown in place of file size when the file is in cache but its size is unknown. Adjective/state label.
-#: src/components/layout/EmptySceneState.tsx:695
+#: src/components/layout/EmptySceneState.tsx:700
 msgid "cached"
 msgstr "cached"
 
@@ -1503,6 +1563,7 @@ msgstr "Can't open this scene"
 #: src/components/controls/IslandScanCard.tsx:184
 #: src/components/controls/IslandsPanel.tsx:304
 #: src/components/controls/ModelManagerPanel.tsx:778
+#: src/components/modals/DestructiveTransformModal.tsx:44
 #: src/components/organisms/modals/PrintingModals.tsx:661
 #: src/components/organisms/modals/PrintingModals.tsx:903
 #: src/components/organisms/modals/PrintingModals.tsx:1997
@@ -1632,11 +1693,11 @@ msgctxt "Undo history entry"
 msgid "Change tenon settings"
 msgstr "Change tenon settings"
 
-#: src/components/layout/TopBar.tsx:1154
+#: src/components/layout/TopBar.tsx:1156
 msgid "Changing print settings invalidates the current sliced file."
 msgstr "Changing print settings invalidates the current sliced file."
 
-#: src/components/layout/TopBar.tsx:1152
+#: src/components/layout/TopBar.tsx:1154
 msgid "Changing printer profile requires re-slice"
 msgstr "Changing printer profile requires re-slice"
 
@@ -1705,7 +1766,7 @@ msgstr "Choose where Ctrl+S should save this imported `.voxl` scene."
 msgid "Choose whether to keep the hollow."
 msgstr "Choose whether to keep the hollow."
 
-#: src/components/layout/FirstRunOnboarding.tsx:199
+#: src/components/layout/FirstRunOnboarding.tsx:200
 msgid "Choose your theme"
 msgstr "Choose your theme"
 
@@ -1742,7 +1803,7 @@ msgid "Cleaned up {cleanedNonManifoldEdges, plural, one {# non-manifold edge} ot
 msgstr "Cleaned up {cleanedNonManifoldEdges, plural, one {# non-manifold edge} other {# non-manifold edges}}."
 
 #: src/components/controls/AutoRotationPanel.tsx:75
-#: src/components/layout/EmptySceneState.tsx:623
+#: src/components/layout/EmptySceneState.tsx:628
 #: src/features/hollowing/HollowingPanel.tsx:301
 #: src/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard.tsx:876
 msgid "Clear"
@@ -1832,7 +1893,7 @@ msgstr "Click points around the model to trace a curved seam that splits it in t
 msgid "Click the face you want to open in the scene."
 msgstr "Click the face you want to open in the scene."
 
-#: src/components/layout/EmptySceneState.tsx:454
+#: src/components/layout/EmptySceneState.tsx:459
 msgid "Click to copy build info"
 msgstr "Click to copy build info"
 
@@ -1846,7 +1907,8 @@ msgid "Client ID"
 msgstr "Client ID"
 
 #: src/components/controls/AutoSupportPanel.tsx:505
-#: src/components/layout/TopBar.tsx:1140
+#: src/components/layout/TopBar.tsx:1142
+#: src/components/modals/IslandHierarchyModal.tsx:93
 #: src/components/modals/SliceCompletedModal.tsx:93
 #: src/components/organisms/modals/PrintingModals.tsx:1092
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
@@ -1885,6 +1947,7 @@ msgstr "Close material anti-aliasing settings"
 
 #: src/components/controls/ModelManagerPanel.tsx:772
 #: src/components/modals/ObsoleteVoxlVersionModal.tsx:40
+#: src/components/modals/PrintingResliceModal.tsx:32
 #: src/components/modals/ScenePrinterMismatchModal.tsx:62
 #: src/features/slicing/components/SlicingPanel.tsx:3195
 #: src/features/slicing/components/SlicingPanel.tsx:3234
@@ -1977,11 +2040,15 @@ msgstr "Close the report"
 msgid "Close unsaved changes modal"
 msgstr "Close unsaved changes modal"
 
-#: src/components/layout/TopBar.tsx:1158
+#: src/components/layout/TopBar.tsx:1160
 msgid "Close warning"
 msgstr "Close warning"
 
-#: src/components/layout/TopBar.tsx:1141
+#: src/components/modals/DestructiveTransformModal.tsx:36
+msgid "Close warning modal"
+msgstr "Close warning modal"
+
+#: src/components/layout/TopBar.tsx:1143
 msgid "Close window"
 msgstr "Close window"
 
@@ -2245,8 +2312,8 @@ msgid "Contact point is lower than the stump root — the shaft would extend bel
 msgstr "Contact point is lower than the stump root — the shaft would extend below the root joint."
 
 #. Confirms proceeding with the profile change despite the re-slice warning above (paired with "Keep current profiles", which cancels).
-#: src/components/layout/FirstRunOnboarding.tsx:286
-#: src/components/layout/TopBar.tsx:1179
+#: src/components/layout/FirstRunOnboarding.tsx:287
+#: src/components/layout/TopBar.tsx:1181
 #: src/components/organisms/modals/SceneFileModals.tsx:507
 msgid "Continue"
 msgstr "Continue"
@@ -2276,6 +2343,10 @@ msgstr "Converting support data and model metadata"
 #: src/features/shaders/mesh/types.ts:33
 msgid "Cool"
 msgstr "Cool"
+
+#: src/components/layout/EmptySceneState.tsx:488
+msgid "Copied!"
+msgstr "Copied!"
 
 #: src/components/controls/AutoSupportPanel.tsx:497
 #: src/components/ui/EditorContextMenu.tsx:107
@@ -2314,8 +2385,8 @@ msgstr "Corrected {correctedWindingIssues, plural, one {# winding issue} other {
 msgid "Could not read printer data."
 msgstr "Could not read printer data."
 
-#: src/components/layout/EmptySceneState.tsx:415
-#: src/components/layout/EmptySceneState.tsx:418
+#: src/components/layout/EmptySceneState.tsx:420
+#: src/components/layout/EmptySceneState.tsx:423
 msgid "Could not reopen this file from cache."
 msgstr "Could not reopen this file from cache."
 
@@ -2524,7 +2595,7 @@ msgstr "Cutting hole punches into the current model geometry."
 msgid "Cutting..."
 msgstr "Cutting..."
 
-#: src/components/layout/FirstRunOnboarding.tsx:227
+#: src/components/layout/FirstRunOnboarding.tsx:228
 msgid "Dark"
 msgstr "Dark"
 
@@ -2575,6 +2646,10 @@ msgstr "Decrease point position"
 #: src/components/controls/ArrangePanel.tsx:257
 msgid "Decrease spacing"
 msgstr "Decrease spacing"
+
+#: src/components/ui/NumberInput.tsx:180
+msgid "Decrease value"
+msgstr "Decrease value"
 
 #: src/components/settings/LocalBackupsSettingsTab.tsx:732
 msgid "Default directory"
@@ -2632,6 +2707,10 @@ msgstr "Delete {count} presets?"
 msgctxt "Undo history entry"
 msgid "Delete {modelName}"
 msgstr "Delete {modelName}"
+
+#: src/components/modals/DestructiveTransformModal.tsx:52
+msgid "Delete & Continue"
+msgstr "Delete & Continue"
 
 #: src/components/settings/LocalBackupsSettingsTab.tsx:970
 msgid "Delete Backup Snapshot"
@@ -2759,6 +2838,11 @@ msgstr "Depth Mode"
 msgid "Desktop-only diagnostics for autosave files and recovery state."
 msgstr "Desktop-only diagnostics for autosave files and recovery state."
 
+#: src/components/modals/DestructiveTransformModal.tsx:30
+#: src/components/modals/DestructiveTransformModal.tsx:31
+msgid "Destructive Transform"
+msgstr "Destructive Transform"
+
 #. Support preset for delicate features. Shown on a narrow card next to "Structure" and "Anchor".
 #: src/supports/Settings/presetMessages.ts:22
 msgid "Detail"
@@ -2797,6 +2881,10 @@ msgstr "Device still processing"
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:242
 msgid "Diagnostics"
 msgstr "Diagnostics"
+
+#: src/components/gizmo/rotate/RotationHintTooltip.tsx:30
+msgid "Dial marks pull at 5° / 10° / 45°"
+msgstr "Dial marks pull at 5° / 10° / 45°"
 
 #: src/supports/Settings/components/BaseFlareSettingsCard.tsx:35
 #: src/supports/Settings/components/RootsSettingsCard.tsx:24
@@ -2857,6 +2945,7 @@ msgstr "Discovered Printers"
 
 #: src/app/page.tsx:12005
 #: src/components/modals/ManifoldWarningModal.tsx:38
+#: src/components/organisms/SystemNotificationStack.tsx:285
 #: src/components/scene/MeshRepairReportModal.tsx:320
 #: src/features/updater/GlobalUpdateIndicator.tsx:234
 msgid "Dismiss"
@@ -2941,8 +3030,12 @@ msgctxt "Undo history entry"
 msgid "Drag cut point"
 msgstr "Drag cut point"
 
+#: src/components/gizmo/rotate/RotationHintTooltip.tsx:28
+msgid "Drag to rotate"
+msgstr "Drag to rotate"
+
 #. "DragonFruit" is the product name and should stay untranslated/unchanged.
-#: src/components/layout/TopBar.tsx:842
+#: src/components/layout/TopBar.tsx:844
 msgid "DragonFruit app menu"
 msgstr "DragonFruit app menu"
 
@@ -2962,7 +3055,7 @@ msgstr "DragonFruit for Linux ships as a Flatpak, so updates are installed outsi
 msgid "DragonFruit handles setup automatically and uses only your own private GitHub repository."
 msgstr "DragonFruit handles setup automatically and uses only your own private GitHub repository."
 
-#: src/components/layout/FirstRunOnboarding.tsx:176
+#: src/components/layout/FirstRunOnboarding.tsx:177
 msgid "DragonFruit is a free, open-source slicer for resin 3D printing. Load a model, orient it, add supports, and slice it for your printer."
 msgstr "DragonFruit is a free, open-source slicer for resin 3D printing. Load a model, orient it, add supports, and slice it for your printer."
 
@@ -2988,7 +3081,7 @@ msgctxt "Drop button"
 msgid "Drop"
 msgstr "Drop"
 
-#: src/components/layout/EmptySceneState.tsx:730
+#: src/components/layout/EmptySceneState.tsx:735
 msgid "Drop supported files"
 msgstr "Drop supported files"
 
@@ -3148,8 +3241,8 @@ msgstr "Enable perimeter wall for imported solid rafts."
 msgid "Enable scene autosave"
 msgstr "Enable scene autosave"
 
-#: src/components/settings/UvToolsSettingsTab.tsx:112
-#: src/components/settings/UvToolsSettingsTab.tsx:116
+#: src/components/settings/UvToolsSettingsTab.tsx:129
+#: src/components/settings/UvToolsSettingsTab.tsx:133
 msgid "Enable UVTools Integration"
 msgstr "Enable UVTools Integration"
 
@@ -3336,6 +3429,10 @@ msgstr "Exporting…"
 msgid "Exposure:"
 msgstr "Exposure:"
 
+#: src/components/modals/UvToolsLaunchingModal.tsx:62
+msgid "External Tool"
+msgstr "External Tool"
+
 #: src/supports/Settings/components/PresetSelector.tsx:903
 msgid "Factory presets will be reset and user presets will be unpinned."
 msgstr "Factory presets will be reset and user presets will be unpinned."
@@ -3451,6 +3548,7 @@ msgstr "Far faces, darker so the shape reads solid."
 msgid "Fewest Supports"
 msgstr "Fewest Supports"
 
+#: src/components/modals/UvToolsLaunchingModal.tsx:84
 #: src/components/organisms/modals/PrintingModals.tsx:514
 #: src/components/scene/MeshRepairConfirmModal.tsx:68
 msgid "File"
@@ -3530,7 +3628,7 @@ msgid "Fleet Management"
 msgstr "Fleet Management"
 
 #. "Fleet" means the set of physical network printers discovered under the current printer profile, not a literal fleet of vehicles.
-#: src/components/layout/TopBar.tsx:873
+#: src/components/layout/TopBar.tsx:875
 msgid "Fleet quick switch"
 msgstr "Fleet quick switch"
 
@@ -3540,7 +3638,7 @@ msgid "Fleet Status Overview"
 msgstr "Fleet Status Overview"
 
 #. Section heading above the list of network printers belonging to the current profile. "Units" = individual printers.
-#: src/components/layout/TopBar.tsx:876
+#: src/components/layout/TopBar.tsx:878
 msgid "Fleet units"
 msgstr "Fleet units"
 
@@ -3581,7 +3679,11 @@ msgstr "Forest Report"
 msgid "Forget all stored panel positions and return to seeded layout."
 msgstr "Forget all stored panel positions and return to seeded layout."
 
-#: src/components/layout/FirstRunOnboarding.tsx:179
+#: src/components/settings/UvToolsSettingsTab.tsx:172
+msgid "Found!"
+msgstr "Found!"
+
+#: src/components/layout/FirstRunOnboarding.tsx:180
 msgid "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
 msgstr "From the community, for the community. Free to use, open to contribute, and shaped by the people who print with it."
 
@@ -3649,11 +3751,11 @@ msgstr "Generating Supports"
 msgid "Geometry"
 msgstr "Geometry"
 
-#: src/components/layout/EmptySceneState.tsx:518
+#: src/components/layout/EmptySceneState.tsx:523
 msgid "Get started"
 msgstr "Get started"
 
-#: src/components/layout/FirstRunOnboarding.tsx:189
+#: src/components/layout/FirstRunOnboarding.tsx:190
 msgid "Get Started"
 msgstr "Get Started"
 
@@ -3766,6 +3868,11 @@ msgstr "Height Factor Cap"
 msgid "Height Gradient"
 msgstr "Height Gradient"
 
+#: src/components/controls/LayerSlider.tsx:845
+#: src/components/controls/LayerSlider.tsx:944
+msgid "Height mm"
+msgstr "Height mm"
+
 #: src/components/controls/ModelStatsCard.tsx:596
 msgid "Height:"
 msgstr "Height:"
@@ -3815,6 +3922,11 @@ msgstr "High-Precision Fill Running…"
 #: src/components/controls/ArrangePanel.tsx:320
 msgid "High-Precision mode requires Z-rotation and keeps it enabled"
 msgstr "High-Precision mode requires Z-rotation and keeps it enabled"
+
+#. Section heading: the colour that marks the area the smoothing brush touches.
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:165
+msgid "Highlight"
+msgstr "Highlight"
 
 #: src/components/controls/autoSupport/AutoSupportPresetRow.tsx:36
 msgid "Hold the model clear of the plate, so a support can stand under it. Turns off a manual Z move."
@@ -4019,7 +4131,7 @@ msgstr "Import complete. Click Print Now when ready."
 msgid "Import mesh…"
 msgstr "Import mesh…"
 
-#: src/components/layout/EmptySceneState.tsx:597
+#: src/components/layout/EmptySceneState.tsx:602
 msgid "Import Scene"
 msgstr "Import Scene"
 
@@ -4048,7 +4160,7 @@ msgstr "Importing Scenes…"
 msgid "Importing VOXL Scene…"
 msgstr "Importing VOXL Scene…"
 
-#: src/components/layout/EmptySceneState.tsx:501
+#: src/components/layout/EmptySceneState.tsx:506
 msgid "Importing your file…"
 msgstr "Importing your file…"
 
@@ -4098,6 +4210,10 @@ msgstr "Increase point position"
 #: src/components/controls/ArrangePanel.tsx:258
 msgid "Increase spacing"
 msgstr "Increase spacing"
+
+#: src/components/ui/NumberInput.tsx:170
+msgid "Increase value"
+msgstr "Increase value"
 
 #: src/components/controls/IslandsPanel.tsx:258
 msgid "Individual lowest-vertex triangles on the mesh surface"
@@ -4201,6 +4317,10 @@ msgstr "Interior View"
 msgid "Interior View Mode"
 msgstr "Interior View Mode"
 
+#: src/components/modals/IslandHierarchyModal.tsx:84
+msgid "Island Hierarchy"
+msgstr "Island Hierarchy"
+
 #: src/components/controls/IslandListCard.tsx:88
 msgid "Island IDs"
 msgstr "Island IDs"
@@ -4249,6 +4369,10 @@ msgstr "It looks like DragonFruit quit before you saved your last session. You c
 msgid "It's a trap! ...just kidding, drop your STL."
 msgstr "It's a trap! ...just kidding, drop your STL."
 
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:132
+msgid "Iterations"
+msgstr "Iterations"
+
 #: src/components/modals/ScenePrinterMismatchModal.tsx:58
 msgid "Its plates are spaced for that printer"
 msgstr "Its plates are spaced for that printer"
@@ -4290,7 +4414,7 @@ msgid "Keep {currentPrinterName}"
 msgstr "Keep {currentPrinterName}"
 
 #. Cancels the pending profile change and closes this warning dialog, leaving the previous profile selection untouched. Paired with the "Continue" button below.
-#: src/components/layout/TopBar.tsx:1168
+#: src/components/layout/TopBar.tsx:1170
 msgid "Keep current profiles"
 msgstr "Keep current profiles"
 
@@ -4303,7 +4427,7 @@ msgstr "Keep Editing"
 msgid "Keep File"
 msgstr "Keep File"
 
-#: src/components/layout/EmptySceneState.tsx:555
+#: src/components/layout/EmptySceneState.tsx:560
 msgid "Keep going without a printer. You can add one later."
 msgstr "Keep going without a printer. You can add one later."
 
@@ -4344,6 +4468,11 @@ msgstr "Keyboard bindings and presets"
 msgid "Knot"
 msgstr "Knot"
 
+#: src/components/ui/LanguageSwitcher.tsx:38
+#: src/components/ui/LanguageSwitcher.tsx:39
+msgid "Language"
+msgstr "Language"
+
 #: src/components/settings/GeneralSettingsTab.tsx:207
 msgid "Larger percentages magnify the whole UI."
 msgstr "Larger percentages magnify the whole UI."
@@ -4371,12 +4500,12 @@ msgstr "Last local sync"
 msgid "Last local sync: {0}"
 msgstr "Last local sync: {0}"
 
-#: src/components/layout/EmptySceneState.tsx:688
+#: src/components/layout/EmptySceneState.tsx:693
 msgid "last opened {period} ago"
 msgstr "last opened {period} ago"
 
 # Shows when a recent file was last accessed. {relativeOpenedAt} is a translated relative time (e.g. "just now", "5m ago"). Place {relativeOpenedAt} wherever the time fits in your language.
-#: src/components/layout/EmptySceneState.tsx:687
+#: src/components/layout/EmptySceneState.tsx:692
 msgid "last opened just now"
 msgstr "last opened just now"
 
@@ -4393,6 +4522,14 @@ msgstr "Last successful autosave: {timestamp}. Save your project manually."
 msgid "Lattice"
 msgstr "Lattice"
 
+#: src/components/modals/UvToolsLaunchingModal.tsx:75
+msgid "Launching UVTools to inspect the sliced file…"
+msgstr "Launching UVTools to inspect the sliced file…"
+
+#: src/components/controls/LayerSlider.tsx:660
+msgid "Layer"
+msgstr "Layer"
+
 #. placeholder {0}: material.layerHeightMm ?? '-'
 #. placeholder {1}: material.normalExposureSec ?? '-'
 #. placeholder {2}: material.bottomExposureSec ?? '-'
@@ -4402,14 +4539,36 @@ msgstr "Lattice"
 msgid "Layer {0} mm • Normal {1}s • Bottom {2}s × {3}"
 msgstr "Layer {0} mm • Normal {1}s • Bottom {2}s × {3}"
 
+#: src/components/controls/LayerSlider.tsx:28
+msgid "Layer {layer} • {height} • Right-click a handle to type an exact value"
+msgstr "Layer {layer} • {height} • Right-click a handle to type an exact value"
+
+#: src/components/controls/LayerSlider.tsx:26
+msgid "Layer {layer} • {height} • Right-click a handle to type an exact value • Double-click to turn the cross-section back on"
+msgstr "Layer {layer} • {height} • Right-click a handle to type an exact value • Double-click to turn the cross-section back on"
+
+#: src/components/controls/LayerSlider.tsx:23
+msgid "Layer {layer} • {height} • Right-click a handle to type an exact value • Double-click to turn the cross-section off"
+msgstr "Layer {layer} • {height} • Right-click a handle to type an exact value • Double-click to turn the cross-section off"
+
+#: src/components/organisms/PrintingPreviewPane.tsx:58
 #: src/features/slicing/components/SlicingPanel.tsx:181
 msgid "Layer {layer} preview"
 msgstr "Layer {layer} preview"
 
 #. Print progress on a monitor card, e.g. "Layer 120/450".
+#. Print progress on a monitor card, e.g. "Layer 120/450".
 #: src/components/organisms/modals/PrintingModals.tsx:233
+#: src/components/organisms/PrintingPreviewPane.tsx:62
 msgid "Layer {layers}"
 msgstr "Layer {layers}"
+
+#: src/components/controls/LayerSlider.tsx:816
+#: src/components/controls/LayerSlider.tsx:845
+#: src/components/controls/LayerSlider.tsx:915
+#: src/components/controls/LayerSlider.tsx:944
+msgid "Layer #"
+msgstr "Layer #"
 
 #: src/components/layout/EmptySceneState.tsx:103
 msgid "Layer 0 of 0. Living dangerously."
@@ -4418,6 +4577,10 @@ msgstr "Layer 0 of 0. Living dangerously."
 #: src/features/slicing/components/SlicingPanel.tsx:2465
 msgid "Layer Height"
 msgstr "Layer Height"
+
+#: src/components/organisms/PrintingPreviewPane.tsx:126
+msgid "Layer Preview"
+msgstr "Layer Preview"
 
 #: src/components/controls/ModelStatsCard.tsx:528
 msgid "Layer profile:"
@@ -4467,6 +4630,10 @@ msgstr "Leave the collection as it is"
 msgid "Left"
 msgstr "Left"
 
+#: src/components/modals/IslandHierarchyModal.tsx:115
+msgid "Legend"
+msgstr "Legend"
+
 #: src/supports/Settings/components/TipSettingsCard.tsx:114
 msgid "Length"
 msgstr "Length"
@@ -4489,7 +4656,7 @@ msgctxt "Transform panel section"
 msgid "Lift"
 msgstr "Lift"
 
-#: src/components/layout/FirstRunOnboarding.tsx:258
+#: src/components/layout/FirstRunOnboarding.tsx:259
 msgid "Light"
 msgstr "Light"
 
@@ -4517,6 +4684,12 @@ msgstr "Line Height"
 msgid "Line Width"
 msgstr "Line Width"
 
+#. Smoothing brush falloff: strength fades evenly from the centre to the edge. Rendered uppercase on a narrow button.
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:27
+msgctxt "Brush falloff"
+msgid "Linear"
+msgstr "Linear"
+
 #: src/features/organicCut/OrganicCutPanel.tsx:672
 msgid "Link width and depth together so the dome keeps its shape."
 msgstr "Link width and depth together so the dome keeps its shape."
@@ -4533,7 +4706,7 @@ msgstr "Live"
 msgid "Load a model and scan for islands."
 msgstr "Load a model and scan for islands."
 
-#: src/components/layout/TopBar.tsx:1007
+#: src/components/layout/TopBar.tsx:1009
 msgid "Load a model in Prepare to unlock this stage"
 msgstr "Load a model in Prepare to unlock this stage"
 
@@ -4547,7 +4720,7 @@ msgstr "Load a model to get an orientation suggestion."
 msgid "Load As-Is"
 msgstr "Load As-Is"
 
-#: src/components/layout/EmptySceneState.tsx:579
+#: src/components/layout/EmptySceneState.tsx:584
 msgid "Load Mesh"
 msgstr "Load Mesh"
 
@@ -4574,6 +4747,10 @@ msgstr "Loading {fileName}"
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:329
 msgid "Loading autosave status…"
 msgstr "Loading autosave status…"
+
+#: src/components/settings/SponsorsCarousel.tsx:296
+msgid "Loading avatar"
+msgstr "Loading avatar"
 
 #: src/components/settings/BackupsSettingsTab.tsx:1074
 #: src/components/settings/LocalBackupsSettingsTab.tsx:727
@@ -4621,12 +4798,16 @@ msgstr "Loading snapshot content…"
 msgid "Loading snapshot..."
 msgstr "Loading snapshot..."
 
+#: src/components/settings/SponsorsCarousel.tsx:518
+msgid "Loading sponsors…"
+msgstr "Loading sponsors…"
+
 #: src/components/organisms/modals/PrintingModals.tsx:1748
 msgid "Loading thumbnail…"
 msgstr "Loading thumbnail…"
 
 #. Shown in place of file size while a recent file is being reopened. Keep it short.
-#: src/components/layout/EmptySceneState.tsx:694
+#: src/components/layout/EmptySceneState.tsx:699
 msgid "loading…"
 msgstr "loading…"
 
@@ -4737,7 +4918,7 @@ msgctxt "Cluster spacing"
 msgid "Low"
 msgstr "Low"
 
-#: src/components/layout/FirstRunOnboarding.tsx:232
+#: src/components/layout/FirstRunOnboarding.tsx:233
 msgid "Low-glare surfaces for late-night printing."
 msgstr "Low-glare surfaces for late-night printing."
 
@@ -4849,6 +5030,11 @@ msgstr "Max Angle"
 msgid "Max angle from vertical for fan-out leaves"
 msgstr "Max angle from vertical for fan-out leaves"
 
+#. "L" abbreviates "layer", as in the L12-40 layer ranges beside it.
+#: src/components/modals/IslandHierarchyModal.tsx:40
+msgid "Max area: {area} at L{layer}"
+msgstr "Max area: {area} at L{layer}"
+
 #: src/supports/autoBracing/AutoBracingSettingsCard.tsx:132
 msgid "Max Brace Distance"
 msgstr "Max Brace Distance"
@@ -4865,11 +5051,11 @@ msgstr "Max horizontal distance a fan-out leaf may span from a trunk shaft"
 msgid "Max Overhang"
 msgstr "Max Overhang"
 
-#: src/components/layout/TopBar.tsx:1118
+#: src/components/layout/TopBar.tsx:1120
 msgid "Maximize"
 msgstr "Maximize"
 
-#: src/components/layout/TopBar.tsx:1119
+#: src/components/layout/TopBar.tsx:1121
 msgid "Maximize window"
 msgstr "Maximize window"
 
@@ -4911,7 +5097,7 @@ msgstr "Merging Supports…"
 
 #. File type badge on the recent files list. Noun — labels a mesh file (.stl, .obj, .3mf).
 #. View mode: mesh edges drawn over a solid surface, so back edges stay hidden.
-#: src/components/layout/EmptySceneState.tsx:679
+#: src/components/layout/EmptySceneState.tsx:684
 #: src/components/settings/SettingsModal.tsx:1223
 #: src/features/shaders/mesh/types.ts:45
 msgid "Mesh"
@@ -4943,6 +5129,10 @@ msgstr "Mesh repair confirmation"
 #: src/components/scene/MeshRepairReportModal.tsx:252
 msgid "Mesh Repair Report"
 msgstr "Mesh Repair Report"
+
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:91
+msgid "Mesh Smoothing"
+msgstr "Mesh Smoothing"
 
 #. Badge label next to the number of meshes this export writes. Rendered uppercase; keep it to one short word.
 #: src/features/export/components/ExportPanel.tsx:568
@@ -4999,11 +5189,11 @@ msgstr "Minima"
 msgid "Minima Reinforcement"
 msgstr "Minima Reinforcement"
 
-#: src/components/layout/TopBar.tsx:1100
+#: src/components/layout/TopBar.tsx:1102
 msgid "Minimize"
 msgstr "Minimize"
 
-#: src/components/layout/TopBar.tsx:1101
+#: src/components/layout/TopBar.tsx:1103
 msgid "Minimize window"
 msgstr "Minimize window"
 
@@ -5033,8 +5223,15 @@ msgstr "Mirror in {axes}"
 msgid "Mode"
 msgstr "Mode"
 
+#. Prefilled name when renaming a model whose file name is only an extension, e.g. ".stl".
+#: src/components/controls/ModelManagerPanel.tsx:410
+msgctxt "Default model name"
+msgid "Model"
+msgstr "Model"
+
+#: src/components/modals/DestructiveTransformModal.tsx:63
 #: src/components/organisms/modals/MeshRepairModals.tsx:316
-msgctxt "Mesh repair dialog field"
+msgctxt "Dialog field"
 msgid "Model"
 msgstr "Model"
 
@@ -5094,7 +5291,7 @@ msgid "Models"
 msgstr "Models"
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:315
-msgctxt "Mesh repair dialog field"
+msgctxt "Dialog field"
 msgid "Models"
 msgstr "Models"
 
@@ -5362,11 +5559,15 @@ msgstr "No history snapshots found in this folder."
 msgid "No history snapshots yet. New syncs will appear here."
 msgstr "No history snapshots yet. New syncs will appear here."
 
-#: src/components/layout/TopBar.tsx:930
+#: src/components/layout/TopBar.tsx:932
 #: src/components/organisms/modals/PrintingModals.tsx:1320
 #: src/components/organisms/modals/PrintingModals.tsx:1512
 msgid "No IP"
 msgstr "No IP"
+
+#: src/components/modals/IslandHierarchyModal.tsx:102
+msgid "No islands found."
+msgstr "No islands found."
 
 #: src/components/settings/BackupsSettingsTab.tsx:1431
 #: src/components/settings/LocalBackupsSettingsTab.tsx:1167
@@ -5413,6 +5614,10 @@ msgstr "No networked printers with valid IP addresses were found in this fleet"
 msgid "No online printer is available for upload."
 msgstr "No online printer is available for upload."
 
+#: src/components/organisms/PrintingPreviewPane.tsx:241
+msgid "No preview available yet."
+msgstr "No preview available yet."
+
 #: src/components/controls/ModelStatsCard.tsx:439
 msgid "No printer connected"
 msgstr "No printer connected"
@@ -5452,7 +5657,7 @@ msgstr "No printers match your search."
 msgid "No printers saved yet. Add one below to start."
 msgstr "No printers saved yet. Add one below to start."
 
-#: src/components/layout/EmptySceneState.tsx:641
+#: src/components/layout/EmptySceneState.tsx:646
 msgid "No recent files"
 msgstr "No recent files"
 
@@ -5467,6 +5672,10 @@ msgstr "No snapshots yet. Run \"Backup Now\" to create your first local snapshot
 #: src/features/scene/useSceneCollectionManager.ts:7069
 msgid "No source file to restore this model from."
 msgstr "No source file to restore this model from."
+
+#: src/components/settings/SponsorsCarousel.tsx:527
+msgid "No sponsors yet — be the first!"
+msgstr "No sponsors yet — be the first!"
 
 #: src/components/layout/EmptySceneState.tsx:102
 msgid "No supports needed for an empty scene."
@@ -5568,9 +5777,11 @@ msgstr "Off"
 #. Toggle state on a narrow uppercase button in the Experiments tab. Keep it short — the button is 92px wide.
 #. Toggle state on a narrow uppercase button. Keep it very short.
 #. Toggle state on a narrow uppercase button. Keep it very short.
+#. Toggle state on a narrow uppercase button. Keep it very short.
 #: src/components/controls/ArrangePanel.tsx:339
 #: src/components/controls/IslandOverlayControls.tsx:79
 #: src/components/controls/IslandVoxelControls.tsx:69
+#: src/components/controls/TerritoryVoxelControls.tsx:67
 #: src/components/settings/BackupsSettingsTab.tsx:1216
 #: src/components/settings/ExperimentsSettingsTab.tsx:200
 #: src/components/settings/GeneralSettingsTab.tsx:332
@@ -5589,7 +5800,7 @@ msgstr "Off"
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:289
 #: src/components/settings/SpaceMouseSettingsTab.tsx:88
 #: src/components/settings/SpaceMouseSettingsTab.tsx:290
-#: src/components/settings/UvToolsSettingsTab.tsx:118
+#: src/components/settings/UvToolsSettingsTab.tsx:135
 msgid "OFF"
 msgstr "OFF"
 
@@ -5598,7 +5809,7 @@ msgid "OFF makes imported root diameter match trunk diameter."
 msgstr "OFF makes imported root diameter match trunk diameter."
 
 #: src/components/layout/TopBar.tsx:515
-#: src/components/layout/TopBar.tsx:930
+#: src/components/layout/TopBar.tsx:932
 #: src/components/organisms/modals/PrintingModals.tsx:765
 #: src/components/organisms/modals/PrintingModals.tsx:775
 #: src/components/organisms/modals/PrintingModals.tsx:1320
@@ -5642,9 +5853,11 @@ msgstr "On"
 #. Toggle state on a narrow uppercase button in the Experiments tab. Keep it short — the button is 92px wide.
 #. Toggle state on a narrow uppercase button. Keep it very short.
 #. Toggle state on a narrow uppercase button. Keep it very short.
+#. Toggle state on a narrow uppercase button. Keep it very short.
 #: src/components/controls/ArrangePanel.tsx:339
 #: src/components/controls/IslandOverlayControls.tsx:78
 #: src/components/controls/IslandVoxelControls.tsx:68
+#: src/components/controls/TerritoryVoxelControls.tsx:66
 #: src/components/settings/BackupsSettingsTab.tsx:1217
 #: src/components/settings/ExperimentsSettingsTab.tsx:204
 #: src/components/settings/GeneralSettingsTab.tsx:333
@@ -5663,7 +5876,7 @@ msgstr "On"
 #: src/components/settings/SceneAutosaveSettingsTab.tsx:290
 #: src/components/settings/SpaceMouseSettingsTab.tsx:89
 #: src/components/settings/SpaceMouseSettingsTab.tsx:291
-#: src/components/settings/UvToolsSettingsTab.tsx:119
+#: src/components/settings/UvToolsSettingsTab.tsx:136
 msgid "ON"
 msgstr "ON"
 
@@ -5713,7 +5926,7 @@ msgstr "One or more models have hole punches that haven’t been applied. Hole p
 msgid "One visible model outside the build volume will be excluded from this slice."
 msgstr "One visible model outside the build volume will be excluded from this slice."
 
-#: src/components/layout/TopBar.tsx:930
+#: src/components/layout/TopBar.tsx:932
 #: src/components/organisms/modals/PrintingModals.tsx:765
 #: src/components/organisms/modals/PrintingModals.tsx:1320
 #: src/components/settings/FleetManagement.tsx:179
@@ -5727,6 +5940,7 @@ msgstr "Only printable models will be sliced"
 
 #: src/components/controls/IslandOverlayControls.tsx:155
 #: src/components/controls/IslandVoxelControls.tsx:100
+#: src/components/controls/TerritoryVoxelControls.tsx:84
 msgid "Opacity"
 msgstr "Opacity"
 
@@ -5787,12 +6001,12 @@ msgstr "Open Monitor"
 msgid "Open Network Settings"
 msgstr "Open Network Settings"
 
-#: src/components/layout/EmptySceneState.tsx:536
+#: src/components/layout/EmptySceneState.tsx:541
 msgid "Open printer library and add one now."
 msgstr "Open printer library and add one now."
 
-#: src/components/layout/TopBar.tsx:816
 #: src/components/layout/TopBar.tsx:817
+#: src/components/layout/TopBar.tsx:818
 msgid "Open printer monitor"
 msgstr "Open printer monitor"
 
@@ -5813,9 +6027,18 @@ msgstr "Open the Hollow tool to apply the hollowing, or continue and supports wi
 msgid "Opening"
 msgstr "Opening"
 
+#: src/components/modals/UvToolsLaunchingModal.tsx:38
+#: src/components/modals/UvToolsLaunchingModal.tsx:65
+msgid "Opening in UVTools"
+msgstr "Opening in UVTools"
+
 #: src/app/page.tsx:8824
 msgid "Opening scene…"
 msgstr "Opening scene…"
+
+#: src/components/modals/DestructiveTransformModal.tsx:58
+msgid "Operation"
+msgstr "Operation"
 
 #: src/components/scene/MeshRepairReportModal.tsx:403
 msgid "Optional details if you want them."
@@ -5841,6 +6064,10 @@ msgstr "Orienting Model"
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:198
 msgid "Origin Colors"
 msgstr "Origin Colors"
+
+#: src/components/settings/FleetManagement.tsx:153
+msgid "Other Printers"
+msgstr "Other Printers"
 
 #: src/features/slicing/components/SlicingPanel.tsx:3189
 msgid "Out-of-bounds models will be excluded"
@@ -5868,14 +6095,14 @@ msgstr "Outside plate"
 msgid "Overhangs"
 msgstr "Overhangs"
 
-#: src/components/layout/TopBar.tsx:1064
-#: src/components/layout/TopBar.tsx:1065
+#: src/components/layout/TopBar.tsx:1066
+#: src/components/layout/TopBar.tsx:1067
 msgid "Overhangs view: Off"
 msgstr "Overhangs view: Off"
 
 #. Tooltip for a toggle button showing its current state, format "Feature name: state". The Overhangs view colours surfaces by how steeply they overhang, which is where supports are needed.
-#: src/components/layout/TopBar.tsx:1064
-#: src/components/layout/TopBar.tsx:1065
+#: src/components/layout/TopBar.tsx:1066
+#: src/components/layout/TopBar.tsx:1067
 msgid "Overhangs view: On"
 msgstr "Overhangs view: On"
 
@@ -5929,6 +6156,10 @@ msgstr "Paint nogo areas for supports. Blocked contact is refused when generatin
 msgctxt "Undo history entry"
 msgid "Paint support blocker"
 msgstr "Paint support blocker"
+
+#: src/components/modals/IslandHierarchyModal.tsx:86
+msgid "Parent-child merges across detected islands"
+msgstr "Parent-child merges across detected islands"
 
 #: src/components/modals/ManifoldWarningModal.tsx:52
 msgid "Parts of this mesh are not closed — edges are left open, faces cross through each other, or surfaces do not quite meet. Slicing and support placement expect a sealed solid, so defects can reach the print without showing up here first."
@@ -6003,7 +6234,7 @@ msgstr "Pick the target machine for this upload."
 msgid "Pick the target machine now, then slicing will begin."
 msgstr "Pick the target machine now, then slicing will begin."
 
-#: src/components/layout/FirstRunOnboarding.tsx:202
+#: src/components/layout/FirstRunOnboarding.tsx:203
 msgid "Pick what fits your workspace. You can change it anytime in Settings."
 msgstr "Pick what fits your workspace. You can change it anytime in Settings."
 
@@ -6116,9 +6347,13 @@ msgstr "Please be patient while we rebuild the model."
 msgid "Please ensure you have saved any important work."
 msgstr "Please ensure you have saved any important work."
 
-#: src/components/layout/EmptySceneState.tsx:504
+#: src/components/layout/EmptySceneState.tsx:509
 msgid "Please hang tight while we prepare your scene."
 msgstr "Please hang tight while we prepare your scene."
+
+#: src/components/modals/PrintingResliceModal.tsx:28
+msgid "Please re-slice before printing"
+msgstr "Please re-slice before printing"
 
 #: src/features/scene/sceneImportMessages.ts:192
 msgid "Please use: {extensions}"
@@ -6139,6 +6374,10 @@ msgstr "Please wait a moment."
 #: src/features/scene/arrange/useArrangeManager.ts:185
 msgid "Please wait."
 msgstr "Please wait."
+
+#: src/components/modals/UvToolsLaunchingModal.tsx:98
+msgid "Please wait…"
+msgstr "Please wait…"
 
 #: src/components/organisms/modals/SceneFileModals.tsx:460
 msgid "Plugin import experimental warning"
@@ -6314,7 +6553,7 @@ msgstr "Printer"
 
 #. Fallback shown only when a network printer has no display name, host name, or IP address yet. {0} is an internal device identifier, not a human-friendly value.
 #. placeholder {0}: device.id
-#: src/components/layout/TopBar.tsx:882
+#: src/components/layout/TopBar.tsx:884
 msgid "Printer {0}"
 msgstr "Printer {0}"
 
@@ -6402,6 +6641,10 @@ msgstr "Prioritize Dual"
 #: src/components/settings/SpaceMouseSettingsTab.tsx:285
 msgid "Prioritize strongest axis per translation/rotation group for steadier input."
 msgstr "Prioritize strongest axis per translation/rotation group for steadier input."
+
+#: src/components/controls/TerritoryVoxelControls.tsx:106
+msgid "Prioritize surface connectivity to prevent internal tunneling"
+msgstr "Prioritize surface connectivity to prevent internal tunneling"
 
 #: src/components/settings/BackupsSettingsTab.tsx:922
 msgid "Private GitHub Backups"
@@ -6514,8 +6757,12 @@ msgstr "Raw masks only."
 msgid "Re-Run Scanline"
 msgstr "Re-Run Scanline"
 
+#: src/components/modals/PrintingResliceModal.tsx:45
+msgid "Re-Slice Now"
+msgstr "Re-Slice Now"
+
 #. "Slice"/"re-slice" is the 3D-printing step that converts a model into printer instructions (G-code). This dialog warns that switching printer profile invalidates the already-sliced file.
-#: src/components/layout/TopBar.tsx:1153
+#: src/components/layout/TopBar.tsx:1155
 msgid "Re-slice required after profile change"
 msgstr "Re-slice required after profile change"
 
@@ -6545,7 +6792,7 @@ msgstr "Rebuilding the model geometry with the latest hollowing settings."
 msgid "Recalculating…"
 msgstr "Recalculating…"
 
-#: src/components/layout/EmptySceneState.tsx:614
+#: src/components/layout/EmptySceneState.tsx:619
 msgid "Recent files"
 msgstr "Recent files"
 
@@ -6829,7 +7076,7 @@ msgid "Rendering Options"
 msgstr "Rendering Options"
 
 #. placeholder {0}: entry.name
-#: src/components/layout/EmptySceneState.tsx:666
+#: src/components/layout/EmptySceneState.tsx:671
 msgid "Reopen {0}"
 msgstr "Reopen {0}"
 
@@ -7034,7 +7281,7 @@ msgstr "Resolving..."
 msgid "Restart DragonFruit, then click <0>I configured it</0>."
 msgstr "Restart DragonFruit, then click <0>I configured it</0>."
 
-#: src/components/layout/TopBar.tsx:1118
+#: src/components/layout/TopBar.tsx:1120
 #: src/components/scene/SceneAutosaveRecoveryModal.tsx:174
 #: src/supports/Settings/components/PresetSelector.tsx:937
 msgid "Restore"
@@ -7044,6 +7291,7 @@ msgstr "Restore"
 msgid "Restore as Current"
 msgstr "Restore as Current"
 
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:206
 #: src/supports/Settings/SupportSidebar.tsx:1207
 msgid "Restore defaults"
 msgstr "Restore defaults"
@@ -7074,7 +7322,7 @@ msgstr "Restore Snapshot"
 msgid "Restore to App"
 msgstr "Restore to App"
 
-#: src/components/layout/TopBar.tsx:1119
+#: src/components/layout/TopBar.tsx:1121
 msgid "Restore window"
 msgstr "Restore window"
 
@@ -7201,7 +7449,7 @@ msgstr "Run native Rust island scan (fastest)"
 msgid "Run Scanline"
 msgstr "Run Scanline"
 
-#: src/components/layout/TopBar.tsx:1006
+#: src/components/layout/TopBar.tsx:1008
 msgid "Run slicing in Export to unlock Printing preview"
 msgstr "Run slicing in Export to unlock Printing preview"
 
@@ -7398,12 +7646,13 @@ msgstr "Scanning your network for {presetName} printers…"
 
 #: src/components/controls/IslandScanCard.tsx:143
 #: src/components/controls/IslandsPanel.tsx:184
+#: src/components/settings/UvToolsSettingsTab.tsx:172
 #: src/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard.tsx:49
 msgid "Scanning…"
 msgstr "Scanning…"
 
 #. File type badge on the recent files list. Noun — labels a saved scene file (.voxl, .lys).
-#: src/components/layout/EmptySceneState.tsx:678
+#: src/components/layout/EmptySceneState.tsx:683
 msgid "Scene"
 msgstr "Scene"
 
@@ -7436,6 +7685,11 @@ msgstr "Scene is too large to save"
 #: src/components/organisms/modals/SceneFileModals.tsx:264
 msgid "Scene may be off-plate"
 msgstr "Scene may be off-plate"
+
+#: src/components/modals/PrintingResliceModal.tsx:26
+#: src/components/modals/PrintingResliceModal.tsx:27
+msgid "Scene Modified"
+msgstr "Scene Modified"
 
 #: src/components/settings/PerformanceSettingsTab.tsx:139
 msgid "Scene mood overlay in thumbnail"
@@ -7567,6 +7821,10 @@ msgstr "Select monitored printer"
 msgid "Select monitored printer for profile {profile}"
 msgstr "Select monitored printer for profile {profile}"
 
+#: src/components/settings/UvToolsSettingsTab.tsx:30
+msgid "Select or type the path to {executableLabel}"
+msgstr "Select or type the path to {executableLabel}"
+
 #: src/components/layout/TopBar.tsx:494
 msgid "Select printer"
 msgstr "Select printer"
@@ -7621,7 +7879,7 @@ msgstr "Selected point alpha"
 msgid "Selected point position"
 msgstr "Selected point position"
 
-#: src/components/layout/TopBar.tsx:778
+#: src/components/layout/TopBar.tsx:779
 #: src/components/organisms/modals/PrintingModals.tsx:524
 #: src/components/organisms/modals/PrintingModals.tsx:784
 #: src/components/organisms/modals/PrintingModals.tsx:1198
@@ -7629,8 +7887,8 @@ msgstr "Selected point position"
 msgid "Selected printer"
 msgstr "Selected printer"
 
-#: src/components/layout/TopBar.tsx:816
 #: src/components/layout/TopBar.tsx:817
+#: src/components/layout/TopBar.tsx:818
 msgid "Selected printer is offline"
 msgstr "Selected printer is offline"
 
@@ -7745,8 +8003,8 @@ msgstr "Set up OAuth"
 msgid "Set up private backups"
 msgstr "Set up private backups"
 
-#: src/components/layout/TopBar.tsx:1078
-#: src/components/layout/TopBar.tsx:1079
+#: src/components/layout/TopBar.tsx:1080
+#: src/components/layout/TopBar.tsx:1081
 msgid "Settings"
 msgstr "Settings"
 
@@ -7775,6 +8033,12 @@ msgid "Shallow surfaces detected by the mesh-normal classifier (the surfaces aut
 msgstr "Shallow surfaces detected by the mesh-normal classifier (the surfaces auto-supports grid)"
 
 #: src/features/slicing/components/SlicingPanel.tsx:783
+msgid "Sharp"
+msgstr "Sharp"
+
+#. Smoothing brush falloff: strength drops quickly away from the centre. Rendered uppercase on a narrow button.
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:29
+msgctxt "Brush falloff"
 msgid "Sharp"
 msgstr "Sharp"
 
@@ -7834,7 +8098,7 @@ msgid "Show Island IDs (debug)"
 msgstr "Show Island IDs (debug)"
 
 #. Opens the printer manager screen (printer profile settings), reached from this quick-switch popover. "Manager" refers to that screen.
-#: src/components/layout/TopBar.tsx:952
+#: src/components/layout/TopBar.tsx:954
 msgid "Show manager"
 msgstr "Show manager"
 
@@ -7984,7 +8248,7 @@ msgstr "Slicing completed"
 msgid "Slicing Finished"
 msgstr "Slicing Finished"
 
-#: src/components/layout/TopBar.tsx:1003
+#: src/components/layout/TopBar.tsx:1005
 msgid "Slicing in progress. Topbar actions are temporarily disabled."
 msgstr "Slicing in progress. Topbar actions are temporarily disabled."
 
@@ -8018,7 +8282,17 @@ msgstr "Slot {slot}"
 
 #. Tool rail label in Prepare mode. The tool brushes and smooths local surface regions.
 #: src/components/controls/toolRailEntries.ts:62
+msgid "Smooth"
+msgstr "Smooth"
+
 #: src/features/slicing/components/SlicingPanel.tsx:785
+msgctxt "Anti-aliasing preset"
+msgid "Smooth"
+msgstr "Smooth"
+
+#. Smoothing brush falloff: strength fades along a soft curve. Adjective, not the verb. Rendered uppercase on a narrow button.
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:28
+msgctxt "Brush falloff"
 msgid "Smooth"
 msgstr "Smooth"
 
@@ -8131,6 +8405,19 @@ msgstr "Split to bodies"
 msgid "Splitting Supports…"
 msgstr "Splitting Supports…"
 
+#: src/components/settings/SponsorsCarousel.tsx:546
+msgid "Sponsor"
+msgstr "Sponsor"
+
+#: src/components/settings/SponsorsCarousel.tsx:510
+msgid "Sponsor Us"
+msgstr "Sponsor Us"
+
+#: src/components/settings/SponsorsCarousel.tsx:494
+#: src/components/settings/SponsorsCarousel.tsx:499
+msgid "Sponsors"
+msgstr "Sponsors"
+
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:73
 msgid "Stability"
 msgstr "Stability"
@@ -8190,7 +8477,7 @@ msgstr "Start Recent Print File"
 msgid "Start this recent file on the selected printer now?"
 msgstr "Start this recent file on the selected printer now?"
 
-#: src/components/layout/FirstRunOnboarding.tsx:327
+#: src/components/layout/FirstRunOnboarding.tsx:328
 msgid "Start using DragonFruit"
 msgstr "Start using DragonFruit"
 
@@ -8254,6 +8541,10 @@ msgstr "Stopping at the end of this step…"
 #: src/components/organisms/modals/PrintingModals.tsx:2013
 msgid "Stopping…"
 msgstr "Stopping…"
+
+#: src/features/mesh-smoothing/MeshSmoothingSettingsPanel.tsx:121
+msgid "Strength"
+msgstr "Strength"
 
 #. Support preset for general use. Shown on a narrow card next to "Detail" and "Anchor".
 #: src/supports/Settings/presetMessages.ts:23
@@ -8339,9 +8630,21 @@ msgstr "Supports are generated against the mesh as it stands. Holes and hollowin
 msgid "Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet."
 msgstr "Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet."
 
+#: src/components/modals/DestructiveTransformModal.tsx:68
+msgid "Supports Detected"
+msgstr "Supports Detected"
+
+#: src/components/modals/DestructiveTransformModal.tsx:32
+msgid "Supports will be deleted before continuing"
+msgstr "Supports will be deleted before continuing"
+
 #: src/supports/PlacementLogic/SupportLimitations.tsx:11
 msgid "Surface angle is upward facing. Supports cannot be placed here."
 msgstr "Surface angle is upward facing. Supports cannot be placed here."
+
+#: src/components/controls/TerritoryVoxelControls.tsx:106
+msgid "Surface Priority Mode"
+msgstr "Surface Priority Mode"
 
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:158
 msgid "Surfaces flatter than this angle get supports (resin standard: 45°). Higher = fewer, mostly on the steepest parts."
@@ -8472,6 +8775,10 @@ msgstr "Tenon width in millimeters"
 #: src/supports/Curves/CurveSettingsCard.tsx:177
 msgid "Tension"
 msgstr "Tension"
+
+#: src/components/controls/TerritoryVoxelControls.tsx:44
+msgid "Territory Voxels"
+msgstr "Territory Voxels"
 
 #: src/app/page.tsx:5001
 msgid "The autosave recovery file could not be found."
@@ -8745,6 +9052,10 @@ msgstr "This scene may not fit the one selected"
 msgid "This self-compiled build needs your own GitHub OAuth app in .env before sign-in can work."
 msgstr "This self-compiled build needs your own GitHub OAuth app in .env before sign-in can work."
 
+#: src/components/modals/DestructiveTransformModal.tsx:75
+msgid "This transform invalidates existing supports. If you continue, all supports for this model will be deleted."
+msgstr "This transform invalidates existing supports. If you continue, all supports for this model will be deleted."
+
 #: src/components/organisms/modals/PrintingModals.tsx:497
 msgid "This will immediately halt the printer."
 msgstr "This will immediately halt the printer."
@@ -8817,6 +9128,14 @@ msgstr "Toggle Island Voxels"
 #: src/features/organicCut/OrganicCutPanel.tsx:673
 msgid "Toggle linked width and depth"
 msgstr "Toggle linked width and depth"
+
+#: src/components/controls/TerritoryVoxelControls.tsx:63
+msgid "Toggle Territory Voxels"
+msgstr "Toggle Territory Voxels"
+
+#: src/components/controls/TerritoryVoxelControls.tsx:124
+msgid "Toggles between internal centroid (OFF) and surface neighbor (ON) logic. Requires Re-Scan."
+msgstr "Toggles between internal centroid (OFF) and surface neighbor (ON) logic. Requires Re-Scan."
 
 #: src/supports/PlacementLogic/SupportLimitations.tsx:15
 msgid "Too close to an existing support."
@@ -8972,6 +9291,10 @@ msgstr "Unknown export error"
 msgid "Unknown manufacturer"
 msgstr "Unknown manufacturer"
 
+#: src/components/modals/DestructiveTransformModal.tsx:64
+msgid "Unknown Model"
+msgstr "Unknown Model"
+
 #: src/features/organicCut/OrganicCutPanel.tsx:671
 msgid "Unlink width and depth — resize them independently."
 msgstr "Unlink width and depth — resize them independently."
@@ -9023,11 +9346,11 @@ msgstr "Unsaved Scene Found"
 msgid "Unsupported file format"
 msgstr "Unsupported file format"
 
-#: src/components/layout/EmptySceneState.tsx:730
+#: src/components/layout/EmptySceneState.tsx:735
 msgid "Unsupported file type"
 msgstr "Unsupported file type"
 
-#: src/components/layout/EmptySceneState.tsx:750
+#: src/components/layout/EmptySceneState.tsx:755
 msgid "Unsupported format detected."
 msgstr "Unsupported format detected."
 
@@ -9153,7 +9476,7 @@ msgstr "Uploading to printer"
 msgid "Use at your own risk."
 msgstr "Use at your own risk."
 
-#: src/components/settings/UvToolsSettingsTab.tsx:130
+#: src/components/settings/UvToolsSettingsTab.tsx:26
 msgid "Use auto-discover or enter the path to {executableLabel} manually."
 msgstr "Use auto-discover or enter the path to {executableLabel} manually."
 
@@ -9170,7 +9493,7 @@ msgstr "Use existing repo"
 msgid "Use the plates the scene already has before adding more"
 msgstr "Use the plates the scene already has before adding more"
 
-#: src/components/layout/EmptySceneState.tsx:552
+#: src/components/layout/EmptySceneState.tsx:557
 msgid "Use without printer"
 msgstr "Use without printer"
 
@@ -9202,17 +9525,26 @@ msgstr "Using SAT-based 2.5D nesting to pack duplicates onto the plate."
 msgid "UVTools"
 msgstr "UVTools"
 
-#: src/components/settings/UvToolsSettingsTab.tsx:129
+#: src/components/settings/UvToolsSettingsTab.tsx:146
 msgid "UVTools Executable Path"
 msgstr "UVTools Executable Path"
+
+#: src/components/settings/UvToolsSettingsTab.tsx:115
+msgid "UVTools Integration"
+msgstr "UVTools Integration"
 
 #: src/components/settings/BackupsSettingsTab.tsx:1152
 msgid "Verify Repo"
 msgstr "Verify Repo"
 
+#: src/components/layout/EmptySceneState.tsx:113
 #: src/features/updater/updaterMessages.ts:29
 msgid "Version {version}"
 msgstr "Version {version}"
+
+#: src/components/layout/EmptySceneState.tsx:113
+msgid "Version {version} — Beta"
+msgstr "Version {version} — Beta"
 
 #: src/features/updater/updaterMessages.ts:44
 msgid "Version {version} • update ready"
@@ -9241,6 +9573,10 @@ msgctxt "Mesh analysis row"
 msgid "Vertices"
 msgstr "Vertices"
 
+#: src/components/settings/SponsorsCarousel.tsx:501
+msgid "via Open Collective"
+msgstr "via Open Collective"
+
 #: src/features/updater/GlobalUpdateIndicator.tsx:208
 msgid "View in Settings"
 msgstr "View in Settings"
@@ -9249,7 +9585,7 @@ msgstr "View in Settings"
 msgid "View island hierarchy tree"
 msgstr "View island hierarchy tree"
 
-#: src/components/layout/TopBar.tsx:1056
+#: src/components/layout/TopBar.tsx:1058
 msgid "View mode"
 msgstr "View mode"
 
@@ -9282,6 +9618,10 @@ msgstr "View, restore, or delete older snapshots from disk."
 #: src/components/settings/BackupsSettingsTab.tsx:1254
 msgid "View, restore, or delete older snapshots from your private repository."
 msgstr "View, restore, or delete older snapshots from your private repository."
+
+#: src/components/controls/TerritoryVoxelControls.tsx:100
+msgid "Visualizes “Vertical Watershed” territories, preserving identity after merges."
+msgstr "Visualizes “Vertical Watershed” territories, preserving identity after merges."
 
 #: src/components/controls/IslandVoxelControls.tsx:127
 msgid "Visualizes isolated grid-aligned islands."
@@ -9424,7 +9764,7 @@ msgstr "Webcam"
 msgid "Weight / support"
 msgstr "Weight / support"
 
-#: src/components/layout/FirstRunOnboarding.tsx:173
+#: src/components/layout/FirstRunOnboarding.tsx:174
 msgid "Welcome!"
 msgstr "Welcome!"
 
@@ -9468,7 +9808,7 @@ msgstr "Window"
 msgid "Window context menu"
 msgstr "Window context menu"
 
-#: src/components/layout/TopBar.tsx:1086
+#: src/components/layout/TopBar.tsx:1088
 msgid "Window controls"
 msgstr "Window controls"
 
@@ -9536,7 +9876,7 @@ msgstr "yes"
 msgid "Yes, restore"
 msgstr "Yes, restore"
 
-#: src/components/layout/TopBar.tsx:1185
+#: src/components/layout/TopBar.tsx:1187
 msgid "You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings."
 msgstr "You can continue to adjust profiles, but you’ll be prompted to re-slice before printing with the updated settings."
 
@@ -9574,7 +9914,7 @@ msgstr "You’re about to close DragonFruit with unsaved scene changes."
 msgid "You’re about to start a new scene with unsaved edits in this one."
 msgstr "You’re about to start a new scene with unsaved edits in this one."
 
-#: src/components/layout/FirstRunOnboarding.tsx:314
+#: src/components/layout/FirstRunOnboarding.tsx:315
 msgid "You're all set!"
 msgstr "You're all set!"
 
@@ -9586,11 +9926,19 @@ msgstr "You’re on the latest version"
 msgid "Your fleet for this profile."
 msgstr "Your fleet for this profile."
 
+#: src/components/modals/PrintingResliceModal.tsx:51
+msgid "Your model has been modified (geometry, position, rotation, scale, or supports changed). The current slice is no longer valid."
+msgstr "Your model has been modified (geometry, position, rotation, scale, or supports changed). The current slice is no longer valid."
+
 #: src/components/layout/EmptySceneState.tsx:77
 msgid "Your models called. They want to be sliced."
 msgstr "Your models called. They want to be sliced."
 
-#: src/components/layout/FirstRunOnboarding.tsx:317
+#: src/components/settings/SponsorsCarousel.tsx:530
+msgid "Your name spins here when you back us."
+msgstr "Your name spins here when you back us."
+
+#: src/components/layout/FirstRunOnboarding.tsx:318
 msgid "Your printer is ready. Drag a model in to start preparing your first print."
 msgstr "Your printer is ready. Drag a model in to start preparing your first print."
 

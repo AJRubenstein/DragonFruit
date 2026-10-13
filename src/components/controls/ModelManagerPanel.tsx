@@ -166,7 +166,7 @@ function buildModelGroups(models: readonly LoadedModel[]): GroupedEntry[] {
     });
 }
 
-const splitModelNameSuffix = (name: string): { base: string; suffix: string } => {
+const splitModelNameSuffix = (name: string, fallbackBase: string): { base: string; suffix: string } => {
   const trimmed = name.trim();
   const match = trimmed.match(/^(.*?)(\.[^.\s]+)$/);
   if (!match) {
@@ -175,7 +175,7 @@ const splitModelNameSuffix = (name: string): { base: string; suffix: string } =>
 
   const base = match[1].trim();
   return {
-    base: base.length > 0 ? base : 'Model',
+    base: base.length > 0 ? base : fallbackBase,
     suffix: match[2],
   };
 };
@@ -407,7 +407,7 @@ export function ModelManagerPanel({
   };
 
   const beginRenameModel = (modelId: string, currentName: string) => {
-    const { base, suffix } = splitModelNameSuffix(currentName);
+    const { base, suffix } = splitModelNameSuffix(currentName, _(msg({ message: 'Model', context: 'Default model name', comment: 'Prefilled name when renaming a model whose file name is only an extension, e.g. ".stl".' })));
     setRenamingGroupId(null);
     setRenamingGroupName('');
     setRenamingModelId(modelId);

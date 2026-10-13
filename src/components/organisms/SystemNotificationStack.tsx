@@ -2,6 +2,7 @@
 
 import React, { useSyncExternalStore } from 'react';
 import { AlertTriangle, CheckCircle2, CloudDownload } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 import { Button } from '@/components/atoms';
 import {
   getSystemNotificationsSnapshot,
@@ -281,7 +282,7 @@ export function SystemNotificationStack() {
                       size="auto"
                       className="flex-1 !h-9 px-4 text-sm"
                     >
-                      Dismiss
+                      <Trans>Dismiss</Trans>
                     </Button>
                   )}
                 </div>

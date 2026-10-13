@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { wheelStepDirection } from '@/components/ui/wheelStepDirection';
 import { clamp } from '@/utils/math';
 
@@ -35,6 +37,7 @@ function countStepDecimals(step: number): number {
 }
 
 export function NumberInput({ value, onChange, className, onBlur, showStepper = true, ...props }: NumberInputProps) {
+  const { _ } = useLingui();
   const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
   const formatValue = React.useCallback((n: number) => Number(n.toFixed(2)).toString(), []);
   const minBound = parseNumericBound(props.min);
@@ -164,7 +167,7 @@ export function NumberInput({ value, onChange, className, onBlur, showStepper = 
             onClick={() => applyStepDelta(1)}
             disabled={Boolean(disableIncrement)}
             tabIndex={-1}
-            aria-label="Increase value"
+            aria-label={_(msg`Increase value`)}
           >
             <ChevronUp className="h-2.5 w-2.5" />
           </button>
@@ -174,7 +177,7 @@ export function NumberInput({ value, onChange, className, onBlur, showStepper = 
             onClick={() => applyStepDelta(-1)}
             disabled={Boolean(disableDecrement)}
             tabIndex={-1}
-            aria-label="Decrease value"
+            aria-label={_(msg`Decrease value`)}
           >
             <ChevronDown className="h-2.5 w-2.5" />
           </button>
