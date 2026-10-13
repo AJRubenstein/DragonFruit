@@ -369,12 +369,14 @@
   rename.
 - Context: docs/dev/auto-supports.md § "Orphan validation after resize".
 
-### [cleanup] Unreachable files, in whole subtrees — L · medium risk
+### [cleanup] Unreachable files — M · medium risk
 - Where: `npx knip --no-progress --include files`. `knip.json` already declares
   the entry points knip cannot see, so what it lists is a candidate, not noise.
-- What: chiefly whole subtrees such as `src/components/models/`, plus strays
-  such as `BackupsSettingsTab.tsx` (replaced by `LocalBackupsSettingsTab`).
-- Why: directories that read as live architecture and compile to nothing.
+- What: strays, no longer whole subtrees — components and hooks nothing mounts
+  (`BackupsSettingsTab.tsx`, replaced by `LocalBackupsSettingsTab`), barrel
+  `index.ts` files nobody imports, fixtures no test loads, undocumented scripts.
+- Why: dead code still draws upkeep — sweeps translated and restyled a stale
+  copy of RaftSettingsCard before anyone noticed nothing mounted it.
 - Careful: knip lists files, not directories — count what is still live in a
   directory before calling it dead. A manual script that shows up gets
   documented and added to `entry`, or deleted — never widen `entry` to `scripts/**`.
