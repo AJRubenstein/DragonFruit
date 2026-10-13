@@ -57,10 +57,22 @@ measured reason, and the sequence deduplicate, fill, split, union does not close
 makes step four impossible by construction.
 
 One thing not yet tried: the **union runs before the split** in the pipeline order, deliberately, and
-that order was chosen on other files. Running it on the split's output is the dead end above, but
-nothing has measured whether the *union's* own fragmentation is a property of the classifier's 356
-solids rather than of the input. If the fragmentation is the solids, that is a separate defect worth
-its own investigation.
+that order was chosen on other files. Running it on the split's output is the dead end above.
+
+## Measured since: the union itself is the problem
+
+The fragmentation is not ours. Taking this file's components and feeding each to
+`Manifold::from_mesh_f32` directly:
+
+- **391 components, 348 accepted, 43 refused outright.**
+- Unioning the 348 accepted: **306,624 triangles out of 187k, and 1,892 components.**
+
+A union of disjoint solids should return roughly what went in, and 1,892 is five times the 348. So
+Manifold takes these solids, accepts them, and shatters them. The pipeline's own union note (parts
+302 to 1,986, triangles +33%) is that number relayed, not a fault in our acceptance test.
+
+That means the boolean path is unusable on this file's solids, and every refusal downstream is
+correct. Repairing it needs a boolean that survives tangled input, or a re-export.
 
 ## Related
 
