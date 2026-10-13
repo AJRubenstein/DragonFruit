@@ -195,6 +195,11 @@ msgstr ""
 msgid "{plateName} is locked."
 msgstr ""
 
+#: src/supports/Settings/autoSupportPresetMessages.ts:41
+msgctxt "Name of a duplicated auto-support preset"
+msgid "{presetName} copy"
+msgstr ""
+
 #: src/components/organisms/modals/PrintingModals.tsx:225
 msgid "{printer} is offline"
 msgstr ""
@@ -421,7 +426,7 @@ msgstr ""
 msgid "3MF Mesh (.3mf)"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:637
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:639
 msgid "A built-in preset cannot be saved over — Duplicate it to make it yours"
 msgstr ""
 
@@ -918,7 +923,7 @@ msgstr ""
 msgid "Auto-support preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:431
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:433
 msgid "Auto-support preset file"
 msgstr ""
 
@@ -1278,7 +1283,7 @@ msgstr ""
 msgid "Built-in"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:606
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:608
 msgid "Built-in presets cannot be deleted"
 msgstr ""
 
@@ -1313,8 +1318,8 @@ msgid "Can't open this scene"
 msgstr ""
 
 #: src/app/page.tsx:11912
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:470
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:666
 #: src/components/controls/AutoSupportPanel.tsx:652
 #: src/components/controls/IslandScanCard.tsx:184
 #: src/components/controls/IslandsPanel.tsx:304
@@ -2083,7 +2088,7 @@ msgstr ""
 msgid "Copy the Client ID and Client Secret into your local <0>.env</0>."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:388
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:390
 msgid "Copy the selected preset under a new name"
 msgstr ""
 
@@ -2138,7 +2143,7 @@ msgstr ""
 msgid "Crash Recovery"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:481
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:483
 #: src/features/slicing/components/LutCurveEditor.tsx:1509
 msgid "Create"
 msgstr ""
@@ -2167,11 +2172,11 @@ msgstr ""
 msgid "Create new LUT curve profile"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:451
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:453
 msgid "Create preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:477
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:479
 msgid "Create the preset and select it"
 msgstr ""
 
@@ -2385,8 +2390,8 @@ msgctxt "Mesh analysis row"
 msgid "Degenerate tris"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:610
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:612
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:681
 #: src/components/settings/LocalBackupsSettingsTab.tsx:999
 #: src/components/ui/EditorContextMenu.tsx:105
 #: src/features/slicing/components/LutCurveEditor.tsx:1746
@@ -2441,7 +2446,7 @@ msgstr ""
 msgid "Delete plate #{plateId}"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:650
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
 #: src/supports/Settings/components/PresetSelector.tsx:857
 msgid "Delete preset"
 msgstr ""
@@ -2459,11 +2464,11 @@ msgstr ""
 msgid "Delete snapshot"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:677
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
 msgid "Delete the preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:607
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:609
 msgid "Delete the selected preset"
 msgstr ""
 
@@ -2587,7 +2592,7 @@ msgstr ""
 msgid "Discard every loop in this cut, not just the active one."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:623
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:625
 msgid "Discard the edits made in this dialog and reload the selected preset"
 msgstr ""
 
@@ -2747,7 +2752,7 @@ msgstr ""
 msgid "Drop supported files to import"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:391
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:393
 #: src/components/controls/toolRailEntries.ts:59
 msgid "Duplicate"
 msgstr ""
@@ -3002,7 +3007,7 @@ msgstr ""
 msgid "Expert"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:407
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:409
 #: src/components/layout/TopBar.tsx:606
 #: src/features/export/components/ExportPanel.tsx:532
 #: src/features/export/components/ExportPanel.tsx:554
@@ -3047,7 +3052,7 @@ msgstr ""
 msgid "Export selected curve"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:404
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:406
 msgid "Export the selected preset as a JSON file"
 msgstr ""
 
@@ -3704,12 +3709,12 @@ msgstr ""
 msgid "If you want them, a few follow-up notes are tucked below."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:423
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:425
 #: src/features/slicing/components/LutCurveEditor.tsx:1335
 msgid "Import"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:420
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:422
 msgid "Import a preset from a JSON file, and apply it"
 msgstr ""
 
@@ -4029,7 +4034,7 @@ msgstr ""
 msgid "Keep the existing supports and place the new ones around them"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:662
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 msgid "Keep the preset"
 msgstr ""
 
@@ -4158,7 +4163,7 @@ msgstr ""
 msgid "Least Scarring"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:466
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 msgid "Leave the collection as it is"
 msgstr ""
 
@@ -4891,7 +4896,7 @@ msgid "New LUT Curve"
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:95
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:452
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:454
 #: src/supports/Settings/components/PresetSelector.tsx:597
 #: src/supports/Settings/components/PresetSelector.tsx:803
 msgid "New Preset"
@@ -5833,8 +5838,8 @@ msgstr ""
 msgid "Preset has unsaved changes"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:491
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:505
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:493
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:507
 msgid "Preset name"
 msgstr ""
 
@@ -6352,16 +6357,16 @@ msgstr ""
 msgid "Rename plate"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:451
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:453
 msgid "Rename preset"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:452
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:454
 msgid "Rename Preset"
 msgstr ""
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:375
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:478
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:480
 msgid "Rename the selected preset"
 msgstr ""
 
@@ -6487,7 +6492,7 @@ msgstr ""
 msgid "Required for self-compiled builds that do not ship with backup OAuth env values."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:626
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:628
 #: src/features/hole-punching/HolePunchPanel.tsx:242
 #: src/features/hollowing/HollowingPanel.tsx:332
 #: src/features/organicCut/OrganicCutPanel.tsx:759
@@ -6746,7 +6751,7 @@ msgstr ""
 msgid "Samples"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:643
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:645
 #: src/features/slicing/components/LutCurveEditor.tsx:1475
 #: src/supports/Settings/components/PresetSelector.tsx:844
 msgid "Save"
@@ -6784,7 +6789,7 @@ msgstr ""
 msgid "Save Material"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:481
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:483
 #: src/features/slicing/components/LutCurveEditor.tsx:1653
 msgid "Save Name"
 msgstr ""
@@ -6818,7 +6823,7 @@ msgstr ""
 msgid "Save webcam snapshot"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:635
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:637
 #: src/supports/Settings/SupportSidebar.tsx:1204
 msgid "Saved"
 msgstr ""
@@ -6827,7 +6832,7 @@ msgstr ""
 msgid "Saved by an obsolete DragonFruit version"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:643
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:645
 msgid "Saved!"
 msgstr ""
 
@@ -7970,7 +7975,7 @@ msgstr ""
 msgid "The contour membrane and the flat cut plane."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:454
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:456
 msgid "The current settings are saved under this name, and it becomes the selected preset."
 msgstr ""
 
@@ -8027,7 +8032,7 @@ msgstr ""
 msgid "The point you clicked."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:685
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:687
 msgid "The preset is removed from the list. The current settings are left as they are."
 msgstr ""
 
@@ -8084,7 +8089,7 @@ msgstr ""
 msgid "The selected plate will begin printing immediately on this machine."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:455
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:457
 msgid "The selected preset is renamed; its settings are not touched."
 msgstr ""
 
@@ -8144,7 +8149,7 @@ msgstr ""
 msgid "This backup snapshot will be permanently removed from disk."
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:654
 msgid "This cannot be undone."
 msgstr ""
 
@@ -8957,11 +8962,11 @@ msgstr ""
 msgid "Workspace behavior and panel layout"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:640
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:642
 msgid "Write these settings to the auto-support settings"
 msgstr ""
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:639
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:641
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr ""
 

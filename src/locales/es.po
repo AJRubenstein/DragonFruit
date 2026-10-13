@@ -195,6 +195,11 @@ msgstr "{pixels} px en XY · {layers} capas en Z"
 msgid "{plateName} is locked."
 msgstr "{plateName} está bloqueada."
 
+#: src/supports/Settings/autoSupportPresetMessages.ts:41
+msgctxt "Name of a duplicated auto-support preset"
+msgid "{presetName} copy"
+msgstr "{presetName} (copia)"
+
 #: src/components/organisms/modals/PrintingModals.tsx:225
 msgid "{printer} is offline"
 msgstr "{printer} está desconectada"
@@ -421,7 +426,7 @@ msgstr "3MF"
 msgid "3MF Mesh (.3mf)"
 msgstr "Malla 3MF (.3mf)"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:637
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:639
 msgid "A built-in preset cannot be saved over — Duplicate it to make it yours"
 msgstr "Un preajuste integrado no se puede sobrescribir: duplícalo para tener tu propia copia"
 
@@ -918,7 +923,7 @@ msgstr "Reparando mallas…"
 msgid "Auto-support preset"
 msgstr "Preajuste de autosoportes"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:431
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:433
 msgid "Auto-support preset file"
 msgstr "Archivo de preajuste de autosoportes"
 
@@ -1278,7 +1283,7 @@ msgstr "Creada para otra impresora"
 msgid "Built-in"
 msgstr "Integrado"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:606
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:608
 msgid "Built-in presets cannot be deleted"
 msgstr "Los preajustes integrados no se pueden eliminar"
 
@@ -1313,8 +1318,8 @@ msgid "Can't open this scene"
 msgstr "No se puede abrir esta escena"
 
 #: src/app/page.tsx:11912
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:470
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:666
 #: src/components/controls/AutoSupportPanel.tsx:652
 #: src/components/controls/IslandScanCard.tsx:184
 #: src/components/controls/IslandsPanel.tsx:304
@@ -2083,7 +2088,7 @@ msgstr "Copiar la plantilla"
 msgid "Copy the Client ID and Client Secret into your local <0>.env</0>."
 msgstr "Copia el Client ID y el Client Secret en tu <0>.env</0> local."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:388
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:390
 msgid "Copy the selected preset under a new name"
 msgstr "Copia el preajuste seleccionado con otro nombre"
 
@@ -2138,7 +2143,7 @@ msgstr "Cobertura objetivo"
 msgid "Crash Recovery"
 msgstr "Recuperación tras un fallo"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:481
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:483
 #: src/features/slicing/components/LutCurveEditor.tsx:1509
 msgid "Create"
 msgstr "Crear"
@@ -2167,11 +2172,11 @@ msgstr "Crear una curva nueva"
 msgid "Create new LUT curve profile"
 msgstr "Crear un perfil de curva LUT nuevo"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:451
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:453
 msgid "Create preset"
 msgstr "Crear preajuste"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:477
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:479
 msgid "Create the preset and select it"
 msgstr "Crea el preajuste y lo selecciona"
 
@@ -2385,8 +2390,8 @@ msgctxt "Mesh analysis row"
 msgid "Degenerate tris"
 msgstr "Triángulos degenerados"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:610
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:612
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:681
 #: src/components/settings/LocalBackupsSettingsTab.tsx:999
 #: src/components/ui/EditorContextMenu.tsx:105
 #: src/features/slicing/components/LutCurveEditor.tsx:1746
@@ -2441,7 +2446,7 @@ msgstr "Eliminar plata"
 msgid "Delete plate #{plateId}"
 msgstr "Eliminar la placa n.º {plateId}"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:650
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
 #: src/supports/Settings/components/PresetSelector.tsx:857
 msgid "Delete preset"
 msgstr "Eliminar el preajuste"
@@ -2459,11 +2464,11 @@ msgstr "Eliminar el archivo de impresión reciente"
 msgid "Delete snapshot"
 msgstr "Eliminar la instantánea"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:677
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:679
 msgid "Delete the preset"
 msgstr "Eliminar el preajuste"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:607
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:609
 msgid "Delete the selected preset"
 msgstr "Elimina el preajuste seleccionado"
 
@@ -2587,7 +2592,7 @@ msgstr "¿Descartar los cambios?"
 msgid "Discard every loop in this cut, not just the active one."
 msgstr "Descarta todos los bucles de este corte, no solo el activo."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:623
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:625
 msgid "Discard the edits made in this dialog and reload the selected preset"
 msgstr "Descarta los cambios hechos en esta ventana y recarga el preajuste seleccionado"
 
@@ -2747,7 +2752,7 @@ msgstr "Suelta archivos compatibles"
 msgid "Drop supported files to import"
 msgstr "Suelta aquí los ficheros compatibles para importarlos"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:391
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:393
 #: src/components/controls/toolRailEntries.ts:59
 msgid "Duplicate"
 msgstr "Duplicar"
@@ -3002,7 +3007,7 @@ msgstr "Aviso legal de los experimentos"
 msgid "Expert"
 msgstr "Experto"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:407
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:409
 #: src/components/layout/TopBar.tsx:606
 #: src/features/export/components/ExportPanel.tsx:532
 #: src/features/export/components/ExportPanel.tsx:554
@@ -3047,7 +3052,7 @@ msgstr "Alcance de la exportación"
 msgid "Export selected curve"
 msgstr "Exportar la curva seleccionada"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:404
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:406
 msgid "Export the selected preset as a JSON file"
 msgstr "Exporta el preajuste seleccionado como archivo JSON"
 
@@ -3704,12 +3709,12 @@ msgstr "Si sales ahora, perderás los cambios sin guardar de la curva LUT."
 msgid "If you want them, a few follow-up notes are tucked below."
 msgstr "Si te interesan, debajo tienes algunas notas adicionales."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:423
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:425
 #: src/features/slicing/components/LutCurveEditor.tsx:1335
 msgid "Import"
 msgstr "Importar"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:420
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:422
 msgid "Import a preset from a JSON file, and apply it"
 msgstr "Importa un preajuste desde un archivo JSON y lo aplica"
 
@@ -4029,7 +4034,7 @@ msgstr "Conserva los soportes existentes y no hace nada"
 msgid "Keep the existing supports and place the new ones around them"
 msgstr "Conserva los soportes existentes y coloca los nuevos alrededor"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:662
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 msgid "Keep the preset"
 msgstr "Conservar el preajuste"
 
@@ -4159,7 +4164,7 @@ msgstr "Diámetro mínimo de una rama u hoja como fracción del tronco del que s
 msgid "Least Scarring"
 msgstr "Menos marcas"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:466
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 msgid "Leave the collection as it is"
 msgstr "Deja la colección como está"
 
@@ -4892,7 +4897,7 @@ msgid "New LUT Curve"
 msgstr "Curva LUT nueva"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:95
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:452
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:454
 #: src/supports/Settings/components/PresetSelector.tsx:597
 #: src/supports/Settings/components/PresetSelector.tsx:803
 msgid "New Preset"
@@ -5834,8 +5839,8 @@ msgstr "Menú contextual de preajustes"
 msgid "Preset has unsaved changes"
 msgstr "El preajuste tiene cambios sin guardar"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:491
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:505
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:493
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:507
 msgid "Preset name"
 msgstr "Nombre del preajuste"
 
@@ -6353,16 +6358,16 @@ msgstr "Renombrar el nombre base del modelo"
 msgid "Rename plate"
 msgstr "Renombrar plata"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:451
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:453
 msgid "Rename preset"
 msgstr "Renombrar preajuste"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:452
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:454
 msgid "Rename Preset"
 msgstr "Renombrar preajuste"
 
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:375
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:478
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:480
 msgid "Rename the selected preset"
 msgstr "Renombra el preajuste seleccionado"
 
@@ -6488,7 +6493,7 @@ msgstr "El repositorio <0>{selectedBackupRepoName}</0> está listo. Haz tu prime
 msgid "Required for self-compiled builds that do not ship with backup OAuth env values."
 msgstr "Necesario en compilaciones propias que no traen las variables de OAuth para las copias."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:626
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:628
 #: src/features/hole-punching/HolePunchPanel.tsx:242
 #: src/features/hollowing/HollowingPanel.tsx:332
 #: src/features/organicCut/OrganicCutPanel.tsx:759
@@ -6747,7 +6752,7 @@ msgstr "Usa los colores por vértice cuando el modelo los tenga."
 msgid "Samples"
 msgstr "Muestras"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:643
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:645
 #: src/features/slicing/components/LutCurveEditor.tsx:1475
 #: src/supports/Settings/components/PresetSelector.tsx:844
 msgid "Save"
@@ -6785,7 +6790,7 @@ msgstr "Guardar la escena cargada"
 msgid "Save Material"
 msgstr "Guardar el material"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:481
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:483
 #: src/features/slicing/components/LutCurveEditor.tsx:1653
 msgid "Save Name"
 msgstr "Guardar nombre"
@@ -6819,7 +6824,7 @@ msgstr "Guarda instantáneas en tu carpeta local de copias y revisa o restaura c
 msgid "Save webcam snapshot"
 msgstr "Guardar una captura de la cámara web"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:635
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:637
 #: src/supports/Settings/SupportSidebar.tsx:1204
 msgid "Saved"
 msgstr "Guardado"
@@ -6828,7 +6833,7 @@ msgstr "Guardado"
 msgid "Saved by an obsolete DragonFruit version"
 msgstr "Guardado con una versión obsoleta de DragonFruit"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:643
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:645
 msgid "Saved!"
 msgstr "¡Guardado!"
 
@@ -7971,7 +7976,7 @@ msgstr "El volumen de impresión te echa de menos."
 msgid "The contour membrane and the flat cut plane."
 msgstr "La membrana de contorno y el plano de corte llano."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:454
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:456
 msgid "The current settings are saved under this name, and it becomes the selected preset."
 msgstr "Los ajustes actuales se guardan con este nombre y pasa a ser el preajuste seleccionado."
 
@@ -8028,7 +8033,7 @@ msgstr "El punto donde empieza el bucle."
 msgid "The point you clicked."
 msgstr "El punto en el que has hecho clic."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:685
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:687
 msgid "The preset is removed from the list. The current settings are left as they are."
 msgstr "El preajuste desaparece de la lista. Los ajustes actuales se quedan como están."
 
@@ -8085,7 +8090,7 @@ msgstr "La máquina elegida no admite antialiasing por ahora."
 msgid "The selected plate will begin printing immediately on this machine."
 msgstr "La placa seleccionada empezará a imprimirse de inmediato en esta máquina."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:455
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:457
 msgid "The selected preset is renamed; its settings are not touched."
 msgstr "Se renombra el preajuste seleccionado; sus ajustes no se tocan."
 
@@ -8145,7 +8150,7 @@ msgstr "Esta acción no se puede deshacer. El preajuste de curva LUT seleccionad
 msgid "This backup snapshot will be permanently removed from disk."
 msgstr "Esta instantánea se borrará del disco para siempre."
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:652
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:654
 msgid "This cannot be undone."
 msgstr "No se puede deshacer."
 
@@ -8958,11 +8963,11 @@ msgstr "Espacio de trabajo"
 msgid "Workspace behavior and panel layout"
 msgstr "Comportamiento del espacio de trabajo y disposición de los paneles"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:640
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:642
 msgid "Write these settings to the auto-support settings"
 msgstr "Escribe estos ajustes en los ajustes de autosoportes"
 
-#: src/components/controls/autoSupport/AutoSupportPresets.tsx:639
+#: src/components/controls/autoSupport/AutoSupportPresets.tsx:641
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr "Escribe estos ajustes y sobrescribe con ellos el preajuste seleccionado"
 
