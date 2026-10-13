@@ -7,6 +7,7 @@
             "src/components/controls/ArrangePanel.tsx",
             "src/components/controls/AutoRotationPanel.tsx",
             "src/components/controls/IslandsPanel.tsx",
+            "src/components/controls/TransformControls.tsx",
             "src/components/controls/autoSupport",
             "src/components/debug",
             "src/components/gizmo/move",

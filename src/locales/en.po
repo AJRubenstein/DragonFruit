@@ -796,7 +796,7 @@ msgstr "Ambient Occlusion"
 msgid "Analysis"
 msgstr "Analysis"
 
-#: src/app/page.tsx:11863
+#: src/app/page.tsx:11862
 msgid "Analyzing Model Islands & Minima"
 msgstr "Analyzing Model Islands & Minima"
 
@@ -846,7 +846,7 @@ msgctxt "Undo history entry"
 msgid "Apply orientation suggestion"
 msgstr "Apply orientation suggestion"
 
-#: src/app/page.tsx:8497
+#: src/app/page.tsx:8496
 msgid "Apply the holes to every visible model, or open the Hollow tool to review and apply them per model."
 msgstr "Apply the holes to every visible model, or open the Hollow tool to review and apply them per model."
 
@@ -854,7 +854,7 @@ msgstr "Apply the holes to every visible model, or open the Hollow tool to revie
 msgid "Apply this preset to the auto-support settings"
 msgstr "Apply this preset to the auto-support settings"
 
-#: src/app/page.tsx:8508
+#: src/app/page.tsx:8507
 msgid "Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually."
 msgstr "Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually."
 
@@ -898,7 +898,7 @@ msgstr "Applying..."
 msgid "Applying…"
 msgstr "Applying…"
 
-#: src/app/page.tsx:11958
+#: src/app/page.tsx:11957
 msgid "Are you sure you want to remove every model from the plate?"
 msgstr "Are you sure you want to remove every model from the plate?"
 
@@ -989,6 +989,11 @@ msgstr "Authorize DragonFruit so backups can be saved into your private reposito
 #: src/components/settings/PerformanceSettingsTab.tsx:220
 #: src/features/hole-punching/HolePunchPanel.tsx:125
 #: src/features/slicing/components/SlicingPanel.tsx:2535
+msgid "Auto"
+msgstr "Auto"
+
+#: src/components/controls/TransformControls.tsx:303
+msgctxt "Auto-lift toggle"
 msgid "Auto"
 msgstr "Auto"
 
@@ -1507,7 +1512,7 @@ msgstr "Camera view mode: {currentLabel}"
 msgid "Can't open this scene"
 msgstr "Can't open this scene"
 
-#: src/app/page.tsx:11919
+#: src/app/page.tsx:11918
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:470
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:666
 #: src/components/controls/AutoSupportPanel.tsx:652
@@ -1624,6 +1629,10 @@ msgstr "Center"
 msgctxt "Placement anchor"
 msgid "Center"
 msgstr "Center"
+
+#: src/components/controls/TransformControls.tsx:274
+msgid "Center Selection"
+msgstr "Center Selection"
 
 #: src/supports/Settings/components/RaftSettingsCard.tsx:150
 msgid "Chamfer Angle"
@@ -1772,12 +1781,12 @@ msgstr "Clear All failed. Check console for details."
 
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
-#: src/app/page.tsx:11211
+#: src/app/page.tsx:11210
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1776
 msgid "Clear build plate"
 msgstr "Clear build plate"
 
-#: src/app/page.tsx:11908
+#: src/app/page.tsx:11907
 msgid "Clear Build Plate?"
 msgstr "Clear Build Plate?"
 
@@ -1795,7 +1804,7 @@ msgstr "Clear hollowing"
 msgid "Clear Override"
 msgstr "Clear Override"
 
-#: src/app/page.tsx:11949
+#: src/app/page.tsx:11948
 msgid "Clear Plate"
 msgstr "Clear Plate"
 
@@ -1862,7 +1871,7 @@ msgstr "Client ID"
 msgid "Close"
 msgstr "Close"
 
-#: src/app/page.tsx:11914
+#: src/app/page.tsx:11913
 msgid "Close clear-plate confirmation"
 msgstr "Close clear-plate confirmation"
 
@@ -2130,7 +2139,7 @@ msgstr "Confirm Cancel"
 msgid "Confirm cancel print"
 msgstr "Confirm cancel print"
 
-#: src/app/page.tsx:11907
+#: src/app/page.tsx:11906
 msgid "Confirm clearing the build plate"
 msgstr "Confirm clearing the build plate"
 
@@ -2150,7 +2159,7 @@ msgstr "Confirm delete recent file"
 msgid "Confirm delete snapshot"
 msgstr "Confirm delete snapshot"
 
-#: src/app/page.tsx:11906
+#: src/app/page.tsx:11905
 msgid "Confirm deleting the plate"
 msgstr "Confirm deleting the plate"
 
@@ -2278,7 +2287,7 @@ msgstr "Contoured regions"
 msgid "Contrast"
 msgstr "Contrast"
 
-#: src/app/page.tsx:8788
+#: src/app/page.tsx:8787
 msgid "Converting support data and model metadata"
 msgstr "Converting support data and model metadata"
 
@@ -2675,7 +2684,7 @@ msgctxt "Undo history entry"
 msgid "Delete models and plates"
 msgstr "Delete models and plates"
 
-#: src/app/page.tsx:11949
+#: src/app/page.tsx:11948
 #: src/components/controls/ModelManagerPanel.tsx:479
 #: src/components/controls/ModelManagerPanel.tsx:766
 #: src/components/controls/ModelManagerPanel.tsx:787
@@ -2739,11 +2748,11 @@ msgid "Delete this model's existing supports and place the new ones"
 msgstr "Delete this model's existing supports and place the new ones"
 
 #. Tooltip on the bin beside the build plate when the plate can go: it removes the bed and the models standing on it. Undo brings them back.
-#: src/app/page.tsx:11210
+#: src/app/page.tsx:11209
 msgid "Delete this plate"
 msgstr "Delete this plate"
 
-#: src/app/page.tsx:11908
+#: src/app/page.tsx:11907
 #: src/components/controls/ModelManagerPanel.tsx:767
 msgid "Delete this plate?"
 msgstr "Delete this plate?"
@@ -2868,7 +2877,7 @@ msgstr "Disconnected GitHub account."
 msgid "Discovered Printers"
 msgstr "Discovered Printers"
 
-#: src/app/page.tsx:12006
+#: src/app/page.tsx:12005
 #: src/components/modals/ManifoldWarningModal.tsx:38
 #: src/components/scene/MeshRepairReportModal.tsx:259
 #: src/features/updater/GlobalUpdateIndicator.tsx:234
@@ -2999,11 +3008,16 @@ msgstr "DragonFruit stores backups in your own private GitHub repository. We int
 msgid "DragonFruit will <0>download, verify and install</0> the update, then restart automatically."
 msgstr "DragonFruit will <0>download, verify and install</0> the update, then restart automatically."
 
+#: src/components/controls/TransformControls.tsx:352
+msgctxt "Drop button"
+msgid "Drop"
+msgstr "Drop"
+
 #: src/components/layout/EmptySceneState.tsx:730
 msgid "Drop supported files"
 msgstr "Drop supported files"
 
-#: src/app/page.tsx:11156
+#: src/app/page.tsx:11155
 msgid "Drop supported files to import"
 msgstr "Drop supported files to import"
 
@@ -3346,7 +3360,7 @@ msgstr "Export selected curve"
 msgid "Export the selected preset as a JSON file"
 msgstr "Export the selected preset as a JSON file"
 
-#: src/app/page.tsx:11896
+#: src/app/page.tsx:11895
 #: src/features/export/components/ExportPanel.tsx:761
 msgid "Exporting…"
 msgstr "Exporting…"
@@ -3663,7 +3677,7 @@ msgstr "Generate Supports"
 msgid "Generate supports automatically on scan"
 msgstr "Generate supports automatically on scan"
 
-#: src/app/page.tsx:11875
+#: src/app/page.tsx:11874
 msgid "Generating Supports"
 msgstr "Generating Supports"
 
@@ -3692,7 +3706,7 @@ msgstr "Give this build plate a name"
 msgid "Go back to the settings dialog"
 msgstr "Go back to the settings dialog"
 
-#: src/app/page.tsx:11998
+#: src/app/page.tsx:11997
 msgid "Go to Settings → 3D Mouse to configure or block it."
 msgstr "Go to Settings → 3D Mouse to configure or block it."
 
@@ -3730,6 +3744,11 @@ msgstr "Grid spacing on slopes at the self-support angle — higher = sparser"
 #: src/components/controls/autoSupport/autoSupportPanelTabs.ts:153
 msgid "Grid Threshold"
 msgstr "Grid Threshold"
+
+#: src/components/controls/TransformControls.tsx:370
+msgctxt "Group rotation toggle"
+msgid "Group"
+msgstr "Group"
 
 #: src/features/scene/sceneHistoryLabels.ts:218
 msgctxt "Undo history entry"
@@ -4458,11 +4477,11 @@ msgstr "Layers:"
 msgid "Layout Mode"
 msgstr "Layout Mode"
 
-#: src/app/page.tsx:12016
+#: src/app/page.tsx:12015
 msgid "Leaf Fanning Active: Click model to sprout leaf"
 msgstr "Leaf Fanning Active: Click model to sprout leaf"
 
-#: src/app/page.tsx:12017
+#: src/app/page.tsx:12016
 msgid "Leaf Fanning: Click a support shaft to lock anchor knot"
 msgstr "Leaf Fanning: Click a support shaft to lock anchor knot"
 
@@ -4488,13 +4507,23 @@ msgstr "Left"
 msgid "Length"
 msgstr "Length"
 
-#: src/app/page.tsx:8828
+#: src/app/page.tsx:8827
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr "Letting DragonFruit finish its startup animation before loading your scene."
 
 #: src/components/controls/IslandVoxelControls.tsx:93
 msgid "Lifecycle (Merge Status)"
 msgstr "Lifecycle (Merge Status)"
+
+#: src/components/controls/TransformControls.tsx:335
+msgctxt "Lift button"
+msgid "Lift"
+msgstr "Lift"
+
+#: src/components/controls/TransformControls.tsx:284
+msgctxt "Transform panel section"
+msgid "Lift"
+msgstr "Lift"
 
 #: src/components/layout/FirstRunOnboarding.tsx:258
 msgid "Light"
@@ -4599,7 +4628,7 @@ msgstr "Loading materials from selected printer…"
 msgid "Loading Mesh Files…"
 msgstr "Loading Mesh Files…"
 
-#: src/app/page.tsx:8778
+#: src/app/page.tsx:8777
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr "Loading Mesh…"
@@ -4613,8 +4642,8 @@ msgid "Loading remote material…"
 msgstr "Loading remote material…"
 
 #: src/app/page.tsx:4956
-#: src/app/page.tsx:8778
-#: src/app/page.tsx:8787
+#: src/app/page.tsx:8777
+#: src/app/page.tsx:8786
 msgid "Loading Scene…"
 msgstr "Loading Scene…"
 
@@ -4636,6 +4665,11 @@ msgstr "Loading thumbnail…"
 #: src/components/layout/EmptySceneState.tsx:694
 msgid "loading…"
 msgstr "loading…"
+
+#: src/components/controls/TransformControls.tsx:152
+msgctxt "Gizmo space toggle"
+msgid "Local"
+msgstr "Local"
 
 #: src/components/organisms/modals/PrintingModals.tsx:1713
 msgctxt "Printer storage"
@@ -5139,6 +5173,11 @@ msgstr "Mortise (near faces)"
 msgid "Mortise edges"
 msgstr "Mortise edges"
 
+#: src/components/controls/TransformControls.tsx:219
+msgctxt "Transform panel section"
+msgid "Move"
+msgstr "Move"
+
 #: src/features/scene/sceneHistoryLabels.ts:53
 msgctxt "Undo history entry"
 msgid "Move {modelName}"
@@ -5147,6 +5186,10 @@ msgstr "Move {modelName}"
 #: src/components/controls/toolRailEntries.ts:49
 msgid "Move and place models on the plate"
 msgstr "Move and place models on the plate"
+
+#: src/components/controls/TransformControls.tsx:148
+msgid "Move and rotate along the model's own axes instead of the build plate's"
+msgstr "Move and rotate along the model's own axes instead of the build plate's"
 
 #: src/features/organicCut/history/organicCutHistoryLabels.ts:20
 msgctxt "Undo history entry"
@@ -5252,7 +5295,7 @@ msgstr "Never"
 msgid "New Curve"
 msgstr "New Curve"
 
-#: src/app/page.tsx:11997
+#: src/app/page.tsx:11996
 msgid "New input device detected."
 msgstr "New input device detected."
 
@@ -5681,6 +5724,10 @@ msgstr "ON (Required)"
 msgid "On-Face"
 msgstr "On-Face"
 
+#: src/components/controls/TransformControls.tsx:289
+msgid "On, models stay this far above the build plate after every move, rotation or scale. Off, they rest on the plate."
+msgstr "On, models stay this far above the build plate after every move, rotation or scale. Off, they rest on the plate."
+
 #: src/components/settings/BackupsSettingsTab.tsx:962
 msgid "Onboarding"
 msgstr "Onboarding"
@@ -5706,7 +5753,7 @@ msgstr "One file per model"
 msgid "One file per plate"
 msgstr "One file per plate"
 
-#: src/app/page.tsx:8507
+#: src/app/page.tsx:8506
 msgid "One or more models have hole punches that haven’t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output."
 msgstr "One or more models have hole punches that haven’t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output."
 
@@ -5809,7 +5856,7 @@ msgstr "Open printer profiles"
 msgid "Open scene…"
 msgstr "Open scene…"
 
-#: src/app/page.tsx:8498
+#: src/app/page.tsx:8497
 msgid "Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh."
 msgstr "Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh."
 
@@ -5817,7 +5864,7 @@ msgstr "Open the Hollow tool to apply the hollowing, or continue and supports wi
 msgid "Opening"
 msgstr "Opening"
 
-#: src/app/page.tsx:8825
+#: src/app/page.tsx:8824
 msgid "Opening scene…"
 msgstr "Opening scene…"
 
@@ -5838,7 +5885,7 @@ msgstr "Orient flat against plate"
 msgid "Orient Model"
 msgstr "Orient Model"
 
-#: src/app/page.tsx:11886
+#: src/app/page.tsx:11885
 msgid "Orienting Model"
 msgstr "Orienting Model"
 
@@ -6052,7 +6099,7 @@ msgstr "Placement Anchor"
 msgid "Placement message."
 msgstr "Placement message."
 
-#: src/app/page.tsx:11876
+#: src/app/page.tsx:11875
 msgid "Placing and bracing supports…"
 msgstr "Placing and bracing supports…"
 
@@ -6424,8 +6471,8 @@ msgid "Processing {count, plural, one {# model} other {# models}}"
 msgstr "Processing {count, plural, one {# model} other {# models}}"
 
 #: src/app/page.tsx:1840
-#: src/app/page.tsx:11866
-#: src/app/page.tsx:11878
+#: src/app/page.tsx:11865
+#: src/app/page.tsx:11877
 msgid "Processing 1 model"
 msgstr "Processing 1 model"
 
@@ -6998,7 +7045,8 @@ msgstr "Reset hollowing"
 msgid "Reset Layout"
 msgstr "Reset Layout"
 
-#: src/app/page.tsx:9502
+#: src/app/page.tsx:9501
+#: src/components/controls/TransformControls.tsx:440
 msgid "Reset Rotation"
 msgstr "Reset Rotation"
 
@@ -7006,7 +7054,8 @@ msgstr "Reset Rotation"
 msgid "Reset saved window layout"
 msgstr "Reset saved window layout"
 
-#: src/app/page.tsx:9502
+#: src/app/page.tsx:9501
+#: src/components/controls/TransformControls.tsx:590
 msgid "Reset Scale"
 msgstr "Reset Scale"
 
@@ -7172,6 +7221,11 @@ msgstr "Roots Diameter"
 msgid "Roots Enabled on Import"
 msgstr "Roots Enabled on Import"
 
+#: src/components/controls/TransformControls.tsx:374
+msgctxt "Transform panel section"
+msgid "Rotate"
+msgstr "Rotate"
+
 #: src/features/scene/sceneHistoryLabels.ts:57
 msgctxt "Undo history entry"
 msgid "Rotate {modelName}"
@@ -7181,6 +7235,10 @@ msgstr "Rotate {modelName}"
 msgctxt "Undo history entry"
 msgid "Rotate hole"
 msgstr "Rotate hole"
+
+#: src/components/controls/TransformControls.tsx:366
+msgid "Rotate the selection as one block around its centre; turn off to rotate each model in place"
+msgstr "Rotate the selection as one block around its centre; turn off to rotate each model in place"
 
 #: src/components/settings/MeshSettingsTab.tsx:377
 msgid "Roughness"
@@ -7331,6 +7389,11 @@ msgstr "Saved!"
 msgid "Saving…"
 msgstr "Saving…"
 
+#: src/components/controls/TransformControls.tsx:449
+msgctxt "Transform panel section"
+msgid "Scale"
+msgstr "Scale"
+
 #: src/features/scene/sceneHistoryLabels.ts:61
 msgctxt "Undo history entry"
 msgid "Scale {modelName}"
@@ -7387,7 +7450,7 @@ msgstr "Scan the model to detect unsupported islands"
 msgid "Scanning for Supports…"
 msgstr "Scanning for Supports…"
 
-#: src/app/page.tsx:11876
+#: src/app/page.tsx:11875
 msgid "Scanning islands & minima…"
 msgstr "Scanning islands & minima…"
 
@@ -7987,7 +8050,7 @@ msgstr "Sliced Layers"
 msgid "Slicing"
 msgstr "Slicing"
 
-#: src/app/page.tsx:11864
+#: src/app/page.tsx:11863
 msgid "Slicing and analysis in progress..."
 msgstr "Slicing and analysis in progress..."
 
@@ -8081,16 +8144,16 @@ msgstr "Solid"
 msgid "Solid Areas"
 msgstr "Solid Areas"
 
-#: src/app/page.tsx:8485
-#: src/app/page.tsx:8505
+#: src/app/page.tsx:8484
+#: src/app/page.tsx:8504
 msgid "Some models have unapplied hole punches"
 msgstr "Some models have unapplied hole punches"
 
-#: src/app/page.tsx:8484
+#: src/app/page.tsx:8483
 msgid "Some models have unapplied hole punches and hollowing"
 msgstr "Some models have unapplied hole punches and hollowing"
 
-#: src/app/page.tsx:8485
+#: src/app/page.tsx:8484
 msgid "Some models have unapplied hollowing"
 msgstr "Some models have unapplied hollowing"
 
@@ -8342,15 +8405,15 @@ msgstr "Supported: {extensions}"
 msgid "Supports"
 msgstr "Supports"
 
-#: src/app/page.tsx:8487
+#: src/app/page.tsx:8486
 msgid "Supports are generated against the mesh as it stands. Hole punches are only baked in later, so a support generated now can land inside a hole that does not exist yet."
 msgstr "Supports are generated against the mesh as it stands. Hole punches are only baked in later, so a support generated now can land inside a hole that does not exist yet."
 
-#: src/app/page.tsx:8490
+#: src/app/page.tsx:8489
 msgid "Supports are generated against the mesh as it stands. Holes and hollowing are only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet."
 msgstr "Supports are generated against the mesh as it stands. Holes and hollowing are only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet."
 
-#: src/app/page.tsx:8489
+#: src/app/page.tsx:8488
 msgid "Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet."
 msgstr "Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet."
 
@@ -8370,7 +8433,7 @@ msgstr "Suspiciously empty in here."
 msgid "Swap which cut half receives the tenon and which receives the mortise."
 msgstr "Swap which cut half receives the tenon and which receives the mortise."
 
-#: src/app/page.tsx:11887
+#: src/app/page.tsx:11886
 msgid "Sweeping orientations…"
 msgstr "Sweeping orientations…"
 
@@ -8540,7 +8603,7 @@ msgstr "The hole carved in the other half."
 msgid "The inputs and factors the last run sized the supports with"
 msgstr "The inputs and factors the last run sized the supports with"
 
-#: src/app/page.tsx:11957
+#: src/app/page.tsx:11956
 msgid "The models on this plate are deleted with it."
 msgstr "The models on this plate are deleted with it."
 
@@ -8881,6 +8944,7 @@ msgid "Transferred"
 msgstr "Transferred"
 
 #: src/components/controls/toolRailEntries.ts:50
+#: src/components/controls/TransformControls.tsx:206
 msgid "Transform"
 msgstr "Transform"
 
@@ -8919,11 +8983,11 @@ msgstr "Try again"
 msgid "UI & Theme"
 msgstr "UI & Theme"
 
-#: src/app/page.tsx:8492
+#: src/app/page.tsx:8491
 msgid "Unapplied Changes"
 msgstr "Unapplied Changes"
 
-#: src/app/page.tsx:8504
+#: src/app/page.tsx:8503
 msgid "Unapplied Holes"
 msgstr "Unapplied Holes"
 
@@ -8932,7 +8996,7 @@ msgstr "Unapplied Holes"
 msgid "Unavailable"
 msgstr "Unavailable"
 
-#: src/app/page.tsx:11911
+#: src/app/page.tsx:11910
 msgid "Undo brings the models back"
 msgstr "Undo brings the models back"
 
@@ -8952,6 +9016,11 @@ msgstr "Ungroup folder"
 #: src/components/controls/ModelManagerPanel.tsx:468
 msgid "Ungroup selected"
 msgstr "Ungroup selected"
+
+#: src/components/controls/TransformControls.tsx:467
+msgctxt "Uniform scaling toggle"
+msgid "Uniform"
+msgstr "Uniform"
 
 #: src/components/controls/IslandVoxelControls.tsx:92
 msgid "Unique Colors"
@@ -9000,7 +9069,7 @@ msgstr "Unlink X and Y"
 msgid "Unlock build plate"
 msgstr "Unlock build plate"
 
-#: src/app/page.tsx:11980
+#: src/app/page.tsx:11979
 msgid "Unlock it to add or move models."
 msgstr "Unlock it to add or move models."
 
@@ -9034,7 +9103,7 @@ msgstr "Unsaved Scene Changes"
 msgid "Unsaved Scene Found"
 msgstr "Unsaved Scene Found"
 
-#: src/app/page.tsx:11156
+#: src/app/page.tsx:11155
 msgid "Unsupported file format"
 msgstr "Unsupported file format"
 
@@ -9521,7 +9590,7 @@ msgstr "Write these settings to the auto-support settings"
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr "Write these settings, and overwrite the selected preset with them"
 
-#: src/app/page.tsx:11897
+#: src/app/page.tsx:11896
 msgid "Writing mesh geometry and support data to file…"
 msgstr "Writing mesh geometry and support data to file…"
 
