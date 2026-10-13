@@ -687,33 +687,11 @@ pub fn repair_with_progress(
     // leftover: corbu's six loops of 78 to 653 edges covering all 1,359 of its boundary edges were
     // every one refused by the derived cap of 48.
     let filled = crate::holes::holes_all(&mut mesh, options.residual_fill_max_edges);
-    // The last-resort cut, after every other pass has had its turn. The side-split cut inside
-    // `repair_orientation` above handles a mesh whose disagreements are spread over the surface; this
-    // is for the residue it cannot, and it refuses when there is more than a handful. It caps its own
-    // seam, so only the winding has to follow — and then a fill, for any boundary the cut did not own.
-    let mut cut = 0usize;
-    for _ in 0..8 {
-        let n = cut_unsatisfiable_edges(&mut mesh);
-        if n == 0 {
-            break;
-        }
-        cut += n;
-    }
-    let settled = if cut > 0 {
-        repair_orientation(&mut mesh)
-    } else {
-        0
-    };
-    let refilled = if cut > 0 {
-        crate::holes::holes_all(&mut mesh, options.residual_fill_max_edges)
-    } else {
-        0
-    };
     stage!(
         "settle",
-        welded + collapsed + noise + filled + flipped + cut + settled + refilled,
+        welded + collapsed + noise + filled + flipped,
         Some(format!(
-            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s), {cut} vertex/vertices cut, {settled} face(s) flipped after the cut, {refilled} hole face(s) after it"
+            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s)"
         )),
         t
     );
@@ -2869,250 +2847,6 @@ fn winding_sides(mesh: &IndexedMesh) -> AHashMap<u32, u8> {
     side
 }
 
-/// Cut the vertices the unsatisfiable edges run through, so each side of the surface there can be
-/// wound on its own.
-///
-/// No assignment satisfies those edges, so no amount of flipping clears them — but a cut does. Each
-/// such vertex is duplicated once per side its incident faces were assigned, and every face keeps
-/// the copy for its own side, which removes the constraint across the cut. Nothing moves: the copies
-/// sit exactly where the original was, so the surface is unchanged, and the settle fill closes the
-/// seam the cut opens. Measured on the V3 Cones, every unsatisfiable edge lies in a box 0.00 x 0.02 x
-/// 0.11 on a model 49 units across, so this touches ten vertices and the seam with them.
-///
-/// Detaching the whole region instead does not work: the unsatisfiable cycles are *inside* it, so
-/// removing the constraints across its border leaves every one of them intact.
-fn detach_frustrated_region(mesh: &mut IndexedMesh) -> usize {
-    let conflicts = frustrated_edges(mesh);
-    if conflicts.is_empty() {
-        return 0;
-    }
-    let side = winding_sides(mesh);
-    let mut touched: AHashSet<u32> = AHashSet::new();
-    for &(u, v) in &conflicts {
-        touched.insert(u);
-        touched.insert(v);
-    }
-    let mut at: AHashMap<u32, Vec<u32>> = AHashMap::new();
-    for (fi, t) in mesh.triangles.iter().enumerate() {
-        for &w in t {
-            if touched.contains(&w) {
-                at.entry(w).or_default().push(fi as u32);
-            }
-        }
-    }
-    let mut split = 0usize;
-    // Sorted, so the copies are numbered the same way in every process.
-    let mut vertices: Vec<u32> = at.keys().copied().collect();
-    vertices.sort_unstable();
-    for w in vertices {
-        let faces = &at[&w];
-        let mut sides: Vec<u8> = faces.iter().map(|f| *side.get(f).unwrap_or(&0)).collect();
-        sides.sort_unstable();
-        sides.dedup();
-        if sides.len() < 2 {
-            continue;
-        }
-        let mut copy: AHashMap<u8, u32> = AHashMap::new();
-        for &s in &sides {
-            let p = mesh.positions[w as usize];
-            mesh.positions.push(p);
-            copy.insert(s, (mesh.positions.len() - 1) as u32);
-        }
-        for &f in faces {
-            let c = copy[&*side.get(&f).unwrap_or(&0)];
-            for k in 0..3 {
-                if mesh.triangles[f as usize][k] == w {
-                    mesh.triangles[f as usize][k] = c;
-                }
-            }
-        }
-        split += 1;
-    }
-    split
-}
-
-/// Close the seam a cut opened, one side at a time.
-///
-/// The seam's edges belong to known sides — each is the single face of either the region or the rest
-/// of the surface — so each side's edges form their own cycle and can be walked directly, with the
-/// direction taken from the face that owns the edge. That is the point of closing it here: the general
-/// fill cannot, because its walk pairs boundary edges by vertex alone and joins the two fans at a
-/// pinched vertex, so a cap built from its loops bridges the two sides and the non-orientability comes
-/// straight back.
-///
-/// Each cap is a fan from a new centre vertex, so it reuses no edge of the mesh and cannot bridge
-/// anything.
-fn cap_seam(mesh: &mut IndexedMesh, topo: &Topology, seam: &[EdgeKey], region: &AHashSet<u32>) {
-    for in_region in [true, false] {
-        let mut side: Vec<EdgeKey> = seam
-            .iter()
-            .copied()
-            .filter(|k| {
-                topo.edges
-                    .get(k)
-                    .and_then(|info| info.faces.first().copied())
-                    .map(|f| region.contains(&f) == in_region)
-                    .unwrap_or(false)
-            })
-            .collect();
-        if side.len() < 3 {
-            continue;
-        }
-        side.sort_unstable();
-        let mut owner: AHashMap<EdgeKey, u32> = AHashMap::new();
-        let mut arrives: AHashMap<u32, EdgeKey> = AHashMap::new();
-        for &key in &side {
-            let Some(info) = topo.edges.get(&key) else {
-                continue;
-            };
-            let Some(&(_, head, _)) = info
-                .directed
-                .iter()
-                .find(|d| region.contains(&d.2) == in_region)
-            else {
-                continue;
-            };
-            owner.insert(key, head);
-            arrives.insert(head, key);
-        }
-        let mut next: AHashMap<EdgeKey, EdgeKey> = AHashMap::new();
-        for &key in &side {
-            let Some(info) = topo.edges.get(&key) else {
-                continue;
-            };
-            let Some(&(tail, _, _)) = info
-                .directed
-                .iter()
-                .find(|d| region.contains(&d.2) == in_region)
-            else {
-                continue;
-            };
-            if let Some(&prev) = arrives.get(&tail) {
-                next.insert(key, prev);
-            }
-        }
-        let mut used: AHashSet<EdgeKey> = AHashSet::new();
-        for &start in &side {
-            if used.contains(&start) {
-                continue;
-            }
-            let mut lp: Vec<u32> = Vec::new();
-            let mut cur = start;
-            let mut closed = false;
-            loop {
-                if used.contains(&cur) {
-                    closed = cur == start;
-                    break;
-                }
-                used.insert(cur);
-                if let Some(&head) = owner.get(&cur) {
-                    lp.push(head);
-                }
-                match next.get(&cur) {
-                    Some(&n) => cur = n,
-                    None => break,
-                }
-            }
-            if closed && lp.len() >= 3 {
-                let c = lp.iter().fold([0.0f64; 3], |s, &v| {
-                    let p = mesh.positions[v as usize];
-                    [s[0] + p.x as f64, s[1] + p.y as f64, s[2] + p.z as f64]
-                });
-                let n = lp.len() as f64;
-                mesh.positions
-                    .push(Vec3::new((c[0] / n) as f32, (c[1] / n) as f32, (c[2] / n) as f32));
-                let centre = (mesh.positions.len() - 1) as u32;
-                for i in 0..lp.len() {
-                    mesh.triangles.push([lp[i], lp[(i + 1) % lp.len()], centre]);
-                }
-            }
-        }
-    }
-}
-
-/// Cut the edges no assignment can satisfy, as a last resort after everything else has run.
-///
-/// Every odd cycle contains at least one unsatisfiable edge — an odd cycle is exactly one no
-/// assignment satisfies — so removing those edges from the parity graph breaks all of them. The region
-/// is one face from each such edge, and the vertices it shares with the rest of the surface are
-/// duplicated, which removes the constraint across every one of them.
-///
-/// This runs at the end, not inside `repair_orientation`, and only when those edges are few. The
-/// side-split cut there resolves a mesh whose disagreements are spread over the surface — corbu's 113
-/// winding edges go to zero — and this is for the residue it cannot: the cones' two to seven, in a box
-/// 0.00 x 0.02 x 0.11 on a model 49 units across. Cutting a surface that is frustrated throughout
-/// detaches dozens of faces instead: corbu came out of that with 919 inconsistent edges and a volume
-/// of -12.9.
-fn cut_unsatisfiable_edges(mesh: &mut IndexedMesh) -> usize {
-    const MAX_CUT_EDGES: usize = 16;
-    let conflicts = frustrated_edges(mesh);
-    if conflicts.is_empty() || conflicts.len() > MAX_CUT_EDGES {
-        return 0;
-    }
-    let before: AHashSet<EdgeKey> = Topology::build(mesh)
-        .edges
-        .iter()
-        .filter(|(_, info)| info.faces.len() == 1)
-        .map(|(k, _)| *k)
-        .collect();
-    let topo = Topology::build(mesh);
-    let mut region: AHashSet<u32> = AHashSet::new();
-    for &key in &conflicts {
-        if let Some(info) = topo.edges.get(&key) {
-            if let Some(&f) = info.faces.first() {
-                region.insert(f);
-            }
-        }
-    }
-    if region.is_empty() {
-        return 0;
-    }
-    let mut inside: AHashSet<u32> = AHashSet::new();
-    for &f in &region {
-        for &w in &mesh.triangles[f as usize] {
-            inside.insert(w);
-        }
-    }
-    let mut outside: AHashSet<u32> = AHashSet::new();
-    for (fi, t) in mesh.triangles.iter().enumerate() {
-        if region.contains(&(fi as u32)) {
-            continue;
-        }
-        for &w in t {
-            outside.insert(w);
-        }
-    }
-    // Sorted, so the copies are numbered the same way in every process.
-    let mut shared: Vec<u32> = inside.intersection(&outside).copied().collect();
-    shared.sort_unstable();
-    if shared.is_empty() {
-        return 0;
-    }
-    let mut copy: AHashMap<u32, u32> = AHashMap::new();
-    for &w in &shared {
-        let p = mesh.positions[w as usize];
-        mesh.positions.push(p);
-        copy.insert(w, (mesh.positions.len() - 1) as u32);
-    }
-    for &f in &region {
-        for k in 0..3 {
-            let w = mesh.triangles[f as usize][k];
-            if let Some(&c) = copy.get(&w) {
-                mesh.triangles[f as usize][k] = c;
-            }
-        }
-    }
-    let after = Topology::build(mesh);
-    let seam: Vec<EdgeKey> = after
-        .edges
-        .iter()
-        .filter(|(k, info)| info.faces.len() == 1 && !before.contains(k))
-        .map(|(k, _)| *k)
-        .collect();
-    cap_seam(mesh, &after, &seam, &region);
-    shared.len()
-}
-
 pub(crate) fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     if mesh.triangles.is_empty() {
         return 0;
@@ -3120,25 +2854,17 @@ pub(crate) fn repair_orientation(mesh: &mut IndexedMesh) -> usize {
     // Consistency first: the component vote below can only turn a whole component, so a
     // component whose faces disagree with each other has to be settled before it runs.
     let mut flipped_faces = unify_winding(mesh);
-    // The edges no assignment satisfies, if any: cut the vertices they run through so each side can
-    // be wound on its own, then let the flips below resolve what the cut unblocked. The cut has to
-    // come before them — on its own it only removes a constraint, and the faces still have to turn.
-    for _ in 0..8 {
-        if detach_frustrated_region(mesh) == 0 {
-            break;
-        }
-    }
     flipped_faces += reduce_winding_edges(mesh);
-    // The greedy flips above can stall on a graph that is satisfiable — the Möbius band, after the
-    // cut removed its unsatisfiable edge, still came back with one inconsistent edge. The parity walk
-    // already has the assignment: flipping every face on side 1 satisfies every satisfiable edge
-    // exactly, and leaves only the edges no assignment can satisfy. Applied unconditionally, because
-    // a face's side is a free choice and only its consistency matters.
-    let sides = winding_sides(mesh);
-    for (f, tri) in mesh.triangles.iter_mut().enumerate() {
-        if sides.get(&(f as u32)).copied().unwrap_or(0) == 1 {
-            tri.swap(1, 2);
-            flipped_faces += 1;
+    // The parity walk's assignment satisfies every edge when the graph is satisfiable, and is
+    // arbitrary when it is not: applied there it undoes the greedy flips above and leaves more
+    // inconsistent edges than the mesh arrived with. Measured on corbu, 113 in and 919 out.
+    if frustrated_edges(mesh).is_empty() {
+        let sides = winding_sides(mesh);
+        for (f, tri) in mesh.triangles.iter_mut().enumerate() {
+            if sides.get(&(f as u32)).copied().unwrap_or(0) == 1 {
+                tri.swap(1, 2);
+                flipped_faces += 1;
+            }
         }
     }
     let components = triangle_components(mesh);
@@ -4091,17 +3817,19 @@ mod orientability_tests {
         assert!(winding_is_unsatisfiable(&mobius_band()));
     }
 
-    /// The cut makes it orientable, and the fill closes the rims the band was left with.
+    /// A repair may not add parts.
+    ///
+    /// A Möbius band is non-orientable, so its winding cannot be made consistent by any assignment;
+    /// the residual is reported as the floor it is. What must not happen is paying for it with
+    /// duplicated geometry — that was a cut, and it left coincident facets behind, which showed up as
+    /// three thousand extra self-intersecting triangles on corbu and as doubled facets in the
+    /// viewport.
     #[test]
-    fn a_mobius_band_repairs_to_consistent_winding() {
+    fn repairing_a_mobius_band_adds_no_parts() {
+        let count = |components: &[u32]| components.iter().max().copied().unwrap_or(0) + 1;
+        let before = count(&triangle_components(&mobius_band()));
         let out = repair(mobius_band(), &RepairOptions::default());
-        assert_eq!(
-            out.report.post.inconsistent_winding_edges,
-            0,
-            "{}",
-            out.report.residual_issues.join("; ")
-        );
-        assert_eq!(out.report.post.boundary_loops, 0);
+        assert_eq!(count(&triangle_components(&out.mesh)), before);
     }
 }
 
