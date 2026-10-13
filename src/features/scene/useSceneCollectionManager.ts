@@ -63,6 +63,13 @@ import {
   reportRestoredModel,
 } from '@/features/scene/sceneImportMessages';
 import { duplicatedModelName, pastedModelName } from '@/features/scene/modelCopyNames';
+import {
+  repairCancelledMessage,
+  repairedModelsMessage,
+  repairFailedForModelMessage,
+  repairFailedMessage,
+  repairStoppedMessage,
+} from '@/features/scene/meshRepairMessages';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
 import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
@@ -7115,7 +7122,9 @@ export function useSceneCollectionManager(options?: {
         allRepaired = false;
         const message = err instanceof Error ? err.message : String(err);
         emitSceneImportReport(
-          modelIds.length === 1 ? `Repair failed: ${message}` : `Repair failed for ${model.name}: ${message}`,
+          modelIds.length === 1
+            ? repairFailedMessage(message, _)
+            : repairFailedForModelMessage(model.name, message, _),
           'error',
           { durationMs: 6_000 },
         );
@@ -7126,7 +7135,7 @@ export function useSceneCollectionManager(options?: {
     if (repaired.size === 0) {
       if (cancelled) {
         emitSceneImportReport(
-          modelIds.length === 1 ? 'Repair cancelled. The model is unchanged.' : 'Repair cancelled. The models are unchanged.',
+          repairCancelledMessage(modelIds.length, _),
           'warning',
         );
       }
@@ -7157,19 +7166,13 @@ export function useSceneCollectionManager(options?: {
       setMeshRepairReports(reportEntries);
     }
     if (cancelled) {
-      emitSceneImportReport(
-        `Repair stopped. Repaired ${repaired.size} of ${modelIds.length} models; the rest are unchanged.`,
-        'warning',
-      );
+      emitSceneImportReport(repairStoppedMessage(repaired.size, modelIds.length, _), 'warning');
     } else if (reportEntries.length === 0 && allRepaired) {
-      emitSceneImportReport(
-        repaired.size === 1 ? `Repaired ${repairedNames[0]}.` : `Repaired ${repaired.size} models.`,
-        'success',
-      );
+      emitSceneImportReport(repairedModelsMessage(repairedNames, _), 'success');
     }
 
     return allRepaired;
-  }, [clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
+  }, [_, clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
 
   // Cleanup on unmount
   useEffect(() => {

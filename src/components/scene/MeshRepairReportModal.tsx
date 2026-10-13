@@ -31,6 +31,46 @@ type Translate = (descriptor: MessageDescriptor) => string;
 
 // Module level on purpose: React Compiler renames locals inside components
 // before the Lingui macro derives the message id.
+function formatBatchSubtitle(
+  translate: Translate,
+  count: number,
+  duration: string,
+  repaired: number,
+  residual: number,
+): string {
+  return translate(msg`${plural(count, { one: '# mesh', other: '# meshes' })} · ${duration} · ${repaired} clean · ${residual} with issues`);
+}
+
+function formatDeltaParts(pre: MeshAnalysisJson, post: MeshAnalysisJson, translate: Translate): string[] {
+  const trianglesBefore = pre.triangle_count.toLocaleString();
+  const trianglesAfter = post.triangle_count.toLocaleString();
+  const parts = [translate(msg({ message: `${trianglesBefore} → ${trianglesAfter} tris`, context: 'Mesh repair summary, triangle count' }))];
+  if (pre.non_manifold_edges !== post.non_manifold_edges) {
+    const edgesBefore = pre.non_manifold_edges;
+    const edgesAfter = post.non_manifold_edges;
+    parts.push(translate(msg({ message: `NME ${edgesBefore} → ${edgesAfter}`, context: 'Mesh repair summary; NME = non-manifold edges' })));
+  }
+  if (pre.boundary_loops !== post.boundary_loops) {
+    const holesBefore = pre.boundary_loops;
+    const holesAfter = post.boundary_loops;
+    parts.push(translate(msg({ message: `holes ${holesBefore} → ${holesAfter}`, context: 'Mesh repair summary' })));
+  }
+  if (pre.inconsistent_edges !== post.inconsistent_edges) {
+    const windingBefore = pre.inconsistent_edges;
+    const windingAfter = post.inconsistent_edges;
+    parts.push(translate(msg({ message: `winding ${windingBefore} → ${windingAfter}`, context: 'Mesh repair summary' })));
+  }
+  if (pre.self_intersections !== post.self_intersections) {
+    const intersectionsBefore = pre.self_intersections;
+    const intersectionsAfter = post.self_intersections;
+    parts.push(translate(msg({ message: `self-int ${intersectionsBefore} → ${intersectionsAfter}`, context: 'Mesh repair summary; self-intersections' })));
+  }
+  parts.push(post.is_watertight
+    ? translate(msg({ message: 'watertight', context: 'Mesh repair summary' }))
+    : translate(msg({ message: 'not watertight', context: 'Mesh repair summary' })));
+  return parts;
+}
+
 function summarizeRepairWins(report: MeshRepairReportEntry['report'], translate: Translate): string[] {
   const wins: string[] = [];
   const closedHoles = Math.max(0, report.pre.boundary_loops - report.post.boundary_loops);
@@ -107,7 +147,7 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
     ? reports[0].modelName
     : isSingle
       ? reports[0].modelName
-      : `${reports.length} meshes · ${formatMs(totals.totalMs)} · ${totals.repaired} clean · ${totals.residual} with issues`;
+      : formatBatchSubtitle(_, reports.length, formatMs(totals.totalMs), totals.repaired, totals.residual);
 
   // On the optimistic "Repair Complete" page, an unsuccessful repair (mesh still
   // not valid) is flagged with a red cross instead of the green check.
@@ -574,26 +614,10 @@ function ReportCard({
   );
 }
 
-// i18n-ignore-start: compact technical readout (abbreviations), kept in English
 function DeltaLine({ pre, post }: { pre: MeshAnalysisJson; post: MeshAnalysisJson }) {
-  const parts: string[] = [];
-  parts.push(`${pre.triangle_count.toLocaleString()} → ${post.triangle_count.toLocaleString()} tris`);
-  if (pre.non_manifold_edges !== post.non_manifold_edges) {
-    parts.push(`NME ${pre.non_manifold_edges} → ${post.non_manifold_edges}`);
-  }
-  if (pre.boundary_loops !== post.boundary_loops) {
-    parts.push(`holes ${pre.boundary_loops} → ${post.boundary_loops}`);
-  }
-  if (pre.inconsistent_edges !== post.inconsistent_edges) {
-    parts.push(`winding ${pre.inconsistent_edges} → ${post.inconsistent_edges}`);
-  }
-  if (pre.self_intersections !== post.self_intersections) {
-    parts.push(`self-int ${pre.self_intersections} → ${post.self_intersections}`);
-  }
-  parts.push(post.is_watertight ? 'watertight' : 'not watertight');
-  return <>{parts.join(' · ')}</>;
+  const { _ } = useLingui();
+  return <>{formatDeltaParts(pre, post, _).join(' · ')}</>;
 }
-// i18n-ignore-end
 
 function AnalysisBlock({ title, analysis }: { title: string; analysis: MeshAnalysisJson }) {
   const { _ } = useLingui();

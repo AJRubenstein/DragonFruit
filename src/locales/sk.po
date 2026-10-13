@@ -54,6 +54,10 @@ msgstr ""
 msgid "{count, plural, one {# mesh will be exported.} other {# meshes will be exported.}}"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:41
+msgid "{count, plural, one {# mesh} other {# meshes}} · {duration} · {repaired} clean · {residual} with issues"
+msgstr ""
+
 #. Warning badge over the viewport when models stick out of the printer build volume.
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:233
 msgid "{count, plural, one {# model out of build volume} other {# models out of build volume}}"
@@ -74,8 +78,16 @@ msgstr ""
 msgid "{count, plural, one {# support entity} other {# support entities}}"
 msgstr ""
 
+#: src/features/scene/meshRepairMessages.ts:29
+msgid "{count, plural, one {Repair cancelled. The model is unchanged.} other {Repair cancelled. The models are unchanged.}}"
+msgstr ""
+
 #: src/components/organisms/modals/MeshRepairModals.tsx:31
 msgid "{count, plural, one {Repair Mesh} other {Repair # Meshes}}"
+msgstr ""
+
+#: src/features/scene/meshRepairMessages.ts:17
+msgid "{count, plural, one {Repaired # model.} other {Repaired # models.}}"
 msgstr ""
 
 #: src/features/slicing/components/SlicingPanel.tsx:202
@@ -215,6 +227,11 @@ msgstr ""
 
 #: src/features/slicing/components/SlicingPanel.tsx:153
 msgid "{steps}x ZAA Samples"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:47
+msgctxt "Mesh repair summary, triangle count"
+msgid "{trianglesBefore} → {trianglesAfter} tris"
 msgstr ""
 
 #. A rate: how many times per second. {value} is an already formatted number.
@@ -554,9 +571,9 @@ msgstr ""
 msgid "Advanced mode"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:326
-#: src/components/scene/MeshRepairReportModal.tsx:365
-#: src/components/scene/MeshRepairReportModal.tsx:534
+#: src/components/scene/MeshRepairReportModal.tsx:366
+#: src/components/scene/MeshRepairReportModal.tsx:405
+#: src/components/scene/MeshRepairReportModal.tsx:574
 msgid "After"
 msgstr ""
 
@@ -609,7 +626,7 @@ msgstr ""
 msgid "Analysis"
 msgstr ""
 
-#: src/app/page.tsx:11843
+#: src/app/page.tsx:11856
 msgid "Analyzing Model Islands & Minima"
 msgstr ""
 
@@ -635,7 +652,7 @@ msgid "Anti-aliasing: nothing to anti-alias."
 msgstr "Anti-aliasing: nič sa nedá anti-aliasovať."
 
 #. placeholder {0}: report.steps.length
-#: src/components/scene/MeshRepairReportModal.tsx:63
+#: src/components/scene/MeshRepairReportModal.tsx:103
 msgid "Applied {0, plural, one {# automated repair step} other {# automated repair steps}} and re-validated the mesh."
 msgstr ""
 
@@ -706,7 +723,7 @@ msgstr ""
 msgid "Applying…"
 msgstr ""
 
-#: src/app/page.tsx:11938
+#: src/app/page.tsx:11951
 msgid "Are you sure you want to remove every model from the plate?"
 msgstr ""
 
@@ -1118,13 +1135,13 @@ msgstr ""
 msgid "Beds per row"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:325
-#: src/components/scene/MeshRepairReportModal.tsx:364
-#: src/components/scene/MeshRepairReportModal.tsx:533
+#: src/components/scene/MeshRepairReportModal.tsx:365
+#: src/components/scene/MeshRepairReportModal.tsx:404
+#: src/components/scene/MeshRepairReportModal.tsx:573
 msgid "Before"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:318
+#: src/components/scene/MeshRepairReportModal.tsx:358
 msgid "Before/after analysis and repair steps."
 msgstr ""
 
@@ -1177,8 +1194,8 @@ msgstr ""
 msgid "Bottom"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:606
-#: src/components/scene/MeshRepairReportModal.tsx:647
+#: src/components/scene/MeshRepairReportModal.tsx:630
+#: src/components/scene/MeshRepairReportModal.tsx:671
 msgctxt "Mesh analysis row"
 msgid "Boundary edges"
 msgstr ""
@@ -1187,8 +1204,8 @@ msgstr ""
 msgid "Boundary loops"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:607
-#: src/components/scene/MeshRepairReportModal.tsx:648
+#: src/components/scene/MeshRepairReportModal.tsx:631
+#: src/components/scene/MeshRepairReportModal.tsx:672
 msgctxt "Mesh analysis row"
 msgid "Boundary loops"
 msgstr ""
@@ -1300,7 +1317,7 @@ msgstr ""
 msgid "Can't open this scene"
 msgstr ""
 
-#: src/app/page.tsx:11899
+#: src/app/page.tsx:11912
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:468
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:664
 #: src/components/controls/AutoSupportPanel.tsx:652
@@ -1522,7 +1539,7 @@ msgstr ""
 msgid "Clean (no pending recovery)"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:52
+#: src/components/scene/MeshRepairReportModal.tsx:92
 msgid "Cleaned up {cleanedNonManifoldEdges, plural, one {# non-manifold edge} other {# non-manifold edges}}."
 msgstr ""
 
@@ -1550,12 +1567,12 @@ msgstr ""
 
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
-#: src/app/page.tsx:11191
+#: src/app/page.tsx:11204
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1776
 msgid "Clear build plate"
 msgstr ""
 
-#: src/app/page.tsx:11888
+#: src/app/page.tsx:11901
 msgid "Clear Build Plate?"
 msgstr ""
 
@@ -1563,7 +1580,7 @@ msgstr ""
 msgid "Clear Override"
 msgstr ""
 
-#: src/app/page.tsx:11929
+#: src/app/page.tsx:11942
 msgid "Clear Plate"
 msgstr ""
 
@@ -1625,12 +1642,12 @@ msgstr ""
 #: src/components/modals/SliceCompletedModal.tsx:93
 #: src/components/organisms/modals/PrintingModals.tsx:1092
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
-#: src/components/scene/MeshRepairReportModal.tsx:176
+#: src/components/scene/MeshRepairReportModal.tsx:216
 #: src/features/slicing/components/LutCurveEditor.tsx:1269
 msgid "Close"
 msgstr "Zatvoriť"
 
-#: src/app/page.tsx:11894
+#: src/app/page.tsx:11907
 msgid "Close clear-plate confirmation"
 msgstr ""
 
@@ -1764,7 +1781,7 @@ msgstr "Zatvoriť okno"
 msgid "Close without applying the edits made in this dialog"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:46
+#: src/components/scene/MeshRepairReportModal.tsx:86
 msgid "Closed {closedHoles, plural, one {# open hole} other {# open holes}}."
 msgstr ""
 
@@ -1840,8 +1857,8 @@ msgstr ""
 msgid "Components"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:603
-#: src/components/scene/MeshRepairReportModal.tsx:644
+#: src/components/scene/MeshRepairReportModal.tsx:627
+#: src/components/scene/MeshRepairReportModal.tsx:668
 msgctxt "Mesh analysis row"
 msgid "Components"
 msgstr ""
@@ -1893,7 +1910,7 @@ msgstr ""
 msgid "Confirm cancel print"
 msgstr ""
 
-#: src/app/page.tsx:11887
+#: src/app/page.tsx:11900
 msgid "Confirm clearing the build plate"
 msgstr ""
 
@@ -1913,7 +1930,7 @@ msgstr ""
 msgid "Confirm delete snapshot"
 msgstr ""
 
-#: src/app/page.tsx:11886
+#: src/app/page.tsx:11899
 msgid "Confirm deleting the plate"
 msgstr ""
 
@@ -2055,11 +2072,11 @@ msgstr ""
 msgid "Copy"
 msgstr "Kopírovať"
 
-#: src/components/scene/MeshRepairReportModal.tsx:209
+#: src/components/scene/MeshRepairReportModal.tsx:249
 msgid "Copy full JSON to clipboard"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:212
+#: src/components/scene/MeshRepairReportModal.tsx:252
 msgid "Copy JSON"
 msgstr ""
 
@@ -2079,7 +2096,7 @@ msgstr ""
 msgid "Copy the whole report to the clipboard"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:55
+#: src/components/scene/MeshRepairReportModal.tsx:95
 msgid "Corrected {correctedWindingIssues, plural, one {# winding issue} other {# winding issues}}."
 msgstr ""
 
@@ -2092,7 +2109,7 @@ msgstr ""
 msgid "Could not reopen this file from cache."
 msgstr "Nepodarilo sa znovu otvoriť súbor z cachu"
 
-#: src/features/scene/useSceneCollectionManager.ts:7053
+#: src/features/scene/useSceneCollectionManager.ts:7060
 msgid "Could not restore the model."
 msgstr ""
 
@@ -2367,8 +2384,8 @@ msgstr ""
 msgid "Defective — {0} errors"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:609
-#: src/components/scene/MeshRepairReportModal.tsx:650
+#: src/components/scene/MeshRepairReportModal.tsx:633
+#: src/components/scene/MeshRepairReportModal.tsx:674
 msgctxt "Mesh analysis row"
 msgid "Degenerate tris"
 msgstr ""
@@ -2418,7 +2435,7 @@ msgstr ""
 msgid "Delete model"
 msgstr ""
 
-#: src/app/page.tsx:11929
+#: src/app/page.tsx:11942
 #: src/components/controls/ModelManagerPanel.tsx:479
 #: src/components/controls/ModelManagerPanel.tsx:766
 #: src/components/controls/ModelManagerPanel.tsx:787
@@ -2472,11 +2489,11 @@ msgid "Delete this model's existing supports and place the new ones"
 msgstr ""
 
 #. Tooltip on the bin beside the build plate when the plate can go: it removes the bed and the models standing on it. Undo brings them back.
-#: src/app/page.tsx:11190
+#: src/app/page.tsx:11203
 msgid "Delete this plate"
 msgstr ""
 
-#: src/app/page.tsx:11888
+#: src/app/page.tsx:11901
 #: src/components/controls/ModelManagerPanel.tsx:767
 msgid "Delete this plate?"
 msgstr ""
@@ -2601,9 +2618,9 @@ msgstr ""
 msgid "Discovered Printers"
 msgstr ""
 
-#: src/app/page.tsx:11986
+#: src/app/page.tsx:11999
 #: src/components/modals/ManifoldWarningModal.tsx:38
-#: src/components/scene/MeshRepairReportModal.tsx:219
+#: src/components/scene/MeshRepairReportModal.tsx:259
 #: src/features/updater/GlobalUpdateIndicator.tsx:234
 msgid "Dismiss"
 msgstr ""
@@ -2690,7 +2707,7 @@ msgstr "Potiahni sem súbor. Tvoja plocha ťa súdi."
 msgid "DragonFruit app menu"
 msgstr "Menu aplikácie DragonFruit"
 
-#: src/components/scene/MeshRepairReportModal.tsx:236
+#: src/components/scene/MeshRepairReportModal.tsx:276
 msgid "DragonFruit could not fully repair this mesh — it is still not a valid manifold and may cause problems later in your workflow."
 msgstr ""
 
@@ -2715,7 +2732,7 @@ msgstr ""
 msgid "DragonFruit menu"
 msgstr "Menu DragonFruit"
 
-#: src/components/scene/MeshRepairReportModal.tsx:235
+#: src/components/scene/MeshRepairReportModal.tsx:275
 msgid "DragonFruit repaired this mesh and replaced the model in your current scene."
 msgstr ""
 
@@ -2731,7 +2748,7 @@ msgstr ""
 msgid "Drop supported files"
 msgstr "Hoď podporované súbory"
 
-#: src/app/page.tsx:11136
+#: src/app/page.tsx:11149
 msgid "Drop supported files to import"
 msgstr ""
 
@@ -2740,8 +2757,8 @@ msgstr ""
 msgid "Duplicate"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:610
-#: src/components/scene/MeshRepairReportModal.tsx:651
+#: src/components/scene/MeshRepairReportModal.tsx:634
+#: src/components/scene/MeshRepairReportModal.tsx:675
 msgctxt "Mesh analysis row"
 msgid "Duplicate tris"
 msgstr ""
@@ -3039,7 +3056,7 @@ msgstr ""
 msgid "Export the selected preset as a JSON file"
 msgstr ""
 
-#: src/app/page.tsx:11876
+#: src/app/page.tsx:11889
 #: src/features/export/components/ExportPanel.tsx:761
 msgid "Exporting…"
 msgstr ""
@@ -3272,7 +3289,7 @@ msgstr ""
 msgid "Follow the plate a model lands on"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:301
+#: src/components/scene/MeshRepairReportModal.tsx:341
 msgid "Follow-up notes"
 msgstr ""
 
@@ -3356,7 +3373,7 @@ msgstr ""
 msgid "Generate supports automatically on scan"
 msgstr ""
 
-#: src/app/page.tsx:11855
+#: src/app/page.tsx:11868
 msgid "Generating Supports"
 msgstr ""
 
@@ -3385,7 +3402,7 @@ msgstr ""
 msgid "Go back to the settings dialog"
 msgstr ""
 
-#: src/app/page.tsx:11978
+#: src/app/page.tsx:11991
 msgid "Go to Settings → 3D Mouse to configure or block it."
 msgstr ""
 
@@ -3540,6 +3557,11 @@ msgstr ""
 msgid "Hole Punching"
 msgstr ""
 
+#: src/components/scene/MeshRepairReportModal.tsx:56
+msgctxt "Mesh repair summary"
+msgid "holes {holesBefore} → {holesAfter}"
+msgstr ""
+
 #. Tool rail label in Support mode. One word, like the other tool names: opens the hollowing tool (shell the model, add drainage holes).
 #: src/components/controls/toolRailEntries.ts:213
 msgid "Hollow"
@@ -3683,7 +3705,7 @@ msgstr ""
 msgid "If you quit now, your unsaved LUT curve changes will be lost."
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:274
+#: src/components/scene/MeshRepairReportModal.tsx:314
 msgid "If you want them, a few follow-up notes are tucked below."
 msgstr ""
 
@@ -3759,8 +3781,8 @@ msgstr ""
 msgid "Include Supports"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:608
-#: src/components/scene/MeshRepairReportModal.tsx:649
+#: src/components/scene/MeshRepairReportModal.tsx:632
+#: src/components/scene/MeshRepairReportModal.tsx:673
 msgctxt "Mesh analysis row"
 msgid "Inconsistent edges"
 msgstr ""
@@ -4126,11 +4148,11 @@ msgstr ""
 msgid "Layout Mode"
 msgstr ""
 
-#: src/app/page.tsx:11996
+#: src/app/page.tsx:12009
 msgid "Leaf Fanning Active: Click model to sprout leaf"
 msgstr ""
 
-#: src/app/page.tsx:11997
+#: src/app/page.tsx:12010
 msgid "Leaf Fanning: Click a support shaft to lock anchor knot"
 msgstr ""
 
@@ -4405,7 +4427,7 @@ msgstr ""
 msgid "LUT: {curveName}"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:43
+#: src/components/scene/MeshRepairReportModal.tsx:83
 msgid "Made the mesh watertight."
 msgstr ""
 
@@ -4587,11 +4609,11 @@ msgstr ""
 msgid "Mesh repair confirmation"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:145
+#: src/components/scene/MeshRepairReportModal.tsx:185
 msgid "Mesh repair report"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:117
+#: src/components/scene/MeshRepairReportModal.tsx:157
 msgid "Mesh Repair Report"
 msgstr ""
 
@@ -4865,7 +4887,7 @@ msgstr ""
 msgid "New Curve"
 msgstr ""
 
-#: src/app/page.tsx:11977
+#: src/app/page.tsx:11990
 msgid "New input device detected."
 msgstr ""
 
@@ -4893,8 +4915,13 @@ msgstr ""
 msgid "Next (N)"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:613
-#: src/components/scene/MeshRepairReportModal.tsx:654
+#: src/components/scene/MeshRepairReportModal.tsx:51
+msgctxt "Mesh repair summary; NME = non-manifold edges"
+msgid "NME {edgesBefore} → {edgesAfter}"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:637
+#: src/components/scene/MeshRepairReportModal.tsx:678
 msgid "no"
 msgstr ""
 
@@ -5074,7 +5101,7 @@ msgstr ""
 msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
 msgstr ""
 
-#: src/features/scene/useSceneCollectionManager.ts:7026
+#: src/features/scene/useSceneCollectionManager.ts:7033
 msgid "No source file to restore this model from."
 msgstr ""
 
@@ -5098,14 +5125,14 @@ msgstr ""
 msgid "Non-manifold edges"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:604
-#: src/components/scene/MeshRepairReportModal.tsx:645
+#: src/components/scene/MeshRepairReportModal.tsx:628
+#: src/components/scene/MeshRepairReportModal.tsx:669
 msgctxt "Mesh analysis row"
 msgid "Non-manifold edges"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:605
-#: src/components/scene/MeshRepairReportModal.tsx:646
+#: src/components/scene/MeshRepairReportModal.tsx:629
+#: src/components/scene/MeshRepairReportModal.tsx:670
 msgctxt "Mesh analysis row"
 msgid "Non-manifold verts"
 msgstr ""
@@ -5136,6 +5163,11 @@ msgstr ""
 
 #: src/components/settings/LocalBackupsSettingsTab.tsx:741
 msgid "Not selected"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:70
+msgctxt "Mesh repair summary"
+msgid "not watertight"
 msgstr ""
 
 #: src/components/layout/EmptySceneState.tsx:76
@@ -5424,7 +5456,7 @@ msgstr ""
 msgid "Opening scene…"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:302
+#: src/components/scene/MeshRepairReportModal.tsx:342
 msgid "Optional details if you want them."
 msgstr ""
 
@@ -5436,7 +5468,7 @@ msgstr "Orientovať rovinu proti ploche"
 msgid "Orient Model"
 msgstr ""
 
-#: src/app/page.tsx:11866
+#: src/app/page.tsx:11879
 msgid "Orienting Model"
 msgstr ""
 
@@ -5625,7 +5657,7 @@ msgstr ""
 msgid "Placement message."
 msgstr ""
 
-#: src/app/page.tsx:11856
+#: src/app/page.tsx:11869
 msgid "Placing and bracing supports…"
 msgstr ""
 
@@ -5997,8 +6029,8 @@ msgid "Processing {count, plural, one {# model} other {# models}}"
 msgstr ""
 
 #: src/app/page.tsx:1828
-#: src/app/page.tsx:11846
-#: src/app/page.tsx:11858
+#: src/app/page.tsx:11859
+#: src/app/page.tsx:11871
 msgid "Processing 1 model"
 msgstr ""
 
@@ -6177,7 +6209,7 @@ msgstr ""
 msgid "Reduce Total Copies to 1 before arranging"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:60
+#: src/components/scene/MeshRepairReportModal.tsx:100
 msgid "Reduced disconnected mesh sections from {before} to {after}."
 msgstr ""
 
@@ -6366,19 +6398,27 @@ msgstr "Opraviť"
 msgid "Repair Again"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:116
+#: src/components/scene/MeshRepairReportModal.tsx:156
 msgid "Repair Complete"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:256
+#: src/features/scene/meshRepairMessages.ts:25
+msgid "Repair failed for {modelName}: {message}"
+msgstr ""
+
+#: src/features/scene/meshRepairMessages.ts:21
+msgid "Repair failed: {message}"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:296
 msgid "Repair finished"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:256
+#: src/components/scene/MeshRepairReportModal.tsx:296
 msgid "Repair incomplete"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:116
+#: src/components/scene/MeshRepairReportModal.tsx:156
 msgid "Repair Incomplete"
 msgstr ""
 
@@ -6402,10 +6442,18 @@ msgstr ""
 msgid "Repair recommended before slicing"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:335
-#: src/components/scene/MeshRepairReportModal.tsx:374
-#: src/components/scene/MeshRepairReportModal.tsx:540
+#: src/components/scene/MeshRepairReportModal.tsx:375
+#: src/components/scene/MeshRepairReportModal.tsx:414
+#: src/components/scene/MeshRepairReportModal.tsx:580
 msgid "Repair steps"
+msgstr ""
+
+#: src/features/scene/meshRepairMessages.ts:36
+msgid "Repair stopped. Repaired {repaired} of {total} models; the rest are unchanged."
+msgstr ""
+
+#: src/features/scene/meshRepairMessages.ts:14
+msgid "Repaired {modelName}."
 msgstr ""
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:274
@@ -6470,7 +6518,7 @@ msgstr ""
 msgid "Reset Layout"
 msgstr ""
 
-#: src/app/page.tsx:9499
+#: src/app/page.tsx:9495
 msgid "Reset Rotation"
 msgstr ""
 
@@ -6478,7 +6526,7 @@ msgstr ""
 msgid "Reset saved window layout"
 msgstr ""
 
-#: src/app/page.tsx:9499
+#: src/app/page.tsx:9495
 msgid "Reset Scale"
 msgstr ""
 
@@ -6500,8 +6548,8 @@ msgstr ""
 msgid "Resetting stream…"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:402
-#: src/components/scene/MeshRepairReportModal.tsx:562
+#: src/components/scene/MeshRepairReportModal.tsx:442
+#: src/components/scene/MeshRepairReportModal.tsx:602
 msgid "Residual issues"
 msgstr ""
 
@@ -6513,7 +6561,7 @@ msgstr ""
 msgid "Resolution"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:49
+#: src/components/scene/MeshRepairReportModal.tsx:89
 msgid "Resolved {resolvedSelfIntersections, plural, one {# self-intersection} other {# self-intersections}}."
 msgstr ""
 
@@ -6844,7 +6892,7 @@ msgstr ""
 msgid "Scanning for Supports…"
 msgstr ""
 
-#: src/app/page.tsx:11856
+#: src/app/page.tsx:11869
 msgid "Scanning islands & minima…"
 msgstr ""
 
@@ -7120,8 +7168,13 @@ msgstr ""
 msgid "Selection Preview"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:611
-#: src/components/scene/MeshRepairReportModal.tsx:652
+#: src/components/scene/MeshRepairReportModal.tsx:66
+msgctxt "Mesh repair summary; self-intersections"
+msgid "self-int {intersectionsBefore} → {intersectionsAfter}"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:635
+#: src/components/scene/MeshRepairReportModal.tsx:676
 msgctxt "Mesh analysis row"
 msgid "Self-intersections"
 msgstr ""
@@ -7346,8 +7399,8 @@ msgstr ""
 msgid "Shows the Voxels, Minima, Coincident, and Overhangs layer toggles."
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:612
-#: src/components/scene/MeshRepairReportModal.tsx:653
+#: src/components/scene/MeshRepairReportModal.tsx:636
+#: src/components/scene/MeshRepairReportModal.tsx:677
 msgctxt "Mesh analysis row"
 msgid "Signed volume"
 msgstr ""
@@ -7419,7 +7472,7 @@ msgstr ""
 msgid "Slicing"
 msgstr ""
 
-#: src/app/page.tsx:11844
+#: src/app/page.tsx:11857
 msgid "Slicing and analysis in progress..."
 msgstr ""
 
@@ -7787,7 +7840,7 @@ msgstr "Je to tu podozrivo prázdne."
 msgid "Swap which cut half receives the tenon and which receives the mortise."
 msgstr ""
 
-#: src/app/page.tsx:11867
+#: src/app/page.tsx:11880
 msgid "Sweeping orientations…"
 msgstr ""
 
@@ -7846,7 +7899,7 @@ msgstr ""
 msgid "Target Printer"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:317
+#: src/components/scene/MeshRepairReportModal.tsx:357
 msgid "Technical details"
 msgstr ""
 
@@ -7947,7 +8000,7 @@ msgstr ""
 msgid "The inputs and factors the last run sized the supports with"
 msgstr ""
 
-#: src/app/page.tsx:11937
+#: src/app/page.tsx:11950
 msgid "The models on this plate are deleted with it."
 msgstr ""
 
@@ -8295,8 +8348,8 @@ msgstr ""
 msgid "Triangles"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:601
-#: src/components/scene/MeshRepairReportModal.tsx:642
+#: src/components/scene/MeshRepairReportModal.tsx:625
+#: src/components/scene/MeshRepairReportModal.tsx:666
 msgctxt "Mesh analysis row"
 msgid "Triangles"
 msgstr ""
@@ -8334,7 +8387,7 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
-#: src/app/page.tsx:11891
+#: src/app/page.tsx:11904
 msgid "Undo brings the models back"
 msgstr ""
 
@@ -8397,7 +8450,7 @@ msgstr ""
 msgid "Unlock build plate"
 msgstr ""
 
-#: src/app/page.tsx:11960
+#: src/app/page.tsx:11973
 msgid "Unlock it to add or move models."
 msgstr ""
 
@@ -8431,7 +8484,7 @@ msgstr ""
 msgid "Unsaved Scene Found"
 msgstr ""
 
-#: src/app/page.tsx:11136
+#: src/app/page.tsx:11149
 msgid "Unsupported file format"
 msgstr ""
 
@@ -8650,8 +8703,8 @@ msgstr ""
 msgid "Vertical"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:602
-#: src/components/scene/MeshRepairReportModal.tsx:643
+#: src/components/scene/MeshRepairReportModal.tsx:626
+#: src/components/scene/MeshRepairReportModal.tsx:667
 msgctxt "Mesh analysis row"
 msgid "Vertices"
 msgstr ""
@@ -8791,8 +8844,13 @@ msgstr ""
 msgid "Warm"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:613
-#: src/components/scene/MeshRepairReportModal.tsx:654
+#: src/components/scene/MeshRepairReportModal.tsx:69
+msgctxt "Mesh repair summary"
+msgid "watertight"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:637
+#: src/components/scene/MeshRepairReportModal.tsx:678
 msgctxt "Mesh analysis row"
 msgid "Watertight"
 msgstr ""
@@ -8851,7 +8909,7 @@ msgstr "Čo tlačíme dnes?"
 msgid "What counts as a support-needing surface, and how tightly neighbouring detections merge"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:287
+#: src/components/scene/MeshRepairReportModal.tsx:327
 msgid "What DragonFruit repaired"
 msgstr ""
 
@@ -8867,6 +8925,11 @@ msgstr ""
 #: src/components/layout/EmptySceneState.tsx:92
 msgid "Why so empty?"
 msgstr "Prečo tak prázdny?"
+
+#: src/components/scene/MeshRepairReportModal.tsx:61
+msgctxt "Mesh repair summary"
+msgid "winding {windingBefore} → {windingAfter}"
+msgstr ""
 
 #. Heading of the floating panel right-click menu that resets panel positions.
 #: src/components/layout/FloatingPanelStack.tsx:1818
@@ -8908,7 +8971,7 @@ msgstr ""
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr ""
 
-#: src/app/page.tsx:11877
+#: src/app/page.tsx:11890
 msgid "Writing mesh geometry and support data to file…"
 msgstr ""
 
@@ -8937,8 +9000,8 @@ msgstr ""
 msgid "Y Min"
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:613
-#: src/components/scene/MeshRepairReportModal.tsx:654
+#: src/components/scene/MeshRepairReportModal.tsx:637
+#: src/components/scene/MeshRepairReportModal.tsx:678
 msgid "yes"
 msgstr ""
 
