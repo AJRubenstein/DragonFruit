@@ -9,7 +9,9 @@ import {
   registerHistoryHandler,
   getUndoCount,
   getRedoCount,
+  subscribeHistoryChanges,
 } from '../historyStore';
+import type { HistoryChange } from '../types';
 
 const ACTION = { type: 'test:action', payload: { value: 1 }, description: { id: 'test:action' } } as const;
 
@@ -123,5 +125,27 @@ describe('historyStore', () => {
 
     assert.equal(getRedoCount(), 0);
     assert.equal(getUndoCount(), 0);
+  });
+
+  it('reports pushes and applied undos and redos as changes, and nothing that did not apply', () => {
+    let accepts = true;
+    register(ACTION.type, () => accepts);
+    const changes: HistoryChange[] = [];
+    const unsubscribe = subscribeHistoryChanges((change) => changes.push(change));
+    cleanups.push(() => { unsubscribe(); });
+
+    pushHistory(ACTION);
+    undo();
+    redo();
+    accepts = false;
+    undo(); // declined
+    undo(); // empty
+    clearHistory();
+
+    assert.deepEqual(changes, [
+      { kind: 'push', actionType: ACTION.type },
+      { kind: 'undo', actionType: ACTION.type },
+      { kind: 'redo', actionType: ACTION.type },
+    ]);
   });
 });

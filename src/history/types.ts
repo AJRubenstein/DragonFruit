@@ -40,6 +40,12 @@ export type HistoryHandler = (action: HistoryAction, direction: HistoryDirection
 
 export type HistorySubscriber = () => void;
 
+/** One entry that changed the scene; see `subscribeHistoryChanges`. */
+export interface HistoryChange {
+  kind: 'push' | HistoryDirection;
+  actionType: string;
+}
+
 export type HistoryDebugEventKind =
   | 'push'
   | 'undo'
