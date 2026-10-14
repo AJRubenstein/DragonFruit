@@ -89,18 +89,24 @@ impl WebviewLiveness {
         if previous == 0 || gap_ms < NOTABLE_GAP.as_millis() as u64 {
             return;
         }
-        // Which side broke the silence is the measurement that matters: a
-        // timer firing late says the page was throttled, a probe answer says
-        // it was reachable all along.
-        if answering_probe && probe_sent != 0 {
+        // A hidden page's timers can stop outright. The probe wakes it, and the
+        // overdue timer tends to fire in the same instant, ahead of the probe's
+        // own answer. So the delay since the probe is what measures whether the
+        // page was reachable, whichever ping happened to arrive first.
+        let source = if answering_probe {
+            "probe answer"
+        } else {
+            "webview timer"
+        };
+        if probe_sent != 0 {
             log::info!(
-                "[webview-watchdog] Heartbeat back after {} s; the probe was answered in {} ms.",
+                "[webview-watchdog] Heartbeat back after {} s, {} ms after the probe ({source}).",
                 gap_ms / 1000,
                 now.saturating_sub(probe_sent)
             );
         } else {
             log::info!(
-                "[webview-watchdog] Heartbeat back after {} s, from the webview's own timer.",
+                "[webview-watchdog] Heartbeat back after {} s ({source}).",
                 gap_ms / 1000
             );
         }
