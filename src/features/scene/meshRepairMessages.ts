@@ -35,3 +35,43 @@ export function repairCancelledMessage(count: number, translate: Translate): str
 export function repairStoppedMessage(repaired: number, total: number, translate: Translate): string {
   return translate(msg`Repair stopped. Repaired ${repaired} of ${total} models; the rest are unchanged.`);
 }
+
+/**
+ * The remesh outcome. Every number arrives already formatted for the locale, so
+ * the message is one string with placeholders rather than a concatenation.
+ */
+export function remeshedMessage(
+  inputTriangles: string,
+  outputTriangles: string,
+  elapsed: string,
+  translate: Translate,
+): string {
+  return translate(msg`Remeshed ${inputTriangles} → ${outputTriangles} triangles in ${elapsed}.`);
+}
+
+/**
+ * The tetrahedral surfacing outcome. Every number arrives already formatted for the locale, so the
+ * message is one string with placeholders rather than a concatenation.
+ */
+/** The toast for a shrink-wrap run: what it cost, in triangles, and how long it took. */
+export function shrinkWrappedMessage(
+  inputTriangles: string,
+  outputTriangles: string,
+  elapsed: string,
+  translate: Translate,
+): string {
+  return translate(
+    msg`Shrink-Wrapped ${inputTriangles} → ${outputTriangles} triangles in ${elapsed}.`,
+  );
+}
+
+export function tetSurfacedMessage(
+  inputTriangles: string,
+  outputTriangles: string,
+  elapsed: string,
+  translate: Translate,
+): string {
+  return translate(
+    msg`Remesh: ${inputTriangles} → ${outputTriangles} triangles in ${elapsed}.`,
+  );
+}

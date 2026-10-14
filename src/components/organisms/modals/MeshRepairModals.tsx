@@ -343,8 +343,8 @@ export function MeshRepairModals({
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: '#d97706' }} />
                     <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                       {isMultiple
-                        ? <Trans><strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired results will replace these models in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>
-                        : <Trans><strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>}
+                        ? <Trans>The repaired results will replace these models in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>
+                        : <Trans>The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>}
                     </p>
                   </div>
                 </div>

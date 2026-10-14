@@ -4,6 +4,8 @@ import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import * as THREE from 'three';
 import { loadTauriCore, refineCoarseFaces } from '@/utils/tauriMeshBridge';
+import { solidRemeshFromGeometry, tetSurfaceFromGeometry, type SolidRemeshProgressSink, type SolidRemeshOptions, type TetSurfaceProgressSink, type TetWrapOptions } from '@/utils/meshShrinkwrap';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
 import { loadMeshFromPath } from '@/utils/meshRepair';
@@ -67,9 +69,12 @@ import { duplicatedModelName, pastedModelName } from '@/features/scene/modelCopy
 import {
   repairCancelledMessage,
   repairedModelsMessage,
+  remeshedMessage,
   repairFailedForModelMessage,
   repairFailedMessage,
   repairStoppedMessage,
+  tetSurfacedMessage,
+  shrinkWrappedMessage,
 } from '@/features/scene/meshRepairMessages';
 import {
   addPlateLabel,
@@ -95,10 +100,13 @@ import {
   SCENE_CHANGE_LABEL,
   showModelLabel,
   SLICE_SCENE_LABEL,
+  shrinkWrapModelLabel,
   splitModelLabel,
   splitSupportsLabel,
   SWITCH_PRINTER_LABEL,
   switchPrinterLabel,
+  tetSurfaceModelLabel,
+  solidRemeshModelLabel,
   transformModelLabel,
   transformModelsLabel,
   unlinkModelsLabel,
@@ -1357,6 +1365,7 @@ export function useSceneCollectionManager(options?: {
   onBlockedByLock?: (plateId?: string) => void;
 }) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
 
   type ScenePluginImportEntry = {
     pluginId: string;
@@ -7210,6 +7219,112 @@ export function useSceneCollectionManager(options?: {
     return allRepaired;
   }, [_, clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
 
+  /**
+   * Rebuild one model's surface with the native tetrahedral surfacing pass and swap the result in
+   * as a single undo step.
+   *
+   * Unlike the shrinkwrap remesh, the decomposition follows the model's own points rather than a
+   * uniform lattice, so fine detail survives and the boundary is closed by construction. The swap
+   * lands in place, keeping the model's transform and its place in the scene. The outcome, with the
+   * before/after triangle counts, is reported as a toast.
+   */
+  const tetSurfaceModelInPlace = useCallback(async (
+    modelId: string,
+    options: TetWrapOptions,
+    progressSink?: TetSurfaceProgressSink,
+  ): Promise<boolean> => {
+    const model = modelsRef.current.find((entry) => entry.id === modelId);
+    if (!model) return false;
+
+    try {
+      const result = await tetSurfaceFromGeometry(model.geometry.geometry, options, progressSink);
+      if (!result) {
+        emitSceneImportReport(_(msg`Remesh needs the desktop app.`), 'warning');
+        return false;
+      }
+      // The pass awaited, so the scene it lands in may no longer hold the model.
+      if (!modelsRef.current.some((entry) => entry.id === modelId)) return false;
+
+      // The pass carries no mesh modifiers, so an empty before-state is what marks this as a
+      // single undo step: the swap is recorded only when a history option is given.
+      const swapped = replaceModelGeometry(modelId, result.geometry, tetSurfaceModelLabel(model.name), {
+        historyBefore: {},
+      });
+      if (!swapped) return false;
+
+      const { report } = result;
+      emitSceneImportReport(
+        tetSurfacedMessage(
+          fmt.number(report.input_triangles),
+          fmt.number(report.output_triangles),
+          fmt.quantity(Math.round(report.ms), 0, 'ms'),
+          _,
+        ),
+        'success',
+      );
+      return true;
+    } catch (error) {
+      console.error('[tetSurfaceModelInPlace] Remesh failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      emitSceneImportReport(_(msg`Remesh failed: ${message}`), 'error', { durationMs: 6_000 });
+      return false;
+    }
+  }, [_, emitSceneImportReport, fmt, replaceModelGeometry]);
+
+  /**
+   * Rebuild one model's surface by resolving it into a solid and swap the result in as a single
+   * undo step.
+   *
+   * This is the mode the reference implementation's shrinkwrap uses: close what is open, boolean the
+   * mesh with itself so the result is resolved and retriangulated, then drop scrap shells. Where the
+   * tetrahedral remesh conforms to the model's own points and hands the same surface back, this one
+   * moves it, so it is for a mesh that is not one solid. The swap lands in place, keeping the
+   * model's transform and its place in the scene. The outcome, with the before/after triangle
+   * counts, is reported as a toast.
+   */
+  const solidRemeshModelInPlace = useCallback(async (
+    modelId: string,
+    options: SolidRemeshOptions,
+    progressSink?: SolidRemeshProgressSink,
+  ): Promise<boolean> => {
+    const model = modelsRef.current.find((entry) => entry.id === modelId);
+    if (!model) return false;
+
+    try {
+      const result = await solidRemeshFromGeometry(model.geometry.geometry, options, progressSink);
+      if (!result) {
+        emitSceneImportReport(_(msg`Shrink-Wrap needs the desktop app.`), 'warning');
+        return false;
+      }
+      // The pass awaited, so the scene it lands in may no longer hold the model.
+      if (!modelsRef.current.some((entry) => entry.id === modelId)) return false;
+
+      // The pass carries no mesh modifiers, so an empty before-state is what marks this as a
+      // single undo step: the swap is recorded only when a history option is given.
+      const swapped = replaceModelGeometry(modelId, result.geometry, solidRemeshModelLabel(model.name), {
+        historyBefore: {},
+      });
+      if (!swapped) return false;
+
+      const { report } = result;
+      emitSceneImportReport(
+        shrinkWrappedMessage(
+          fmt.number(report.input_triangles),
+          fmt.number(report.output_triangles),
+          fmt.quantity(Math.round(report.ms), 0, 'ms'),
+          _,
+        ),
+        'success',
+      );
+      return true;
+    } catch (error) {
+      console.error('[solidRemeshModelInPlace] Shrink-Wrap failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      emitSceneImportReport(_(msg`Shrink-Wrap failed: ${message}`), 'error', { durationMs: 6_000 });
+      return false;
+    }
+  }, [_, emitSceneImportReport, fmt, replaceModelGeometry]);
+
   // Cleanup on unmount
   useEffect(() => {
     const previous = trackedGeometriesRef.current;
@@ -7926,6 +8041,8 @@ export function useSceneCollectionManager(options?: {
     meshRepairConfirmPrompt,
     resolveMeshRepairConfirmPrompt,
     repairModelsInPlace,
+    tetSurfaceModelInPlace,
+    solidRemeshModelInPlace,
     recentOpenedFiles,
     reopenRecentOpenedFile,
     clearRecentOpenedFiles,
