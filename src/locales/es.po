@@ -4552,7 +4552,6 @@ msgid "Layer {layer} • {height} • Right-click a handle to type an exact valu
 msgstr "Capa {layer} • {height} • Haz clic derecho en un tirador para escribir un valor exacto • Doble clic para desactivar la sección transversal"
 
 #: src/components/organisms/PrintingPreviewPane.tsx:58
-#: src/features/slicing/components/SlicingPanel.tsx:181
 msgid "Layer {layer} preview"
 msgstr "Vista previa de la capa {layer}"
 
@@ -6317,10 +6316,6 @@ msgstr "Nombre de la plata"
 msgid "Plate Ordering"
 msgstr "Ordenación de placas"
 
-#: src/features/slicing/components/SlicingPanel.tsx:3121
-msgid "Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}"
-msgstr "Vista previa de la placa · Capa {previewSelectedLayer}/{previewTotalLayers}"
-
 #: src/components/settings/MultiPlateSettingsTab.tsx:49
 #: src/features/export/components/ExportPanel.tsx:99
 msgid "Plates"
@@ -6488,10 +6483,6 @@ msgstr "Pulsa <0>{clearLabel}</0> para reiniciar todo, o <1>{doneLabel}</1> para
 #: src/supports/Settings/AnatomyPreview/SupportAnatomyPreviewSlot.tsx:33
 msgid "Preview"
 msgstr "Vista previa"
-
-#: src/features/slicing/components/SlicingPanel.tsx:3140
-msgid "Preview for this layer is not available."
-msgstr "No hay vista previa de esta capa."
 
 #: src/components/settings/MeshSettingsTab.tsx:228
 msgid "Preview Model"

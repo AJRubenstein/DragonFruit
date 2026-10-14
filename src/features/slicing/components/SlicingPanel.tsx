@@ -87,11 +87,6 @@ interface SlicingPanelProps {
   captureSceneThumbnailPng?: (plateId?: string) => Promise<Uint8Array | null>;
   /** A run's first moment, with the bed it is slicing, so per-bed state is dropped for that bed. */
   onSliceRunStarted?: (context?: { plateId?: string }) => void;
-  onLayerPreviewGenerated?: (payload: {
-    layerIndex: number;
-    totalLayers: number;
-    pngBytes: Uint8Array;
-  }) => void;
   onSlicingFinished?: (payload: {
     totalLayers: number;
   }) => void;
@@ -175,10 +170,6 @@ function formatRemoteMaterialLabel(translate: Translate, materialName: string, s
 
 function formatRemoteMaterialIdLabel(translate: Translate, materialId: string): string {
   return translate(msg`${materialId} (Remote ID)`);
-}
-
-function formatLayerPreviewAlt(translate: Translate, layer: number): string {
-  return translate(msg`Layer ${layer} preview`);
 }
 
 // Phases reported by the native slicer arrive already worded from the backend, so
@@ -798,7 +789,6 @@ export function SlicingPanel({
   estimatedVolumeLabelOverride,
   captureSceneThumbnailPng,
   onSliceRunStarted,
-  onLayerPreviewGenerated,
   onSlicingFinished,
   onSliceArtifactReady,
   onSlicePlateSliced,
@@ -936,9 +926,6 @@ export function SlicingPanel({
   });
   const [selectedRemoteMaterialName, setSelectedRemoteMaterialName] = useState<string | null>(null);
   const [isLoadingRemoteMaterial, setIsLoadingRemoteMaterial] = useState(false);
-  const [layerPreviewUrls, setLayerPreviewUrls] = useState<Array<string | null>>([]);
-  const [previewTotalLayers, setPreviewTotalLayers] = useState(0);
-  const [previewSelectedLayer, setPreviewSelectedLayer] = useState(1);
   const [lastBenchmark, setLastBenchmark] = useState<SliceBenchmarkSnapshot | null>(null);
   const [lastNativeError, setLastNativeError] = useState<string | null>(null);
   const [slicerEngineVersion, setSlicerEngineVersion] = useState<string | null>(null);
@@ -1745,22 +1732,12 @@ export function SlicingPanel({
     };
   }, [progressPercent, showSlicingModal]);
 
-  const clearLayerPreviewUrls = useCallback(() => {
-    setLayerPreviewUrls((previous) => {
-      for (const url of previous) {
-        if (url) URL.revokeObjectURL(url);
-      }
-      return [];
-    });
-  }, []);
-
   useEffect(() => {
     return () => {
       slicingAbortControllerRef.current?.abort();
-      clearLayerPreviewUrls();
       onSlicingBusyChange?.(false);
     };
-  }, [clearLayerPreviewUrls, onSlicingBusyChange]);
+  }, [onSlicingBusyChange]);
 
   useEffect(() => {
     if (!isSlicingZip) {
@@ -1922,9 +1899,6 @@ export function SlicingPanel({
     setShowSlicingModal(true);
     setSlicingModalStage('running');
     onSlicingBusyChange?.(true);
-    clearLayerPreviewUrls();
-    setPreviewTotalLayers(0);
-    setPreviewSelectedLayer(1);
     onSliceIntentChanged?.(effectiveSliceIntent);
     onSliceRunStarted?.(scope ? { plateId: scope.plateId } : undefined);
 
@@ -1941,7 +1915,6 @@ export function SlicingPanel({
     let rasterAccumulatedMs = 0;
     let slicingPhaseStartMs: number | null = null;
     let exportThumbnailPng: Uint8Array | null = null;
-    let completedTotalLayers = 0;
     let slicingSucceeded = false;
     let completedTotalLayersFromResult = 0;
 
@@ -2081,35 +2054,6 @@ export function SlicingPanel({
             setEstimatedRemainingMs(null);
           }
         },
-        onLayerPreview: (layerIndex, totalLayers, pngBytes) => {
-          completedTotalLayers = Math.max(completedTotalLayers, totalLayers);
-          onLayerPreviewGenerated?.({
-            layerIndex,
-            totalLayers,
-            pngBytes,
-          });
-          const blobBytes = Uint8Array.from(pngBytes);
-          const blob = new Blob([blobBytes.buffer], { type: 'image/png' });
-          const nextUrl = URL.createObjectURL(blob);
-          setLayerPreviewUrls((previous) => {
-            const next = previous.slice();
-            const requiredLength = Math.max(totalLayers, layerIndex + 1);
-            if (next.length < requiredLength) {
-              next.length = requiredLength;
-            }
-            const prevUrl = next[layerIndex];
-            if (prevUrl) URL.revokeObjectURL(prevUrl);
-            next[layerIndex] = nextUrl;
-            return next;
-          });
-          setPreviewTotalLayers(totalLayers);
-          setPreviewSelectedLayer((previousLayer) => {
-            if (!Number.isFinite(previousLayer) || previousLayer <= 0) {
-              return Math.max(1, Math.min(totalLayers, layerIndex + 1));
-            }
-            return Math.max(1, Math.min(totalLayers, previousLayer));
-          });
-        },
       });
 
       setCurrentPhase('Encoding');
@@ -2174,7 +2118,6 @@ export function SlicingPanel({
         if (batch) {
           const plateTotalLayers = Math.max(
             1,
-            completedTotalLayers,
             completedTotalLayersFromResult,
             result.benchmark.totalLayers ?? 0,
           );
@@ -2226,7 +2169,7 @@ export function SlicingPanel({
         setCurrentPhase('Opening');
         // i18n-ignore: sliceStatus is never rendered
         setSliceStatus('Opening');
-        onSlicingFinished?.({ totalLayers: Math.max(completedTotalLayers, completedTotalLayersFromResult, 1) });
+        onSlicingFinished?.({ totalLayers: Math.max(completedTotalLayersFromResult, 1) });
       }
     }
 
@@ -2374,17 +2317,9 @@ export function SlicingPanel({
     };
   }, [isSlicingZip, shouldAutoSlice]);
 
-  const selectedLayerPreviewUrl = useMemo(() => {
-    if (previewSelectedLayer < 1) return null;
-    return layerPreviewUrls[previewSelectedLayer - 1] ?? null;
-  }, [layerPreviewUrls, previewSelectedLayer]);
-
   const handleCloseSlicingModal = useCallback(() => {
     setShowSlicingModal(false);
-    clearLayerPreviewUrls();
-    setPreviewTotalLayers(0);
-    setPreviewSelectedLayer(1);
-  }, [clearLayerPreviewUrls]);
+  }, []);
 
   if (models.length === 0) {
     return (
@@ -3114,34 +3049,6 @@ export function SlicingPanel({
                   </div>
                 )}
               </div>
-
-              {slicingModalStage === 'finished' && previewTotalLayers > 0 && (
-                <div className="rounded-lg border p-2.5 space-y-1.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    <Trans>Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}</Trans>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={Math.max(1, previewTotalLayers)}
-                    step={1}
-                    value={Math.max(1, Math.min(previewTotalLayers || 1, previewSelectedLayer))}
-                    onChange={(event) => setPreviewSelectedLayer(Number(event.target.value))}
-                    className="w-full"
-                  />
-                  {selectedLayerPreviewUrl ? (
-                    <img
-                      src={selectedLayerPreviewUrl}
-                      alt={formatLayerPreviewAlt(_, previewSelectedLayer)}
-                      className="w-full h-36 rounded object-contain"
-                    />
-                  ) : (
-                    <div className="h-36 rounded border border-dashed flex items-center justify-center text-xs" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
-                      <Trans>Preview for this layer is not available.</Trans>
-                    </div>
-                  )}
-                </div>
-              )}
 
               <div className="h-2.5 rounded overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                 <div

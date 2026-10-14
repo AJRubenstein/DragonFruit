@@ -4551,7 +4551,6 @@ msgid "Layer {layer} • {height} • Right-click a handle to type an exact valu
 msgstr ""
 
 #: src/components/organisms/PrintingPreviewPane.tsx:58
-#: src/features/slicing/components/SlicingPanel.tsx:181
 msgid "Layer {layer} preview"
 msgstr ""
 
@@ -6316,10 +6315,6 @@ msgstr ""
 msgid "Plate Ordering"
 msgstr ""
 
-#: src/features/slicing/components/SlicingPanel.tsx:3121
-msgid "Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}"
-msgstr ""
-
 #: src/components/settings/MultiPlateSettingsTab.tsx:49
 #: src/features/export/components/ExportPanel.tsx:99
 msgid "Plates"
@@ -6486,10 +6481,6 @@ msgstr ""
 #. Heading of the right-click menu on the support anatomy preview card in the Support Studio.
 #: src/supports/Settings/AnatomyPreview/SupportAnatomyPreviewSlot.tsx:33
 msgid "Preview"
-msgstr ""
-
-#: src/features/slicing/components/SlicingPanel.tsx:3140
-msgid "Preview for this layer is not available."
 msgstr ""
 
 #: src/components/settings/MeshSettingsTab.tsx:228
