@@ -1,6 +1,6 @@
 # LYS to STL Extraction Specification
 
-This page documents the reverse-engineered mesh extraction contract used when importing `.lys` scene data and converting geometry to STL-like triangle meshes.
+This page documents the mesh extraction contract used when importing `.lys` scene data and converting geometry to STL-like triangle meshes.
 
 ## Overview
 

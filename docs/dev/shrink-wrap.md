@@ -20,6 +20,14 @@ dialog parameters, and its automatic repair path never calls it.
 | `ShrinkWrapOptions` | `voxel_mm`, `gap_fill_mm`, `thickness_mm`, `max_triangles` |
 | `ShrinkWrapOutcome` | the wrapped `mesh` plus a `ShrinkWrapReport` |
 | `ShrinkWrapReport` | input, isosurface and output triangle counts, voxel size, offset, band size, elapsed milliseconds |
+| `mesh_shrinkwrap_staged(options_json)` | the Tauri command. Resamples the staged mesh, replaces the staging buffer with the result and returns the report. It remains registered and callable; the app no longer reaches it, since the entry that did was removed. |
+
+In the app it is the **Remesh** entry in the repair flyout on the Editor menu. It is enabled only
+with an active model, and it asks for confirmation first, because the consequence is the whole
+surface rather than a repair of it. The defaults there are the ones measured on a ~600k-triangle
+model: `voxel_mm` 0.8 with `max_triangles` 600,000, which lands within a fraction of a percent of
+the input triangle count while closing the surface.
+
 
 The CLI exposes it as its own subcommand rather than a flag on `repair`, so that asking for it is a
 deliberate act:
@@ -95,6 +103,216 @@ offset. On a calibration part whose dimensions are the point, that matters — t
   percent, which is the right guard for a repair that might invert a solid and the wrong one here:
   correcting a winding *is* a volume correction. It reverted the fix and left the 2,400 edges; an
   independent propagation settles the same surface to zero.
+
+## The second mode: tetrahedral surfacing
+
+Beside ShrinkWrap there is a second way to rebuild a surface, and it is the one to reach for when
+fine detail matters. Where ShrinkWrap resamples onto a **uniform lattice** — which is what loses
+detail and, where the band thins, emits detached pieces — tetrahedral surfacing decomposes the
+model into tetrahedra and keeps the boundary between the inside and outside cells. The decomposition
+follows the model's own points, so nothing is coarser than the input, and the boundary between two
+labels is closed by construction, so there is nothing to detach.
+
+It is a separate mode, not a setting on ShrinkWrap: a lattice and a decomposition are unrelated
+results, and a user choosing between them needs to know which one they asked for.
+
+### The public surface
+
+| item | what it is |
+| --- | --- |
+| `tet_surface(mesh, options)` | the entry point, in `dragonfruit_mesh_repair::tet_wrap` |
+| `tet_surface_with_progress(mesh, options, sink)` | the same run, announcing each phase; `tet_surface` is a thin wrapper over it |
+| `TetWrapOptions` | `switches`, `max_triangles`, `tolerance` |
+| `TetWrapOutcome` | the rebuilt `mesh` plus a `TetWrapReport` |
+| `TetWrapReport` | input and output triangle counts, decomposition size, inside-cell count, per-phase milliseconds, and `cancelled` |
+| `mesh_tet_surface_staged(options_json)` | the Tauri command. Resamples the staged mesh, replaces the staging buffer with the result and returns the report. |
+| `tetSurfaceFromGeometry(geometry, options)` | the frontend entry, in `src/utils/meshShrinkwrap.ts`. Stages the geometry, calls the command and reads the new positions back. |
+| `tetSurfaceModelInPlace(modelId, options)` | the scene action. Swaps the rebuilt geometry in, records one undo step and reports the triangle counts. |
+
+In the app it is the **Remesh** entry in the repair flyout on the Editor menu. It is
+enabled only with an active model, and it asks for confirmation first, because the consequence is the
+whole surface rather than a repair of it. Its progress runs in its own dialog, on its three phases,
+and its Stop stops the run at a phase boundary.
+
+The lattice mode above is no longer reachable from the app. It remains a native pass and its own CLI
+subcommand, `shrinkwrap`, and a caller has to name it. It left the menu because a lattice loses fine
+detail to its voxel size, which the decomposition does not, so offering both asked the user to
+choose between a resample and a better resample.
+
+The CLI exposes it as its own subcommand, `tetwrap`, for the same reason `shrinkwrap` is not a flag
+on `repair`:
+
+```
+dragonfruit-mesh-repair tetwrap model.stl --switches pQ --tolerance 0 --out-stl surfaced.stl
+```
+
+### The phases
+
+`tet_surface_with_progress` announces three phases, in order, each a cancellation point:
+
+1. **`tetrahedralize`** — prepare the input, then decompose it. Preparation is: weld exact
+   coincident corners; merge the nearly-coincident ones that a soup leaves behind when it computes
+   the same corner from two places and floating point rounds the copies apart; drop triangles with no
+   area; drop pairs of triangles that share three vertices and wind opposite ways, which are
+   zero-depth sheets and enclose nothing; correct the winding; and simplify the input by
+   `tolerance_mm` so the cell size follows the shape rather than the export's density. The
+   decomposition is then **constrained**: the input's triangles are handed to TetGen as a piecewise
+   linear complex (`-p`), so the decomposition is required to contain them.
+2. **`label`** — decide inside from outside by the winding number at each tetrahedron's own
+   centroid.
+3. **`extract`** — walk the tetrahedra's faces and keep the ones between an inside and an outside
+   cell, wound as the inside cell has them so the result faces outward.
+
+`TetWrapOptions::max_triangles` simplifies the extracted surface when it exceeds the budget; it runs
+after the third phase and is not itself a cancellation point.
+
+### Measured
+
+On `poussin.stl`, a clean 170,790-triangle model, the constrained decomposition that made the
+difference: 170,909 triangles out from 170,790, on 323,632 tetrahedra against the 596,374 a
+point-only decomposition produced, in about 20 seconds.
+
+The unconstrained form, on the same file: 172,512 triangles out (**+1.0%**), volume
+**−0.011%**, one component, watertight, `fully_repaired: true`, and no non-manifold, boundary, loop
+or winding defects, in about 20 seconds.
+
+It is still a resample, so the same caveat as ShrinkWrap applies: the surface is rebuilt and its
+triangles are new. But it does not move the surface by a voxel the way the lattice does — the
+decomposition follows the input, so there is no resolution floor separating it from the original.
+
+## Cavities
+
+A cavity is a closed shell inside the material. A hollowed model has them on purpose and a damaged
+one can have them by accident, so they are **reported** before anything removes them: the choice
+between a hollow model and a solid one is the caller's.
+
+| item | what it is |
+| --- | --- |
+| `scan_cavities(mesh)` | `dragonfruit_mesh_repair::repair::scan_cavities`, returning `CavityScan` |
+| `remove_cavities(mesh, include_broken)` | delete them, returning the triangle count removed |
+| `CavityScan` | `components`, `broken_components`, `triangles`, `volume` |
+| `drop_zero_depth_sheets(triangles)` | delete pairs of triangles sharing three vertices and winding opposite ways |
+
+```
+dragonfruit-mesh-repair cavities model.stl --pretty
+dragonfruit-mesh-repair solidify model.stl --include-broken --out-stl solid.stl
+```
+
+Two kinds are reported. A **cavity** is a closed component whose faces are almost all interior to
+another component — the same rule the repair pipeline's own cull uses, so what is reported is what
+it would remove. A **broken** cavity is one that is mostly interior but *not* closed, which is what
+a cavity breaking through the outer wall leaves behind.
+
+Removing one removes surface, not material: a cavity encloses nothing, so deleting it leaves the
+outer shell, solid except where the cavity broke through it. Closing that is the resampler's job,
+which may invent geometry; repair keeps refusing such a model.
+
+Known limit: this classifies by **component**, so it sees a cavity only when the cavity is a
+component of its own. On `corbu-chibi-corrboo45.stl` the inner shell shares edges with the wall it
+broke through, making the two one component, and the scan reports only fragments — 13 triangles of
+1.016 million. Separating that case needs a per-face test, distinguishing air that is enclosed
+(cavity) from air that is unbounded (outside), rather than a component test.
+
+## The third mode: surface to solid
+
+This mode is neither a resampler nor a decomposition. It closes what is open, resolves the mesh into
+a solid with a boolean of the mesh with itself, and drops the scrap shells the boolean leaves. A
+boolean of a mesh with itself reconciles it: the result is retriangulated, coincident and
+self-intersecting geometry is resolved, and boundaries are gone. That is what moves the surface.
+[`crate::tet_wrap`] conforms a decomposition to the input's own triangles, so it returns the input's
+surface; this returns a *resolved* one.
+
+The four steps, in order:
+
+```text
+scan for open edges
+close them
+boolean the mesh with itself
+drop the shells small enough to be scrap
+```
+
+| item | what it is |
+| --- | --- |
+| `solid_remesh(mesh, options)` | the entry point, in `dragonfruit_mesh_repair::solid_remesh` |
+| `solid_remesh_with_progress(mesh, options, sink)` | the same run, announcing each phase |
+| `SolidRemeshOptions` | `fill_holes_max_edges`, `remove_noise_shells`, `tolerance` |
+| `SolidRemeshReport` | input and output triangle counts, shells before and after, holes filled, `declined`, `ms`, `cancelled` |
+| `mesh_solid_remesh_staged(options_json, progress_token)` | the Tauri command. Rebuilds the staged mesh and returns the report |
+| `solidRemeshStagedMesh(invoke, options, token)` | the bridge call, in `src/utils/tauriMeshBridge.ts` |
+| `solidRemeshFromGeometry(geometry, options, sink)` | the frontend entry, in `src/utils/meshShrinkwrap.ts` |
+| `solidRemeshModelInPlace(modelId, options, sink)` | the scene action. Swaps the rebuilt geometry in, records one undo step and reports the triangle counts |
+
+```
+dragonfruit-mesh-repair solid-remesh model.stl --out-stl solid.stl
+```
+
+In the app it is the **Shrink-Wrap** entry in the repair flyout, beside **Remesh**. Both are whole
+surface replacements and both ask for confirmation first. Its progress runs in the same dialog as
+Remesh, on its own four phases, with its own accent so the two are not confused mid-run.
+
+The phases are `prepare` (weld, merge near-coincident vertices, correct winding, split pinches),
+`simplify` (drop the triangles `tolerance` allows), `fill` (cap every boundary loop), `solid` (the
+boolean), and `shells` (drop scrap shells) — the reference's own order, with its simplification in
+the same place.
+
+### Measured
+
+On `poussin.stl`, a clean closed model, 170,790 triangles in:
+
+| `tolerance` | triangles out | reduction |
+| --- | --- | --- |
+| 0 | 170,790 | none |
+| 0.0001 | 167,210 | 2% |
+| 0.0005 | 159,270 | 7% |
+| **0.001** (default) | **123,558** | **28%** |
+| 0.002 | 48,824 | 71% |
+| 0.005 | 11,854 | 93% |
+| 0.05 | 190 | 99.9%, destroyed |
+
+One shell before and after, no holes filled, 1.5 seconds at the default.
+
+Two things follow from that table, and both are load-bearing.
+
+**The `tolerance` is not a percentage of anything intuitive.** It is `meshopt`'s relative error, and
+the value in a reference implementation's dialog is not this quantity: 0.05 of *theirs* is a light
+pass and 0.05 of *this* leaves 190 triangles of 170,790. The default here is 0.001 because it is a
+reduction a person can see without the model being gone.
+
+**Without the simplification this mode is a no-op.** A boolean of a mesh with itself is idempotent
+and the manifold round trip preserves a clean mesh's triangulation, so at `tolerance = 0` the surface
+comes back exactly as it went in. The simplification is the whole of what "shrink-wrap" does to a
+clean model, which is why it is a phase of this mode and not of the tetrahedral one: collapsing a
+surface folds it, and a boolean is what resolves a folded one. The tetrahedral mode constrains the
+model's own facets, so it defaults to leaving them alone.
+
+### Constraints
+
+- **A resolved surface is not a repair.** Like the other two modes it is never a stage of
+  `repair()`, and a caller names it.
+- **Declining returns the input, not an empty mesh.** `SolidRemeshReport::declined` carries the
+  reason. A caller that asked about a model must still have that model afterwards.
+- **`fill_holes_max_edges` counts down, not up.** The pass reads zero as "no loop qualifies", not as
+  "no cap", so filling every loop is `usize::MAX` and that is the default.
+
+### Constraints
+
+- **Never called from `repair()` on its own.** `remove_cavities` is available to a caller, and
+  `solidify` is a subcommand; the pipeline's own cull keeps its closed-component rule.
+- **Never called from `repair()`.** Like ShrinkWrap, it is a separate function, a separate CLI
+  subcommand, and a caller has to name it.
+- **The inside decision is a plain winding number per centroid, not an optimal cut.** It is
+  unambiguous for a cell well inside or well outside but not for one the surface passes through;
+  resolving those optimally is the next step.
+- **`-d` is not used, and it is the switch that sounds right.** TetGen's `-d` detects intersections
+  between PLC facets and splits them, which is the remedy for the soup this path is for. It also
+  produces no decomposition at all on a clean model, so the constrained path takes input whose
+  facets are compatible and refuses the rest. `corbu-chibi-corrboo45.stl` is refused for exactly
+  that reason, and its facets genuinely intersect.
+- **Constraining needs compatibility, and compatibility is the whole difficulty.** The comparison
+  above is why the constraint is worth having; the refusal on corbu is why a point-only
+  decomposition is still reachable.
+- **A cancelled run returns the input unchanged.** A half-built decomposition shares nothing with
+  the input, so there is no meaningful halfway result; `TetWrapReport::cancelled` marks the case.
 
 ## Related pages
 
