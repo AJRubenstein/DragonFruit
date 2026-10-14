@@ -15,6 +15,11 @@
  *   npx tsx scripts/dragonfruit-ts-cli.ts support list scene.voxl --json
  */
 
+// First, before anything that reaches `src/`: the support state and its history
+// labels use the Lingui macros, which only a build compiles away. These are the
+// stubs `npm test` loads for the same reason. The CLI runs as CommonJS under tsx,
+// so the imports below are resolved one after another, after this has run.
+import './test-unit/register.mjs';
 import { readFileSync, writeFileSync, statSync } from 'fs';
 import { basename, resolve, dirname } from 'path';
 import { execFileSync, execSync } from 'child_process';
