@@ -26,8 +26,8 @@ import { AutoSupportPresetSelect } from './AutoSupportPresetSelect';
  * says which way the flag is set, so it reads the same to someone who cannot tell
  * the accent fill from the quiet one.
  */
-const AUTO_LIFT_ON = msg`Auto-Lift ON`;
-const AUTO_LIFT_OFF = msg`Auto-Lift OFF`;
+const AUTO_LIFT_ON = msg({ message: 'Auto-Lift ON', comment: 'Toggle button sharing a narrow row with the preset dropdown. Keep it about as short as the English.' });
+const AUTO_LIFT_OFF = msg({ message: 'Auto-Lift OFF', comment: 'Toggle button sharing a narrow row with the preset dropdown. Keep it about as short as the English.' });
 
 /**
  * What the flag does, in the terms an auto-support run cares about. Mirrors the

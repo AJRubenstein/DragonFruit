@@ -1,7 +1,7 @@
 //! Smoke tests for the repair pipeline on synthetic fixtures.
 
 use dragonfruit_mesh_repair::core::mesh::{IndexedMesh, Vec3};
-use dragonfruit_mesh_repair::{analyze, repair, RepairOptions};
+use dragonfruit_mesh_repair::{analyze, repair, repair_with_progress, RepairOptions};
 
 /// Build a unit cube with outward-facing winding.
 fn unit_cube() -> IndexedMesh {
@@ -78,7 +78,7 @@ fn duplicated_vertices_are_welded() {
         .report
         .steps
         .iter()
-        .any(|s| s.name == "weld" && s.changed > 0));
+        .any(|s| s.name == "stitch" && s.changed > 0));
 }
 
 #[test]
@@ -133,81 +133,249 @@ fn degenerate_triangles_are_culled() {
     assert_eq!(outcome.mesh.triangles.len(), 12);
 }
 
+/// The stage order is the design, not an accident.
+///
+/// Orientation, stitch, holes and double faces each disturb what the one before it
+/// settled, so they come round more than once. A refactor that "simplifies" this list
+/// has changed what the repair does, and this is where that shows up.
 #[test]
-fn defaults_enable_fragmented_auto_solidify_with_guards() {
-    let defaults = RepairOptions::default();
-    assert!(
-        defaults.solidify_fragmented_components,
-        "fragmented auto-solidify should be enabled by default"
+fn the_pipeline_runs_the_stage_order_it_says_it_does() {
+    let outcome = repair(unit_cube(), &RepairOptions::default());
+    let names: Vec<&str> = outcome
+        .report
+        .steps
+        .iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "orient_components",
+            "stitch",
+            "holes_trivial",
+            "double_faces",
+            "orient_holes_stitch",
+            "orient_holes_all_stitch",
+            "double_faces_after_split",
+            "remove_inner_faces",
+            "noise_shells",
+            "settle",
+            "prune_and_classify",
+        ]
     );
-    assert_eq!(defaults.solidify_component_threshold, 256);
-    assert_eq!(defaults.solidify_self_intersection_threshold, 128);
 }
 
+/// The sink hears about each stage before it runs, and stopping it stops the run.
 #[test]
-fn fragmented_auto_solidify_triggers_without_explicit_resolve_flag() {
-    // Two disconnected triangles crossing each other.
-    let mesh = IndexedMesh {
-        positions: vec![
-            Vec3::new(-1.0, -1.0, 0.0),
-            Vec3::new(2.0, -1.0, 0.0),
-            Vec3::new(-1.0, 2.0, 0.0),
-            Vec3::new(-1.0, 0.0, -1.0),
-            Vec3::new(1.0, 0.0, -1.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        ],
-        triangles: vec![[0, 1, 2], [3, 4, 5]],
-    };
+fn the_progress_sink_sees_each_stage_and_can_stop_the_run() {
+    let mut seen: Vec<String> = Vec::new();
+    let outcome = repair_with_progress(
+        unit_cube(),
+        &RepairOptions::default(),
+        Some(&mut |name, index| {
+            seen.push(format!("{index}:{name}"));
+            true
+        }),
+    );
+    let named: Vec<&str> = seen
+        .iter()
+        .map(|entry| entry.split(':').nth(1).unwrap())
+        .collect();
+    let recorded: Vec<&str> = outcome
+        .report
+        .steps
+        .iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    assert_eq!(
+        named, recorded,
+        "the sink has to name the stage it is announcing, in the order the report records them"
+    );
+    assert_eq!(seen[0], "1:orient_components");
+    assert!(!outcome.report.cancelled);
 
-    let options = RepairOptions {
-        resolve_self_intersections: false,
-        solidify_fragmented_components: true,
-        solidify_component_threshold: 2,
-        solidify_self_intersection_threshold: 1,
-        ..RepairOptions::default()
-    };
-
-    let outcome = repair(mesh.clone(), &options);
+    // Say no to the third stage and the run stops at the boundary before it.
+    let mut asked = 0;
+    let stopped = repair_with_progress(
+        unit_cube(),
+        &RepairOptions::default(),
+        Some(&mut |_, _| {
+            asked += 1;
+            asked < 3
+        }),
+    );
+    assert!(stopped.report.cancelled);
+    assert_eq!(stopped.report.steps.len(), 2, "the third stage never ran");
     assert!(
-        outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "auto_enable_solidify"),
-        "auto solidify step should be recorded"
+        !stopped.report.fully_repaired || stopped.report.post.is_watertight,
+        "a cancelled run still reports the mesh it has"
+    );
+}
+
+/// A solid with a cavity keeps its cavity.
+///
+/// The wall of a cavity faces inward, which is what a cavity wall is. A per-component
+/// outward vote turns it outward, and that makes the cavity a solid and moves the model's
+/// volume: on a real multi-component model it flipped 83,745 faces and the volume moved 17%.
+/// The orientation pass propagates winding per patch and guards its component vote with a
+/// nesting test, so a component sitting inside another keeps the orientation it has.
+#[test]
+fn a_cavity_keeps_its_orientation() {
+    let mut mesh = unit_cube();
+    let outer_faces = mesh.triangles.len();
+
+    // A smaller cube inside it, wound the other way, which is what a cavity looks like.
+    let base = mesh.positions.len() as u32;
+    for corner in [
+        Vec3::new(0.3, 0.3, 0.3),
+        Vec3::new(0.7, 0.3, 0.3),
+        Vec3::new(0.7, 0.7, 0.3),
+        Vec3::new(0.3, 0.7, 0.3),
+        Vec3::new(0.3, 0.3, 0.7),
+        Vec3::new(0.7, 0.3, 0.7),
+        Vec3::new(0.7, 0.7, 0.7),
+        Vec3::new(0.3, 0.7, 0.7),
+    ] {
+        mesh.positions.push(corner);
+    }
+    let inner = [
+        [0u32, 2, 1], [0, 3, 2],
+        [4, 5, 6], [4, 6, 7],
+        [0, 1, 5], [0, 5, 4],
+        [3, 7, 6], [3, 6, 2],
+        [0, 4, 7], [0, 7, 3],
+        [1, 2, 6], [1, 6, 5],
+    ];
+    for face in inner {
+        mesh.triangles.push([face[0] + base, face[1] + base, face[2] + base]);
+    }
+    assert_eq!(mesh.triangles.len(), outer_faces * 2);
+
+    let before = mesh.signed_volume();
+    assert!(before > 0.9, "the cavity should subtract: {before}");
+    assert_eq!(analyze(&mesh).inconsistent_winding_edges, 0);
+
+    let outcome = repair(mesh, &RepairOptions::default());
+    let after = outcome.mesh.signed_volume();
+    assert!(
+        (after - before).abs() / before.abs() < 1e-3,
+        "the cavity was turned inside out: {before} -> {after}"
+    );
+    assert_eq!(
+        outcome.report.post.inconsistent_winding_edges, 0,
+        "and the winding is still consistent"
+    );
+}
+
+/// Two surfaces sharing an edge are separated, and the mesh comes out manifold.
+///
+/// A cube with a third triangle hung off one of its edges. That edge carries three faces,
+/// two forward and one backward, which no pairing resolves. The split gives each surface its
+/// own copy of the edge's vertices, moved into its own solid, so a re-read of the exported
+/// file cannot merge them back. This is the watertight repair of overlapping parts, and it is
+/// the one case the pipeline could previously only report.
+#[test]
+fn a_shared_edge_is_separated() {
+    let mut mesh = unit_cube();
+    let apex = mesh.positions.len() as u32;
+    mesh.positions.push(Vec3::new(0.5, -0.4, 0.6));
+    mesh.triangles.push([0, 1, apex]);
+
+    let before = analyze(&mesh);
+    assert!(
+        before.non_manifold_edges > 0,
+        "the fixture has to start with a shared edge: {before:?}"
+    );
+
+    let outcome = repair(mesh, &RepairOptions::default());
+    let after = &outcome.report.post;
+    assert_eq!(
+        after.non_manifold_edges, 0,
+        "the shared edge should be separated: {:?}",
+        outcome.report.residual_issues
     );
     assert!(
-        outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "corefine_self_intersections"),
-        "co-refinement should run when auto solidify triggers"
-    );
-    assert!(
-        outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "extract_union_boundary_faces"),
-        "union boundary extraction should run after corefine"
+        after.boundary_edges <= before.boundary_edges,
+        "and it must not open anything: {} -> {}",
+        before.boundary_edges,
+        after.boundary_edges
     );
 
-    // Control check: same thresholds but auto mode disabled should not run corefine.
-    let control = RepairOptions {
-        resolve_self_intersections: false,
-        solidify_fragmented_components: false,
-        solidify_component_threshold: 2,
-        solidify_self_intersection_threshold: 1,
-        ..RepairOptions::default()
-    };
-    let control_outcome = repair(mesh, &control);
+    // And the order they run in. The union merges parts that overlap and skips any component that
+    // is not already manifold; the split offsets the surfaces it separates, so nothing can merge
+    // them afterwards. Running the split first separates surfaces and then leaves the union unable
+    // to merge anything, which measured as 240 parts where the other order gives 43.
+    let names: Vec<&str> = outcome
+        .report
+        .steps
+        .iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    let union_at = names
+        .iter()
+        .position(|name| *name == "union_overlapping_parts")
+        .expect("the fixture has bad edges, so the union runs");
+    let split_at = names
+        .iter()
+        .position(|name| *name == "split_non_manifold_edges")
+        .expect("and a shared edge, so the split runs");
     assert!(
-        !control_outcome
-            .report
-            .steps
-            .iter()
-            .any(|s| s.name == "corefine_self_intersections"),
-        "corefine should remain off when both resolve and auto-solidify are disabled"
+        union_at < split_at,
+        "the union has to run before the split or it has nothing it can merge: {names:?}"
+    );
+}
+
+/// Small shells that are not scraps are kept.
+///
+/// A model with supports is a model with hundreds of small closed shells. The reference's
+/// noise-shell rule also deletes a shell whose area is under a hundredth of the mesh's and whose
+/// triangle count is under a twentieth, and every support pillar is one: on `COOKIE_b4.stl` it
+/// took 88,912 faces and the repair reported success while the supports were gone.
+///
+/// The mistakes are not symmetric. Keeping a stray shell costs a shell the user can see and
+/// delete; deleting a support costs a print.
+#[test]
+fn small_shells_that_are_not_scraps_are_kept() {
+    let mut mesh = unit_cube();
+    for pillar in 0..12 {
+        let base = mesh.positions.len() as u32;
+        let x = 2.0 + pillar as f32 * 0.5;
+        for corner in [
+            Vec3::new(x, 0.0, 0.0),
+            Vec3::new(x + 0.2, 0.0, 0.0),
+            Vec3::new(x + 0.2, 0.2, 0.0),
+            Vec3::new(x, 0.2, 0.0),
+            Vec3::new(x, 0.0, 0.2),
+            Vec3::new(x + 0.2, 0.0, 0.2),
+            Vec3::new(x + 0.2, 0.2, 0.2),
+            Vec3::new(x, 0.2, 0.2),
+        ] {
+            mesh.positions.push(corner);
+        }
+        for face in [
+            [0u32, 2, 1], [0, 3, 2],
+            [4, 5, 6], [4, 6, 7],
+            [0, 1, 5], [0, 5, 4],
+            [3, 7, 6], [3, 6, 2],
+            [0, 4, 7], [0, 7, 3],
+            [1, 2, 6], [1, 6, 5],
+        ] {
+            mesh.triangles.push([face[0] + base, face[1] + base, face[2] + base]);
+        }
+    }
+
+    let before = analyze(&mesh);
+    assert_eq!(before.connected_components, 13, "the fixture is a model and 12 pillars");
+
+    let outcome = repair(mesh, &RepairOptions::default());
+    let after = &outcome.report.post;
+    assert_eq!(
+        after.connected_components, before.connected_components,
+        "no pillar is a scrap: {:?}",
+        outcome.report.residual_issues
+    );
+    assert_eq!(
+        after.triangle_count, before.triangle_count,
+        "and no pillar lost a face"
     );
 }

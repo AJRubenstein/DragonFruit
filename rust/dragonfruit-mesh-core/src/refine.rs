@@ -37,6 +37,28 @@ pub const MAX_EDGE_DIAGONAL_FRACTION: f32 = 0.02;
 /// refined are the worst ones, which are the ones that show.
 pub const DEFAULT_GROWTH_LIMIT: f32 = 1.3;
 
+/// Triangles a *coarse* mesh may gain to reach its target.
+///
+/// A growth fraction is the wrong shape for a coarse model, because the budget is
+/// proportional to the mesh that most needs it. Measured on a 12-triangle 120mm
+/// block, `1.3x` bought 14 triangles and left the longest edge untouched at
+/// 169.71mm — 48.7x the 3.49mm target, on faces that are planar and split for
+/// nothing but the shading. A flat headroom costs a bounded number of triangles
+/// on any mesh below a million of them, and is invisible above
+/// [`DEFAULT_GROWTH_LIMIT`]'s own allowance on the dense parts the fraction
+/// exists to protect: 2.13M triangles allow 639k of growth, 250k is less.
+pub const COARSE_GROWTH_HEADROOM: usize = 250_000;
+
+/// The triangle budget a refinement may spend on a mesh of `triangles` faces:
+/// the growth fraction, or the fraction plus a coarse model's headroom, whichever
+/// is larger. The two refiners that exist (the loaders' dispatcher and the
+/// renderer-geometry command) both ask for it here, so the policy cannot differ
+/// between them.
+pub fn refinement_budget(triangles: usize) -> usize {
+    let by_fraction = (triangles as f32 * DEFAULT_GROWTH_LIMIT) as usize;
+    by_fraction.max(triangles.saturating_add(COARSE_GROWTH_HEADROOM))
+}
+
 /// Subdivide the triangles whose edges are longer than `max_edge`.
 ///
 /// Returns the input unchanged when nothing exceeds it, so a caller can run this
@@ -89,11 +111,11 @@ pub fn refine_long_edges_with_budget(
             .into_iter()
             .map(|(key, (span, faces, _))| (key, span, faces))
             .collect();
-        candidates.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.0.cmp(&b.0))
-        });
+        // `total_cmp`, not `partial_cmp`: a mesh can carry non-finite positions,
+        // and a comparator that maps NaN to `Equal` is not a total order — Rust's
+        // sort panics on one ("does not correctly implement a total order") rather
+        // than producing a wrong order. For finite spans the two agree.
+        candidates.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
 
         // Each admitted edge costs one triangle in every face that touches it,
         // including a face that is already splitting: its second long edge makes

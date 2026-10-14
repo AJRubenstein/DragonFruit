@@ -1,3 +1,4 @@
+import type { MessageDescriptor } from '@lingui/core';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_EDIT_REPLACE } from './actionTypes';
 import { getSnapshot, type SupportState } from '../state';
@@ -11,7 +12,7 @@ export function captureSupportEditSnapshot(): SupportEditHistorySnapshot {
 }
 
 type SupportEditHistoryJob = {
-  description: string;
+  description: MessageDescriptor;
   before: SupportEditHistorySnapshot;
   after: SupportEditHistorySnapshot;
 };
@@ -56,7 +57,7 @@ function scheduleFlush() {
 }
 
 export function pushSupportEditHistory(
-  description: string,
+  description: MessageDescriptor,
   before: SupportEditHistorySnapshot,
   after: SupportEditHistorySnapshot,
 ) {

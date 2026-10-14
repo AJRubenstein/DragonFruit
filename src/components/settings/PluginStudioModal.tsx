@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { Trans } from '@lingui/react/macro';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { AlertTriangle, Archive, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, FlaskConical, GitBranch, Layers, Maximize2, Minimize2, Plus, Printer, Search, Square, Trash2, X } from 'lucide-react';
 import JSZip from 'jszip';
@@ -2097,7 +2098,7 @@ function StepPrinters({ presets, onChange }: StepPrintersProps) {
             style={ACCENT_SECONDARY_BUTTON_STYLE_92}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add Printer
+            <Trans>Add printer</Trans>
           </Button>
         </div>
       </div>
@@ -2982,7 +2983,7 @@ function StepMaterials({ templates, onChange }: StepMaterialsProps) {
                     title="Duplicate this material core profile into a new printer variant"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Add Printer Variant
+                    <Trans>Add printer variant</Trans>
                   </Button>
                   <button
                     type="button"
@@ -3914,7 +3915,7 @@ export function PluginStudioModal({ isOpen, onClose }: PluginStudioModalProps) {
           </div>
         </div>
 
-        <div className="px-4 py-3 border-t flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+        <div className="px-3 py-3 border-t flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
           <div className="flex items-center gap-3 min-w-0">
             <Button
               variant="secondary"

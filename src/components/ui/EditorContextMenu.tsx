@@ -9,6 +9,7 @@ import {
   Copy,
   Scissors,
   ClipboardPaste,
+  RefreshCw,
   Trash2,
   Split,
   LifeBuoy,
@@ -29,6 +30,9 @@ export type EditorMenuAction =
   | 'copy'
   | 'paste'
   | 'repair'
+  | 'show-repair-report'
+  | 'undo-repairs'
+  | 'remesh'
   | 'split-supports'
   | 'merge-supports'
   | 'supports-toggle-curve'
@@ -60,6 +64,8 @@ type MenuLeafDef = {
   id: EditorMenuAction;
   label: MessageDescriptor;
   icon: LucideIcon;
+  /** Rule above this row, breaking the flyout into groups. Ignored on the first row. */
+  startsGroup?: boolean;
 };
 
 type MenuSubmenuDef = {
@@ -94,14 +100,25 @@ export const ORGANIC_CUT_DELETE_WAYPOINT_ITEM: EditorMenuItemDef = {
 
 // msg`` marks strings for extraction without evaluating them immediately;
 // the _ helper resolves each descriptor against the active locale at render time.
-const MENU_ITEMS: MenuItemDef[] = [
+export const MENU_ITEMS: MenuItemDef[] = [
   // Selection / clipboard.
   { id: 'delete', label: msg`Delete`, icon: Trash2 },
   { id: 'cut',    label: msg`Cut`,    icon: Scissors },
   { id: 'copy',   label: msg`Copy`,   icon: Copy },
   { id: 'paste',  label: msg`Paste`,  icon: ClipboardPaste },
-  // Mesh repair.
-  { id: 'repair', label: msg`Repair`, icon: Wrench, startsGroup: true },
+  // Mesh repair, fanned out like supports and geometry. The first entry reads "Repair Again" and
+  // the report entry only appears once the model has one, so the caller builds this submenu from
+  // these items; this is the shape it starts from.
+  {
+    id: 'repair-menu',
+    label: msg`Repair`,
+    icon: Wrench,
+    startsGroup: true,
+    children: [
+      { id: 'repair', label: msg`Auto-Repair`, icon: Wrench },
+      { id: 'remesh', label: msg`Remesh`, icon: RefreshCw },
+    ],
+  },
   // Support scaffolding and geometry designation, each fanned out into a flyout
   // so the top level stays short.
   {
@@ -120,8 +137,8 @@ const MENU_ITEMS: MenuItemDef[] = [
     label: msg`Geometry`,
     icon: Shapes,
     children: [
-      { id: 'mark-as-support-geometry', label: msg`Mark as Support Geometry`, icon: LifeBuoy },
-      { id: 'mark-as-model-geometry',   label: msg`Mark as Model Geometry`,   icon: Box },
+      { id: 'mark-as-support-geometry', label: msg`Mark as Support`, icon: LifeBuoy },
+      { id: 'mark-as-model-geometry',   label: msg`Mark as Model`,   icon: Box },
     ],
   },
   // { id: 'link-models',   label: msg`Link Selected Models`,   icon: Link },
@@ -150,6 +167,7 @@ export function EditorContextMenu({ position, onAction, onClose, disabledActions
           id: child.id,
           label: _(child.label),
           icon: child.icon,
+          startsGroup: child.startsGroup,
           disabled: disabledActions.includes(child.id),
         }))
       : undefined,

@@ -67,8 +67,6 @@ interface TopBarProps {
   onHoverTintStrengthChange: (value: number) => void;
   selectedTintStrength: number;
   onSelectedTintStrengthChange: (value: number) => void;
-  debugPrimitivesPanelVisible: boolean;
-  onDebugPrimitivesPanelVisibleChange: (value: boolean) => void;
   view3dSettings: View3DSettings;
   onView3dSettingsChange: (settings: View3DSettings) => void;
   slicingThumbnailRenderSettings: SlicingThumbnailRenderSettings;
@@ -133,8 +131,6 @@ export function TopBar({
   onHoverTintStrengthChange,
   selectedTintStrength,
   onSelectedTintStrengthChange,
-  debugPrimitivesPanelVisible,
-  onDebugPrimitivesPanelVisibleChange,
   view3dSettings,
   onView3dSettingsChange,
   slicingThumbnailRenderSettings,
@@ -447,7 +443,7 @@ export function TopBar({
     const handleOpenSettings = (e: Event) => {
       const detail = (e as CustomEvent).detail as { tab?: string } | undefined;
       const tab = detail?.tab as SettingsTabKey | undefined;
-      if (tab && ['general', 'camera', 'workspaces', 'mesh', 'performance', 'spacemouse', 'ui', 'hotkeys', 'plugins', 'experiments', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'].includes(tab)) {
+      if (tab && ['general', 'camera', 'workspaces', 'multiPlate', 'mesh', 'performance', 'spacemouse', 'ui', 'hotkeys', 'plugins', 'experiments', 'sceneAutosave', 'backups', 'uvtools', 'logging', 'updates', 'about'].includes(tab)) {
         setSettingsInitialTab(tab as SettingsTabKey);
       } else {
         setSettingsInitialTab('general');
@@ -737,6 +733,7 @@ export function TopBar({
         >
           <img
             src="/dragonfruit_assets/branding/simple_icon.svg"
+            // i18n-ignore: product name
             alt="DragonFruit"
             className="h-7 w-7 object-contain"
             draggable={false}
@@ -791,14 +788,14 @@ export function TopBar({
           <span className="min-w-0 flex flex-col items-start leading-none gap-[2px]">
             <span
               className={topbarUsesFleetLabelOrder
-                ? 'truncate text-[10px] tracking-[0.01em]'
-                : 'text-[9px] uppercase tracking-[0.11em]'}
+                ? 'truncate text-[11px] tracking-[0.01em]'
+                : 'text-[11px] uppercase tracking-[0.11em]'}
               style={{ color: 'var(--text-muted)' }}
               title={topbarPrinterLabelTop}
             >
               {topbarPrinterLabelTop}
             </span>
-            <span className="truncate text-[11px] font-semibold" style={{ color: 'var(--text-strong)' }}>
+            <span className="truncate text-[12px] font-semibold" style={{ color: 'var(--text-strong)' }}>
               {topbarPrinterLabelBottom}
             </span>
           </span>
@@ -842,6 +839,7 @@ export function TopBar({
           onSelect={handleAppMenuSelect}
           onClose={closeAppMenu}
           dismissIgnoreRef={appMenuButtonRef}
+          // i18n-ignore: product name
           title="DragonFruit"
           ariaLabel={_(msg({ message: 'DragonFruit app menu', comment: '"DragonFruit" is the product name and should stay untranslated/unchanged.' }))}
         />
@@ -965,7 +963,7 @@ export function TopBar({
           className={`relative w-full transition-opacity ${topbarActionsDisabled ? 'opacity-45' : ''}`}
           aria-disabled={topbarActionsDisabled}
         >
-          <div ref={stepsContainerRef} className="flex items-center justify-center gap-1">
+          <div ref={stepsContainerRef} className="flex items-center justify-center gap-2">
             {steps.map((item) => {
               const active = mode === item.mode;
               const locked = item.locked;
@@ -984,7 +982,7 @@ export function TopBar({
                   }}
                   disabled={nativeDisabled}
                   aria-disabled={disabled}
-                  className={`group relative flex cursor-pointer items-center gap-1.5 rounded-lg border px-1.5 py-1.5 transition-all duration-200 flex-1 min-w-[90px] max-w-[190px] h-[32px] ${
+                  className={`group relative flex cursor-pointer items-center gap-1.5 rounded-[5.5px] border px-1.5 py-1.5 transition-all duration-200 flex-1 min-w-[90px] max-w-[190px] h-[32px] ${
                     active
                       ? 'shadow-[0_6px_16px_rgba(0,0,0,0.25)]'
                       : 'hover:-translate-y-[1px] hover:shadow-[0_6px_14px_rgba(0,0,0,0.18)]'
@@ -1049,7 +1047,7 @@ export function TopBar({
       </div>
       )}
 
-      <div className="flex flex-1 max-w-[430px] items-center justify-end gap-2 pr-2">
+      <div className="flex flex-1 max-w-[430px] items-center justify-end gap-2 pr-[3px]">
         <div className={`flex items-center gap-2 transition-opacity ${topbarActionsDisabled ? 'opacity-45 pointer-events-none' : ''}`}>
           {!hideWorkflowControls && (
           <>
@@ -1091,7 +1089,7 @@ export function TopBar({
             <button
               type="button"
               onClick={handleDesktopWindowMinimize}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border transition-colors"
               style={isLightTheme ? {
                 borderColor: 'color-mix(in srgb, #c8920a, var(--border-subtle) 35%)',
                 background: 'color-mix(in srgb, #c8920a, var(--surface-1) 50%)',
@@ -1104,12 +1102,12 @@ export function TopBar({
               title={_(msg`Minimize`)}
               aria-label={_(msg`Minimize window`)}
             >
-              <Minimize2 className="h-3.5 w-3.5" />
+              <Minimize2 className="h-4 w-4" />
             </button>
             <button
               type="button"
               onClick={handleDesktopWindowToggleMaximize}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border transition-colors"
               style={isLightTheme ? {
                 borderColor: 'color-mix(in srgb, #1a7a3a, var(--border-subtle) 35%)',
                 background: 'color-mix(in srgb, #1a7a3a, var(--surface-1) 50%)',
@@ -1123,15 +1121,15 @@ export function TopBar({
               aria-label={isDesktopWindowMaximized ? _(msg`Restore window`) : _(msg`Maximize window`)}
             >
               {isDesktopWindowMaximized ? (
-                <Square className="h-3.5 w-3.5" />
+                <Square className="h-4 w-4" />
               ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
+                <Maximize2 className="h-4 w-4" />
               )}
             </button>
             <button
               type="button"
               onClick={handleDesktopWindowClose}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border transition-colors"
               style={isLightTheme ? {
                 borderColor: 'color-mix(in srgb, #c0160a, var(--border-subtle) 35%)',
                 background: 'color-mix(in srgb, #c0160a, var(--surface-1) 50%)',
@@ -1144,7 +1142,7 @@ export function TopBar({
               title={_(msg`Close`)}
               aria-label={_(msg`Close window`)}
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -1221,8 +1219,6 @@ export function TopBar({
         onHoverTintStrengthChange={onHoverTintStrengthChange}
         selectedTintStrength={selectedTintStrength}
         onSelectedTintStrengthChange={onSelectedTintStrengthChange}
-        debugPrimitivesPanelVisible={debugPrimitivesPanelVisible}
-        onDebugPrimitivesPanelVisibleChange={onDebugPrimitivesPanelVisibleChange}
         view3dSettings={view3dSettings}
         onView3dSettingsChange={onView3dSettingsChange}
         slicingThumbnailRenderSettings={slicingThumbnailRenderSettings}

@@ -178,6 +178,7 @@ export function SupportPathfindingDebugHud({
 
   const latestEvents = (snapshot.events ?? []).slice(-8);
 
+  // i18n-ignore-start: developer debug HUD, kept in English
   return (
     <div
       style={{
@@ -295,6 +296,7 @@ export function SupportPathfindingDebugHud({
       )}
     </div>
   );
+  // i18n-ignore-end
 }
 
 export function SupportPathfindingDebugOverlay({

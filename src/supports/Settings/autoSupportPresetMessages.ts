@@ -22,7 +22,7 @@ type Translate = (descriptor: MessageDescriptor) => string;
  * panel's dropdown and the settings dialog's strip, so the two surfaces name the
  * state the same way.
  */
-export const NO_ACTIVE_PRESET_LABEL = msg`Custom — not a preset`;
+export const NO_ACTIVE_PRESET_LABEL = msg({ message: 'Custom — not a preset', comment: 'Shown in a half-width preset dropdown when no preset is selected. Keep it short; "no preset" alone is enough.' });
 
 const BUILT_IN_NAMES: Record<string, MessageDescriptor> = {
   light: msg({ message: 'Light', context: 'auto-support preset', comment: "Built-in auto-support preset for sparse supports — the Light tier in the Auto Support panel's preset selector." }),
@@ -33,4 +33,10 @@ const BUILT_IN_NAMES: Record<string, MessageDescriptor> = {
 export function translateAutoSupportPresetName(preset: AutoSupportPreset, translate: Translate): string {
   const descriptor = BUILT_IN_NAMES[preset.id];
   return descriptor ? translate(descriptor) : preset.name;
+}
+
+/** The name Duplicate gives a copy: the source's shown name, so a built-in's copy is in the user's language. */
+export function formatAutoSupportPresetCopyName(preset: AutoSupportPreset, translate: Translate): string {
+  const presetName = translateAutoSupportPresetName(preset, translate);
+  return translate(msg({ message: `${presetName} copy`, context: 'Name of a duplicated auto-support preset' }));
 }

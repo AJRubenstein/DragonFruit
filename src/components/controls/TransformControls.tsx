@@ -1,9 +1,11 @@
 import React from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import * as THREE from 'three';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Button, Card, CardHeader } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
+import type { SelectionRotationMode } from '@/features/scene/selectionTransform';
 
 interface SectionHeaderProps {
   title: string;
@@ -31,6 +33,9 @@ interface TransformControlsProps {
   onRotationChange: (x: number, y: number, z: number) => void;
   onResetRotation: () => void;
   onRotationComplete?: () => void;
+  /** Set only while several models are selected: whether they turn as one block or each in place. */
+  selectionRotationMode?: SelectionRotationMode;
+  onSelectionRotationModeChange?: (mode: SelectionRotationMode) => void;
   
   // Scale
   scale: THREE.Vector3;
@@ -66,6 +71,8 @@ export function TransformControls({
   onRotationChange,
   onResetRotation,
   onRotationComplete,
+  selectionRotationMode,
+  onSelectionRotationModeChange,
   scale,
   onScaleChange,
   onResetScale,
@@ -82,6 +89,7 @@ export function TransformControls({
   onDrop,
   onTransformCommit,
 }: TransformControlsProps) {
+  const { t } = useLingui();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const compactButtonClass = '!h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]';
   const valueInputClass = 'ui-input h-8 w-full px-1.5 text-xs sm:text-sm text-left tabular-nums no-spinners';
@@ -137,11 +145,11 @@ export function TransformControls({
     <button
       type="button"
       onClick={() => onLocalSpaceChange(!localSpace)}
-      title="Move and rotate along the model's own axes instead of the build plate's"
+      title={t`Move and rotate along the model's own axes instead of the build plate's`}
       className={toggleButtonClass}
       style={toggleButtonStyle(localSpace)}
     >
-      Local
+      <Trans context="Gizmo space toggle">Local</Trans>
     </button>
   );
 
@@ -195,7 +203,7 @@ export function TransformControls({
           <>
             <PanelCollapseToggle expanded={expanded} onToggle={() => setExpanded((prev) => !prev)} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-              Transform
+              <Trans>Transform</Trans>
             </h3>
           </>
         )}
@@ -208,7 +216,7 @@ export function TransformControls({
           <div className="rounded-md border p-2" style={moveCardStyle}>
             <div className="flex items-center">
               <div className="flex-1" />
-              <SectionHeader title="Move" />
+              <SectionHeader title={t({ message: 'Move', context: 'Transform panel section' })} />
               <div className="flex-1 flex justify-end">
                 {renderLocalSpaceToggle()}
               </div>
@@ -263,7 +271,7 @@ export function TransformControls({
                   size="auto"
                   className={compactButtonClass + ' w-full'}
                 >
-                  Center Selection
+                  <Trans>Center Selection</Trans>
                 </Button>
 
               </div>
@@ -273,11 +281,12 @@ export function TransformControls({
           <div className="rounded-md border p-2" style={liftCardStyle}>
             <div className="flex items-center">
               <div className="flex-1" />
-              <SectionHeader title="Lift" />
+              <SectionHeader title={t({ message: 'Lift', context: 'Transform panel section' })} />
               <div className="flex-1 flex justify-end">
                 <button
                   type="button"
                   onClick={() => onAutoLiftChange(!autoLift)}
+                  title={t`On, models stay this far above the build plate after every move, rotation or scale. Off, they rest on the plate.`}
                   className="h-7 min-w-[64px] rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors"
                   style={autoLift
                     ? {
@@ -291,7 +300,7 @@ export function TransformControls({
                         color: 'var(--text-muted)',
                       }}
                 >
-                  Auto
+                  <Trans context="Auto-lift toggle">Auto</Trans>
                 </button>
               </div>
             </div>
@@ -323,7 +332,7 @@ export function TransformControls({
                     background: 'color-mix(in srgb, var(--accent), var(--surface-1) 90%)',
                   }}
                 >
-                  Lift
+                  <Trans context="Lift button">Lift</Trans>
                 </Button>
                 <Button
                   onClick={() => {
@@ -340,7 +349,7 @@ export function TransformControls({
                     background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-1) 92%)',
                   }}
                 >
-                  Drop
+                  <Trans context="Drop button">Drop</Trans>
                 </Button>
               </div>
             </div>
@@ -349,8 +358,20 @@ export function TransformControls({
           {/* ROTATE SECTION */}
           <div className="rounded-md border p-2" style={rotateCardStyle}>
             <div className="flex items-center">
-              <div className="flex-1" />
-              <SectionHeader title="Rotate" />
+              <div className="flex-1 flex justify-start">
+                {selectionRotationMode && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectionRotationModeChange?.(selectionRotationMode === 'group' ? 'individual' : 'group')}
+                    title={t`Rotate the selection as one block around its centre; turn off to rotate each model in place`}
+                    className={toggleButtonClass}
+                    style={toggleButtonStyle(selectionRotationMode === 'group')}
+                  >
+                    <Trans context="Group rotation toggle">Group</Trans>
+                  </button>
+                )}
+              </div>
+              <SectionHeader title={t({ message: 'Rotate', context: 'Transform panel section' })} />
               <div className="flex-1 flex justify-end">
                 {renderLocalSpaceToggle()}
               </div>
@@ -416,7 +437,7 @@ export function TransformControls({
                   size="auto"
                   className="w-full !h-8 px-1.5 text-[10px] sm:text-[11px]"
                 >
-                  Reset Rotation
+                  <Trans>Reset Rotation</Trans>
                 </Button>
               </div>
           </div>
@@ -425,7 +446,7 @@ export function TransformControls({
           <div className="rounded-md border p-2" style={scaleCardStyle}>
             <div className="flex items-center justify-between">
               <div className="flex-1" />
-              <SectionHeader title="Scale" />
+              <SectionHeader title={t({ message: 'Scale', context: 'Transform panel section' })} />
               <div className="flex-1 flex justify-end">
                 <button
                 type="button"
@@ -443,7 +464,7 @@ export function TransformControls({
                       color: 'var(--text-muted)',
                     }}
               >
-                Uniform
+                <Trans context="Uniform scaling toggle">Uniform</Trans>
               </button>
             </div>
             </div>
@@ -566,7 +587,7 @@ export function TransformControls({
                   size="auto"
                   className="w-full !h-8 px-1.5 text-[10px] sm:text-[11px]"
                 >
-                  Reset Scale
+                  <Trans>Reset Scale</Trans>
                 </Button>
               </div>
           </div>

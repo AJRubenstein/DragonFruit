@@ -98,7 +98,7 @@ export function AutoBracingSettingsCard({
                     onChange={(nextValue) => onPatternChange(nextValue as AutoBracingPattern)}
                     options={AUTO_BRACING_PATTERN_OPTIONS.map((pattern) => ({
                         value: pattern,
-                        label: pattern === 'singleDiagonal' ? 'Single Diagonal' : pattern === 'zigZag' ? 'Zig Zag' : 'Crosses',
+                        label: pattern === 'singleDiagonal' ? _(msg`Single Diagonal`) : pattern === 'zigZag' ? _(msg`Zig Zag`) : _(msg`Crosses`),
                     }))}
                     className="min-w-0 space-y-0"
                     selectClassName="h-[36px] py-2 text-base"
@@ -176,26 +176,30 @@ export function AutoBracingSettingsCard({
 
             {/* Row 3: Initial Pattern | Repeating Pattern */}
             <div className="grid grid-cols-2 gap-1.5 items-start">
-                {renderPatternSelect('Initial Pattern', settings.initialPattern, (initialPattern) => onChange({ initialPattern }))}
-                {renderPatternSelect('Repeating Pattern', settings.repeatingPattern, (repeatingPattern) => onChange({ repeatingPattern }))}
+                {renderPatternSelect(_(msg`Initial Pattern`), settings.initialPattern, (initialPattern) => onChange({ initialPattern }))}
+                {renderPatternSelect(_(msg`Repeating Pattern`), settings.repeatingPattern, (repeatingPattern) => onChange({ repeatingPattern }))}
             </div>
 
             {/* Row 4: Seed Spacing (full width) */}
             <label className="space-y-1 min-w-0">
                 <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>{_(msg`Cluster Spacing`)}</div>
                 <div className="grid grid-cols-3 gap-1.5">
-                    {([['Low', 2], ['Mid', 5], ['High', 10]] as const).map(([label, value]) => {
+                    {([
+                        [msg({ message: 'Low', context: 'Cluster spacing' }), 2],
+                        [msg({ message: 'Mid', context: 'Cluster spacing' }), 5],
+                        [msg({ message: 'High', context: 'Cluster spacing' }), 10],
+                    ] as const).map(([label, value]) => {
                         const isActive = settings.seedSpacingMm === value;
                         return (
                             <Button
-                                key={label}
+                                key={value}
                                 variant="secondary"
                                 size="auto"
                                 className="!h-8 whitespace-nowrap px-1.5 text-[10px] sm:text-[11px]"
                                 style={isActive ? activeModeStyle : { background: 'var(--surface-0)' }}
                                 onClick={() => onChange({ seedSpacingMm: value })}
                             >
-                                {label}
+                                {_(label)}
                             </Button>
                         );
                     })}

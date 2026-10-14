@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
@@ -8,13 +8,15 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronDown, CircleHelp, Cpu, Download, Edit3, ExternalLink, Layers3, Play, Printer, Timer, X } from 'lucide-react';
 import { MouseTooltip } from '@/components/ui/MouseTooltip';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
-import { KNOWN_SOURCE_EXTENSION_STRIP_RE } from '@/features/plugins/pluginFileTypeExtensions';
+import { normalizeExportBaseName, resolvePlateOutputBaseName } from '@/features/export/logic/exportFileNaming';
 import { Button, Card, CardHeader, IconButton } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import { openProfileSettingsModal } from '@/components/settings/profileModalEvents';
+import { derivePlateOutputPath, joinSliceOutputPath, type PlateSliceScope } from '@/features/slicing/plateSliceNaming';
+import { plateNumberPlaceholder } from '@/features/scene/plates/plateMessages';
 import { MaterialAntiAliasingSection, type MaterialDraft } from '@/components/settings/profileFormAtoms';
 import {
   getActiveMaterialProfile,
@@ -37,18 +39,14 @@ import {
   type SliceExportArtifact,
   type SliceExportResult,
 } from '@/features/slicing/sliceExportOrchestrator';
-import { resolveSlicingFormatDefinition } from '@/features/slicing/formats/registry';
+import { resolveOutputFileExtension, resolveSlicingFormatDefinition } from '@/features/slicing/formats/registry';
 import { pluginNetworkFetch } from '@/utils/pluginNetworkBridge';
 import { resolveCompositeMaterialLabel } from '@/utils/materialLabel';
-import {
-  getSavedSlicingPerformanceSettings,
-  saveSlicingPerformanceSettings,
-} from '@/components/settings/performancePreferences';
 import {
   getSavedUvToolsSettings,
   resolveUvToolsExecutablePath,
 } from '@/components/settings/uvToolsPreferences';
-import { cleanupStalePrintTempArtifacts, cleanupAllPrintTempArtifacts, getSlicerEngineVersion } from '@/features/slicing/tauri/nativeSlicerBridge';
+import { cleanupStalePrintTempArtifacts, cleanupAllPrintTempArtifacts, existingNativePaths, getSlicerEngineVersion, pickDirectoryWithNativeDialog } from '@/features/slicing/tauri/nativeSlicerBridge';
 import type { AaPreset as AaAutoPreset } from '@/features/slicing/autoAaPhysics';
 import {
   clampBlurSigma,
@@ -56,28 +54,39 @@ import {
   parseAaLevelSteps,
   resolveSliceAntiAliasing,
 } from '@/features/slicing/sliceAntiAliasing';
-import { AaSupportWarningModal } from '@/components/modals/AaSupportWarningModal';
 import {
-  LutCurveSelector,
-  LutCurveEditorModal,
   DEFAULT_CUSTOM_CURVE,
   DEFAULT_SAVED_CURVES,
   type CurvePoint,
   type SavedCurve,
 } from './LutCurveEditor';
 import { useKeyPressed } from '@/hotkeys/hotkeyStore';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { LocaleFormat } from '@/utils/localeNumber';
 
 export type SliceIntent = 'file' | 'upload' | 'print' | 'preview' | 'uvtools';
 
 interface SlicingPanelProps {
   models: LoadedModel[];
+  /**
+   * The plates a slice can cover, in cascade order. Without them the panel
+   * slices every visible model, which is what a single-plate scene means. With
+   * them, a slice covers one plate: its models, judged against its own volume and
+   * shifted to the origin so the rasterizer's origin-centred mapping stays true.
+   * More than one entry also offers slicing them all, one file per plate.
+   */
+  plateSliceScopes?: readonly PlateSliceScope[];
+  /** Which of those the plain Slice action covers. */
+  activePlateSliceIndex?: number;
   excludedModelIds?: readonly string[];
   activeModel: LoadedModel | null;
   estimatedLayerCountOverride?: number | null;
   estimatedLayerHeightMmOverride?: number | null;
   estimatedVolumeLabelOverride?: string | null;
-  captureSceneThumbnailPng?: () => Promise<Uint8Array | null>;
-  onSliceRunStarted?: () => void;
+  /** The scene shot for a plate's file. The bed frames it: a batch writes one shot per bed. */
+  captureSceneThumbnailPng?: (plateId?: string) => Promise<Uint8Array | null>;
+  /** A run's first moment, with the bed it is slicing, so per-bed state is dropped for that bed. */
+  onSliceRunStarted?: (context?: { plateId?: string }) => void;
   onLayerPreviewGenerated?: (payload: {
     layerIndex: number;
     totalLayers: number;
@@ -86,7 +95,19 @@ interface SlicingPanelProps {
   onSlicingFinished?: (payload: {
     totalLayers: number;
   }) => void;
-  onSliceArtifactReady?: (artifact: SliceExportArtifact) => void;
+  onSliceArtifactReady?: (
+    artifact: SliceExportArtifact,
+    context?: { plateId?: string; totalLayers?: number; savedPath?: string; savedDirectory?: string },
+  ) => void;
+  /**
+   * A batch's plate, as soon as it is sliced — before the batch ends and the app walks into the
+   * printing workspace. Recording it here is what lets the workspace's own previews be read
+   * ahead of time, while the other plates are still slicing, instead of after it opens.
+   */
+  onSlicePlateSliced?: (
+    artifact: SliceExportArtifact,
+    context: { plateId?: string; totalLayers: number; savedPath?: string },
+  ) => void;
   onBenchmarkComplete?: (benchmark: SliceBenchmarkSnapshot) => void;
   onSliceTriggerRef?: React.MutableRefObject<(() => void) | null>;
   shouldAutoSlice?: boolean;
@@ -95,7 +116,14 @@ interface SlicingPanelProps {
   canUpload?: boolean;
   canPrint?: boolean;
   onSliceIntentChanged?: (intent: SliceIntent) => void;
-  onBeforeSliceStart?: (intent: SliceIntent) => Promise<boolean> | boolean;
+  /**
+   * Runs before each slice. A batch hands it the folder it already picked, so every plate's
+   * file lands in one place and nothing asks the user again.
+   */
+  onBeforeSliceStart?: (
+    intent: SliceIntent,
+    options?: { destinationDirectory?: string; baseName?: string },
+  ) => Promise<boolean> | boolean;
   onBeforeSlicingRun?: () => Promise<void> | void;
   resolveOutputPathForIntent?: (intent: SliceIntent) => string | null | undefined;
 }
@@ -165,30 +193,52 @@ const SLICING_PHASE_LABELS: Record<string, MessageDescriptor> = {
   Cancelling: msg`Cancelling`,
 };
 
+/**
+ * What a finished batch leaves in the status line. A module-scope helper because it interpolates:
+ * a `msg` written inline in a component has its local renamed by React Compiler in production
+ * builds, which desyncs the message id from the compiled catalog.
+ */
+function formatSlicedPlatesStatus(translate: Translate, count: number): string {
+  return translate(msg`${plural(count, {
+    one: 'Sliced # plate.',
+    other: 'Sliced # plates.',
+  })}`);
+}
+
 function formatSlicingPhaseLabel(translate: Translate, phase: string): string {
   const descriptor = SLICING_PHASE_LABELS[phase];
   return descriptor ? translate(descriptor) : phase;
 }
 
-function normalizeExportBaseName(rawName: string | null | undefined): string {
-  const trimmed = (rawName ?? '').trim();
-  if (!trimmed) return 'MyPrint';
+type SlicePlateScope = 'all_plates' | 'current_plate';
 
-  const withoutKnownExt = trimmed.replace(KNOWN_SOURCE_EXTENSION_STRIP_RE, '');
-  const cleaned = withoutKnownExt.replace(/[.\s]+$/g, '').trim();
-  return cleaned || 'MyPrint';
-}
+/**
+ * Which plates a slice covers. "All Plates" writes one file per plate into a zip, which the
+ * panel used to offer as a second button under the slice action.
+ */
+const SLICE_PLATE_SCOPE_OPTIONS: ReadonlyArray<{ value: SlicePlateScope; label: MessageDescriptor }> = [
+  { value: 'all_plates', label: msg`All Plates` },
+  { value: 'current_plate', label: msg`Current Plate` },
+];
+
+/** The plate scope control, dressed as the anti-aliasing Auto/Expert pair above it. */
+const activeSliceScopeStyle: React.CSSProperties = {
+  borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
+  background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
+  color: 'var(--text-strong)',
+};
+
+const idleSliceScopeStyle: React.CSSProperties = {
+  borderColor: 'var(--border-subtle)',
+  background: 'var(--surface-0)',
+  color: 'var(--text-muted)',
+};
 
 function resolveSliceFilenameBase(models: LoadedModel[], activeModel: LoadedModel | null): string {
-  const visibleModels = models.filter((model) => model.visible);
+  const firstVisible = models.find((model) => model.visible);
 
-  if (visibleModels.length === 1) {
-    return normalizeExportBaseName(visibleModels[0].name);
-  }
-
-  if (visibleModels.length > 1) {
-    const firstVisibleName = normalizeExportBaseName(visibleModels[0]?.name);
-    return `${firstVisibleName}_DF_Scene`;
+  if (firstVisible) {
+    return normalizeExportBaseName(firstVisible.name);
   }
 
   if (activeModel) {
@@ -209,11 +259,11 @@ function formatDuration(ms: number | null): string {
     .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function formatLayerRate(translate: Translate, layersPerSecond: number | null): string {
+function formatLayerRate(translate: Translate, fmt: LocaleFormat, layersPerSecond: number | null): string {
   if (layersPerSecond == null || !Number.isFinite(layersPerSecond)) return '—';
   const rate = layersPerSecond >= 100
     ? String(Math.round(layersPerSecond))
-    : layersPerSecond.toFixed(1);
+    : fmt.fixed(layersPerSecond, 1);
   return translate(msg`${rate} layers/s`);
 }
 
@@ -240,16 +290,21 @@ function resolveSlicingPhaseKind(phase: string): SlicingPhaseKind {
   return 'other';
 }
 
-function formatClockFromSeconds(totalSeconds: number): string {
+// h/m/s are unit abbreviations the translator may change, so each form is one message.
+const CLOCK_HOURS_MINUTES = msg({ message: '{hours}h {minutes}m', comment: 'Estimated print time: hours and minutes, as in "2h 5m".' });
+const CLOCK_MINUTES_SECONDS = msg({ message: '{minutes}m {paddedSeconds}s', comment: 'Estimated print time: minutes and two-digit seconds, as in "8m 05s".' });
+
+function formatClockFromSeconds(translate: Translate, totalSeconds: number): string {
   const total = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return translate({ ...CLOCK_HOURS_MINUTES, values: { hours, minutes } });
   }
-  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+  const paddedSeconds = seconds.toString().padStart(2, '0');
+  return translate({ ...CLOCK_MINUTES_SECONDS, values: { minutes, paddedSeconds } });
 }
 
 function formatElapsedClock(ms: number): string {
@@ -301,8 +356,6 @@ const REMOTE_OFFLINE_LAYER_HEIGHT_MAX_MM = 1;
 const REMOTE_OFFLINE_LAYER_HEIGHT_STEP_MM = 0.01;
 const MICRONS_PER_MM = 1000;
 const AA_STRENGTH_PRESETS = [4, 8, 16, 32] as const;
-const AA_STRENGTH_MIN_STEPS = 2;
-const AA_STRENGTH_MAX_STEPS = 64;
 const BLUR_WIDTH_PRESETS = [1, 2, 4, 8] as const;
 const BLUR_WIDTH_MIN_PX = 0; // 0 = XY blur disabled (engine skips blur code path)
 const BLUR_WIDTH_MAX_PX = 64;
@@ -729,13 +782,15 @@ const AUTO_AA_PRESET_OPTIONS: ReadonlyArray<{
   { preset: 'raw', label: msg`Disabled`, desc: msg`Raw masks only.` },
   { preset: 'sharp', label: msg`Sharp`, desc: msg`Crisp text and details.` },
   { preset: 'balanced', label: msg`Balanced`, desc: msg`Printer-aware smoothing.` },
-  { preset: 'smooth', label: msg`Smooth`, desc: msg`Soft organic curves.` },
+  { preset: 'smooth', label: msg({ message: 'Smooth', context: 'Anti-aliasing preset' }), desc: msg`Soft organic curves.` },
 ];
 
 // AaAutoPreset is imported from autoAaPhysics.ts
 
 export function SlicingPanel({
   models,
+  plateSliceScopes,
+  activePlateSliceIndex = 0,
   excludedModelIds = [],
   activeModel,
   estimatedLayerCountOverride,
@@ -746,6 +801,7 @@ export function SlicingPanel({
   onLayerPreviewGenerated,
   onSlicingFinished,
   onSliceArtifactReady,
+  onSlicePlateSliced,
   onBenchmarkComplete,
   onSliceTriggerRef,
   shouldAutoSlice,
@@ -772,6 +828,7 @@ export function SlicingPanel({
   const sliceIntentAnchorRef = useRef<HTMLDivElement | null>(null);
   const [isSlicingZip, setIsSlicingZip] = useState(false);
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [sliceStatus, setSliceStatus] = useState('Idle');
   const [currentPhase, setCurrentPhase] = useState('Idle');
   const [progressDone, setProgressDone] = useState(0);
@@ -787,51 +844,51 @@ export function SlicingPanel({
   const [slicingModalStage, setSlicingModalStage] = useState<'running' | 'finished' | 'failed' | 'cancelled'>('running');
   const [displayProgressPercent, setDisplayProgressPercent] = useState(0);
   const [aaMode, setAaMode] = useState<'Off' | 'Blur' | '3DAA'>(resolveInitialAaMode);
-  const [showAaWarningModal, setShowAaWarningModal] = useState(false);
-  const [pendingAaTarget, setPendingAaTarget] = useState<'Off' | 'Blur' | '3DAA' | null>(null);
-  const [aaWarningModelName, setAaWarningModelName] = useState('');
   const [showOutOfBoundsWarningModal, setShowOutOfBoundsWarningModal] = useState(false);
+  /** How many of a batch's files are already on disk, so the user can be asked before writing. */
+  const [overwriteCollisionCount, setOverwriteCollisionCount] = useState(0);
+  const overwriteWarningResolveRef = useRef<((proceed: boolean) => void) | null>(null);
   const outOfBoundsWarningResolveRef = useRef<((proceed: boolean) => void) | null>(null);
-  const [aaLevel, setAaLevel] = useState<AaStrengthLevel>(resolveInitialAaLevel);
-  const [useCustomAaLevel, setUseCustomAaLevel] = useState<boolean>(() => {
+  const [aaLevel] = useState<AaStrengthLevel>(resolveInitialAaLevel);
+  const [useCustomAaLevel] = useState<boolean>(() => {
     const initialSteps = parseAaLevelSteps(resolveInitialAaLevel()) ?? 4;
     return resolveInitialCustomOptionEnabled(
       SLICING_AA_LEVEL_CUSTOM_ENABLED_STORAGE_KEY,
       !isPresetValue(AA_STRENGTH_PRESETS, initialSteps),
     );
   });
-  const [blurBrushRadiusPx, setBlurBrushRadiusPx] = useState<number>(resolveInitialBlurBrushRadiusPx);
-  const [blurBrushKernel, setBlurBrushKernel] = useState<BlurKernelMode>(() => resolveInitialBlurKernel(
+  const [blurBrushRadiusPx] = useState<number>(resolveInitialBlurBrushRadiusPx);
+  const [blurBrushKernel] = useState<BlurKernelMode>(() => resolveInitialBlurKernel(
     SLICING_BLUR_BRUSH_KERNEL_STORAGE_KEY,
     'gaussian',
   ));
-  const [blurBrushSigmaX, setBlurBrushSigmaX] = useState<number>(() => resolveInitialBlurSigma(
+  const [blurBrushSigmaX] = useState<number>(() => resolveInitialBlurSigma(
     SLICING_BLUR_BRUSH_SIGMA_X_STORAGE_KEY,
     0.5,
     SLICING_BLUR_BRUSH_SIGMA_STORAGE_KEY,
   ));
-  const [blurBrushSigmaY, setBlurBrushSigmaY] = useState<number>(() => resolveInitialBlurSigma(
+  const [blurBrushSigmaY] = useState<number>(() => resolveInitialBlurSigma(
     SLICING_BLUR_BRUSH_SIGMA_Y_STORAGE_KEY,
     0.5,
     SLICING_BLUR_BRUSH_SIGMA_STORAGE_KEY,
   ));
-  const [zBlurRadiusLayers, setZBlurRadiusLayers] = useState<number>(resolveInitialZBlurRadiusLayers);
-  const [zBlurKernel, setZBlurKernel] = useState<BlurKernelMode>(() => resolveInitialBlurKernel(
+  const [zBlurRadiusLayers] = useState<number>(resolveInitialZBlurRadiusLayers);
+  const [zBlurKernel] = useState<BlurKernelMode>(() => resolveInitialBlurKernel(
     SLICING_Z_BLUR_KERNEL_STORAGE_KEY,
     'box',
   ));
-  const [zBlurSigma, setZBlurSigma] = useState<number>(() => resolveInitialBlurSigma(
+  const [zBlurSigma] = useState<number>(() => resolveInitialBlurSigma(
     SLICING_Z_BLUR_SIGMA_STORAGE_KEY,
     0.5,
   ));
-  const [useCustomBlurBrushRadius, setUseCustomBlurBrushRadius] = useState<boolean>(() => {
+  const [useCustomBlurBrushRadius] = useState<boolean>(() => {
     const initial = resolveInitialBlurBrushRadiusPx();
     return resolveInitialCustomOptionEnabled(
       SLICING_BLUR_BRUSH_CUSTOM_ENABLED_STORAGE_KEY,
       !isPresetValue(BLUR_WIDTH_PRESETS, initial),
     );
   });
-  const [useCustomZBlurRadius, setUseCustomZBlurRadius] = useState<boolean>(() => {
+  const [useCustomZBlurRadius] = useState<boolean>(() => {
     const initial = resolveInitialZBlurRadiusLayers();
     return resolveInitialCustomOptionEnabled(
       SLICING_Z_BLUR_RADIUS_CUSTOM_ENABLED_STORAGE_KEY,
@@ -847,14 +904,8 @@ export function SlicingPanel({
     );
   });
   const [zBlendAutoMode, setZBlendAutoMode] = useState<boolean>(resolveInitialZBlendAutoMode);
-  const [zaaPattern, setZaaPattern] = useState<ZaaPattern>(resolveInitialZaaPattern);
-  const [zaaDuplicateZ, setZaaDuplicateZ] = useState<boolean>(resolveInitialZaaDuplicateZ);
-  // Rollup / collapse state — transient (not persisted to localStorage)
-  const [showMoreZaaOptions, setShowMoreZaaOptions] = useState(false);   // item 4: "More" rollup for Pattern + DupZ
-  const [showXyBlurSection, setShowXyBlurSection] = useState(true);      // item 6
-  const [showZBlurSection, setShowZBlurSection] = useState(true);        // item 6
-  const [showGrayscaleSection, setShowGrayscaleSection] = useState(true); // item 6
-  const [showAaOnSupports, setShowAaOnSupports] = useState(false);       // item 7: default closed
+  const [zaaPattern] = useState<ZaaPattern>(resolveInitialZaaPattern);
+  const [zaaDuplicateZ] = useState<boolean>(resolveInitialZaaDuplicateZ);
   const [aaQualityMode, setAaQualityMode] = useState<'auto' | 'expert'>(resolveInitialAaQualityMode);
   const [aaAutoPreset, setAaAutoPreset] = useState<AaAutoUiPreset>(resolveInitialAaAutoPreset);
   const [materialAaEditorDraft, setMaterialAaEditorDraft] = useState<MaterialDraft | null>(null);
@@ -872,9 +923,9 @@ export function SlicingPanel({
   const [savedCurves, setSavedCurves] = useState<SavedCurve[]>(() => resolveInitialSavedCurves());
   const [selectedCurveId, setSelectedCurveId] = useState<string>(() => resolveInitialSelectedCurveId(resolveInitialSavedCurves()));
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
-  const [minimumAaAlphaPercent, setMinimumAaAlphaPercent] = useState<number>(resolveInitialMinimumAaAlphaPercent);
+  const [minimumAaAlphaPercent] = useState<number>(resolveInitialMinimumAaAlphaPercent);
   const [enableMinimumAaAlphaOverride, setEnableMinimumAaAlphaOverride] = useState<boolean>(resolveInitialMinimumAaAlphaOverrideEnabled);
-  const [blurGraySourceMode, setBlurGraySourceMode] = useState<BlurGraySourceMode>(resolveInitialBlurGraySourceMode);
+  const [blurGraySourceMode] = useState<BlurGraySourceMode>(resolveInitialBlurGraySourceMode);
   const [remoteOfflineLayerHeightMm, setRemoteOfflineLayerHeightMm] = useState<number>(() => {
     if (typeof window === 'undefined') return 0.05;
     const raw = window.localStorage.getItem(SLICING_REMOTE_OFFLINE_LAYER_HEIGHT_GLOBAL_STORAGE_KEY)
@@ -902,7 +953,7 @@ export function SlicingPanel({
   const slicingAbortControllerRef = useRef<AbortController | null>(null);
   const autoSliceTriggeredRef = useRef(false);
   const autoSliceTimeoutRef = useRef<number | null>(null);
-  const handleSliceZipExportRef = useRef<(() => Promise<void>) | null>(null);
+  const handleSliceZipExportRef = useRef<((scopeOverride?: PlateSliceScope) => Promise<boolean>) | null>(null);
   const hasSlicingProgressStartedRef = useRef(false);
 
   const profileState = React.useSyncExternalStore(subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot);
@@ -929,7 +980,6 @@ export function SlicingPanel({
     ...(activeMaterialProfile?.antiAliasingSettings ?? {}),
     ...(sessionAaOverrideDraft?.antiAliasingSettings ?? {}),
   }), [activeMaterialProfile?.antiAliasingSettings, sessionAaOverrideDraft?.antiAliasingSettings]);
-  const aaOnSupportsEnabled = profileAntiAliasingSettings.aaOnSupports === true;
   const effectiveMaterialProfile = useMemo(() => {
     if (!activeMaterialProfile) return null;
     if (!activePrinterProfile) return activeMaterialProfile;
@@ -1003,7 +1053,7 @@ export function SlicingPanel({
     });
   }, [aaMode, aaQualityMode, autoDetectedResinType, blurGraySourceMode]);
 
-  const autoLutCurveLabel = autoDetectedResinType === 'clear' ? _(msg`Clear`) : _(msg`Opaque`);
+  const autoLutCurveLabel = autoDetectedResinType === 'clear' ? _(msg({ message: 'Clear', context: 'Resin type' })) : _(msg({ message: 'Opaque', context: 'Resin type' }));
 
   const sessionAaOverrideEnabled = sessionAaOverrideDraft?.antiAliasingSettings?.enableOverride === true;
   const materialProfileAaOverrideEnabled = activeMaterialProfile?.antiAliasingSettings?.enableOverride === true;
@@ -1181,64 +1231,61 @@ export function SlicingPanel({
 
   const slicingElapsedLabel = useMemo(() => formatElapsedClock(currentElapsedMs), [currentElapsedMs]);
 
-  // When the user enables AA on an STL whose support geometry analysis didn't
-  // produce a model/support split, warn that we can't disable AA for possible
-  // support geometry.
-  const handleAaModeChange = useCallback((mode: 'Off' | 'Blur' | '3DAA') => {
-    if (mode === 'Off') {
-      setAaMode('Off');
-      return;
-    }
-
-    // Check visible models for STL files with unclassified support geometry.
-    const stlWithoutSupportSplit = models.filter((m) => {
-      if (!m.visible) return false;
-      if (!m.name.toLowerCase().endsWith('.stl')) return false;
-      const report = m.geometry.meshDefects?.nativeRepairReport;
-      if (!report) return true; // No analysis report at all
-      const hasSplit = report.model_triangle_count != null && report.model_triangle_count > 0;
-      const isSupportGeometry = m.isSupportGeometry !== undefined
-        ? m.isSupportGeometry
-        : report.likely_support_geometry === true;
-      return !hasSplit && !isSupportGeometry;
-    });
-
-    if (stlWithoutSupportSplit.length > 0) {
-      setAaWarningModelName(stlWithoutSupportSplit[0].name);
-      setPendingAaTarget(mode);
-      setShowAaWarningModal(true);
-    } else {
-      setAaMode(mode);
-    }
-  }, [models]);
-
-  const handleAaWarningProceed = useCallback(() => {
-    if (pendingAaTarget) {
-      setAaMode(pendingAaTarget);
-    }
-    setShowAaWarningModal(false);
-    setPendingAaTarget(null);
-  }, [pendingAaTarget]);
-
-  const handleAaWarningCancel = useCallback(() => {
-    setShowAaWarningModal(false);
-    setPendingAaTarget(null);
-  }, []);
-
   const excludedModelIdSet = useMemo(() => new Set(excludedModelIds), [excludedModelIds]);
+  /** The plate the plain Slice action covers. */
+  const activePlateSliceScope = plateSliceScopes?.[activePlateSliceIndex] ?? null;
+  /**
+   * The plates a slice could cover that actually hold something. An empty bed is not a
+   * choice: a scene whose other beds are bare slices exactly as a single-bed scene does, and
+   * a bare bed is not what a file is named for either.
+   */
+  const populatedPlateScopes = useMemo(
+    () => (plateSliceScopes ?? []).filter((scope) => scope.modelIds.length > 0),
+    [plateSliceScopes],
+  );
+  const singlePlate = populatedPlateScopes.length <= 1;
+  /** Which plates the slice covers: every plate that has one, or just the plate in hand. */
+  const [slicePlateScope, setSlicePlateScope] = useState<SlicePlateScope>('all_plates');
+  /**
+   * What the scope means here. With one bed there is nothing to choose, so it is the bed in hand
+   * whatever the selector last said — the button then reads and slices like a single run, which
+   * is what a one-bed scene is.
+   */
+  const effectiveSlicePlateScope: SlicePlateScope = singlePlate ? 'current_plate' : slicePlateScope;
+  /** The models the slice covers: one plate's, or every visible one. */
+  const plateModelIdSet = useMemo(
+    () => (activePlateSliceScope ? new Set(activePlateSliceScope.modelIds) : null),
+    [activePlateSliceScope],
+  );
+  const scopedModels = useMemo(
+    () => (plateModelIdSet ? models.filter((model) => plateModelIdSet.has(model.id)) : models),
+    [models, plateModelIdSet],
+  );
   const visibleModels = useMemo(
-    () => models.filter((model) => model.visible && !excludedModelIdSet.has(model.id)),
-    [excludedModelIdSet, models],
+    () => scopedModels.filter((model) => model.visible && !excludedModelIdSet.has(model.id)),
+    [excludedModelIdSet, scopedModels],
   );
   const excludedVisibleModelCount = useMemo(
-    () => models.filter((model) => model.visible && excludedModelIdSet.has(model.id)).length,
-    [excludedModelIdSet, models],
+    () => scopedModels.filter((model) => model.visible && excludedModelIdSet.has(model.id)).length,
+    [excludedModelIdSet, scopedModels],
   );
   const requestOutOfBoundsSliceConfirmation = useCallback(() => new Promise<boolean>((resolve) => {
     outOfBoundsWarningResolveRef.current?.(false);
     outOfBoundsWarningResolveRef.current = resolve;
     setShowOutOfBoundsWarningModal(true);
   }), []);
+  const requestOverwriteConfirmation = useCallback((collisions: number) => new Promise<boolean>((resolve) => {
+    overwriteWarningResolveRef.current?.(false);
+    overwriteWarningResolveRef.current = resolve;
+    setOverwriteCollisionCount(collisions);
+  }), []);
+  const settleOverwriteConfirmation = useCallback((proceed: boolean) => {
+    const resolve = overwriteWarningResolveRef.current;
+    overwriteWarningResolveRef.current = null;
+    setOverwriteCollisionCount(0);
+    resolve?.(proceed);
+  }, []);
+
   const settleOutOfBoundsSliceConfirmation = useCallback((proceed: boolean) => {
     const resolve = outOfBoundsWarningResolveRef.current;
     outOfBoundsWarningResolveRef.current = null;
@@ -1248,6 +1295,8 @@ export function SlicingPanel({
   useEffect(() => () => {
     outOfBoundsWarningResolveRef.current?.(false);
     outOfBoundsWarningResolveRef.current = null;
+    overwriteWarningResolveRef.current?.(false);
+    overwriteWarningResolveRef.current = null;
   }, []);
   const activePrinterProfileId = (activePrinterProfile?.id ?? '').trim();
   const isShiftHeld = useKeyPressed('shift');
@@ -1263,10 +1312,19 @@ export function SlicingPanel({
     return sliceIntent;
   }, [canPrint, canUpload, canUvTools, isShiftHeld, sliceIntent]);
   // 'preview' is always available regardless of network state
-  const sliceFilenameBase = useMemo(
-    () => resolveSliceFilenameBase(visibleModels, activeModel),
-    [activeModel, visibleModels],
-  );
+  // A slice is a plate's output, so it is named for the plate: its own name, or — in a
+  // one-bed scene whose bed has no name — the first model standing on it, which is the
+  // convention the export panel follows too. A scene with no plates falls back to the model.
+  const sliceFilenameBase = useMemo(() => {
+    const scope = plateSliceScopes?.[activePlateSliceIndex] ?? plateSliceScopes?.[0];
+    if (!scope) return resolveSliceFilenameBase(visibleModels, activeModel);
+    const scopeModelIdSet = new Set(scope.modelIds);
+    return resolvePlateOutputBaseName({
+      plateName: scope.plateName,
+      plateNumberLabel: plateNumberPlaceholder(activePlateSliceIndex + 1, _),
+      plateModels: models.filter((model) => scopeModelIdSet.has(model.id)),
+    });
+  }, [_, activeModel, activePlateSliceIndex, models, plateSliceScopes, visibleModels]);
 
   useEffect(() => {
     if (!activePrinterProfileId) {
@@ -1311,8 +1369,8 @@ export function SlicingPanel({
     }
 
     const ml = totalMm3 / 1000;
-    return `${ml.toFixed(2)} mL`;
-  }, [estimatedVolumeLabelOverride, visibleModels]);
+    return fmt.quantity(ml, 2, 'ml');
+  }, [estimatedVolumeLabelOverride, visibleModels, fmt]);
 
   const effectiveLayerHeightMm = useMemo(() => {
     if (showRemoteOfflineLayerHeightOverride) {
@@ -1386,8 +1444,8 @@ export function SlicingPanel({
       + normalLayers * (effectiveMaterialProfile.normalExposureSec + travelSecPerLayer)
     );
 
-    return formatClockFromSeconds(totalSec);
-  }, [effectiveMaterialProfile, estimatedLayerCount]);
+    return formatClockFromSeconds(_, totalSec);
+  }, [effectiveMaterialProfile, estimatedLayerCount, _]);
 
   const sliceAntiAliasing = useMemo(() => resolveSliceAntiAliasing({
     printerProfile: activePrinterProfile,
@@ -1412,15 +1470,6 @@ export function SlicingPanel({
     setAaQualityMode('expert');
   }, [materialAaOverrideEnabled]);
 
-  const duplicateZSupportedAtCurrentAa = sliceAntiAliasing.decision.duplicateZSupported;
-  const advancedSampleCountLabel = aaMode === '3DAA' ? '3DAA Sample Count' : 'XY Sample Count';
-  const advancedSampleCountHelp = aaMode === '3DAA'
-    ? 'Controls how many raster samples each layer uses before resolving the final grayscale. In 3DAA these samples are distributed through the layer height using perturbation, so higher values improve shallow slopes and edge stability but cost more slicing time.'
-    : 'Controls supersampling for the layer-local XY edge-smoothing pass. Higher levels preserve finer edge detail but cost more slicing time.';
-  const advancedBlurWidthLabel = 'XY Blur Radius';
-  const advancedBlurWidthHelp = aaMode === '3DAA'
-    ? 'Controls the final in-plane XY blur radius that softens perturbation output after sampling. Higher values smooth edges more, but can soften tiny features.'
-    : 'Controls XY blur radius in pixels. Higher values create smoother transitions but can soften fine details.';
   const autoAaSummarySampleLabel = effectiveAutoAaConfig.aaMode === 'Off'
     ? _(msg`No AA`)
     : effectiveAutoAaConfig.antiAliasingMode === 'Blur'
@@ -1443,45 +1492,14 @@ export function SlicingPanel({
   const autoAaSummaryGrayLabel = effectiveAutoAaConfig.aaMode === 'Off'
     ? _(msg`No Gray Map`)
     : formatLutCurveSummaryLabel(_, autoLutCurveLabel);
-  const effectiveBlurGraySourceMode = materialAaOverrideEnabled
-    ? profileAntiAliasingSettings.blurGraySourceMode
-    : 'lut';
-  const blurUsesLutCurve = (aaMode === 'Blur' || aaMode === '3DAA') && effectiveBlurGraySourceMode === 'lut';
 
   const minimumAaProfileSupport = sliceAntiAliasing.decision.minimumAaAlpha;
 
-  const profileMinimumAaAlphaPercent = minimumAaProfileSupport.value;
   const hasProfileMinimumAaAlpha = minimumAaProfileSupport.available;
-
-  const setClampedMinimumAaAlphaPercent = useCallback((value: number) => {
-    const next = Number.isFinite(value) ? value : 50;
-    setMinimumAaAlphaPercent(Math.max(0, Math.min(100, Math.round(next))));
-  }, []);
-
-  const setClampedAaLevelSteps = useCallback((value: number) => {
-    setAaLevel(formatAaLevel(value));
-  }, []);
-
-  const setClampedBlurBrushRadiusPx = useCallback((value: number) => {
-    const next = Number.isFinite(value) ? value : 1;
-    setBlurBrushRadiusPx(Math.max(BLUR_WIDTH_MIN_PX, Math.min(BLUR_WIDTH_MAX_PX, Math.round(next))));
-  }, []);
-
-  const setClampedZBlurRadiusLayers = useCallback((value: number) => {
-    const next = Number.isFinite(value) ? value : 1;
-    setZBlurRadiusLayers(Math.max(0, Math.min(Z_BLUR_RADIUS_MAX_LAYERS, Math.round(next))));
-  }, []);
 
   const setClampedZBlendLookBack = useCallback((value: number) => {
     const next = Number.isFinite(value) ? value : 2;
     setZBlendLookBack(Math.max(LOOK_BACK_MIN_LAYERS, Math.min(LOOK_BACK_MAX_LAYERS, Math.round(next))));
-  }, []);
-
-  const setAaOnSupportsEnabled = useCallback((enabled: boolean) => {
-    saveSlicingPerformanceSettings({
-      ...getSavedSlicingPerformanceSettings(),
-      aaOnSupportsExperimental: enabled,
-    });
   }, []);
 
   const setClampedRemoteOfflineLayerHeightMm = useCallback((value: number) => {
@@ -1820,35 +1838,76 @@ export function SlicingPanel({
     selectedRemoteMaterialId,
   ]);
 
-  const handleSliceZipExport = async () => {
+  const handleSliceZipExport = async (
+    scopeOverride?: PlateSliceScope,
+    /**
+     * Set by the batch: the folder it already picked for every plate's file, so the run does
+     * not ask for a destination per bed, and the collected artifacts it hands over itself once
+     * the whole batch is done — a switch to the printing workspace mid-batch aborts the run
+     * that is still in flight.
+     */
+    batch?: {
+      destinationDirectory: string;
+      completed: Array<{
+        artifact: SliceExportArtifact;
+        plateId?: string;
+        totalLayers: number;
+        /** Where the run wrote it, so the plate is not saved again on the way past. */
+        savedPath?: string;
+      }>;
+    },
+  ): Promise<boolean> => {
+    // A batch passes each plate's scope in turn; a plain run uses the active one.
+    const scope = scopeOverride ?? activePlateSliceScope;
+    const scopeModelIdSet = scope ? new Set(scope.modelIds) : null;
+    const scopeModels = scopeModelIdSet
+      ? models.filter((model) => scopeModelIdSet.has(model.id))
+      : models;
+    const scopeFilenameBase = scope
+      ? resolvePlateOutputBaseName({
+          plateName: scope.plateName,
+          plateNumberLabel: plateNumberPlaceholder((plateSliceScopes?.indexOf(scope) ?? 0) + 1, _),
+          plateModels: scopeModels,
+        })
+      : null;
     if (!activePrinterProfile) {
       alert(_(msg`Select a printer profile first.`));
-      return;
+      return false;
     }
 
     if (!materialProfileForSlicing) {
       alert(_(msg`Select a material profile first.`));
-      return;
+      return false;
     }
 
     if (visibleModels.length === 0) {
       alert(excludedVisibleModelCount > 0
         ? _(msg`All visible models are outside the build volume.`)
         : _(msg`No visible models available for slicing.`));
-      return;
+      return false;
     }
 
-    if (excludedVisibleModelCount > 0 && !(await requestOutOfBoundsSliceConfirmation())) return;
+    if (excludedVisibleModelCount > 0 && !(await requestOutOfBoundsSliceConfirmation())) return false;
 
-    const proceed = await Promise.resolve(onBeforeSliceStart?.(effectiveSliceIntent) ?? true).catch(() => false);
+    // A batch writes files into the folder it picked: the intent menus are the single-plate
+    // flow's, and none of them means "all of them at once".
+    const intentForRun: SliceIntent = batch ? 'file' : effectiveSliceIntent;
+
+    const proceed = await Promise.resolve(
+      onBeforeSliceStart?.(
+        intentForRun,
+        batch ? { destinationDirectory: batch.destinationDirectory, baseName: scopeFilenameBase ?? undefined } : undefined,
+      ) ?? true,
+    ).catch(() => false);
     if (!proceed) {
-      return;
+      return false;
     }
 
-    const resolvedOutputPath = (resolveOutputPathForIntent?.(effectiveSliceIntent) ?? '').trim();
+    const resolvedOutputPath = (resolveOutputPathForIntent?.(intentForRun) ?? '').trim();
 
     setIsSlicingZip(true);
     setCurrentPhase('Preparing');
+    // i18n-ignore: sliceStatus is never rendered
     setSliceStatus('Preparing');
     setProgressDone(0);
     setProgressTotal(1);
@@ -1867,7 +1926,7 @@ export function SlicingPanel({
     setPreviewTotalLayers(0);
     setPreviewSelectedLayer(1);
     onSliceIntentChanged?.(effectiveSliceIntent);
-    onSliceRunStarted?.();
+    onSliceRunStarted?.(scope ? { plateId: scope.plateId } : undefined);
 
     // Fire scene save concurrently — it's best-effort and independent of mesh preparation.
     // The orchestrator uses visibleModels already captured in memory, so there's no ordering dependency.
@@ -1895,7 +1954,7 @@ export function SlicingPanel({
 
       if (captureSceneThumbnailPng && !skipThumbnailCapture) {
         try {
-          exportThumbnailPng = await captureSceneThumbnailPng();
+          exportThumbnailPng = await captureSceneThumbnailPng(scope?.plateId ?? undefined);
           console.info('[Slicing] Scene thumbnail capture result', {
             hasThumbnail: Boolean(exportThumbnailPng && exportThumbnailPng.length > 0),
             bytes: exportThumbnailPng?.length ?? 0,
@@ -1905,13 +1964,28 @@ export function SlicingPanel({
         }
       }
 
+      // A plate's file is named for the plate, beside the chosen path; a plain
+      // run keeps the name and destination it always had.
+      const outputBaseName = scopeFilenameBase ?? (sliceFilenameBase || activePrinterProfile.name || 'slice_export');
+      const scopeOutputPath = scopeFilenameBase
+        ? derivePlateOutputPath(resolvedOutputPath, scopeFilenameBase)
+        : null;
+
       const result = await runSliceExportOrchestrator({
-        models,
+        models: scopeModels,
         excludedModelIds,
+        ...(scope
+          ? {
+              plateVolumeBoundsMm: scope.volumeBoundsMm,
+              plateOffsetMm: scope.offsetMm,
+            }
+          : {}),
         printerProfile: activePrinterProfile,
         materialProfile: materialProfileForSlicing,
-        filenameBase: sliceFilenameBase || activePrinterProfile.name || 'slice_export',
-        outputPath: resolvedOutputPath.length > 0 ? resolvedOutputPath : null,
+        filenameBase: outputBaseName,
+        outputPath: (scopeOutputPath ?? resolvedOutputPath).trim().length > 0
+          ? (scopeOutputPath ?? resolvedOutputPath)
+          : null,
         antiAliasing: {
           preset: aaAutoPreset,
           override: sessionAaOverrideDraft,
@@ -2039,6 +2113,7 @@ export function SlicingPanel({
       });
 
       setCurrentPhase('Encoding');
+      // i18n-ignore: sliceStatus is never rendered
       setSliceStatus('Encoding');
 
       const runEndMs = performance.now();
@@ -2089,11 +2164,34 @@ export function SlicingPanel({
       }));
 
       setCurrentPhase('Ready');
+      // i18n-ignore: sliceStatus is never rendered
       setSliceStatus(`Generated ${result.outputFormat} via native Rust backend.`);
-      setSlicingModalStage('finished');
+      // A batch reaches "finished" once, at the end: one plate of several is not the run's end,
+      // and the modal would otherwise announce every plate but the last.
+      if (!batch) setSlicingModalStage('finished');
       slicingSucceeded = true;
       if (result.artifact) {
-        onSliceArtifactReady?.(result.artifact);
+        if (batch) {
+          const plateTotalLayers = Math.max(
+            1,
+            completedTotalLayers,
+            completedTotalLayersFromResult,
+            result.benchmark.totalLayers ?? 0,
+          );
+          batch.completed.push({
+            artifact: result.artifact,
+            ...(scope ? { plateId: scope.plateId } : {}),
+            ...(result.artifact.nativeTempPath ? { savedPath: result.artifact.nativeTempPath } : {}),
+            totalLayers: plateTotalLayers,
+          });
+          onSlicePlateSliced?.(result.artifact, {
+            ...(scope ? { plateId: scope.plateId } : {}),
+            ...(result.artifact.nativeTempPath ? { savedPath: result.artifact.nativeTempPath } : {}),
+            totalLayers: plateTotalLayers,
+          });
+        } else {
+          onSliceArtifactReady?.(result.artifact, scope ? { plateId: scope.plateId } : undefined);
+        }
       }
       if (result.benchmark) {
         onBenchmarkComplete?.(result.benchmark);
@@ -2101,6 +2199,7 @@ export function SlicingPanel({
     } catch (error) {
       if ((error as { name?: string } | null)?.name === 'AbortError') {
         setCurrentPhase('Cancelled');
+        // i18n-ignore: sliceStatus is never rendered
         setSliceStatus('Cancelled');
         setSlicingModalStage('cancelled');
       } else {
@@ -2121,17 +2220,91 @@ export function SlicingPanel({
       }
       setIsSlicingZip(false);
       onSlicingBusyChange?.(false);
-      if (slicingSucceeded) {
+      // Handed on for a plain run only: the batch hands its plates over when it is done, which
+      // is also when the app switches to the printing workspace.
+      if (slicingSucceeded && !batch) {
         setCurrentPhase('Opening');
+        // i18n-ignore: sliceStatus is never rendered
         setSliceStatus('Opening');
         onSlicingFinished?.({ totalLayers: Math.max(completedTotalLayers, completedTotalLayersFromResult, 1) });
       }
+    }
+
+    return slicingSucceeded;
+  };
+
+  /**
+   * Slice every plate in turn, one file each, named for the plate. Sequential
+   * rather than concurrent: each run drives the same native pipeline and the same
+   * progress surface, and a batch that stops on the first failure leaves the
+   * plates it did write intact.
+   */
+  const handleSliceAllPlates = async () => {
+    // The beds that hold something, in cascade order. An empty bed has no file of its own, and
+    // asking for one would stop the batch on a bed there is nothing to slice.
+    if (populatedPlateScopes.length < 2) return;
+
+    // One folder for the run, the way a per-plate export picks one: the plates are sliced one
+    // after another into it, each file named for its plate, and nothing asks again.
+    const destinationDirectory = (await pickDirectoryWithNativeDialog()).trim();
+    if (!destinationDirectory) return;
+
+    // What the run is about to write, so a folder that already holds any of those names — or a
+    // pair of plates named the same — can be asked about before a file is lost to it.
+    const outputExtension = resolveOutputFileExtension(
+      activePrinterProfile?.display.outputFormat,
+      activePrinterProfile?.display.formatVersion,
+    );
+    const targetPaths = populatedPlateScopes.map((scope) => joinSliceOutputPath(
+      destinationDirectory,
+      resolvePlateOutputBaseName({
+        plateName: scope.plateName,
+        plateNumberLabel: plateNumberPlaceholder(populatedPlateScopes.indexOf(scope) + 1, _),
+        // The batch resolves each plate for itself; this is only the name it will write.
+        plateModels: models.filter((model) => scope.modelIds.includes(model.id)),
+      }),
+      outputExtension,
+    ));
+
+    const alreadyOnDisk = await existingNativePaths(targetPaths).catch(() => [] as boolean[]);
+    const clashingWithTheFolder = targetPaths.filter((_, index) => alreadyOnDisk[index] === true).length;
+    const clashingWithEachOther = targetPaths.length - new Set(targetPaths).size;
+    const collisions = clashingWithTheFolder + clashingWithEachOther;
+    if (collisions > 0 && !(await requestOverwriteConfirmation(collisions))) return;
+
+    const completed: Array<{
+      artifact: SliceExportArtifact;
+      plateId?: string;
+      totalLayers: number;
+      savedPath?: string;
+    }> = [];
+    for (const scope of populatedPlateScopes) {
+      const sliced = await handleSliceZipExport(scope, { destinationDirectory, completed });
+      if (!sliced) break;
+    }
+
+    // The batch's own end. Every plate reached "Ready" on its own; this is what the modal waits
+    // for, and what the plates handed over below walk the app into the printing workspace with.
+    setCurrentPhase('Ready');
+    setSliceStatus(formatSlicedPlatesStatus(_, completed.length));
+    setSlicingModalStage('finished');
+
+    // The plates are handed over once the batch is done. The first of them is what walks the
+    // app into the printing workspace; doing that per bed would abort the run that follows.
+    for (const entry of completed) {
+      onSliceArtifactReady?.(entry.artifact, {
+        ...(entry.plateId ? { plateId: entry.plateId } : {}),
+        ...(entry.savedPath ? { savedPath: entry.savedPath } : {}),
+        savedDirectory: destinationDirectory,
+        totalLayers: entry.totalLayers,
+      });
     }
   };
 
   const handleCancelSlicing = useCallback(() => {
     if (!isSlicingZip) return;
     setCurrentPhase('Cancelling');
+    // i18n-ignore: sliceStatus is never rendered
     setSliceStatus('Cancelling');
     slicingAbortControllerRef.current?.abort();
   }, [isSlicingZip]);
@@ -2291,7 +2464,7 @@ export function SlicingPanel({
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}><Trans>Layer Height</Trans></div>
                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {effectiveLayerHeightMm != null ? `${effectiveLayerHeightMm.toFixed(3)} mm` : '—'}
+                  {effectiveLayerHeightMm != null ? fmt.quantity(effectiveLayerHeightMm, 3, 'mm') : '—'}
                 </div>
               </div>
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
@@ -2311,7 +2484,7 @@ export function SlicingPanel({
               <div className="rounded border px-1.5 py-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}><Trans>Engine</Trans></div>
                 <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                  {slicerEngineVersion ? `v${slicerEngineVersion}` : 'Slicer V3'}
+                  {slicerEngineVersion ? `v${slicerEngineVersion}` : 'Slicer V3' /* i18n-ignore: product name */}
                 </div>
               </div>
             </div>
@@ -2544,800 +2717,6 @@ export function SlicingPanel({
                       </div>
                     </>
                   )}
-
-                  {false && aaQualityMode === 'expert' && <>
-                  <SettingLabelWithHelp
-                    label="Anti-Aliasing Mode"
-                    help="Off disables AA. Blur applies XY smoothing only. 3DAA applies XY smoothing plus Z perturbation sampling through the layer height."
-                  />
-                  <div className="grid grid-cols-3 gap-1">
-                    {(['Off', 'Blur', '3DAA'] as const).map((mode) => {
-                      const active = aaMode === mode;
-                      return (
-                        <button
-                          key={mode}
-                          type="button"
-                          className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                          style={active
-                            ? {
-                                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                color: 'var(--text-strong)',
-                              }
-                            : {
-                                borderColor: 'var(--border-subtle)',
-                                background: 'var(--surface-0)',
-                                color: 'var(--text-muted)',
-                              }}
-                          onClick={() => handleAaModeChange(mode)}
-                        >
-                          {mode}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {aaMode !== 'Off' && (
-                    <>
-                      {/* ── Sample Count ── */}
-                      <SettingLabelWithHelp
-                        label={advancedSampleCountLabel}
-                        help={advancedSampleCountHelp}
-                      />
-                      <div className="grid grid-cols-5 gap-1">
-                        {AA_STRENGTH_PRESETS.map((steps) => {
-                          const level = formatAaLevel(steps);
-                          const active = !useCustomAaLevel && aaLevel === level;
-                          return (
-                            <button
-                              key={level}
-                              type="button"
-                              className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                              style={active
-                                ? {
-                                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                    color: 'var(--text-strong)',
-                                  }
-                                : {
-                                    borderColor: 'var(--border-subtle)',
-                                    background: 'var(--surface-0)',
-                                    color: 'var(--text-muted)',
-                                  }}
-                              onClick={() => {
-                                setUseCustomAaLevel(false);
-                                setAaLevel(level);
-                              }}
-                            >
-                              {level}
-                            </button>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          className="min-w-0 rounded border px-1 py-1 text-[9px] sm:text-[11px] font-medium leading-none tracking-tight whitespace-nowrap transition-colors"
-                          style={useCustomAaLevel
-                            ? {
-                                borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                color: 'var(--text-strong)',
-                              }
-                            : {
-                                borderColor: 'var(--border-subtle)',
-                                background: 'var(--surface-0)',
-                                color: 'var(--text-muted)',
-                              }}
-                          onClick={() => setUseCustomAaLevel(true)}
-                        >
-                          Custom
-                        </button>
-                      </div>
-                      {useCustomAaLevel && (
-                        <ScrollableNumberField
-                          className="mt-1"
-                          value={parseAaLevelSteps(aaLevel) ?? 4}
-                          onChange={setClampedAaLevelSteps}
-                          min={AA_STRENGTH_MIN_STEPS}
-                          max={AA_STRENGTH_MAX_STEPS}
-                          step={1}
-                          unit="x"
-                          ariaLabel="Custom AA strength"
-                          decreaseTitle="Decrease AA strength"
-                          increaseTitle="Increase AA strength"
-                        />
-                      )}
-
-                      {/* ── "More" rollup: Perturbation Pattern + Duplicate Terminal Z (3DAA only, item 4) ── */}
-                      {aaMode === '3DAA' && (
-                        <>
-                          <button
-                            type="button"
-                            className="flex items-center gap-1 px-0.5 py-0.5 rounded text-xs transition-colors"
-                            style={{ color: 'var(--text-muted)' }}
-                            onClick={() => setShowMoreZaaOptions((v) => !v)}
-                          >
-                            <ChevronDown className={`h-3 w-3 transition-transform duration-150 ${showMoreZaaOptions ? '' : '-rotate-90'}`} />
-                            <span>More</span>
-                          </button>
-                          {showMoreZaaOptions && (
-                            <>
-                              <SettingLabelWithHelp
-                                label="Perturbation Pattern"
-                                help="Chooses how 3DAA distributes Z samples. Uniform uses centered spacing, Halton is low-discrepancy, and Base2 uses a van der Corput sequence."
-                              />
-                              <div className="grid grid-cols-3 gap-1">
-                                {([
-                                  ['uniform', 'Uniform'],
-                                  ['halton', 'Halton'],
-                                  ['base2', 'Base2'],
-                                ] as const).map(([pattern, label]) => (
-                                  <button
-                                    key={pattern}
-                                    type="button"
-                                    className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                    style={zaaPattern === pattern
-                                      ? {
-                                          borderColor: 'var(--accent-secondary-action-border)',
-                                          background: 'var(--accent-secondary-action-bg-92)',
-                                          color: 'var(--accent-secondary-action-color)',
-                                        }
-                                      : {
-                                          borderColor: 'var(--border-subtle)',
-                                          background: 'var(--surface-0)',
-                                          color: 'var(--text-muted)',
-                                        }}
-                                    onClick={() => setZaaPattern(pattern)}
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-
-                              {duplicateZSupportedAtCurrentAa && (
-                                <>
-                                  <SettingLabelWithHelp
-                                    label="Duplicate Terminal Z"
-                                    help="Reduces triangle lookups by 50% by pairing half of Y perturbations at the same Z perturbation height."
-                                  />
-                                  <div className="grid grid-cols-2 gap-1">
-                                    <button
-                                      type="button"
-                                      className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                      style={!zaaDuplicateZ
-                                        ? {
-                                            borderColor: 'var(--accent-secondary-action-border)',
-                                            background: 'var(--accent-secondary-action-bg-92)',
-                                            color: 'var(--accent-secondary-action-color)',
-                                          }
-                                        : {
-                                            borderColor: 'var(--border-subtle)',
-                                            background: 'var(--surface-0)',
-                                            color: 'var(--text-muted)',
-                                          }}
-                                      onClick={() => setZaaDuplicateZ(false)}
-                                    >
-                                      Off
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                      style={zaaDuplicateZ
-                                        ? {
-                                            borderColor: 'var(--accent-secondary-action-border)',
-                                            background: 'var(--accent-secondary-action-bg-92)',
-                                            color: 'var(--accent-secondary-action-color)',
-                                          }
-                                        : {
-                                            borderColor: 'var(--border-subtle)',
-                                            background: 'var(--surface-0)',
-                                            color: 'var(--text-muted)',
-                                          }}
-                                      onClick={() => setZaaDuplicateZ(true)}
-                                    >
-                                      On
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </>
-                          )}
-                        </>
-                      )}
-
-                      {/* ── XY Blur Radius (item 1: disabled state; item 6: collapse toggle) ── */}
-                      <SettingLabelWithHelp
-                        label={advancedBlurWidthLabel}
-                        help={advancedBlurWidthHelp}
-                        onToggle={() => setShowXyBlurSection((v) => !v)}
-                        isOpen={showXyBlurSection}
-                      />
-                      {showXyBlurSection && (
-                        <>
-                          <div className="grid grid-cols-5 gap-1">
-                            {BLUR_WIDTH_PRESETS.map((radius) => {
-                              const active = !useCustomBlurBrushRadius && blurBrushRadiusPx === radius;
-                              return (
-                                <button
-                                  key={radius}
-                                  type="button"
-                                  className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                  style={active
-                                    ? {
-                                        borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                        background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                        color: 'var(--text-strong)',
-                                      }
-                                    : {
-                                        borderColor: 'var(--border-subtle)',
-                                        background: 'var(--surface-0)',
-                                        color: 'var(--text-muted)',
-                                      }}
-                                  onClick={() => {
-                                    setUseCustomBlurBrushRadius(false);
-                                    setClampedBlurBrushRadiusPx(radius);
-                                  }}
-                                >
-                                  {`${radius}px`}
-                                </button>
-                              );
-                            })}
-                            <button
-                              type="button"
-                              className="min-w-0 rounded border px-1 py-1 text-[9px] sm:text-[11px] font-medium leading-none tracking-tight whitespace-nowrap transition-colors"
-                              style={useCustomBlurBrushRadius
-                                ? {
-                                    borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                    background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                    color: 'var(--text-strong)',
-                                  }
-                                : {
-                                    borderColor: 'var(--border-subtle)',
-                                    background: 'var(--surface-0)',
-                                    color: 'var(--text-muted)',
-                                  }}
-                              onClick={() => setUseCustomBlurBrushRadius(true)}
-                            >
-                              Custom
-                            </button>
-                          </div>
-                          {useCustomBlurBrushRadius && (
-                            <div
-                              className="mt-1 rounded-md border p-2"
-                              style={{
-                                borderColor: 'var(--border-subtle)',
-                                background: 'color-mix(in srgb, var(--surface-0), var(--surface-1) 38%)',
-                              }}
-                            >
-                              <ScrollableNumberField
-                                value={blurBrushRadiusPx}
-                                onChange={setClampedBlurBrushRadiusPx}
-                                min={BLUR_WIDTH_MIN_PX}
-                                max={BLUR_WIDTH_MAX_PX}
-                                step={1}
-                                unit="px"
-                                ariaLabel="Custom blur width in pixels"
-                                decreaseTitle="Decrease blur width"
-                                increaseTitle="Increase blur width"
-                              />
-                              {/* Item 1: radius=0 → "XY Blur Disabled" replaces Box/Gaussian grid */}
-                              {blurBrushRadiusPx === 0 ? (
-                                <div className="mt-2">
-                                  <button
-                                    type="button"
-                                    className="w-full rounded border px-1.5 py-1 text-xs font-medium"
-                                    style={{
-                                      borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                      background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                      color: 'var(--text-strong)',
-                                    }}
-                                  >
-                                    XY Blur Disabled
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="mt-2 grid grid-cols-2 gap-1">
-                                  {([['box', 'Box'], ['gaussian', 'Gaussian']] as const).map(([mode, label]) => {
-                                    const active = blurBrushKernel === mode;
-                                    return (
-                                      <button
-                                        key={mode}
-                                        type="button"
-                                        className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                        style={active
-                                          ? {
-                                              borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                              background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                              color: 'var(--text-strong)',
-                                            }
-                                          : {
-                                              borderColor: 'var(--border-subtle)',
-                                              background: 'var(--surface-0)',
-                                              color: 'var(--text-muted)',
-                                            }}
-                                        onClick={() => setBlurBrushKernel(mode)}
-                                      >
-                                        {label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              {blurBrushKernel === 'gaussian' && blurBrushRadiusPx > 0 && (
-                                <div className="mt-2 grid grid-cols-2 gap-1.5">
-                                  <div>
-                                    <div className="px-0.5 pb-1 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                                      Sigma X
-                                    </div>
-                                    <ScrollableNumberField
-                                      value={blurBrushSigmaX}
-                                      onChange={(value) => setBlurBrushSigmaX(clampBlurSigma(value, 1.5))}
-                                      min={0.05}
-                                      max={16}
-                                      step={0.05}
-                                      unit=""
-                                      ariaLabel="Gaussian XY sigma X"
-                                      decreaseTitle="Decrease XY sigma X"
-                                      increaseTitle="Increase XY sigma X"
-                                    />
-                                  </div>
-                                  <div>
-                                    <div className="px-0.5 pb-1 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                                      Sigma Y
-                                    </div>
-                                    <ScrollableNumberField
-                                      value={blurBrushSigmaY}
-                                      onChange={(value) => setBlurBrushSigmaY(clampBlurSigma(value, 1.5))}
-                                      min={0.05}
-                                      max={16}
-                                      step={0.05}
-                                      unit=""
-                                      ariaLabel="Gaussian XY sigma Y"
-                                      decreaseTitle="Decrease XY sigma Y"
-                                      increaseTitle="Increase XY sigma Y"
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {/* ── Z Blur Radius Layers (3DAA only) ── */}
-                      {aaMode === '3DAA' && (
-                        <>
-                          <SettingLabelWithHelp
-                            label="Z Blur Radius Layers"
-                            help="Applies a blur across neighboring layers after 3DAA sampling to smooth Z stair-steps. Radius 0 disables Z blur. Radius 1 blends 3 layers, radius 2 blends 5 layers, etc."
-                            onToggle={() => setShowZBlurSection((v) => !v)}
-                            isOpen={showZBlurSection}
-                          />
-                          {showZBlurSection && (
-                            <>
-                              <div className="grid grid-cols-4 gap-1">
-                                {Z_BLUR_RADIUS_PRESETS.map((preset) => {
-                                  const active = !useCustomZBlurRadius && zBlurRadiusLayers === preset;
-                                  return (
-                                    <button
-                                      key={preset}
-                                      type="button"
-                                      className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                      style={active
-                                        ? {
-                                            borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                            background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                            color: 'var(--text-strong)',
-                                          }
-                                        : {
-                                            borderColor: 'var(--border-subtle)',
-                                            background: 'var(--surface-0)',
-                                            color: 'var(--text-muted)',
-                                          }}
-                                      onClick={() => {
-                                        setUseCustomZBlurRadius(false);
-                                        setClampedZBlurRadiusLayers(preset);
-                                      }}
-                                    >
-                                      {`${preset}`}
-                                    </button>
-                                  );
-                                })}
-                                <button
-                                  type="button"
-                                  className="min-w-0 rounded border px-1 py-1 text-[9px] sm:text-[11px] font-medium leading-none tracking-tight whitespace-nowrap transition-colors"
-                                  style={useCustomZBlurRadius
-                                    ? {
-                                        borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                        background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                        color: 'var(--text-strong)',
-                                      }
-                                    : {
-                                        borderColor: 'var(--border-subtle)',
-                                        background: 'var(--surface-0)',
-                                        color: 'var(--text-muted)',
-                                      }}
-                                  onClick={() => setUseCustomZBlurRadius(true)}
-                                >
-                                  Custom
-                                </button>
-                              </div>
-                              {useCustomZBlurRadius && (
-                                <div
-                                  className="mt-1 rounded-md border p-2"
-                                  style={{
-                                    borderColor: 'var(--border-subtle)',
-                                    background: 'color-mix(in srgb, var(--surface-0), var(--surface-1) 38%)',
-                                  }}
-                                >
-                                  <ScrollableNumberField
-                                    value={zBlurRadiusLayers}
-                                    onChange={setClampedZBlurRadiusLayers}
-                                    min={0}
-                                    max={Z_BLUR_RADIUS_MAX_LAYERS}
-                                    step={1}
-                                    unit=""
-                                    ariaLabel="3DAA Z blur radius layers"
-                                    decreaseTitle="Decrease Z blur radius"
-                                    increaseTitle="Increase Z blur radius"
-                                  />
-                                  {zBlurRadiusLayers === 0 ? (
-                                    <div className="mt-2">
-                                      <button
-                                        type="button"
-                                        className="w-full rounded border px-1.5 py-1 text-xs font-medium"
-                                        style={{
-                                          borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                          background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                          color: 'var(--text-strong)',
-                                        }}
-                                      >
-                                        Z Blur Disabled
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="mt-2 grid grid-cols-2 gap-1">
-                                      {([['box', 'Box'], ['gaussian', 'Gaussian']] as const).map(([mode, label]) => {
-                                        const active = zBlurKernel === mode;
-                                        return (
-                                          <button
-                                            key={mode}
-                                            type="button"
-                                            className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                            style={active
-                                              ? {
-                                                  borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                                  background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                                  color: 'var(--text-strong)',
-                                                }
-                                              : {
-                                                  borderColor: 'var(--border-subtle)',
-                                                  background: 'var(--surface-0)',
-                                                  color: 'var(--text-muted)',
-                                                }}
-                                            onClick={() => setZBlurKernel(mode)}
-                                          >
-                                            {label}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                  {zBlurKernel === 'gaussian' && zBlurRadiusLayers > 0 && (
-                                    <div className="mt-2">
-                                      <div className="px-0.5 pb-1 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                                        Sigma
-                                      </div>
-                                      <ScrollableNumberField
-                                        value={zBlurSigma}
-                                        onChange={(value) => setZBlurSigma(clampBlurSigma(value, 0.5))}
-                                        min={0.05}
-                                        max={16}
-                                        step={0.05}
-                                        unit=""
-                                        ariaLabel="Gaussian Z sigma"
-                                        decreaseTitle="Decrease Z sigma"
-                                        increaseTitle="Increase Z sigma"
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </>
-                      )}
-
-                      {/* divider before Grayscale */}
-                      <div
-                        className="my-2.5 mx-1 h-px rounded-full"
-                        style={{
-                          background: 'linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--border-subtle), var(--text-muted) 18%) 22%, color-mix(in srgb, var(--border-subtle), var(--text-muted) 18%) 78%, transparent 100%)',
-                        }}
-                      />
-
-                      {/* ── Grayscale Mapping ── */}
-                      <SettingLabelWithHelp
-                        label="Grayscale Mapping"
-                        help="LUT Curve is the default and recommended path for grayscale AA. Minimum Grey remains available as a simpler fallback override when you want threshold-style behavior instead of a cure-response curve."
-                        onToggle={() => setShowGrayscaleSection((v) => !v)}
-                        isOpen={showGrayscaleSection}
-                      />
-                      {showGrayscaleSection && (
-                        <>
-                          <div className="grid grid-cols-2 gap-1">
-                            <button
-                              type="button"
-                              className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                              style={blurGraySourceMode === 'lut'
-                                ? {
-                                    borderColor: 'var(--accent-secondary-action-border)',
-                                    background: 'var(--accent-secondary-action-bg-92)',
-                                    color: 'var(--accent-secondary-action-color)',
-                                  }
-                                : {
-                                    borderColor: 'var(--border-subtle)',
-                                    background: 'var(--surface-0)',
-                                    color: 'var(--text-muted)',
-                                  }}
-                              onClick={() => setBlurGraySourceMode('lut')}
-                            >
-                              LUT Curve
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                              style={blurGraySourceMode === 'minimum'
-                                ? {
-                                    borderColor: 'var(--accent-secondary-action-border)',
-                                    background: 'var(--accent-secondary-action-bg-92)',
-                                    color: 'var(--accent-secondary-action-color)',
-                                  }
-                                : {
-                                    borderColor: 'var(--border-subtle)',
-                                    background: 'var(--surface-0)',
-                                    color: 'var(--text-muted)',
-                                  }}
-                              onClick={() => setBlurGraySourceMode('minimum')}
-                            >
-                              Minimum Grey
-                            </button>
-                          </div>
-
-                          {((aaMode === 'Blur' && blurUsesLutCurve)
-                            || (aaMode === '3DAA' && blurGraySourceMode === 'lut')) && (
-                            <div className="space-y-1">
-                              <SettingLabelWithHelp
-                                label="LUT Curve"
-                                help={aaMode === '3DAA'
-                                  ? 'Chooses the cure-response LUT for perturbation-based 3DAA grayscale output. Opaque uses a stronger EXP curve (~47%→90%) for standard resins, Clear uses a gentler EXP curve (~39%→65%) for translucent materials, and Custom lets you import or tune your own curve.'
-                                  : 'Remaps the final grayscale output through the shared resin-calibrated cure curve system used by both Blur AA and 3DAA.'}
-                              />
-                              <div className="grid grid-cols-3 gap-1">
-                                {(['opaque', 'clear', 'custom'] as const).map((rtype) => {
-                                  const active = zBlendResinType === rtype;
-                                  const isAutoDetected = rtype !== 'custom' && autoDetectedResinType === rtype;
-                                  return (
-                                    <button
-                                      key={rtype}
-                                      type="button"
-                                      className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                      style={active
-                                        ? {
-                                            borderColor: 'var(--accent-secondary-action-border)',
-                                            background: 'var(--accent-secondary-action-bg-92)',
-                                            color: 'var(--accent-secondary-action-color)',
-                                          }
-                                        : {
-                                            borderColor: 'var(--border-subtle)',
-                                            background: 'var(--surface-0)',
-                                            color: 'var(--text-muted)',
-                                          }}
-                                      title={isAutoDetected ? 'Auto-detected from material name' : undefined}
-                                      onClick={() => setZBlendResinType(rtype)}
-                                    >
-                                      {rtype === 'opaque' ? 'Opaque' : rtype === 'clear' ? 'Clear' : 'Custom'}
-                                      {isAutoDetected && <span className="ml-1 opacity-60 text-[9px]">✦</span>}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {zBlendResinType === 'custom' && (
-                                <LutCurveSelector
-                                  savedCurves={savedCurves}
-                                  selectedCurveId={selectedCurveId}
-                                  onSelectCurve={setSelectedCurveId}
-                                  onOpenEditor={(id) => setEditingTarget(id ?? NEW_CURVE_EDITING_TARGET)}
-                                />
-                              )}
-                              <LutCurveEditorModal
-                                isOpen={editingTarget !== null}
-                                savedCurves={savedCurves}
-                                selectedCurveId={selectedCurveId}
-                                onSelectCurve={(id) => {
-                                  setSelectedCurveId(id);
-                                  setEditingTarget(id);
-                                }}
-                                onImportCurve={(curve) => {
-                                  const importedId = curve.id.trim() || crypto.randomUUID();
-                                  const normalizedName = curve.name.trim() || 'Imported Curve';
-                                  setSavedCurves((prev) => {
-                                    const lowerNames = new Set(prev.map((entry) => entry.name.trim().toLowerCase()));
-                                    let finalName = normalizedName;
-                                    let suffix = 2;
-                                    while (lowerNames.has(finalName.trim().toLowerCase())) {
-                                      finalName = `${normalizedName} (${suffix})`;
-                                      suffix += 1;
-                                    }
-                                    const importedCurve = {
-                                      ...curve,
-                                      id: importedId,
-                                      name: finalName,
-                                    };
-                                    return [...prev, importedCurve];
-                                  });
-                                  setSelectedCurveId(importedId);
-                                  setEditingTarget(importedId);
-                                }}
-                                editingCurve={
-                                  editingTarget === null || editingTarget === NEW_CURVE_EDITING_TARGET
-                                    ? null
-                                    : (savedCurves.find((c) => c.id === editingTarget) ?? null)
-                                }
-                                onSave={(curve) => {
-                                  if (savedCurves.some((c) => c.id === curve.id)) {
-                                    setSavedCurves((prev) => prev.map((c) => c.id === curve.id ? curve : c));
-                                  } else {
-                                    setSavedCurves((prev) => [...prev, curve]);
-                                    setSelectedCurveId(curve.id);
-                                  }
-                                  setEditingTarget(null);
-                                }}
-                                onDelete={(id) => {
-                                  const next = savedCurves.filter((c) => c.id !== id);
-                                  const fallback = next.length > 0
-                                    ? next
-                                    : [{ ...DEFAULT_SAVED_CURVES[0], id: crypto.randomUUID(), points: [...DEFAULT_CUSTOM_CURVE] }];
-
-                                  const nextSelectedId = selectedCurveId === id
-                                    ? fallback[0].id
-                                    : (fallback.some((curve) => curve.id === selectedCurveId)
-                                        ? selectedCurveId
-                                        : fallback[0].id);
-
-                                  setSavedCurves(fallback);
-                                  setSelectedCurveId(nextSelectedId);
-                                  setEditingTarget(nextSelectedId);
-                                }}
-                                onClose={() => setEditingTarget(null)}
-                              />
-                            </div>
-                          )}
-
-                          {blurGraySourceMode === 'minimum' && (
-                            <div className="space-y-1">
-                              <SettingLabelWithHelp
-                                label="Minimum Grey Level"
-                                help="Sets the minimum pixel intensity used by AA gradients. Profile uses material defaults; Override lets you force a value for this slice."
-                              />
-                              {hasProfileMinimumAaAlpha && (
-                                <div className="grid grid-cols-2 gap-1">
-                                  <button
-                                    type="button"
-                                    className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                    style={!enableMinimumAaAlphaOverride
-                                      ? {
-                                          borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                          background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                          color: 'var(--text-strong)',
-                                        }
-                                      : {
-                                          borderColor: 'var(--border-subtle)',
-                                          background: 'var(--surface-0)',
-                                          color: 'var(--text-muted)',
-                                        }}
-                                    onClick={() => setEnableMinimumAaAlphaOverride(false)}
-                                  >
-                                    {`Profile (${profileMinimumAaAlphaPercent}%)`}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                    style={enableMinimumAaAlphaOverride
-                                      ? {
-                                          borderColor: 'color-mix(in srgb, var(--accent), var(--border-subtle) 42%)',
-                                          background: 'color-mix(in srgb, var(--accent), var(--surface-1) 88%)',
-                                          color: 'var(--text-strong)',
-                                        }
-                                      : {
-                                          borderColor: 'var(--border-subtle)',
-                                          background: 'var(--surface-0)',
-                                          color: 'var(--text-muted)',
-                                        }}
-                                    onClick={() => setEnableMinimumAaAlphaOverride(true)}
-                                  >
-                                    Override
-                                  </button>
-                                </div>
-                              )}
-                              {(enableMinimumAaAlphaOverride || !hasProfileMinimumAaAlpha) && (
-                                <ScrollableNumberField
-                                  className="mt-1"
-                                  value={minimumAaAlphaPercent}
-                                  onChange={setClampedMinimumAaAlphaPercent}
-                                  min={0}
-                                  max={100}
-                                  step={1}
-                                  unit="%"
-                                  ariaLabel="Minimum alpha percent override"
-                                  decreaseTitle="Decrease minimum alpha"
-                                  increaseTitle="Increase minimum alpha"
-                                />
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {/* ── AA on Supports — moved to bottom, default closed (item 7) ── */}
-                      {(aaMode === 'Blur' || aaMode === '3DAA') && (
-                        <>
-                          <div
-                            className="my-2.5 mx-1 h-px rounded-full"
-                            style={{
-                              background: 'linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--border-subtle), var(--text-muted) 18%) 22%, color-mix(in srgb, var(--border-subtle), var(--text-muted) 18%) 78%, transparent 100%)',
-                            }}
-                          />
-                          <SettingLabelWithHelp
-                            label="AA on Supports"
-                            help="Controls whether native support and raft geometry also receives grayscale AA in the selected mode. Off keeps supports crisp and binary; On allows anti-aliased support edges too."
-                            onToggle={() => setShowAaOnSupports((v) => !v)}
-                            isOpen={showAaOnSupports}
-                          />
-                          {showAaOnSupports && (
-                            <div className="grid grid-cols-2 gap-1">
-                              <button
-                                type="button"
-                                className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                style={!aaOnSupportsEnabled
-                                  ? {
-                                      borderColor: 'var(--accent-secondary-action-border)',
-                                      background: 'var(--accent-secondary-action-bg-92)',
-                                      color: 'var(--accent-secondary-action-color)',
-                                    }
-                                  : {
-                                      borderColor: 'var(--border-subtle)',
-                                      background: 'var(--surface-0)',
-                                      color: 'var(--text-muted)',
-                                    }}
-                                onClick={() => setAaOnSupportsEnabled(false)}
-                              >
-                                Supports Off
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded border px-1.5 py-1 text-xs font-medium transition-colors"
-                                style={aaOnSupportsEnabled
-                                  ? {
-                                      borderColor: 'var(--accent-secondary-action-border)',
-                                      background: 'var(--accent-secondary-action-bg-92)',
-                                      color: 'var(--accent-secondary-action-color)',
-                                    }
-                                  : {
-                                      borderColor: 'var(--border-subtle)',
-                                      background: 'var(--surface-0)',
-                                      color: 'var(--text-muted)',
-                                    }}
-                                onClick={() => setAaOnSupportsEnabled(true)}
-                              >
-                                Supports On
-                              </button>
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                    </>
-                  )}
-                  </>}
                 </>
               ) : (
                 <div
@@ -3351,6 +2730,31 @@ export function SlicingPanel({
               )}
             </div>
           </div>
+
+          {/* Which plates the slice covers: one file for the bed being worked on, or a zip
+              with one file per bed. Only worth offering when more than one bed holds
+              something — an empty bed is not a choice. */}
+          {!singlePlate && (
+            <div
+              className="rounded-md border p-2"
+              style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
+            >
+              <div role="group" aria-label={_(msg`Slice plates`)} className="grid grid-cols-2 gap-1.5">
+                {SLICE_PLATE_SCOPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={slicePlateScope === option.value}
+                    className="rounded border px-2 py-1.5 text-center text-xs font-semibold transition-colors"
+                    style={slicePlateScope === option.value ? activeSliceScopeStyle : idleSliceScopeStyle}
+                    onClick={() => setSlicePlateScope(option.value)}
+                  >
+                    {_(option.label)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Slice intent split-button */}
           {(() => {
@@ -3372,14 +2776,22 @@ export function SlicingPanel({
                   <Button
                     variant="primary"
                     size="auto"
-                    onClick={() => { void handleSliceZipExport(); }}
+                    onClick={() => {
+                      void (effectiveSlicePlateScope === 'all_plates'
+                        ? handleSliceAllPlates()
+                        : handleSliceZipExport());
+                    }}
                     disabled={isDisabled}
-                    className={`flex-1 !h-9 text-sm inline-flex items-center justify-center gap-1.5 ${hasMenuOptions && !isShiftHeld ? 'rounded-r-none' : ''} ${isSlicingZip ? 'cursor-wait opacity-70' : ''}`}
+                    className={`flex-1 !h-9 text-sm inline-flex items-center justify-center gap-1.5 ${hasMenuOptions && !isShiftHeld && effectiveSlicePlateScope === 'current_plate' ? 'rounded-r-none' : ''} ${isSlicingZip ? 'cursor-wait opacity-70' : ''}`}
                   >
-                    <CurrentIcon className="w-4 h-4 shrink-0" />
-                    {isSlicingZip ? _(msg`Slicing…`) : current.label}
+                    {effectiveSlicePlateScope === 'all_plates'
+                      ? <Layers3 className="w-4 h-4 shrink-0" />
+                      : <CurrentIcon className="w-4 h-4 shrink-0" />}
+                    {isSlicingZip
+                      ? _(msg`Slicing…`)
+                      : (effectiveSlicePlateScope === 'all_plates' ? _(msg`Slice All`) : current.label)}
                   </Button>
-                  {hasMenuOptions && !isShiftHeld && (
+                  {hasMenuOptions && !isShiftHeld && effectiveSlicePlateScope === 'current_plate' && (
                     <Button
                       variant="primary"
                       size="auto"
@@ -3398,6 +2810,7 @@ export function SlicingPanel({
                     </Button>
                   )}
                 </div>
+
                 {sliceIntentMenuOpen && sliceIntentMenuRect && typeof document !== 'undefined' && createPortal(
                   <div
                     ref={sliceIntentMenuRef}
@@ -3456,7 +2869,7 @@ export function SlicingPanel({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label={_(msg`Material anti-aliasing settings`)}
+            aria-label={_(msg`Material Anti-Aliasing Settings`)}
           >
             <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="min-w-0">
@@ -3489,14 +2902,14 @@ export function SlicingPanel({
                 }}
               />
             </div>
-            <div className="px-3 py-2 border-t flex items-center justify-end gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="px-2 py-2 border-t flex items-center justify-end gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
               <Button
                 variant="secondary"
                 size="auto"
                 onClick={() => setIsMaterialAaEditorOpen(false)}
                 className="!h-8 !px-3 !py-0 text-xs rounded-full"
               >
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button
                 variant="secondary"
@@ -3528,7 +2941,7 @@ export function SlicingPanel({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label={_(msg`Session anti-aliasing override`)}
+            aria-label={_(msg`Session Anti-Aliasing Override`)}
           >
             <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="min-w-0">
@@ -3562,7 +2975,7 @@ export function SlicingPanel({
                 }}
               />
             </div>
-            <div className="px-3 py-2 border-t flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="px-2 py-2 border-t flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
               <Button
                 variant="secondary"
                 size="auto"
@@ -3586,7 +2999,7 @@ export function SlicingPanel({
                   onClick={() => setIsSessionAaOverrideOpen(false)}
                   className="!h-8 !px-3 !py-0 text-xs rounded-full"
                 >
-                  Cancel
+                  <Trans>Cancel</Trans>
                 </Button>
                 <Button
                   variant="secondary"
@@ -3697,7 +3110,7 @@ export function SlicingPanel({
                 {slicingModalStage === 'running' && liveLayersPerSec != null && (
                   <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                     <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Speed</Trans></div>
-                    <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatLayerRate(_, liveLayersPerSec)}</div>
+                    <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>{formatLayerRate(_, fmt, liveLayersPerSec)}</div>
                   </div>
                 )}
               </div>
@@ -3773,13 +3186,13 @@ export function SlicingPanel({
 
       <StructuredDialogModal
         open={showOutOfBoundsWarningModal}
-        ariaLabel="Out-of-bounds models will be excluded"
+        ariaLabel={_(msg`Out-of-bounds models will be excluded`)}
         title={<Trans>Models Outside Build Volume</Trans>}
         subtitle={<Trans>Only printable models will be sliced</Trans>}
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
         zIndexClassName="z-[130]"
-        closeAriaLabel="Close modal"
+        closeAriaLabel={_(msg`Close modal`)}
         onClose={() => settleOutOfBoundsSliceConfirmation(false)}
         onBackdropClick={() => settleOutOfBoundsSliceConfirmation(false)}
         actions={(
@@ -3811,12 +3224,44 @@ export function SlicingPanel({
         </p>
       </StructuredDialogModal>
 
-      <AaSupportWarningModal
-        isOpen={showAaWarningModal}
-        modelName={aaWarningModelName}
-        onCancel={handleAaWarningCancel}
-        onProceed={handleAaWarningProceed}
-      />
+      <StructuredDialogModal
+        open={overwriteCollisionCount > 0}
+        ariaLabel={_(msg`Files will be overwritten`)}
+        title={<Trans>Overwrite Existing Files?</Trans>}
+        icon={<AlertTriangle className="h-4 w-4" />}
+        iconTone="warning"
+        zIndexClassName="z-[130]"
+        closeAriaLabel={_(msg`Close modal`)}
+        onClose={() => settleOverwriteConfirmation(false)}
+        onBackdropClick={() => settleOverwriteConfirmation(false)}
+        actions={(
+          <>
+            <Button
+              variant="secondary"
+              className="!h-9 text-xs"
+              onClick={() => settleOverwriteConfirmation(false)}
+            >
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button
+              className="!h-9 text-xs"
+              onClick={() => settleOverwriteConfirmation(true)}
+            >
+              <Trans>Overwrite and Slice</Trans>
+            </Button>
+          </>
+        )}
+      >
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {overwriteCollisionCount === 1 ? (
+            <Trans>A file this run writes is already in that folder. Slicing replaces it.</Trans>
+          ) : (
+            <Trans comment="{overwriteCollisionCount} is always 2 or more; the singular case is its own message.">
+              <strong style={{ color: 'var(--text-strong)' }}>{overwriteCollisionCount}</strong> files this run writes are already in that folder. Slicing replaces them.
+            </Trans>
+          )}
+        </p>
+      </StructuredDialogModal>
     </Card>
   );
 }

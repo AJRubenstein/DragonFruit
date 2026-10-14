@@ -247,6 +247,11 @@ export function getRedoCount() {
   return redoStack.length;
 }
 
+/** The entry the next undo would pop, or null. For inspection only: the entry is the stack's own. */
+export function peekUndo(): HistoryAction | null {
+  return undoStack[undoStack.length - 1] ?? null;
+}
+
 /**
  * Result of routing an action to its registered handlers.
  *

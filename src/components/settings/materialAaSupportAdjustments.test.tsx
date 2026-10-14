@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nProvider } from '@lingui/react';
+import { i18n } from '@/i18n';
 import { DEFAULT_MATERIAL_ANTI_ALIASING_SETTINGS } from '@/features/profiles/profileStore';
 import { MaterialAntiAliasingSection, type MaterialDraft } from './profileFormAtoms';
 
@@ -17,7 +19,7 @@ test('Support Adjustments stay available with Custom Settings and Override Auto 
       },
       layerHeightMm: 0.05,
     } as MaterialDraft;
-    const html = renderToStaticMarkup(<MaterialAntiAliasingSection draft={draft} onChange={() => {}} />);
+    const html = renderToStaticMarkup(<I18nProvider i18n={i18n}><MaterialAntiAliasingSection draft={draft} onChange={() => {}} /></I18nProvider>);
     for (const label of ['Support Adjustments', 'Apply AA to Support Geometry', '3DAA tip shrink (%)', 'Tip Compensation Offset Mode']) {
       assert.ok(html.includes(label), `${label} visible for Auto preset with saved mode ${mode}`);
     }
@@ -41,7 +43,7 @@ test('Compensation Distance is editable only for Manual with Override Auto enabl
       },
       layerHeightMm: 0.05,
     } as MaterialDraft;
-    return renderToStaticMarkup(<MaterialAntiAliasingSection draft={draft} onChange={() => {}} />);
+    return renderToStaticMarkup(<I18nProvider i18n={i18n}><MaterialAntiAliasingSection draft={draft} onChange={() => {}} /></I18nProvider>);
   };
 
   assert.ok(!render('manual', false).includes('Compensation Distance (mm)'));

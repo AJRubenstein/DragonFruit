@@ -150,7 +150,7 @@ export function FleetManagement({
                     {activeManagedPrinter && index === 1 && (
                       <div className="my-1.5 border-t pt-1" style={{ borderColor: 'var(--border-subtle)' }}>
                         <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                          Other Printers
+                          <Trans>Other Printers</Trans>
                         </div>
                       </div>
                     )}
@@ -266,7 +266,7 @@ export function FleetManagement({
                 style={{ color: 'var(--accent-secondary)' }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                <Trans>Add Printer</Trans>
+                <Trans>Add printer</Trans>
               </Button>
             ) : (
               managedPrinters.length > 0 && (
@@ -421,7 +421,7 @@ export function FleetManagement({
 
       {/* Footer — Auto/Manual toggle + Cancel, hidden on the method chooser. */}
       {method !== null && showAddPrinterFlow && (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-t px-3 py-2" style={{ borderColor: 'var(--border-subtle)' }}>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t px-2 py-2" style={{ borderColor: 'var(--border-subtle)' }}>
           <SetupModeButton
             mode={method === 'scan' ? 'auto' : 'manual'}
             onSwitch={() => {

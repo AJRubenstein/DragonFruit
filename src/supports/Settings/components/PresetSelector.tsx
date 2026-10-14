@@ -760,7 +760,7 @@ export function PresetSelector({
                                                     >
                                                         {slot}
                                                     </span>
-                                                    <div className="flex-1 truncate">Slot {slot}</div>
+                                                    <div className="flex-1 truncate">{formatPresetSlotLabel(slot, _)}</div>
                                                 </div>
                                             </div>
                                         </button>
@@ -800,7 +800,7 @@ export function PresetSelector({
                             >
                                 <div className="flex items-center justify-center gap-1.5">
                                     <Save className="h-3.5 w-3.5" />
-                                    <span>New Preset</span>
+                                    <span><Trans>New Preset</Trans></span>
                                 </div>
                             </button>
                         </div>
@@ -898,7 +898,7 @@ export function PresetSelector({
             {/* ── Restore Defaults Modal ──────────────────────────────────── */}
             <StructuredDialogModal
                 open={restoreConfirmOpen}
-                ariaLabel={_(msg`Restore factory defaults`)}
+                ariaLabel={_(msg`Restore Factory Defaults?`)}
                 title={_(msg`Restore Factory Defaults?`)}
                 subtitle={_(msg`Factory presets will be reset and user presets will be unpinned.`)}
                 icon={

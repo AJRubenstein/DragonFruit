@@ -7,18 +7,36 @@ export type TauriInvoke = <T>(
   opts?: { headers?: Record<string, string> },
 ) => Promise<T>;
 
+/** Subscribe to a backend event. Returns the unsubscribe function. */
+export type TauriListen = <T>(
+  event: string,
+  handler: (event: { payload: T }) => void,
+) => Promise<() => void>;
+
 export interface TauriCoreModule {
   invoke: TauriInvoke;
+  listen: TauriListen;
 }
 
 let tauriCorePromise: Promise<TauriCoreModule | null> | null = null;
 
-/** Resolve the Tauri `invoke` binding, or null in the browser. Cached. */
+/**
+ * Resolve the Tauri bindings this bridge needs, or null in the browser. Cached.
+ *
+ * Both modules are loaded together so a caller cannot end up with an `invoke` and no
+ * way to hear back from the command it invoked.
+ */
 export async function loadTauriCore(): Promise<TauriCoreModule | null> {
   if (!isTauriRuntime()) return null;
   if (!tauriCorePromise) {
-    tauriCorePromise = import('@tauri-apps/api/core')
-      .then((mod) => ({ invoke: mod.invoke as TauriInvoke }))
+    tauriCorePromise = Promise.all([
+      import('@tauri-apps/api/core'),
+      import('@tauri-apps/api/event'),
+    ])
+      .then(([core, event]) => ({
+        invoke: core.invoke as TauriInvoke,
+        listen: event.listen as TauriListen,
+      }))
       .catch(() => null);
   }
   return tauriCorePromise;
@@ -108,6 +126,22 @@ export async function readPositionsFromCommand(
   const bytes = await invoke<ArrayBuffer | Uint8Array | number[]>(command);
   return decodeF32(bytes, command);
 }
+
+/**
+ * How large a mesh may be for [`refineCoarseFaces`] to be worth asking about.
+ *
+ * The command sends the whole soup and returns positions *and* normals, so it
+ * costs twice the mesh in traffic. A mesh with faces too long for the field is a
+ * mesh with few of them — the target is a fraction of the model's own diagonal,
+ * so a coarse face is a big face — which is what makes this gate cheap in
+ * practice: the meshes that need refining are the ones small enough to send.
+ *
+ * Above it, a mesh is left as it arrived. That is a real limit, and it is the
+ * right way round: a dense mesh has nothing to split, and a *large* mesh with a
+ * few huge faces is rarer than the import cost of treating every dense one as if
+ * it were coarse.
+ */
+export const REFINE_MAX_TRIANGLES = 400_000;
 
 /**
  * Ask the native side to refine geometry an importer built in the renderer.

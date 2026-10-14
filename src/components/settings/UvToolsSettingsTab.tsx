@@ -3,6 +3,8 @@
 import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { ExternalLink, Search, CheckCircle2 } from 'lucide-react';
 import { Button, SegmentedControl, SettingRow, Spinner } from '@/components/atoms';
 import type { UvToolsSettings } from '@/components/settings/uvToolsPreferences';
@@ -15,6 +17,18 @@ interface UvToolsSettingsTabProps {
 }
 
 const FOUND_GLOW_DURATION_MS = 5000;
+
+type Translate = (descriptor: MessageDescriptor) => string;
+
+// Interpolating messages live at module level so React Compiler cannot rename the
+// placeholder (see AGENTS.md); `executableLabel` keeps the catalog ids unchanged.
+function formatExecutablePathHint(translate: Translate, executableLabel: string): string {
+  return translate(msg`Use auto-discover or enter the path to ${executableLabel} manually.`);
+}
+
+function formatExecutablePathPlaceholder(translate: Translate, executableLabel: string): string {
+  return translate(msg`Select or type the path to ${executableLabel}`);
+}
 
 export function UvToolsSettingsTab({
   uvToolsSettings,
@@ -29,6 +43,7 @@ export function UvToolsSettingsTab({
   // Resolved in an effect so the server-rendered markup and the first client
   // render agree; macOS points at the `.app` bundle, not at an executable.
   const [isMac, setIsMac] = React.useState(false);
+  // i18n-ignore: file names
   const executableLabel = isMac ? 'UVtools.app' : 'UVTools.exe';
 
   React.useEffect(() => {
@@ -79,7 +94,7 @@ export function UvToolsSettingsTab({
   return (
     <div className="space-y-3">
       <section
-        className="rounded-lg border p-3"
+        className="rounded-md border p-3"
         style={{
           background: 'var(--surface-1)',
           borderColor: 'var(--border-subtle)',
@@ -97,11 +112,13 @@ export function UvToolsSettingsTab({
           </span>
           <div className="flex-1">
             <h3 className="text-xs font-semibold" style={{ color: 'var(--text-strong)' }}>
-              UVTools Integration
+              <Trans>UVTools Integration</Trans>
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Automatically open sliced print files in UVTools for further inspection and repair.
-              After slicing, the file is sent directly to UVTools for analysis.
+              <Trans>
+                Automatically open sliced print files in UVTools for further inspection and repair.
+                After slicing, the file is sent directly to UVTools for analysis.
+              </Trans>
             </p>
           </div>
         </div>
@@ -115,8 +132,8 @@ export function UvToolsSettingsTab({
           <SegmentedControl
             label={_(msg`Enable UVTools Integration`)}
             options={[
-              { value: 'on', label: _(msg`ON`) },
               { value: 'off', label: _(msg`OFF`) },
+              { value: 'on', label: _(msg`ON`) },
             ]}
             value={uvToolsSettings.enabled ? 'on' : 'off'}
             onChange={(next) => onUvToolsSettingsChange({ ...uvToolsSettings, enabled: next === 'on' })}
@@ -127,7 +144,7 @@ export function UvToolsSettingsTab({
           <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}>
             <SettingRow
               label={_(msg`UVTools Executable Path`)}
-              description={_(msg`Use auto-discover or enter the path to ${executableLabel} manually.`)}
+              description={formatExecutablePathHint(_, executableLabel)}
             >
               <Button
                 variant="secondary"
@@ -152,7 +169,7 @@ export function UvToolsSettingsTab({
                 ) : (
                   <Search className="h-4 w-4 shrink-0" />
                 )}
-                {discoveryBusy ? 'Scanning…' : showFoundGlow ? 'Found!' : 'Auto-Discover'}
+                {discoveryBusy ? _(msg`Scanning…`) : showFoundGlow ? _(msg`Found!`) : _(msg`Auto-Discover`)}
               </Button>
             </SettingRow>
 
@@ -161,7 +178,7 @@ export function UvToolsSettingsTab({
                 type="text"
                 value={uvToolsSettings.customPath}
                 onChange={(e) => onUvToolsSettingsChange({ ...uvToolsSettings, customPath: e.target.value })}
-                placeholder={`Select or type the path to ${executableLabel}`}
+                placeholder={formatExecutablePathPlaceholder(_, executableLabel)}
                 className="w-full rounded-md border px-2.5 py-1.5 text-xs font-mono"
                 style={{
                   borderColor: 'var(--border-subtle)',

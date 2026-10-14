@@ -572,7 +572,11 @@ export function renameAutoSupportPreset(id: string, name: string): AutoSupportPr
  * copy then reads as modified, which is the truth — the settings on screen are not
  * its block until they are saved into it.
  */
-export function duplicateAutoSupportPreset(id: string): AutoSupportPreset | null {
+/**
+ * `copyName` is the name the copy should take, translated by the caller (the store has no
+ * language); it is made unique here. Without one the copy is named "<source> copy".
+ */
+export function duplicateAutoSupportPreset(id: string, copyName?: string): AutoSupportPreset | null {
     const source = state.byId[id];
     if (!source) {
         console.warn('[AutoSupportPresetStore] Cannot duplicate, preset not found:', id);
@@ -581,7 +585,7 @@ export function duplicateAutoSupportPreset(id: string): AutoSupportPreset | null
 
     return insertPreset({
         id: makeAutoSupportPresetId(),
-        name: ensureUniquePresetName(`${source.name} copy`),
+        name: ensureUniquePresetName(copyName ?? `${source.name} copy`),
         isBuiltIn: false,
         settings: snapshotPresetSettings(source.settings),
         updatedAt: Date.now(),

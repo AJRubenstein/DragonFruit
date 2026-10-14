@@ -59,6 +59,34 @@
 
 ## Open
 
+### [bug] SceneCanvas ends navigation in an effect that re-runs every render — S · low risk
+- Where: src/components/scene/SceneCanvas/SceneCanvas.tsx, the `useEffect` that ends orbit /
+  wheel gestures when `cameraInteractionCycleEnabled` is false (~line 5403).
+- What: its deps include `handleOrbitEnd`, whose identity changes on every parent render
+  (`onCameraEnd`/`onCameraChange` close over the scene manager), so the effect re-runs every
+  render and calls `setIsOrbitInteracting(false)`/`setIsOrbitRotating(false)` from a passive
+  effect. Bailing setStates still count towards React's nested-update budget, so any other
+  per-render churn in the tree turns this into "Maximum update depth exceeded" (measured:
+  549 effect runs in 3s, and the error fires from this line).
+- Fix: hold the three callbacks in a ref and depend on
+  `[cameraInteractionCycleEnabled, spaceMouseNavigationActive]` — measured 0 errors with the
+  rest of the tree churning. Reverted from the arrange fix because it was not needed there.
+- Context: found while chasing the arrange regression, 2026-10-08. The same file already
+  documents this identity churn in the trackpad-wheel effect.
+
+
+### [bug] Duplicate on a later plate places copies on plate 1 — M · medium risk
+- Where: `handleFillPlateDuplicate` in src/features/scene/arrange/useArrangeManager.ts
+  (~line 1484), the high-precision duplicate preview/apply in src/app/page.tsx (~line 1390
+  and the duplicate preview effect ~9300).
+- What: the fill and the high-precision duplicate derive their frame from
+  `view3dSettings` alone, with no cascade offset, so on plate 2 the copies land in
+  plate 1's coordinates. The same shape the arrange paths had (fixed for arrange by
+  `resolveArrangeFrame` / `plateOffsetMm`).
+- Why: the copy is created, then stands on the wrong bed.
+- Context: inferred from reading the code while fixing arrange — not yet measured;
+  check both duplicate layouts (auto/fill and high precision) on plate 2.
+
 ### [cleanup] Dead imports and components in the page.tsx header — S · low risk
 - Where: src/app/page.tsx, lines ~7-59 (import header).
 - What: ~30 symbols imported and unused — lucide icons, several panels/cards
@@ -183,12 +211,6 @@
 - Context: ADR-0025 (`docs/adr/`) records the full audit and disposition; it is
   `status: proposed` and this is its unexecuted phase 1. Do not re-derive.
 
-### [cleanup] Stale DFST header size in a doc comment — S · low risk
-- Where: src-tauri/src/mesh_repair.rs, the comment above the DFST spec.
-- What: one comment says "a 16-byte `DFST` header"; the spec below it and
-  `STL_RESPONSE_HEADER_BYTES` both say 64. The constant is right.
-- Why: trivial, but it is the kind of thing someone trusts while writing a reader.
-
 ### [docs] Candidate ADR: empirical sizing over physics-based — S · low risk
 - Where: src/supports/autoSupport/parameterSizing.ts (header comment), and the
   reverted physics work in the auto-supports history.
@@ -205,16 +227,15 @@
 ### [refactor] Consolidate toasts into a queue with one lifetime — M · medium risk
 - Where: src/features/notifications/useEditorToasts.ts (12 useState + 11 timer
   refs for six toasts), src/components/organisms/NotificationStack.tsx (literal
-  z-indexes and a hardcoded offset conditional), src/components/ui/SupportToasts.tsx
-  (a second path, no timer), plus inline `<ToastViewport>` uses such as
-  AutoBracingSettingsCard.tsx (a third).
+  z-indexes and a hardcoded offset conditional), plus inline `<ToastViewport>`
+  uses such as AutoBracingSettingsCard.tsx (a second path).
 - What: replace the repeated fade/clear timer pair with a module store holding a
   queue and one timer — `pushToast({ tone, text, durationMs })` — and let the
   stack compute its own offsets instead of a two-case conditional.
 - Why: adding one message today is five steps across four files plus a judgement
   call about overlap, and the durations are per-toast literals (2200/2600,
-  3800/4500, duration-400). Three independent paths means three behaviours for
-  the same UI element.
+  3800/4500, duration-400). Two independent paths means two behaviours for the
+  same UI element.
 - Careful: `Toast`/`ToastViewport` are already shared and fine — this is about
   what drives them. The save toast has three pieces of state, not two (a
   minimum-visible-time animation), so it is the one that constrains the API.
@@ -308,27 +329,17 @@
   Confirm with an exact 180° rotation on each axis, and with a drag crossing 180°
   continuously.
 
-### [cleanup] Dead symbols in SlicingPanel and the backups tabs — S · low risk
-- Where: src/features/slicing/components/SlicingPanel.tsx and
-  src/components/settings/BackupsSettingsTab.tsx. Regenerate with
+### [cleanup] Dead symbols in SlicingPanel — S · low risk
+- Where: src/features/slicing/components/SlicingPanel.tsx. Regenerate with
   `npx eslint <file>` — don't trust a frozen listing.
 - What: `sliceStatus` is a useState written by seven call sites and never read;
   `formatDuration`, `fetchStatus`, `activePrinter`, `activeMaterial` and a
   handful of `set*` setters are unused.
 - Why: `sliceStatus` in particular reads like live status and is not — it
   invites someone to "fix" a display that no longer exists. Predates the i18n
-  pass (confirmed at HEAD); mechanical once the parked block below is resolved.
+  pass (confirmed at HEAD); mechanical now that the parked expert-AA block is gone.
 
-### [cleanup] 790 lines of parked expert-AA UI in SlicingPanel — M · medium risk
-- Where: src/features/slicing/components/SlicingPanel.tsx, lines ~2779-3571,
-  opened by `{false && aaQualityMode === 'expert' && <>`.
-- What: the whole expert anti-aliasing panel is switched off by a literal
-  `false`. It holds most of the AA vocabulary (Perturbation Pattern, LUT Curve,
-  Z Blur Radius, Minimum Grey Level, AA on Supports) and keeps several memoized
-  labels alive (`advancedSampleCountLabel`, `advancedBlurWidthLabel`…).
-- Why: decide with the AA owner whether this is parked or abandoned. Left
-  untranslated in the i18n pass on purpose — wrapping it would add ~80 strings
-  nobody can see; if it comes back, it needs that pass plus an AA glossary.
+
 ### [fix] Consolidation gives grid hosts the regular 8 mm fan radius — S · medium risk
 - Where: src/supports/autoSupport/autoPlace.ts, `fanLeafToHost(...)` call in the
   consolidation pass (~line 2372) passes `new Set()` as `gridHostIds`.
@@ -356,3 +367,45 @@
   choice is pinned by `orphanValidation.test.ts`, so that is a decision, not a
   rename.
 - Context: docs/dev/auto-supports.md § "Orphan validation after resize".
+
+### [cleanup] Unreachable files — M · medium risk
+- Where: `npx knip --no-progress --include files`. `knip.json` already declares
+  the entry points knip cannot see, so what it lists is a candidate, not noise.
+- What: strays, no longer whole subtrees — components and hooks nothing mounts
+  (`BackupsSettingsTab.tsx`, replaced by `LocalBackupsSettingsTab`), barrel
+  `index.ts` files nobody imports, fixtures no test loads, undocumented scripts.
+- Why: dead code still draws upkeep — sweeps translated and restyled a stale
+  copy of RaftSettingsCard before anyone noticed nothing mounted it.
+- Keep, do not re-investigate: `BackupsSettingsTab.tsx` is the GitHub backup UI,
+  parked while #30 may revive it; `loadVoxlFixture.ts` feeds the export goldens
+  that live outside the repo in `lysdiag/`.
+- Careful: knip lists files, not directories — count what is still live in a
+  directory before calling it dead. A manual script that shows up gets
+  documented and added to `entry`, or deleted — never widen `entry` to `scripts/**`.
+
+### [cleanup] Unused runtime dependencies — S · low risk
+- Where: package.json; `npx knip --no-progress --include dependencies`.
+- What: `@react-three/postprocessing`, `manifold-3d` and the JS
+  `@tauri-apps/plugin-updater` have no importer.
+- Why: install weight and supply-chain surface for nothing.
+- Careful: the updater itself stays — `src-tauri/src/updater_channel.rs` drives
+  the `tauri-plugin-updater` crate directly; only the npm package is unused.
+
+### [cleanup] Unused exports and exported types — L · low risk
+- Where: `npx knip --no-progress --include exports,types,duplicates`.
+- What: a few hundred exports and types nobody imports, plus `export X` next to
+  `export default X` duplicates.
+- Why: a public surface that is not one misleads whoever reads the module.
+- Careful: do it after the files entry — each deleted file orphans exports
+  elsewhere, so this listing moves with it.
+
+### [toolchain] Type-aware ESLint on the code that is actually alive — M · medium risk
+- Where: eslint.config.mjs (no `projectService`, so every type-aware rule is off).
+- What: enable `projectService` and `@typescript-eslint/no-unnecessary-condition`
+  over live code only — it flags always-false guards, which is the shape dead
+  code takes once the variable feeding it stops being assigned.
+- Why: it catches this class statically. A dead `if (url) URL.revokeObjectURL(url)`
+  survived review and `tsc`; only deleting the variable exposed it.
+- Careful: scope it to what knip says is reachable, and see the existing
+  `src/hotkeys` entry — lint cannot go into CI until a scope reaches zero. The
+  workable order is clear one scope, then gate that scope with `--max-warnings 0`.

@@ -35,15 +35,17 @@ import type { TenonPreviewKind, MembranePreviewResult } from './meshOrganicCut';
 import { cutPlaneFromPoints } from './cutPlane';
 import { snapPointsToFeatureEdges } from './snapToEdges';
 import { planeMeshIntersection, type PlaneMeshCurve } from './planeMeshIntersection';
+import type { MessageDescriptor } from '@lingui/core';
 import { createTypedHistory } from '@/history/typedHistory';
 import {
   ORGANIC_CUT_EDIT,
   type OrganicCutHistoryPayloadMap,
   type OrganicCutLoopSnapshot,
 } from './history/actionTypes';
+import { CUT_EDIT_LABELS, ORGANIC_CUT_HISTORY_LABELS } from './history/organicCutHistoryLabels';
 import type * as THREE from 'three';
 
-const organicCutHistory = createTypedHistory<OrganicCutHistoryPayloadMap>();
+const organicCutHistory = createTypedHistory<OrganicCutHistoryPayloadMap>(ORGANIC_CUT_HISTORY_LABELS);
 
 /**
  * Consecutive edits of the SAME kind within this window collapse into one undo
@@ -675,7 +677,7 @@ export function useOrganicCutSession({
   // edits began. Closed by the window expiring, by a different edit, or by the
   // tool/model going away — whichever comes first.
   const pendingRunRef = React.useRef<{
-    description: string;
+    description: MessageDescriptor;
     modelId: string;
     before: OrganicCutLoopSnapshot[];
     beforeActive: number;
@@ -744,7 +746,7 @@ export function useOrganicCutSession({
 
     organicCutHistory.push({
       type: ORGANIC_CUT_EDIT,
-      description: 'cut:drag',
+      description: CUT_EDIT_LABELS.drag,
       payload: {
         modelId,
         before: toSnapshot(baseline.loops),
@@ -766,7 +768,7 @@ export function useOrganicCutSession({
    */
   const commitLoops = React.useCallback(
     (
-      description: string,
+      description: MessageDescriptor,
       updater: (prev: SessionLoop[]) => SessionLoop[],
       nextActiveIndex?: number,
       coalesce = false,
@@ -840,7 +842,7 @@ export function useOrganicCutSession({
   );
 
   const setActiveLoopPoints = React.useCallback(
-    (description: string, updater: (prev: OrganicCutLoopPoint[]) => OrganicCutLoopPoint[]) => {
+    (description: MessageDescriptor, updater: (prev: OrganicCutLoopPoint[]) => OrganicCutLoopPoint[]) => {
       commitLoops(description, (prev) => {
         const idx = activeLoopIndexRef.current;
         if (idx < 0 || idx >= prev.length) return prev;
@@ -868,12 +870,12 @@ export function useOrganicCutSession({
     // fields that step once per wheel notch.
     const settings = extractSettings(next);
     if (!settingsEqual(settingsRef.current, settings)) {
-      commitLoops('cut:settings', (prev) => prev, undefined, true, settings);
+      commitLoops(CUT_EDIT_LABELS.settings, (prev) => prev, undefined, true, settings);
     }
     const tenon = extractTenon(next);
     // Tenon settings are part of the loop, so changing them — width, shape, or the
     // gizmo's aim — is an edit and goes through the same recorded path.
-    commitLoops('cut:tenon settings', (prev) => {
+    commitLoops(CUT_EDIT_LABELS.tenonSettings, (prev) => {
       const idx = activeLoopIndexRef.current;
       if (idx < 0 || idx >= prev.length) return prev;
       if (tenonsEqual(prev[idx].tenon, tenon)) return prev;
@@ -1253,12 +1255,12 @@ export function useOrganicCutSession({
   ]);
 
   const addPoint = React.useCallback((point: OrganicCutLoopPoint) => {
-    setActiveLoopPoints('cut:place point', (prev) => [...prev, point]);
+    setActiveLoopPoints(CUT_EDIT_LABELS.placePoint, (prev) => [...prev, point]);
     // A freshly placed point invalidates any redo history.
   }, [setActiveLoopPoints]);
 
   const insertPoint = React.useCallback((afterIndex: number, point: OrganicCutLoopPoint) => {
-    setActiveLoopPoints('cut:delete point', (prev) => {
+    setActiveLoopPoints(CUT_EDIT_LABELS.deletePoint, (prev) => {
       // Insert AFTER afterIndex → at array position afterIndex+1. Clamp so a bad
       // index can't throw; a negative index prepends, an over-large one appends.
       const at = Math.max(0, Math.min(prev.length, afterIndex + 1));
@@ -1273,7 +1275,7 @@ export function useOrganicCutSession({
   }, []);
 
   const removePoint = React.useCallback((index: number) => {
-    setActiveLoopPoints('cut:move point', (prev) => {
+    setActiveLoopPoints(CUT_EDIT_LABELS.movePoint, (prev) => {
       if (index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next.splice(index, 1);
@@ -1290,7 +1292,7 @@ export function useOrganicCutSession({
   }, [setActiveLoopPoints]);
 
   const updatePoint = React.useCallback((index: number, point: OrganicCutLoopPoint) => {
-    setActiveLoopPoints('cut:lock point', (prev) => {
+    setActiveLoopPoints(CUT_EDIT_LABELS.lockPoint, (prev) => {
       if (index < 0 || index >= prev.length) return prev;
       const prevPoint = prev[index];
       // Skip a state churn if the point didn't actually move (drag with no delta).
@@ -1314,7 +1316,7 @@ export function useOrganicCutSession({
   // would otherwise drag onto a nearby edge/corner. Double-click a marker to flip
   // it. A no-op if the index is out of range.
   const toggleLockPoint = React.useCallback((index: number) => {
-    setActiveLoopPoints('cut:lock waypoint', (prev) => {
+    setActiveLoopPoints(CUT_EDIT_LABELS.lockWaypoint, (prev) => {
       if (index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next[index] = { ...next[index], locked: !next[index].locked };
@@ -1328,7 +1330,7 @@ export function useOrganicCutSession({
   const snapActiveLoopToEdges = React.useCallback(() => {
     const geometry = activeGeometryRef.current;
     if (!geometry) return;
-    setActiveLoopPoints('cut:snap to edges', (prev) => {
+    setActiveLoopPoints(CUT_EDIT_LABELS.snapToEdges, (prev) => {
       if (prev.length === 0) return prev;
       const { points, movedCount } = snapPointsToFeatureEdges(prev, geometry);
       // Nothing moved (no feature edges, or all points already on one) → keep the
@@ -1343,7 +1345,7 @@ export function useOrganicCutSession({
     const key = activeGeometryKeyRef.current;
     if (key) savedLoopsRef.current.delete(key);
     // Keep the panel's current tenon on the fresh loop (don't reset the user's prefs).
-    commitLoops('cut:clear all', () => [emptyLoop(extractTenon(panelStateRef.current))], 0);
+    commitLoops(CUT_EDIT_LABELS.clearAll, () => [emptyLoop(extractTenon(panelStateRef.current))], 0);
     setLastResult(null);
     setCutError(null);
     setCutLeakPoints([]);
@@ -1372,7 +1374,7 @@ export function useOrganicCutSession({
     const all = loopsRef.current;
     const newIndex = all.length; // index of the appended loop
     const inheritTenon = all[activeLoopIndexRef.current]?.tenon ?? extractTenon(panelStateRef.current);
-    commitLoops('cut:add loop', (prev) => [...prev, emptyLoop(inheritTenon)], newIndex);
+    commitLoops(CUT_EDIT_LABELS.addLoop, (prev) => [...prev, emptyLoop(inheritTenon)], newIndex);
     setSelectedIndex(null);
     setGeodesicPolyline(null);
     setMembranePreview(null);
@@ -1397,7 +1399,7 @@ export function useOrganicCutSession({
         : index === curActive
           ? Math.max(0, Math.min(curActive, lastIndexAfter))
           : curActive;
-    commitLoops('cut:remove loop', (prev) => {
+    commitLoops(CUT_EDIT_LABELS.removeLoop, (prev) => {
       if (prev.length <= 1 || index < 0 || index >= prev.length) return prev;
       const next = prev.slice();
       next.splice(index, 1);

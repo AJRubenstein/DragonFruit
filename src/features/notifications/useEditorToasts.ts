@@ -1,3 +1,4 @@
+import type { MessageDescriptor } from '@lingui/core';
 import React from 'react';
 import type { SceneImportReport } from '@/features/scene/useSceneCollectionManager';
 
@@ -31,13 +32,35 @@ export type UseEditorToastsOptions = {
   sceneImportReport: SceneImportReport | null;
 };
 
+/**
+ * Keeps an `animated` toast in the tree for `tailMs` after it is told to hide.
+ *
+ * A toast whose presence and whose `visible` flag are the same boolean is torn
+ * out of the tree in the commit that hides it, so its fade-out never gets to run
+ * and it blinks away. Holding the element for one transition is what the other
+ * toasts get for free from the gap between their fade timer and their clear
+ * timer; this is that gap for the ones that have no second timer.
+ */
+export function useTrailingMount(visible: boolean, tailMs = 240): boolean {
+  const [mounted, setMounted] = React.useState(visible);
+  React.useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      return;
+    }
+    const timeout = window.setTimeout(() => setMounted(false), tailMs);
+    return () => window.clearTimeout(timeout);
+  }, [tailMs, visible]);
+  return mounted;
+}
+
 export function useEditorToasts({
   isSceneSaveInProgress,
   isPreSliceSceneSaveInProgress,
   isAutosaving,
   sceneImportReport,
 }: UseEditorToastsOptions) {
-  const [historyActionToast, setHistoryActionToast] = React.useState<{ id: number; text: string; direction: 'undo' | 'redo' } | null>(null);
+  const [historyActionToast, setHistoryActionToast] = React.useState<{ id: number; label: MessageDescriptor; direction: 'undo' | 'redo' } | null>(null);
   const [isHistoryActionToastVisible, setIsHistoryActionToastVisible] = React.useState(false);
   const [isSceneImportToastVisible, setIsSceneImportToastVisible] = React.useState(false);
   const [exportSuccessToast, setExportSuccessToast] = React.useState<{ id: number; path: string } | null>(null);

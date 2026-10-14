@@ -9,6 +9,7 @@ import { ChevronRight, Network } from 'lucide-react';
 import { Button, Card, CardHeader, IconChip, Input } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type IslandListCardProps = {
   islands: Island[];
@@ -34,6 +35,7 @@ export function IslandListCard({
   zOffsetMm,
 }: IslandListCardProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const cardRef = React.useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -223,12 +225,12 @@ export function IslandListCard({
                       </div>
                       <div className="ui-meta leading-tight">
                         {island.volumeMm3 !== undefined
-                          ? `${island.volumeMm3.toFixed(2)} mm³`
-                          : `${island.totalAreaMm2.toFixed(1)} mm²`}
+                          ? fmt.quantity(island.volumeMm3, 2, 'mm3')
+                          : fmt.quantity(island.totalAreaMm2, 1, 'mm2')}
                       </div>
                       {island.maxAreaMm2 !== undefined && island.maxAreaLayer !== undefined && (
                         <div className="ui-meta leading-tight" style={{ color: 'color-mix(in srgb, var(--text-muted), black 20%)' }}>
-                          Max: {island.maxAreaMm2.toFixed(2)} mm² @ L{Math.round(island.maxAreaLayer + (zOffsetMm / layerHeightMm))}
+                          Max: {fmt.quantity(island.maxAreaMm2, 2, 'mm2')} @ L{Math.round(island.maxAreaLayer + (zOffsetMm / layerHeightMm))}
                         </div>
                       )}
                     </div>

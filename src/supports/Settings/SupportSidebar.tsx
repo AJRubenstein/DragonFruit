@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, Eye, Save, RotateCcw, Sparkles, Wrench, WandSparkles, Sailboat, Grid3X3, Pickaxe } from 'lucide-react';
+import { Check, Save, RotateCcw, Sparkles, Wrench, WandSparkles, Sailboat, Grid3X3, Pickaxe } from 'lucide-react';
 import { usePresetHotkeys } from '@/hotkeys/usePresetHotkeys';
 import { useLingui } from '@lingui/react';
 import { formatAutoBraceStatus, formatBracesCleared } from '../autoBracing/autoBraceMessages';
@@ -21,7 +21,6 @@ import {
     updateAutoBracingSettings,
     updateAutoSupportSettings,
     updateDevToolsEnabled,
-    updateNavigationDiscsOnly,
 } from './state';
 import {
     subscribe as subscribeToSupportState,
@@ -75,6 +74,8 @@ import {
 import { DEFAULT_RAFT_SETTINGS } from '../Rafts/Crenelated/RaftDefaults';
 import type { SidebarPanel } from './sidebarPanels';
 import { resetSupportSettingsScrollForTabChange } from './supportSidebarScroll';
+import { Trans } from '@lingui/react/macro';
+import { adjustSupportSettingsLabel } from '@/supports/history/supportHistoryLabels';
 
 const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners !bg-[var(--surface-0)]';
 const SECTION_CARD_STYLE: React.CSSProperties = {
@@ -131,10 +132,6 @@ function hasMeaningfulSupportEditChange(
     return JSON.stringify(beforeSupport) !== JSON.stringify(afterSupport);
 }
 
-function formatSupportKindLabel(kind: EditableSupportTarget['kind']): string {
-    return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
-}
-
 function Section({
     title,
     children,
@@ -189,8 +186,6 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
     const autoBraceStatusTimeoutRef = React.useRef<number | null>(null);
     const autoBracingHotkeyWasActiveRef = React.useRef(false);
     const isAdaptiveConeAngle = (settings.tip.coneAngleMode ?? 'normal') === 'adaptive';
-    /** The eye button's state: contact discs solid, every member a line. */
-    const discsOnlyView = settings.navigationDiscsOnly;
     const sidebarPanelState = React.useSyncExternalStore(subscribeToSidebarPanel, getSidebarPanelSnapshot, getSidebarPanelSnapshot);
     const activePanel = sidebarPanelState.panel;
     const useAdaptiveIconCompactDisplay = isAdaptiveConeAngle && activePanel === DEFAULT_SIDEBAR_PANEL;
@@ -399,7 +394,7 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
             const after = captureSupportEditSnapshot();
             if (hasMeaningfulSupportEditChange(before, after)) {
                 pushSupportEditHistory(
-                    `Adjust ${formatSupportKindLabel(target.kind)} Settings`,
+                    adjustSupportSettingsLabel(target.kind),
                     before,
                     after,
                 );
@@ -988,7 +983,7 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
 
                     <div className="space-y-2">
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Root Disk Height</div>
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}><Trans>Root Disk Height</Trans></div>
                             <div className="relative">
                                 <NumberInput
                                     value={settings.roots.diskHeightMm}
@@ -1003,7 +998,7 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
                         </div>
 
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.coneHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Cone Height</div>
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}><Trans>Cone Height</Trans></div>
                             <div className="relative">
                                 <NumberInput
                                     value={settings.roots.coneHeightMm}
@@ -1199,13 +1194,6 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
                 )}
                 right={(
                     <div className="inline-flex items-center gap-1">
-                        <IconButton
-                            onClick={() => updateNavigationDiscsOnly(!discsOnlyView)}
-                            className={`!p-0.5 transition-colors ${discsOnlyView ? '!bg-sky-600/25 !text-sky-300' : '!text-[var(--text-muted)] hover:!text-[var(--text-strong)] hover:!bg-[var(--surface-2)]'}`}
-                            title={discsOnlyView ? _(msg`Show full supports`) : _(msg`Contact discs only, supports as lines`)}
-                        >
-                            <Eye className="h-3.5 w-3.5" />
-                        </IconButton>
                         <IconButton
                             onClick={handleSave}
                             className={`!p-0.5 transition-colors ${saveStatus === 'saved' ? '!bg-green-600/30 !text-green-400' : saveStatus === 'error' ? '!bg-red-600/30 !text-red-400' : '!text-green-400/70 hover:!text-green-400 hover:!bg-green-600/15'}`}

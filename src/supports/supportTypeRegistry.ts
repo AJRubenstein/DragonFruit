@@ -167,9 +167,10 @@ export interface SupportTypeDescriptor {
      */
     label: string;
     /**
-     * Singular lower-case name, for history descriptions like
-     * `Move ${singular} joint`. Declared rather than derived from `label`,
-     * which does not depluralise ("Leaves" -> "Leave").
+     * Singular lower-case name, for internal labels and logs (the undo
+     * history names types through `supportHistoryLabels.ts` instead, so it can
+     * be translated). Declared rather than derived from `label`, which does
+     * not depluralise ("Leaves" -> "Leave").
      */
     singular: string;
     location: SupportCollectionLocation;

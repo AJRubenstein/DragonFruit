@@ -8,18 +8,16 @@ import { SegmentedControl, Select, SettingRow } from '@/components/atoms';
 import type { SpaceMouseSettings } from '@/components/settings/spacemousePreferences';
 import { getCandidateGamepads, NAMED_3D_MOUSE } from '@/components/scene/camera/SpaceMouseController';
 import { getNativeSpaceMouseActive, subscribeNativeSpaceMouseActive } from '@/components/scene/camera/nativeSpaceMouseBridge';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 type SpaceMouseSettingsTabProps = {
   settings: SpaceMouseSettings;
   onChange: (partial: Partial<SpaceMouseSettings>) => void;
 };
 
-function formatNumber(value: number) {
-  return value.toFixed(2);
-}
-
 export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettingsTabProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [candidatePads, setCandidatePads] = React.useState<Gamepad[]>([]);
 
   // When the native 3DxWare/navlib bridge is driving the camera, the 3Dconnexion
@@ -52,7 +50,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
   return (
     <div className="space-y-3">
       <section
-        className="rounded-lg border p-3"
+        className="rounded-md border p-3"
         style={{
           background: 'var(--surface-1)',
           borderColor: 'var(--border-subtle)',
@@ -87,8 +85,8 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <SegmentedControl
             label={_(msg`Enable 3D Mouse`)}
             options={[
-              { value: 'on', label: _(msg`ON`) },
               { value: 'off', label: _(msg`OFF`) },
+              { value: 'on', label: _(msg`ON`) },
             ]}
             value={settings.enabled ? 'on' : 'off'}
             onChange={(next) => onChange({ enabled: next === 'on' })}
@@ -188,7 +186,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
 
       {!navlibActive && (
       <section
-        className="rounded-lg border p-3"
+        className="rounded-md border p-3"
         style={{
           background: 'var(--surface-1)',
           borderColor: 'var(--border-subtle)',
@@ -218,7 +216,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Translation</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.translationSensitivity)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.translationSensitivity, 2)}</span>
             </label>
             <input
               type="range"
@@ -234,7 +232,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Rotation</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.rotationSensitivity)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.rotationSensitivity, 2)}</span>
             </label>
             <input
               type="range"
@@ -250,7 +248,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Zoom</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.zoomSensitivity)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.zoomSensitivity, 2)}</span>
             </label>
             <input
               type="range"
@@ -266,7 +264,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <div className="space-y-0.5">
             <label className="text-xs flex justify-between" style={{ color: 'var(--text-muted)' }}>
               <span>Deadzone</span>
-              <span style={{ color: 'var(--text-strong)' }}>{formatNumber(settings.deadzone)}</span>
+              <span style={{ color: 'var(--text-strong)' }}>{fmt.fixed(settings.deadzone, 2)}</span>
             </label>
             <input
               type="range"
@@ -289,8 +287,8 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
           <SegmentedControl
             label={_(msg`Dominant axis mode`)}
             options={[
-              { value: 'on', label: _(msg`ON`) },
               { value: 'off', label: _(msg`OFF`) },
+              { value: 'on', label: _(msg`ON`) },
             ]}
             value={settings.dominantAxis ? 'on' : 'off'}
             onChange={(next) => onChange({ dominantAxis: next === 'on' })}
@@ -301,7 +299,7 @@ export function SpaceMouseSettingsTab({ settings, onChange }: SpaceMouseSettings
 
       {!navlibActive && (
       <section
-        className="rounded-lg border p-3"
+        className="rounded-md border p-3"
         style={{
           background: 'var(--surface-1)',
           borderColor: 'var(--border-subtle)',

@@ -10,11 +10,14 @@
  *
  * What counts as a literal: JSX text (single- and multi-line), text-bearing
  * props (`title`, `label`, `aria-label`, `ariaLabel`, `placeholder`, `help`, …)
- * with a plain string value, and `label`/`hint`/`title`/`description` keys in
- * data arrays. Text inside `<Trans>` and template literals is skipped. It is a
+ * with a plain string value, `label`/`hint`/`title`/`description` keys in data
+ * arrays, capitalised strings in a ternary branch, literals passed to a text
+ * setter (`setStatusText('…')`), and template literals that read as a sentence
+ * (`Upload to ${name}`). Text inside `<Trans>`, `msg` and `t` is skipped. It is a
  * heuristic: when a literal is deliberately not translatable (a unit, a brand,
  * a file extension), put `i18n-ignore` in a comment on that line or the line
- * above it.
+ * above it. A developer-only section goes between `i18n-ignore-start` and
+ * `i18n-ignore-end` comments.
  *
  * Usage:
  *   node scripts/check-i18n-literals.mjs              # check every listed path
@@ -39,9 +42,33 @@ const PROP_RE = new RegExp(`\\b(${TEXT_PROPS.join('|')})="([^"]{2,})"`, 'g');
 const DATA_RE = /\b(label|hint|title|description): (['"])((?:[^'"\\]|\\.){2,}?)\2/g;
 const JSX_TEXT_RE = />([^<>{}\n]{2,})</g;
 const JSX_MULTILINE_RE = />\s*\n\s*([A-Za-z][^<>{}]{1,240}?)\s*\n\s*<\//gs;
+// A ternary branch (` ? 'Text'` / ` : 'Text'`). Object keys (`label: 'x'`) have no space before
+// the colon, so they do not match.
+const TERNARY_RE = /\s[?:]\s+(['"])([A-Z][^'"\\\n]+?)\1/g;
+// A text setter fed a literal: `setStatusText('Uploading…')`.
+const SETTER_RE = /\bset[A-Z]\w*(?:Text|Label|Message|Title|Status|Error)\(\s*(['"])([^'"\\\n]{2,}?)\1/g;
+// A template literal that reads as a sentence, `Upload to ${name}`; its static text must look human.
+const TEMPLATE_RE = /(^|[^\w.])`([A-Z][a-z]+ [^`]*)`/g;
+// JSX text that shares its element with an expression: `>Slot {slot}<`, `>{count} items<`.
+const JSX_BEFORE_EXPR_RE = />([^<>{}\n]*[A-Za-z]{2}[^<>{}\n]*)\{/g;
+const JSX_AFTER_EXPR_RE = /\}([^<>{}\n]*[A-Za-z]{2}[^<>{}\n]*)</g;
+// A label handed to a render/format helper, or the label slot of a `['Low', 2]` tuple.
+// Generics and annotations (`(): void, opts?:`, `as Record<`) share that shape; they are not text.
+const TYPE_SHAPED = /^\s*[:[]|\bas\b|\bvoid\b|\?:|React\./;
+const ARG_RE = /\b(?:render|format)\w*\(\s*(['"])([A-Z][^'"\\\n]+?)\1/g;
+const TUPLE_RE = /\[\s*(['"])([A-Z][a-z]+(?: [A-Za-z]+)*)\1\s*,/g;
+const NOT_UI = /\b(Error|console|throw|logger|debug|warn)\b|className|style=/;
 
 const TS_TYPES = new Set(['Promise', 'Array', 'Record', 'Readonly', 'Partial', 'Map', 'Set',
       'React', 'HTMLElement', 'HTMLDivElement', 'HTMLInputElement', 'Omit', 'Pick']);
+const TS_PRIMITIVES = new Set(['void', 'null', 'undefined', 'string', 'number', 'boolean', 'unknown', 'never']);
+
+/** A type annotation caught between `=>`/`<…>` brackets: `& Omit`, `void | Promise`, `THREE.Color`. */
+function looksLikeType(text) {
+      const parts = text.split(/[|&,]/).map((part) => part.trim()).filter(Boolean);
+      return parts.length > 0 && parts.every((part) => TS_TYPES.has(part) || TS_PRIMITIVES.has(part)
+            || /^[A-Z][A-Za-z0-9]*\.[A-Z]\w*$/.test(part));
+}
 const CODEY = /&&|\|\||=>|;\s*$|\breturn\b|\bconst\b|\bfunction\b|\bnew [A-Z]|\{|\}/;
 
 /** Text a person would read, as opposed to code, identifiers, paths or CSS. */
@@ -49,6 +76,7 @@ function looksHuman(raw) {
       const text = raw.trim();
       if (text.length < 2 || text.startsWith('=')) return false;
       if (TS_TYPES.has(text.replace(/^[,\s]+/, ''))) return false;
+      if (looksLikeType(text)) return false;
       if (!/[A-Za-z]{2}/.test(text)) return false;
       if (CODEY.test(text)) return false;
       if (text.includes('(') || text.replace(/\.+$/, '').includes(')') || text.includes(' as ')) return false;
@@ -84,14 +112,29 @@ function lineOf(text, index) {
 
 function scanFile(raw, known) {
       const rawLines = raw.split('\n');
-      const ignored = (line) => /i18n-ignore/.test(rawLines[line - 1] ?? '') || /i18n-ignore/.test(rawLines[line - 2] ?? '');
-      const source = raw
-            .replace(/<Trans[\s>][\s\S]*?<\/Trans>/g, blank)
-            .replace(/`[^`]*`/g, blank);
+      // Developer-only panels stay in English: everything between `i18n-ignore-start` and
+      // `i18n-ignore-end` is skipped, so a debug section needs two comments, not one per line.
+      const ignoredBlockLines = new Set();
+      let blockStart = null;
+      rawLines.forEach((text, index) => {
+            if (/i18n-ignore-start/.test(text)) blockStart = index + 1;
+            else if (/i18n-ignore-end/.test(text) && blockStart !== null) {
+                  for (let line = blockStart; line <= index + 1; line += 1) ignoredBlockLines.add(line);
+                  blockStart = null;
+            }
+      });
+      const ignored = (line) => ignoredBlockLines.has(line)
+            || /i18n-ignore/.test(rawLines[line - 1] ?? '') || /i18n-ignore/.test(rawLines[line - 2] ?? '');
+      const withoutTrans = raw.replace(/<Trans[\s>][\s\S]*?<\/Trans>/g, blank);
+      // Messages already handed to Lingui (`msg\`…\``, `msg({ … })`, `t\`…\``) are not literals.
+      const withoutMessages = withoutTrans
+            .replace(/\b(msg|t|plural)\s*`[^`]*`/g, blank)
+            .replace(/\bmsg\(\{[\s\S]*?\}\)/g, blank);
+      const source = withoutMessages.replace(/`[^`]*`/g, blank);
       const found = [];
       const keep = (line, kind, text) => {
             const value = text.trim().replace(/\s+/g, ' ');
-            if (!looksHuman(value) || known.has(value) || ignored(line)) return;
+            if (!looksHuman(value) || ignored(line)) return;
             found.push({ line, kind, text: value });
       };
 
@@ -101,7 +144,23 @@ function scanFile(raw, known) {
             if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
             for (const m of lineText.matchAll(PROP_RE)) keep(line, `prop:${m[1]}`, m[2]);
             for (const m of lineText.matchAll(JSX_TEXT_RE)) keep(line, 'jsx-text', m[1]);
+            for (const re of [JSX_BEFORE_EXPR_RE, JSX_AFTER_EXPR_RE]) {
+                  for (const m of lineText.matchAll(re)) if (!TYPE_SHAPED.test(m[1])) keep(line, 'jsx-text', m[1]);
+            }
             for (const m of lineText.matchAll(DATA_RE)) keep(line, `data:${m[1]}`, m[3].replace(/\\'/g, "'"));
+            if (NOT_UI.test(lineText)) return;
+            for (const m of lineText.matchAll(TERNARY_RE)) keep(line, 'ternary', m[2]);
+            for (const m of lineText.matchAll(SETTER_RE)) keep(line, 'setter', m[2]);
+            for (const m of lineText.matchAll(ARG_RE)) keep(line, 'argument', m[2]);
+            for (const m of lineText.matchAll(TUPLE_RE)) keep(line, 'tuple', m[2]);
+      });
+      withoutMessages.split('\n').forEach((lineText, index) => {
+            const trimmed = lineText.trim();
+            if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*') || NOT_UI.test(lineText)) return;
+            for (const m of lineText.matchAll(TEMPLATE_RE)) {
+                  // Placeholders read as `…`, so `keep` judges the words around them, not the code inside.
+                  keep(index + 1, 'template', m[2].replace(/\$\{[^}]*\}/g, '…'));
+            }
       });
       for (const m of source.matchAll(JSX_MULTILINE_RE)) {
             keep(lineOf(source, m.index + m[0].indexOf(m[1])), 'jsx-multiline', m[1]);

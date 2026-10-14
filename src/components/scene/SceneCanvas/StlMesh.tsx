@@ -29,7 +29,7 @@ import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 import { getSupportPlacementGuideZ } from './supportPlacementGuideStore';
-import { BAKED_OCCLUSION_ATTRIBUTE, bakedOcclusionStrength } from '@/features/scene/bakedOcclusion';
+import { BAKED_OCCLUSION_ATTRIBUTE, bakedOcclusionStrength, bakedOcclusionVersion, getBakedOcclusionServerVersion, subscribeToBakedOcclusionVersions } from '@/features/scene/bakedOcclusion';
 
 // Scratch raycaster reused for clip-zone fallback raycasts.
 const _clipFallbackRaycaster = new THREE.Raycaster();
@@ -116,8 +116,14 @@ function findInteriorCavityHit(
 ): THREE.Intersection | null {
   const rc = _interiorCavityRaycaster;
   rc.ray.copy(ray);
+  // The ray comes from the camera, so its origin sits wherever the current zoom
+  // puts it — hundreds of scene units away, and the number grows without bound as
+  // the user zooms out. An absolute bound here silently misses the cavity (the
+  // first hit is simply out of range) and both the hole-punch and the support
+  // press then bail, which is what "interior placement stopped working" looks
+  // like. `firstHitOnly` already makes this cheap, so there is no bound to keep.
   rc.near = 0;
-  rc.far = 500;
+  rc.far = Infinity;
   (rc as any).firstHitOnly = true;
 
   const mesh = _interiorCavityRaycastMesh;
@@ -229,7 +235,6 @@ function StlMeshComponent({
   blockerEditMode = false,
   interiorView = false,
   cavityGeometry,
-  bakedAoVersion,
   children,
 }: {
   geometry: THREE.BufferGeometry;
@@ -259,10 +264,6 @@ function StlMeshComponent({
   interiorView?: boolean;
   /** Interior cavity mesh to render as solid in Interior View Mode. */
   cavityGeometry?: THREE.BufferGeometry | null;
-  /** Bumped by the background bake when `aBakedAo` lands on `geometry`. The
-   *  geometry keeps its identity, so this prop — not the geometry — is what
-   *  re-runs the attribute detection below. */
-  bakedAoVersion?: number;
   transform?: ModelTransform | null;
   mode?: SupportMode;
   transformMode?: TransformMode;
@@ -400,12 +401,18 @@ function StlMeshComponent({
   }, [geometry]);
 
   // Baked per-vertex occlusion (see docs/dev/backlog.md). The bake attaches the
-  // attribute in the background, so a model can gain it while mounted —
-  // `bakedAoVersion` is what re-runs this memo, because the geometry object
-  // itself keeps its identity.
+  // attribute in the background, so a model can gain it while mounted, and the
+  // geometry object keeps its identity — the store's per-geometry counter is what
+  // re-runs this memo. It is subscribed to rather than read from the `models`
+  // array, which every landing bake used to replace and invalidate the clearance
+  // map and the raft with.
+  const bakedAoVersion = React.useSyncExternalStore(
+    subscribeToBakedOcclusionVersions,
+    () => bakedOcclusionVersion(geometry),
+    getBakedOcclusionServerVersion,
+  );
   const bakedAoStrength = React.useMemo(() => {
     const occlusion = geometry.getAttribute(BAKED_OCCLUSION_ATTRIBUTE);
-    void bakedAoVersion;
     return occlusion && occlusion.count === geometry.getAttribute('position').count
       ? bakedOcclusionStrength(bakedAoIntensity)
       : 0;
@@ -1034,7 +1041,7 @@ if (uDitherAmount > 0.0) {
             return;
           }
 
-          if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchClick) {
+          if ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing' && onHolePunchClick) {
             const shouldOnlySelect = suppressNextHolePunchClickRef.current || !isActiveModel;
             suppressNextHolePunchClickRef.current = false;
             if (shouldOnlySelect) {
@@ -1137,7 +1144,7 @@ if (uDitherAmount > 0.0) {
         }}
         onPointerMove={(e) => {
           if (isSupportShiftGesture(e)) {
-            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+            if ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing' && onHolePunchHover) {
               onHolePunchHover(null);
             }
             if (!hasExternalHoverSource) schedulePointerHover(false);
@@ -1156,7 +1163,7 @@ if (uDitherAmount > 0.0) {
           // the model in the ray should not suppress model hover.
           const firstIsGizmo = e.intersections[0]?.object.userData?.isGizmoHandle === true;
           if (shouldSuppressModelInteraction || isGizmoHoverCategory || firstIsGizmo) {
-            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+            if ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing' && onHolePunchHover) {
               onHolePunchHover(null);
             }
             if (!hasExternalHoverSource) schedulePointerHover(false);
@@ -1168,7 +1175,7 @@ if (uDitherAmount > 0.0) {
 
           const isTopMostIntersection = e.intersections[0]?.object === e.object;
           if (!isTopMostIntersection) {
-            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+            if ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing' && onHolePunchHover) {
               onHolePunchHover(null);
             }
             if (!hasExternalHoverSource) schedulePointerHover(false);
@@ -1197,7 +1204,7 @@ if (uDitherAmount > 0.0) {
           if (propagateForNonModel && !primaryInClippedZone) {
             // Non-model is visible but model hit is in visible zone — suppress
             // model hover and don't consume the event.
-            if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+            if ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing' && onHolePunchHover) {
               onHolePunchHover(null);
             }
             if (!hasExternalHoverSource) schedulePointerHover(false);
@@ -1240,7 +1247,7 @@ if (uDitherAmount > 0.0) {
             emitImmediateModelHover(modelId);
           }
 
-          if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+          if ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing' && onHolePunchHover) {
             let hoverHit: THREE.Intersection | null = e as unknown as THREE.Intersection;
             if (primaryInClippedZone) {
               const fallback = findClipAwareHit(e.ray, e.object, clipLower, clipUpper, e.distance);
@@ -1344,7 +1351,7 @@ if (uDitherAmount > 0.0) {
           onModelHoverModelChange?.(null);
           emitImmediateModelHover(null);
 
-          if (mode === 'prepare' && transformMode === 'hollowing' && onHolePunchHover) {
+          if ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing' && onHolePunchHover) {
             onHolePunchHover(null);
           }
 
@@ -1362,6 +1369,13 @@ if (uDitherAmount > 0.0) {
         onPointerDown={(e) => {
           if (isSupportShiftGesture(e)) {
             return;
+          }
+
+          // The hole-punch click must know whether this press already selected
+          // the model: in Support the hollowing tool owns the canvas, so only
+          // its suppress flag is set here, not Prepare's selection dance.
+          if (!shouldSuppressModelInteraction && mode === 'support' && transformMode === 'hollowing' && onHolePunchClick && e.button === 0) {
+            suppressNextHolePunchClickRef.current = !isActiveModel;
           }
 
           if (!shouldSuppressModelInteraction && mode === 'prepare' && e.button === 0) {

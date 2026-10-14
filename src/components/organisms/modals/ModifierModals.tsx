@@ -28,7 +28,7 @@ export type ModifierModalsProps = {
   modifierApplyOverlayElapsedLabel: string;
   modifierApplyProcessingLabel: string;
   pendingBlockerResetState: HollowingPanelState | null;
-  pendingDestructiveTransform: { modelId: string; modelName: string; supportCount: number; operationLabel: string; } | null;
+  pendingDestructiveTransform: { modelIds: string[]; modelName: string; supportCount: number; operationLabel: string; } | null;
   pendingModifierResetAction: PendingModifierResetAction | null;
   setPendingBlockerResetState: React.Dispatch<React.SetStateAction<HollowingPanelState | null>>;
   setPendingModifierResetAction: React.Dispatch<React.SetStateAction<PendingModifierResetAction | null>>;
@@ -59,6 +59,11 @@ export function ModifierModals({
 }: ModifierModalsProps) {
   // A blocking progress overlay: swallow Escape rather than let it through.
   useEscapeToClose(showModifierApplyBlockingOverlay, undefined);
+
+  // Two of the three reset actions undo hollowing; only `hole_punch` is about
+  // holes alone, so the confirmation reads off that rather than one action.
+  const isHollowingReset = pendingModifierResetAction === 'hollowing'
+    || pendingModifierResetAction === 'clear_hollowing';
 
   return (
     <>
@@ -114,7 +119,7 @@ export function ModifierModals({
       <StructuredDialogModal
         open={pendingModifierResetAction !== null}
         ariaLabel="Confirm modifier reset"
-        title={pendingModifierResetAction === 'hollowing' ? 'Remove Hollowing?' : 'Remove All Holes?'}
+        title={isHollowingReset ? 'Remove Hollowing?' : 'Remove All Holes?'}
         subtitle="This action can't be undone"
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
@@ -134,33 +139,35 @@ export function ModifierModals({
               onClick={handleConfirmModifierReset}
             >
               <Trash2 className="w-3.5 h-3.5" />
-              {pendingModifierResetAction === 'hollowing' ? 'Remove Hollowing' : 'Remove All Holes'}
+              {isHollowingReset ? 'Remove Hollowing' : 'Remove All Holes'}
             </Button>
           </>
         )}
       >
         <div className="space-y-2">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            {pendingModifierResetAction === 'hollowing'
+            {isHollowingReset
               ? 'Are you sure you want to remove hollowing from this model?'
               : 'Are you sure you want to remove all hole punches from this model?'}
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            {pendingModifierResetAction === 'hollowing'
-              ? 'Your model will return to its solid version.'
-              : 'All holes on this model will be removed.'}
+            {pendingModifierResetAction === 'clear_hollowing'
+              ? 'The cavity and all holes will be removed.'
+              : pendingModifierResetAction === 'hollowing'
+                ? 'Your model will return to its solid version.'
+                : 'All holes on this model will be removed.'}
           </p>
         </div>
       </StructuredDialogModal>
 
       <StructuredDialogModal
         open={pendingBlockerResetState !== null}
-        ariaLabel="Confirm blocker reset"
-        title="Reset Blockers?"
-        subtitle="Blockers will be lost"
+        ariaLabel="Confirm solid area reset"
+        title="Reset Solid Areas?"
+        subtitle="Solid areas will be lost"
         icon={<AlertTriangle className="h-4 w-4" />}
         iconTone="warning"
-        closeAriaLabel="Close blocker reset confirmation"
+        closeAriaLabel="Close solid area reset confirmation"
         onClose={() => setPendingBlockerResetState(null)}
         actions={(
           <>
@@ -176,17 +183,17 @@ export function ModifierModals({
               onClick={handleConfirmBlockerReset}
             >
               <Trash2 className="w-3.5 h-3.5" />
-              Reset Blockers
+              Reset Solid Areas
             </Button>
           </>
         )}
       >
         <div className="space-y-2">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            Changing the voxel resolution or shell thickness will clear all applied blockers.
+            Changing the voxel resolution or shell thickness will clear all solid areas.
           </p>
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            You will need to re-select blocked regions after the change.
+            You will need to mark them again after the change.
           </p>
         </div>
       </StructuredDialogModal>

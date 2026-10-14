@@ -104,6 +104,7 @@ import {
   writeCornerOnlyWireframePositions,
 } from './SceneCanvasGeometry';
 import { ModelAttachedSupportLayer } from './ModelAttachedSupportLayer';
+import { FollowModelMove } from './FollowModelMove';
 import {
   CameraModeEntryFramingController,
   CameraProjectionController,
@@ -133,6 +134,10 @@ import { PickingEmptySpaceHoverResetter, SceneRenderBindings } from './SceneCanv
 
 import { PickingProviderWrapper, SelectionSync, useInteractionWarning } from './SceneSelectionAndPicking';
 import { CameraClipPlaneStabilizer, CameraProvider, EnableLocalClipping, Helpers, Lights, SceneMoodOverlay } from './SceneEnvironment';
+import { plateNumberPlaceholder } from '@/features/scene/plates/plateMessages';
+import { plateCascadeOffsetMm, type PlateOrdering } from '@/features/scene/plates/plateCascade';
+import { modelAnswersPointer, modelPlateScope, type PlateScope } from '@/features/scene/plates/plateInteractivity';
+import type { PlateFrame, ScenePlate } from '@/features/scene/useSceneCollectionManager';
 import { StlMesh } from './StlMesh';
 import { setClipBounds } from './clipBoundsStore';
 import { setSupportPlacementGuideZ, useSupportPlacementGuideActive } from './supportPlacementGuideStore';
@@ -181,7 +186,7 @@ import {
   isBoundsOutsideVolume,
   shouldUsePreciseBoundsForTransform,
 } from '@/utils/modelBounds';
-import { computeLowestZ } from '@/utils/geometry';
+import { computeLowestZ, countTriangles } from '@/utils/geometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { Toast } from '@/components/atoms';
 import { getCenteredPositions } from '@/utils/modelBounds';
@@ -196,6 +201,7 @@ import {
 import { applyScaleFactor } from '@/components/gizmo/scale/applyScaleFactor';
 import { createWheelDeviceClassifier, type WheelDevice } from '@/components/scene/SceneCanvas/wheelDeviceClassifier';
 import { getSelectionGizmoCenter } from '@/features/scene/selectionPosition';
+import { rotateSelectionFromActive, type SelectionRotationMode } from '@/features/scene/selectionTransform';
 import { DEFAULT_LIFT_DISTANCE_MM } from '@/features/transform/liftDefaults';
 import { setPickRayFromCamera } from '@/components/scene/camera/pickRay';
 import {
@@ -340,6 +346,13 @@ function resolveTrackpadGestureAction(
 
 const EMPTY_MODEL_ID_LIST: readonly string[] = Object.freeze([]);
 
+/**
+ * How much darker a model standing on a bed that is not the one being worked on is
+ * drawn. Module scope, not the component body: the render pass that dims the models
+ * runs before a later `const` in the body would have been initialised.
+ */
+const INACTIVE_PLATE_MODEL_DIM = 0.4;
+
 const FLOATING_PANEL_RIGHT_INSET_PX = 12;
 // Drei GizmoHelper positions by gizmo center, not right edge.
 // GizmoViewcube renders at scale [60,60,60] on a unit box, so half-extent is 30px.
@@ -459,6 +472,25 @@ export function SceneCanvas({
   heatmapMaxAngle,
   heatmapColors,
   interiorView = false,
+  plates,
+  plateFrames,
+  plateOrdering,
+  activePlateId,
+  onActivatePlate,
+  plateViewRunId,
+  onAddPlate,
+  onRenamePlate,
+  resolveModelPlateId,
+  plateName,
+  onPlateNameChange,
+  showPlateName = true,
+  showPlateWidgets = true,
+  plateLocked,
+  onTogglePlateLock,
+  onClearPlate,
+  plateClearTitle,
+  onArrangePlate,
+  duplicateGhostPlates,
   disableRaycast,
   ambientIntensity,
   directionalIntensity,
@@ -490,11 +522,14 @@ export function SceneCanvas({
   transform,
   uniformScaling = true,
   localTransformSpace = false,
+  selectionRotationMode = 'group',
   autoLift = false,
   liftDistance = DEFAULT_LIFT_DISTANCE_MM,
   autoSnapEnabled = true,
   onTransformChange,
   onTransformStart,
+  isModelPlateLocked,
+  onBlockedByPlateLock,
   onGizmoTransformCommit,
   onGizmoTransformGroupCommit,
   onTransformEnd,
@@ -573,6 +608,44 @@ export function SceneCanvas({
   heatmapMaxAngle?: number;
   heatmapColors?: string[];
   interiorView?: boolean;
+  /** The scene's plates and where each one sits in the cascade. */
+  plates?: ScenePlate[];
+  plateFrames?: PlateFrame[];
+  /** The grid those beds are laid out on, which is where the next one would land. */
+  plateOrdering: PlateOrdering;
+  /** Which plate is being worked on. */
+  activePlateId?: string;
+  onActivatePlate?: (plateId: string) => void;
+  /**
+   * Bumped by the scene when the plate being worked on is switched deliberately. The view
+   * pans to that plate: a bed picked out of the cascade may be half off screen.
+   */
+  plateViewRunId?: number;
+  onAddPlate?: () => void;
+  onRenamePlate?: (plateId: string, name: string) => void;
+  /** The plate a model stands on, resolved by the scene. */
+  resolveModelPlateId?: (model: LoadedModel) => string;
+  /** The build plate's name and its setter. Strings for its editor are resolved here. */
+  plateName?: string;
+  onPlateNameChange?: (next: string) => void;
+  /** Hide the name widget on an empty plate: there is nothing on it to name. */
+  showPlateName?: boolean;
+  /** The add/lock/arrange/bin column beside the plate, hidden in an empty scene. */
+  showPlateWidgets?: boolean;
+  /** The plate lock, handed to the 3D helpers that draw it. */
+  plateLocked?: boolean;
+  onTogglePlateLock?: () => void;
+  /** Runs from the bin beside the plate: it takes the plate, or empties it. */
+  onClearPlate?: () => void;
+  /**
+   * The bin's tooltip. The caller knows what the bin will do — remove the plate or
+   * only empty it — so it words it; without this it is worded as a clear.
+   */
+  plateClearTitle?: string;
+  /** Arranges every model on the plate, from the button beside it. */
+  onArrangePlate?: () => void;
+  /** The beds a duplicate preview would need beyond the plate being worked on. */
+  duplicateGhostPlates?: Array<{ dxMm: number; dyMm: number }>;
   disableRaycast?: boolean;
   hideCrossSectionCap?: boolean;
   onCameraChange?: () => void;
@@ -612,10 +685,16 @@ export function SceneCanvas({
   uniformScaling?: boolean;
   /** Drive the transform gizmo in the model's own frame instead of the world axes. */
   localTransformSpace?: boolean;
+  /** How the gizmo turns a multi-model selection: as one block, or each model in place. */
+  selectionRotationMode?: SelectionRotationMode;
   autoLift?: boolean;
   liftDistance?: number;
   autoSnapEnabled?: boolean;
   onTransformChange?: (position: THREE.Vector3, rotation: THREE.Euler, scale: THREE.Vector3) => void;
+  /** Whether a model's bed refuses edits, so a drag never starts on one. */
+  isModelPlateLocked?: (modelId: string) => boolean;
+  /** Told when a gesture is refused by a plate lock, so the app can say so. */
+  onBlockedByPlateLock?: () => void;
   onTransformStart?: (
     operation: 'move' | 'rotate' | 'scale',
     details?: { axis?: 'x' | 'y' | 'z' | 'uniform'; isUniform?: boolean },
@@ -637,7 +716,7 @@ export function SceneCanvas({
   onTransformEnd?: (
     operation: 'move' | 'rotate' | 'scale',
     finalTransform?: ModelTransform,
-    options?: { skipStoreCommit?: boolean },
+    options?: { skipStoreCommit?: boolean; spawnPlateForDrop?: boolean },
   ) => void;
   showIslandIdLabels?: boolean;
   mode?: SupportMode;
@@ -742,7 +821,14 @@ export function SceneCanvas({
   gizmoResetNonce?: number;
   historyTransformResyncToken?: number;
   isLayerScrubbing?: boolean;
-  onRegisterExportThumbnailCapture?: (capture: (() => Promise<Uint8Array | null>) | null) => void;
+  /**
+   * Registered with the canvas so a caller outside it can take the shot. The optional bounds
+   * frame a bed other than the one being worked on — a batch slices one bed after another while
+   * the workspace's active bed stays put.
+   */
+  onRegisterExportThumbnailCapture?: (
+    capture: ((volumeBoundsOverride?: THREE.Box3 | null) => Promise<Uint8Array | null>) | null,
+  ) => void;
   exportThumbnailRenderOptions?: ExportThumbnailRenderOptions;
   indicatorPlaneZ?: number | null;
   indicatorPlaneColor?: string;
@@ -939,9 +1025,7 @@ export function SceneCanvas({
           },
           visible,
           color: fallbackColor,
-          polygonCount: geom.geometry.getAttribute('position')?.count
-            ? geom.geometry.getAttribute('position').count / 3
-            : 0,
+          polygonCount: countTriangles(geom.geometry),
         },
       ];
     }
@@ -1066,7 +1150,7 @@ export function SceneCanvas({
     before: ModelTransform;
   } | null>(null);
   const [gizmoGroupStartSnapshot, setGizmoGroupStartSnapshot] = React.useState<{
-    operation: 'move' | 'scale';
+    operation: 'move' | 'rotate' | 'scale';
     activeModelId: string;
     pivot: THREE.Vector3;
     beforeByModelId: Record<string, ModelTransform>;
@@ -1146,14 +1230,14 @@ export function SceneCanvas({
       crossSectionLiveTransformsRef.current.set(activeModelId, next);
     } else if (!next) {
       crossSectionLiveTransformsRef.current.clear();
+      // Scene objects are moved imperatively and this ref remains the source of
+      // truth, so a drag needs no rerender to draw. The out-of-bounds test does:
+      // it compares a box against the build volume, so it is judged when the
+      // gesture ends. Bumping during the drag made the red volume and stripe
+      // flicker under the model as it crossed the edge, which is noise; where the
+      // model ends up is the thing worth reporting.
+      setLiveDragTransformVersion((value) => value + 1);
     }
-    // Scene objects are moved imperatively and this ref remains the source of
-    // truth, so a drag does not need a rerender to draw. The out-of-bounds test
-    // does: it compares a box against the build volume, and without this it only
-    // sees where the model was when the gesture started, so the red volume and the
-    // stripe appeared on release. Pointer moves are frame-throttled by the browser,
-    // which keeps this to about one bump per frame.
-    setLiveDragTransformVersion((value) => value + 1);
   }, [activeModelId]);
 
   const {
@@ -1329,21 +1413,59 @@ export function SceneCanvas({
   );
   const activeBuildVolumeSettings = view3dSettings ?? DEFAULT_VIEW3D_SETTINGS;
 
+  /** Where the active plate is in the world. No frames means one plate at the origin. */
+  const activePlateFrame = React.useMemo(
+    () => plateFrames?.find((frame) => frame.id === activePlateId) ?? plateFrames?.[0],
+    [plateFrames, activePlateId],
+  );
+
   const buildVolumeCenterTarget = React.useMemo(() => {
     const centerX = activeBuildVolumeSettings.originMode === 'front_left' ? activeBuildVolumeSettings.widthMm * 0.5 : 0;
     const centerY = activeBuildVolumeSettings.originMode === 'front_left' ? activeBuildVolumeSettings.depthMm * 0.5 : 0;
     const centerZ = activeBuildVolumeSettings.maxZMm * 0.5;
-    return new THREE.Vector3(centerX, centerY, centerZ);
+    return new THREE.Vector3(
+      centerX + (activePlateFrame?.dxMm ?? 0),
+      centerY + (activePlateFrame?.dyMm ?? 0),
+      centerZ,
+    );
   }, [
     activeBuildVolumeSettings.depthMm,
     activeBuildVolumeSettings.maxZMm,
     activeBuildVolumeSettings.originMode,
     activeBuildVolumeSettings.widthMm,
+    activePlateFrame?.dxMm,
+    activePlateFrame?.dyMm,
   ]);
 
   const { defaultCamera, orbitTarget, setOrbitTargetFromPoint, introBoundsSnapshot, cameraIntroRunId, cameraHomeResetRunId, resetCameraHome } =
     useStlLoadCameraIntro(models, buildVolumeCenterTarget, { deferIntro: deferCameraIntro });
   const [cameraIntroCompletedRunId, setCameraIntroCompletedRunId] = React.useState(0);
+  /**
+   * Where a plate pan looks: the middle of that bed, on the bed's own plane. The build
+   * volume's centre sits half way up the volume, and pivoting there leaves the plate low
+   * in the view — fine for Home, which is framing the volume, not for moving to a bed.
+   */
+  const plateViewTarget = React.useMemo(() => {
+    const centerX = activeBuildVolumeSettings.originMode === 'front_left' ? activeBuildVolumeSettings.widthMm * 0.5 : 0;
+    const centerY = activeBuildVolumeSettings.originMode === 'front_left' ? activeBuildVolumeSettings.depthMm * 0.5 : 0;
+    return new THREE.Vector3(
+      centerX + (activePlateFrame?.dxMm ?? 0),
+      centerY + (activePlateFrame?.dyMm ?? 0),
+      0,
+    );
+  }, [
+    activeBuildVolumeSettings.depthMm,
+    activeBuildVolumeSettings.originMode,
+    activeBuildVolumeSettings.widthMm,
+    activePlateFrame?.dxMm,
+    activePlateFrame?.dyMm,
+  ]);
+
+  /** What the camera controller needs to pan to the plate that was just picked. */
+  const plateFocus = React.useMemo(
+    () => ({ runId: plateViewRunId ?? 0, center: plateViewTarget }),
+    [plateViewRunId, plateViewTarget],
+  );
   const [cameraHomeResetCompletedRunId, setCameraHomeResetCompletedRunId] = React.useState(0);
 
   const lastHoveredModelPointRef = React.useRef<THREE.Vector3 | null>(null);
@@ -1548,11 +1670,114 @@ export function SceneCanvas({
     face: '#1f2937',
     text: '#f8fafc',
     accent: '#baf72e',
+    chip: '#20242c',
+    chipBorder: '#3a3f4b',
   });
     // Orientation labels are resolved out here, in the React tree, and handed to
   // the 3D helpers as props — those live inside the r3f reconciler, where the
   // i18n provider is not in scope. "Front" is shared with the build plate's
   // front-edge marker so both always read the same word.
+  // The plate-name editor lives inside the r3f reconciler too, so its strings are
+  // resolved here for the same reason as the orientation labels above.
+  const plateNamePlaceholder = _(msg({ message: 'Plate 1', comment: 'What the build plate\'s name widget shows while the plate has no name of its own, including after the plate is cleared or a new scene is started. The number is the plate\'s, plural forms come later with multiple plates.' }));
+  const plateNameEditTitle = _(msg({ message: 'Rename build plate', comment: "Tooltip on the pencil beside the build plate's name." }));
+  const plateNameEmptyTitle = _(msg({ message: 'Give this build plate a name', comment: "Tooltip on the build plate's name widget while it is still unnamed." }));
+  const addPlateLabel = _(msg({ message: 'Add plate', comment: 'Accessible name of the button beside the build plate that will add another plate. Inert for now, so it reads as unavailable to a screen reader too.' }));
+  const addPlateComingSoonTitle = _(msg({ message: 'Coming Soon!', comment: 'Hover text on the add-plate button beside the build plate. The app has one plate for now, so the button says so instead of doing nothing.' }));
+
+  /**
+   * What the canvas draws: one entry per plate, at its place in the cascade.
+   * Undefined for a caller with no plate list, which keeps the single-plate path
+   * exactly as it was.
+   */
+  /**
+   * Where each model stands, once per render: which plate's models answer the
+   * pointer, and which are drawn dimmed because they stand on another bed. The
+   * colour is multiplied rather than made transparent, so a dimmed model still
+   * reads as solid and does not sort against the ones behind it.
+   */
+  const modelPlateStates = React.useMemo(() => {
+    const states = new Map<string, { scope: PlateScope; dimmedColor?: string }>();
+    for (const model of models ?? []) {
+      const scope = modelPlateScope({
+        position: model.transform.position,
+        frames: plateFrames ?? [],
+        activePlateId,
+        plateCount: plates?.length ?? 0,
+      });
+      states.set(model.id, scope === 'other'
+        ? {
+            scope,
+            dimmedColor: new THREE.Color(model.color || meshColor || '#c8c8ce')
+              .multiplyScalar(INACTIVE_PLATE_MODEL_DIM)
+              .getStyle(),
+          }
+        : { scope });
+    }
+    return states;
+  }, [models, meshColor, plateFrames, activePlateId, plates]);
+
+  /** A model on another bed is not what F should frame while you work on this one. */
+  const isModelFocusable = React.useCallback(
+    (model: LoadedModel) => modelPlateStates.get(model.id)?.scope !== 'other',
+    [modelPlateStates],
+  );
+
+  /**
+   * Where the next bed would go: one cascade step out from the last plate, at the
+   * same footprint. Null without a plate list, which is the single-plate path.
+   */
+  const nextPlateFrame = React.useMemo(() => {
+    const last = plateFrames?.[plateFrames.length - 1];
+    if (!last) return null;
+    const widthMm = last.maxX - last.minX;
+    const depthMm = last.maxY - last.minY;
+    // The ghost is the plate this scene would have next, so the grid is numbered
+    // against one more plate than there is: that is where it will actually land.
+    const { dxMm, dyMm } = plateCascadeOffsetMm(
+      last.index + 1,
+      { widthMm, depthMm },
+      plateFrames.length + 1,
+      plateOrdering,
+    );
+    const minX = last.minX - last.dxMm + dxMm;
+    const minY = last.minY - last.dyMm + dyMm;
+    return { dxMm, dyMm, minX, minY, maxX: minX + widthMm, maxY: minY + depthMm };
+  }, [plateFrames, plateOrdering]);
+
+  const plateLayers = React.useMemo(() => {
+    if (!plates || plates.length === 0 || !plateFrames || plateFrames.length === 0) return undefined;
+    const layers = plates.map((plate, index) => {
+      const frame = plateFrames.find((candidate) => candidate.id === plate.id) ?? plateFrames[index];
+      const populated = (models ?? []).some((model) => {
+        const { x, y } = model.transform.position;
+        return frame != null
+          && x >= frame.minX && x <= frame.maxX
+          && y >= frame.minY && y <= frame.maxY;
+      });
+      return {
+        id: plate.id,
+        name: plate.name,
+        placeholder: plateNumberPlaceholder(index + 1, _),
+        dxMm: frame?.dxMm ?? 0,
+        dyMm: frame?.dyMm ?? 0,
+        isActive: plate.id === activePlateId,
+        populated,
+      };
+    });
+
+    // The export workspace shows what is being exported, and nothing is exported from an
+    // empty bed: the beds that hold nothing are not drawn there, along with the buttons that
+    // hang off them. Every other workspace keeps them, because a bed is where a model goes.
+    return mode === 'export' ? layers.filter((layer) => layer.populated) : layers;
+  }, [plates, plateFrames, activePlateId, _, mode, models]);
+  const plateLockTitle = _(msg({ message: 'Lock build plate', comment: 'Tooltip on the lock button beside the build plate while it is unlocked. Locking refuses new meshes and moves of the models already on the plate.' }));
+  const plateUnlockTitle = _(msg({ message: 'Unlock build plate', comment: 'Tooltip on the lock button beside the build plate while it is locked.' }));
+  const defaultPlateClearTitle = _(msg({ message: 'Clear build plate', comment: 'Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.' }));
+  const clearTitle = plateClearTitle ?? defaultPlateClearTitle;
+  const plateClearDisabledTitle = _(msg({ message: 'Unlock the plate to clear it', comment: 'Tooltip on the bin beside the build plate while the plate is locked, which is why it is disabled.' }));
+  const plateArrangeTitle = _(msg({ message: 'Auto arrange the plate', comment: 'Tooltip on the arrange button beside the build plate. Runs the standard arrange across every model, 1mm apart, with Z-rotation allowed.' }));
+  const plateArrangeDisabledTitle = _(msg({ message: 'Unlock the plate to arrange it', comment: 'Tooltip on the arrange button beside the build plate while the plate is locked, which is why it is disabled.' }));
   const frontFaceLabel = _(msg({ message: 'Front', comment: 'Orientation label, rendered uppercase on the view cube and on the build plate\'s front edge. Keep it as short as possible — long words are auto-shrunk to fit and become hard to read.' }));
   // Face order is fixed by the box geometry: +X, -X, +Y, -Y, +Z, -Z.
   const gizmoFaceLabels = React.useMemo(() => ([
@@ -1813,13 +2038,20 @@ export function SceneCanvas({
     return meshBounds.clone().union(supportRaftBounds);
   }, [BUILD_VOLUME_BOUNDS_EPS_MM, computeSupportAndRaftWorldBounds]);
 
+  /**
+   * The drawn build volume: the ACTIVE plate's, in world coordinates. The
+   * overlay marks the plate being worked on, not whichever plate happens to sit
+   * at the origin, so the cascade offset belongs in here.
+   */
   const buildVolumeBounds = React.useMemo(() => {
     if (!activeBuildVolumeSettings?.enabled) return null;
 
     const width = activeBuildVolumeSettings.widthMm;
     const depth = activeBuildVolumeSettings.depthMm;
-    const minX = activeBuildVolumeSettings.originMode === 'front_left' ? 0 : -width * 0.5;
-    const minY = activeBuildVolumeSettings.originMode === 'front_left' ? 0 : -depth * 0.5;
+    const dx = activePlateFrame?.dxMm ?? 0;
+    const dy = activePlateFrame?.dyMm ?? 0;
+    const minX = (activeBuildVolumeSettings.originMode === 'front_left' ? 0 : -width * 0.5) + dx;
+    const minY = (activeBuildVolumeSettings.originMode === 'front_left' ? 0 : -depth * 0.5) + dy;
 
     const sm = activeBuildVolumeSettings.safetyMarginMm;
     const marginFront = sm?.front ?? 0;
@@ -1831,7 +2063,39 @@ export function SceneCanvas({
       new THREE.Vector3(minX + marginLeft, minY + marginFront, 0),
       new THREE.Vector3(minX + width - marginRight, minY + depth - marginBack, activeBuildVolumeSettings.maxZMm),
     );
-  }, [activeBuildVolumeSettings]);
+  }, [activeBuildVolumeSettings, activePlateFrame?.dxMm, activePlateFrame?.dyMm]);
+
+  /**
+   * The build volume of every plate, in world coordinates. A model is judged
+   * against the plate it stands on, so a plate further along the cascade does not
+   * read as "outside the volume" for the crime of not being the first one.
+   */
+  const plateVolumeBoxes = React.useMemo(() => {
+    if (!plateFrames || plateFrames.length === 0 || !activeBuildVolumeSettings?.enabled) return null;
+    const sm = activeBuildVolumeSettings.safetyMarginMm;
+    const marginFront = sm?.front ?? 0;
+    const marginBack = sm?.back ?? 0;
+    const marginLeft = sm?.left ?? 0;
+    const marginRight = sm?.right ?? 0;
+
+    const boxes = new Map<string, THREE.Box3>();
+    for (const frame of plateFrames) {
+      boxes.set(frame.id, new THREE.Box3(
+        new THREE.Vector3(frame.minX + marginLeft, frame.minY + marginFront, 0),
+        new THREE.Vector3(frame.maxX - marginRight, frame.maxY - marginBack, activeBuildVolumeSettings.maxZMm),
+      ));
+    }
+    return boxes;
+  }, [plateFrames, activeBuildVolumeSettings]);
+
+  /** The volume a model is judged against: the plate it stands on, or the only one. */
+  const volumeBoxForModel = React.useCallback((model: LoadedModel): THREE.Box3 | null => {
+    if (!plateVolumeBoxes) return buildVolumeBounds;
+    const plateId = resolveModelPlateId
+      ? resolveModelPlateId(model)
+      : (model.plateId ?? plateFrames?.[0]?.id);
+    return (plateId ? plateVolumeBoxes.get(plateId) : undefined) ?? buildVolumeBounds;
+  }, [plateVolumeBoxes, plateFrames, buildVolumeBounds, resolveModelPlateId]);
 
   const cachedModelWorldBoundsRef = React.useRef<Map<string, THREE.Box3>>(new Map());
   const activeTransformOverrideModelId = React.useMemo(
@@ -1897,18 +2161,21 @@ export function SceneCanvas({
     return models
       .filter((model) => model.visible)
       .map((model) => {
-        const bounds = modelWorldBounds.get(model.id) ?? computeModelWorldBounds(model, model.transform, buildVolumeBounds);
+        const volume = volumeBoxForModel(model) ?? buildVolumeBounds;
+        const bounds = modelWorldBounds.get(model.id) ?? computeModelWorldBounds(model, model.transform, volume);
         return {
           id: model.id,
           name: model.name,
           bounds,
+          volume,
         };
       })
-      .filter(({ bounds }) => isBoundsOutsideVolume(bounds, buildVolumeBounds, BUILD_VOLUME_BOUNDS_EPS_MM));
+      .filter(({ bounds, volume }) => isBoundsOutsideVolume(bounds, volume, BUILD_VOLUME_BOUNDS_EPS_MM));
   }, [
     BUILD_VOLUME_BOUNDS_EPS_MM,
     liveDragTransformVersion,
     buildVolumeBounds,
+    volumeBoxForModel,
     computeModelWorldBounds,
     isGizmoDragging,
     isGizmoRetargeting,
@@ -2153,9 +2420,19 @@ export function SceneCanvas({
       // --surface-1 is the panel background; --text-strong is primary text.
       const face = tryColor('--surface-1', '#1f2937');
       const text = tryColor('--text-strong', '#f8fafc');
+      // The home chip wears the same surface and hairline as the app's own floating
+      // buttons, so it reads as a control rather than a stray glyph.
+      const chip = tryColor('--surface-0', '#20242c');
+      const chipBorder = tryColor('--border-subtle', '#3a3f4b');
       setGizmoColors((prev) => {
-        if (prev.face === face && prev.text === text && prev.accent === accent) return prev;
-        return { face, text, accent };
+        if (
+          prev.face === face
+          && prev.text === text
+          && prev.accent === accent
+          && prev.chip === chip
+          && prev.chipBorder === chipBorder
+        ) return prev;
+        return { face, text, accent, chip, chipBorder };
       });
     };
 
@@ -2337,6 +2614,11 @@ export function SceneCanvas({
     return null;
   }, [activeActualMeshRef, clipLower, clipUpper]);
 
+  // A drag that only moves models: the gizmo's move arrows, or a Select-mode drag, which
+  // has no gizmo descriptor. Footprint outlines follow these instead of hiding.
+  const isMoveDrag = isGizmoDragging && (
+    activeGizmoDragDescriptor ? activeGizmoDragDescriptor.operation === 'move' : selectDragPressed
+  );
   const isActiveGizmoZMove = activeGizmoDragDescriptor?.operation === 'move'
     && activeGizmoDragDescriptor.axis === 'z';
 
@@ -2584,7 +2866,7 @@ export function SceneCanvas({
 
   const buildMultiSelectionTransformsFromActive = React.useCallback((
     snapshot: {
-      operation: 'move' | 'scale';
+      operation: 'move' | 'rotate' | 'scale';
       activeModelId: string;
       pivot: THREE.Vector3;
       beforeByModelId: Record<string, ModelTransform>;
@@ -2595,6 +2877,18 @@ export function SceneCanvas({
     if (!activeBefore) return {} as Record<string, ModelTransform>;
 
     const result: Record<string, ModelTransform> = {};
+
+    if (snapshot.operation === 'rotate') {
+      const rotated = rotateSelectionFromActive(
+        Object.entries(snapshot.beforeByModelId).map(([id, transform]) => ({ id, transform })),
+        snapshot.activeModelId,
+        activeAfter.rotation,
+        selectionRotationMode,
+        snapshot.pivot,
+      );
+      for (const { id, transform } of rotated) result[id] = transform;
+      return result;
+    }
 
     if (snapshot.operation === 'move') {
       const delta = activeAfter.position.clone().sub(activeBefore.position);
@@ -2637,7 +2931,7 @@ export function SceneCanvas({
     }
 
     return result;
-  }, []);
+  }, [selectionRotationMode]);
 
   const multiGizmoPreviewTransformsById = React.useMemo(() => {
     const snapshot = gizmoGroupStartSnapshot;
@@ -2699,7 +2993,7 @@ export function SceneCanvas({
 
   const applyImmediateMultiPreview = React.useCallback((
     snapshot: {
-      operation: 'move' | 'scale';
+      operation: 'move' | 'rotate' | 'scale';
       activeModelId: string;
       pivot: THREE.Vector3;
       beforeByModelId: Record<string, ModelTransform>;
@@ -3458,7 +3752,11 @@ export function SceneCanvas({
   }, [arrangeArrayPreviewItems]);
 
   const hideFootprintOutlineForPreview = React.useMemo(() => {
-    if (mode !== 'prepare' || transformMode !== 'arrange') return false;
+    // Both tools that put ghosts on the plate: a ghost is what the outline would otherwise
+    // be traced under, and drawing the outline for every selected model while the ghosts
+    // are up is the expensive half of the pair. The Duplicate tool is its own rail mode,
+    // so it has to be named here — it was not, which is why its ghosts kept the outlines.
+    if (mode !== 'prepare' || (transformMode !== 'arrange' && transformMode !== 'duplicate')) return false;
 
     const hasArrangePreview = arrangeGhostPreviewGroups.length > 0 || arrangeSupportPreviewDeltas.length > 0;
     const hasDuplicatePreview = effectiveDuplicatePreviewTransforms.length > 0 || !!duplicateActivePreviewTransform;
@@ -3986,6 +4284,15 @@ export function SceneCanvas({
     1,
     (activeBuildVolumeSettings?.depthMm ?? 200) + 24,
   );
+  /**
+   * Where to lay the cap plane: over the bed being worked on. The plane spans one build
+   * volume, so left at the origin it covers the first bed and nothing else — which is why the
+   * pink scrubbing stencil appeared on plate 1 while another bed was being sliced.
+   */
+  const crossSectionPlaneOffsetMm = React.useMemo(
+    () => ({ dxMm: activePlateFrame?.dxMm ?? 0, dyMm: activePlateFrame?.dyMm ?? 0 }),
+    [activePlateFrame?.dxMm, activePlateFrame?.dyMm],
+  );
 
   const introControllerBounds = introBoundsSnapshot;
 
@@ -4046,6 +4353,17 @@ export function SceneCanvas({
   const isHomeResetAnimating = cameraHomeResetRunId > cameraHomeResetCompletedRunId;
   const hasModelsOnPlate = models.length > 0;
   const cameraInteractionCycleEnabled = hasModelsOnPlate && !isIntroAnimating && !isHomeResetAnimating;
+  /**
+   * Whether the camera answers the pointer at all. Named once because two things need
+   * the same answer: the props OrbitControls is handed, and the stale-disable recovery,
+   * which has to know when a disable is the app's own rather than an animation's.
+   */
+  const cameraInteractionEnabled = cameraInteractionCycleEnabled
+    && !((mode === 'prepare' || mode === 'support') && transformMode === 'supportBlockers' && blockerStrokeActive)
+    && !isGizmoDragging
+    && !isMarqueeSelecting
+    && !isPlacementActive
+    && !organicCutDragging;
   const isDropAnimating = Object.keys(entryDropOffsets).length > 0;
   const dynamicDpr: [number, number] = isLinux
     ? [1, 1]
@@ -4443,8 +4761,8 @@ export function SceneCanvas({
     });
   }, [buildPlateOpacity, isCameraBelowBuildPlate]);
 
-  const hidePlateContactPrimitives = plateContactCullActive || (mode === 'prepare' && transformMode === 'hollowing');
-  const hideRaftPrimitives = (mode === 'support' && plateContactCullActive) || (mode === 'prepare' && transformMode === 'hollowing');
+  const hidePlateContactPrimitives = plateContactCullActive || ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing');
+  const hideRaftPrimitives = (mode === 'support' && plateContactCullActive) || ((mode === 'prepare' || mode === 'support') && transformMode === 'hollowing');
   const hideGridHelpers = false;
   const modifyToolActive = mode === 'prepare' && transformMode === 'transform';
   const navigationLodActive = isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || isGizmoRetargeting || isLayerScrubbing;
@@ -5656,6 +5974,14 @@ export function SceneCanvas({
   const selectDragRaycasterRef = React.useRef(new THREE.Raycaster());
   const selectDragIntersectionRef = React.useRef(new THREE.Vector3());
   const selectDragDeltaRef = React.useRef(new THREE.Vector3());
+  /** Whether the drag is over the ghost bed, which is what a drop there creates. */
+  const ghostPlateDropArmedRef = React.useRef(false);
+  /**
+   * Off, drawn, or drawn as the place this drop would actually land. One string
+   * rather than a pair of booleans, so a move that changes nothing bails out
+   * instead of re-rendering the scene.
+   */
+  const [ghostPlateMode, setGhostPlateMode] = React.useState<'off' | 'shown' | 'armed'>('off');
   const selectDragNdcRef = React.useRef(new THREE.Vector2());
 
   // Mirrors activeModelId synchronously so the deferred drag-begin can confirm
@@ -5673,6 +5999,8 @@ export function SceneCanvas({
     selectDragPlaneRef.current = null;
     selectDragLastPointRef.current = null;
     selectDragStartSnapshotRef.current = null;
+    ghostPlateDropArmedRef.current = false;
+    setGhostPlateMode('off');
     setSelectDragPressed(false);
 
     hideDragCornerCagesNow();
@@ -5796,12 +6124,31 @@ export function SceneCanvas({
     // trailing behind a fast drag.
     updateDragCornerCagesNow();
     last.copy(worldPoint);
-  }, [getSelectDragWorldPoint, queueLiveDragTransform, updateDragCornerCagesNow]);
+
+    // Off every bed, the next one is a place the model could go, so show where it
+    // would land and remember whether the model is over it: a drop there hands the
+    // model a plate of its own.
+    const ghost = nextPlateFrame;
+    if (!ghost) return;
+    const point = group.position;
+    const overPlate = (plateFrames ?? []).some(
+      (frame) => point.x >= frame.minX && point.x <= frame.maxX && point.y >= frame.minY && point.y <= frame.maxY,
+    );
+    const offEveryPlate = !overPlate;
+    const overGhost = offEveryPlate
+      && point.x >= ghost.minX && point.x <= ghost.maxX
+      && point.y >= ghost.minY && point.y <= ghost.maxY;
+    ghostPlateDropArmedRef.current = overGhost;
+    setGhostPlateMode(overGhost ? 'armed' : offEveryPlate ? 'shown' : 'off');
+  }, [getSelectDragWorldPoint, nextPlateFrame, plateFrames, queueLiveDragTransform, updateDragCornerCagesNow]);
 
   const finishSelectDrag = React.useCallback(() => {
     const candidate = selectDragCandidateRef.current;
     const wasActive = selectDragActiveRef.current;
     const snapshot = selectDragStartSnapshotRef.current;
+    // Read before the candidate is cleared: clearing also puts the ghost away, so
+    // by the time the drop is committed the answer would be gone.
+    const spawnPlate = ghostPlateDropArmedRef.current;
     clearSelectDragCandidate();
 
     if (!wasActive || !candidate) return;
@@ -5842,7 +6189,9 @@ export function SceneCanvas({
       });
     }
 
-    onTransformEnd?.('move', live ?? undefined);
+    onTransformEnd?.('move', live ?? undefined, { spawnPlateForDrop: spawnPlate });
+    ghostPlateDropArmedRef.current = false;
+    setGhostPlateMode('off');
     queueLiveDragTransform(null);
     setIsGizmoDragging(false);
     // The cage is already drawn at the final live position by the last move
@@ -5859,9 +6208,15 @@ export function SceneCanvas({
   ]);
 
   const handleSelectModeDragStart = React.useCallback((modelId: string, clientX: number, clientY: number) => {
+    // A bed that refuses edits refuses them at the start of the gesture: a drag that moved the
+    // model and snapped it back on release reads as a bug, not as a lock.
+    if (isModelPlateLocked?.(modelId)) {
+      onBlockedByPlateLock?.();
+      return;
+    }
     selectDragCandidateRef.current = { modelId, clientX, clientY };
     setSelectDragPressed(true);
-  }, []);
+  }, [isModelPlateLocked, onBlockedByPlateLock]);
 
   // Support/raft presses in Select mode also grab the model: select its model
   // (so the drag targets it) then start the same XY drag as a model-mesh press.
@@ -6038,6 +6393,33 @@ export function SceneCanvas({
           showBuildPlate={!thumbnailCaptureActive || includeBuildPlateDuringCapture}
           safetyMarginMm={activeBuildVolumeSettings.safetyMarginMm}
           frontLabel={frontFaceLabel}
+          plateName={plateName}
+          showPlateName={showPlateName}
+          showPlateWidgets={showPlateWidgets}
+          onPlateNameChange={onPlateNameChange}
+          plateNamePlaceholder={plateNamePlaceholder}
+          plateNameEditTitle={plateNameEditTitle}
+          plateNameEmptyTitle={plateNameEmptyTitle}
+          plates={plateLayers}
+          ghostPlate={ghostPlateMode === 'off' || !nextPlateFrame
+            ? null
+            : { ...nextPlateFrame, armed: ghostPlateMode === 'armed' }}
+          duplicateGhostPlates={duplicateGhostPlates}
+          onActivatePlate={onActivatePlate}
+          onRenamePlate={onRenamePlate}
+          onAddPlate={onAddPlate}
+          addPlateLabel={addPlateLabel}
+          addPlateComingSoonTitle={addPlateComingSoonTitle}
+          plateLocked={plateLocked}
+          onTogglePlateLock={onTogglePlateLock}
+          plateLockTitle={plateLockTitle}
+          plateUnlockTitle={plateUnlockTitle}
+          plateClearTitle={clearTitle}
+          plateClearDisabledTitle={plateClearDisabledTitle}
+          onClearPlate={onClearPlate}
+          plateArrangeTitle={plateArrangeTitle}
+          plateArrangeDisabledTitle={plateArrangeDisabledTitle}
+          onArrangePlate={onArrangePlate}
         />
         <EnableLocalClipping enabled={clipLower != null || clipUpper != null || indicatorPlaneZ != null || !!organicCutKeyGizmo} />
         <CameraProvider cameraRef={cameraRef} />
@@ -6090,7 +6472,16 @@ export function SceneCanvas({
                 const isActive = isCaptureTintModel || model.id === activeModelId;
                 const isSelectedModel = isCaptureTintModel || selectedModelIdSet.has(model.id);
                 const isMarqueeCandidate = isMarqueeSelecting && marqueeCandidateIdSet.has(model.id);
-                const suppressModelInteraction = !modelPickerEnabled || !cameraInteractionCycleEnabled || isGizmoDragging || isPostGizmoInteractionGuardActive || supportGizmoInteractionActive || isOrbitInteracting || isWheelZoomInteracting;
+                // A model on another bed is scenery: it keeps its shape, stops
+                // answering the pointer, and is drawn dimmed to match the plate under
+                // it. The first is what keeps a scene of full plates from raycasting
+                // every model on it on every move.
+                const modelPlateState = modelPlateStates.get(model.id);
+                // Another bed's models are scenery — except while one is selected: a drag
+                // onto a bed that does not become the one being worked on leaves the model
+                // selected there, and it has to stay draggable. See `modelAnswersPointer`.
+                const answersPointer = modelAnswersPointer(modelPlateState?.scope ?? 'active', isSelectedModel);
+                const suppressModelInteraction = !answersPointer || !modelPickerEnabled || !cameraInteractionCycleEnabled || isGizmoDragging || isPostGizmoInteractionGuardActive || supportGizmoInteractionActive || isOrbitInteracting || isWheelZoomInteracting;
                 const interactionLodEnabled = (isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive) && !isActive;
                 const supportNonSelectedOpacity = mode === 'support' && !!activeModelId && !isActive ? 0.5 : undefined;
                 const shouldHideDuplicateSourceModel = Boolean(
@@ -6103,6 +6494,20 @@ export function SceneCanvas({
                   : !!model.geometry.meshDefects?.nativeRepairReport?.likely_support_geometry;
                 const modelHoverTintColor = likelySupportGeometry ? likelySupportGeometryTintColor : hoverTintColor;
                 const modelSelectedTintColor = likelySupportGeometry ? likelySupportGeometryTintColor : selectedTintColor;
+                const isModelSelected = isCaptureTintModel
+                  || (
+                    isSelectedModel
+                    && effectiveModelSelected
+                    && (selectionHighlightMode === 'tint' || selectionHighlightMode === 'spotlight')
+                  );
+                // A bed you are not working on is dimmed, and so are the models standing on it —
+                // unless one is selected. The selection tint is what says where it is, and a
+                // dimmed base only muddies the colour the user picked it for; in the export
+                // workspace, where everything on every bed reads as selected, dimming it is the
+                // whole difference between the two beds.
+                const modelMeshColor = modelPlateState?.dimmedColor && !isModelSelected
+                  ? modelPlateState.dimmedColor
+                  : (model.color || meshColor);
                 // Use live drag transform only during active/guarded gizmo interaction.
                 // Otherwise stale refs can mask immediate panel-driven updates (e.g. reset scale).
                 const liveDragTransformForRender = (
@@ -6162,7 +6567,7 @@ export function SceneCanvas({
                       geometry={model.geometry.geometry}
                       clipLower={clipLower}
                       clipUpper={clipUpper}
-                      meshColor={model.color || meshColor} // Use model color
+                      meshColor={modelMeshColor} // Use model color, dimmed on a bed you are not working on
                       nonManifold={modelIsNonManifold} // Red checkerboard overlay when the model fails the manifold status check
                       meshRef={meshGroupRefCallback}
                       actualMeshRef={actualMeshRefCallback}
@@ -6172,7 +6577,6 @@ export function SceneCanvas({
                       matcapVariant={matcapVariant}
                       flatUseVertexColors={flatUseVertexColors}
                       xrayOpacity={xrayOpacity}
-                      bakedAoVersion={model.bakedAoVersion}
                       heatmapMinAngle={heatmapMinAngle}
                       heatmapMaxAngle={heatmapMaxAngle}
                       heatmapColors={heatmapColors ?? emptyHeatmapColors}
@@ -6190,16 +6594,10 @@ export function SceneCanvas({
                       onSupportHover={handleSupportHover}
                       onActiveModelChange={onActiveModelChange}
                       onSelectModeDragStart={handleSelectModeDragStart}
-                      disableRaycast={disableRaycast || !modelPickerEnabled || !cameraInteractionCycleEnabled}
+                      disableRaycast={disableRaycast || !answersPointer || !modelPickerEnabled || !cameraInteractionCycleEnabled}
                       blockSupportPlacement={!cameraInteractionCycleEnabled || isGizmoDragging || blockSupportPlacement}
                       suppressNextClickRef={suppressNextCanvasClickRef}
-                      isSelected={
-                        isCaptureTintModel ||
-                        (
-                          isSelectedModel &&
-                          effectiveModelSelected && (selectionHighlightMode === 'tint' || selectionHighlightMode === 'spotlight')
-                        )
-                      }
+                      isSelected={isModelSelected}
                       isMarqueeCandidate={isMarqueeCandidate}
                       onModelHoverPointChange={onModelHoverPointChange}
                       onModelHoverModelChange={onModelHoverModelChange}
@@ -6541,7 +6939,10 @@ export function SceneCanvas({
                     <lineBasicMaterial
                       color={outOfBoundsModels.length > 0 ? '#ff5b6f' : '#8abfff'}
                       transparent
-                      opacity={0.36}
+                      // Quiet by default: the box marks the limit, it is not something
+                      // to look at. The out-of-bounds colour stays loud, because that
+                      // one is a warning.
+                      opacity={outOfBoundsModels.length > 0 ? 0.36 : 0.18}
                       depthWrite={false}
                       depthTest
                     />
@@ -6610,6 +7011,7 @@ export function SceneCanvas({
                   color={clipUpper != null ? '#FFFFFF' : (indicatorPlaneColor ?? '#ec2a77')}
                   planeWidthMm={crossSectionPlaneWidthMm}
                   planeHeightMm={crossSectionPlaneHeightMm}
+                  planeOffsetMm={crossSectionPlaneOffsetMm}
                   capOpacity={clipUpper != null ? 1 : 0.78}
                   capDepthTest={clipUpper != null}
                   glowThicknessMm={clipUpper != null ? 0 : 0.11}
@@ -6635,6 +7037,7 @@ export function SceneCanvas({
                   color="#FFFFFF"
                   planeWidthMm={crossSectionPlaneWidthMm}
                   planeHeightMm={crossSectionPlaneHeightMm}
+                  planeOffsetMm={crossSectionPlaneOffsetMm}
                   capOpacity={1}
                   capDepthTest={false}
                   direction="bottom"
@@ -6646,20 +7049,26 @@ export function SceneCanvas({
 
               {!hideRaftPrimitives
                 && !thumbnailCaptureActive
-                && !isGizmoDragging
+                && (!isGizmoDragging || isMoveDrag)
                 && !isGizmoRetargeting
                 && !hideFootprintOutlineForPreview
                 && !(transformMode === 'placeOnFace' && disableRaycast)
                 && (
                 <>
                   {footprintOutlineTargets.map((entry) => (
-                    <FootprintBorderRenderer
+                    <FollowModelMove
                       key={`footprint-border-${entry.id}`}
-                      modelGeometry={entry.geometry}
-                      modelTransform={entry.transform}
                       modelId={entry.id}
-                      color={supportHoverTintColor}
-                    />
+                      baseTransform={entry.transform}
+                      liveTransformsRef={crossSectionLiveTransformsRef}
+                    >
+                      <FootprintBorderRenderer
+                        modelGeometry={entry.geometry}
+                        modelTransform={entry.transform}
+                        modelId={entry.id}
+                        color={supportHoverTintColor}
+                      />
+                    </FollowModelMove>
                   ))}
                 </>
               )}
@@ -6775,7 +7184,7 @@ export function SceneCanvas({
                   ]}
                   rotation={gizmoFrameRotation}
                   enableMove
-                  enableRotate={!isMultiGizmoSelection}
+                  enableRotate
                   enableScale
                   uniformScaling={uniformScaling}
                   enableLighting
@@ -6978,7 +7387,18 @@ export function SceneCanvas({
                       activeGroupRef.current.quaternion.premultiply(quaternion);
                       applySupportGroupDelta();
                       const live = captureActiveGroupTransform();
-                      if (live) {
+                      if (live && isMultiGizmoSelection && gizmoGroupStartSnapshot?.operation === 'rotate') {
+                        // The selection turns about its centre, so the active model orbits too
+                        // rather than turning in place; the page seats everything on release.
+                        const immediatePreviewByModelId = buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, live);
+                        const activePreview = immediatePreviewByModelId[gizmoGroupStartSnapshot.activeModelId];
+                        if (activePreview) {
+                          activeGroupRef.current.position.copy(activePreview.position);
+                          applySupportGroupDelta();
+                        }
+                        applyImmediateMultiPreview(gizmoGroupStartSnapshot, immediatePreviewByModelId);
+                        queueLiveDragTransform(activePreview ?? live);
+                      } else if (live) {
                         const correctedLive = alignLiveTransformToLift(activeModel ?? null, live) ?? live;
                         activeGroupRef.current.position.copy(correctedLive.position);
                         activeGroupRef.current.quaternion.copy(new THREE.Quaternion().setFromEuler(correctedLive.rotation));
@@ -7017,6 +7437,26 @@ export function SceneCanvas({
                           scale: sourceTransform.scale.clone(),
                         },
                       };
+
+                      if (isMultiGizmoSelection) {
+                        const beforeByModelId: Record<string, ModelTransform> = {};
+                        selectedTransformableModelIds.forEach((modelId) => {
+                          const model = models.find((entry) => entry.id === modelId);
+                          if (!model) return;
+                          const beforeTransform = modelId === activeModelId ? sourceTransform : model.transform;
+                          beforeByModelId[modelId] = {
+                            position: beforeTransform.position.clone(),
+                            rotation: beforeTransform.rotation.clone(),
+                            scale: beforeTransform.scale.clone(),
+                          };
+                        });
+                        setGizmoGroupStartSnapshot({
+                          operation: 'rotate',
+                          activeModelId,
+                          pivot: computeCenterFromTransforms(beforeByModelId) ?? sourceTransform.position.clone(),
+                          beforeByModelId,
+                        });
+                      }
                     }
                     return true;
                   }}
@@ -7032,13 +7472,36 @@ export function SceneCanvas({
                         }
                       : null);
 
-                    if (live && onTransformChange) {
+                    const isGroupRotate = isMultiGizmoSelection && gizmoGroupStartSnapshot?.operation === 'rotate';
+                    if (live && onTransformChange && !isGroupRotate) {
                       flushPendingTransformChange();
                       onTransformChange(live.position, live.rotation, live.scale);
                     }
 
                     const startSnapshot = gizmoTransformStartSnapshotRef.current;
-                    if (live && startSnapshot && startSnapshot.modelId === activeModelId) {
+                    if (live && isGroupRotate && gizmoGroupStartSnapshot) {
+                      const finalByModelId = buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, live);
+                      applyImmediateMultiPreview(gizmoGroupStartSnapshot, finalByModelId);
+                      onGizmoTransformGroupCommit?.({
+                        operation: 'rotate',
+                        entries: Object.entries(gizmoGroupStartSnapshot.beforeByModelId).map(([modelId, before]) => {
+                          const after = finalByModelId[modelId] ?? before;
+                          return {
+                            modelId,
+                            before: {
+                              position: before.position.clone(),
+                              rotation: before.rotation.clone(),
+                              scale: before.scale.clone(),
+                            },
+                            after: {
+                              position: after.position.clone(),
+                              rotation: after.rotation.clone(),
+                              scale: after.scale.clone(),
+                            },
+                          };
+                        }),
+                      });
+                    } else if (live && startSnapshot && startSnapshot.modelId === activeModelId) {
                       onGizmoTransformCommit?.({
                         modelId: activeModelId,
                         operation: startSnapshot.operation,
@@ -7056,8 +7519,9 @@ export function SceneCanvas({
                     }
                     gizmoTransformStartSnapshotRef.current = null;
                     setActiveGizmoDragDescriptor(null);
-                    onTransformEnd?.('rotate', live ?? undefined);
+                    onTransformEnd?.('rotate', live ?? undefined, { skipStoreCommit: isGroupRotate });
                     queueLiveDragTransform(null);
+                    setGizmoGroupStartSnapshot(null);
                     clearDragCornerCageBaseData();
                     if (!onTransformEnd) {
                       scheduleSupportDragGroupReset();
@@ -7390,14 +7854,7 @@ export function SceneCanvas({
           // Orthographic wheel is a real dolly handled in onTrackpadWheel; letting
           // OrbitControls also zoom would fight the derived frustum.
           enableZoom={cameraProjectionMode === 'perspective'}
-          enabled={
-            cameraInteractionCycleEnabled
-            && !((mode === 'prepare' || mode === 'support') && transformMode === 'supportBlockers' && blockerStrokeActive)
-            && !isGizmoDragging
-            && !isMarqueeSelecting
-            && !isPlacementActive
-            && !organicCutDragging
-          }
+          enabled={cameraInteractionEnabled}
           onStart={handleOrbitStart}
           onChange={handleOrbitChange}
           onEnd={handleOrbitEnd}
@@ -7407,8 +7864,10 @@ export function SceneCanvas({
         {!thumbnailCaptureActive && cameraInteractionCycleEnabled && (
           <ZUpGizmoHelper
             alignment="bottom-right"
-            margin={mode === 'printing' ? [72, 72] : [nonPrintingViewCubeRightMargin, 72]}
+            margin={mode === 'printing' ? [82, 82] : [nonPrintingViewCubeRightMargin, 82]}
             accentColor={gizmoColors.accent}
+            chipColor={gizmoColors.chip}
+            chipBorderColor={gizmoColors.chipBorder}
             onHome={resetCameraHome}
           >
             <ZUpGizmoViewcube
@@ -7450,6 +7909,7 @@ export function SceneCanvas({
             hoverPointRef={lastHoveredModelPointRef}
             setOrbitTargetFromPoint={setOrbitTargetFromPoint}
             models={models}
+            isModelFocusable={isModelFocusable}
             activeModelId={activeModelId}
             selectedModelIds={selectedModelIds ?? []}
             hoveredModelId={hoveredModelId}
@@ -7457,6 +7917,7 @@ export function SceneCanvas({
             cameraRef={cameraRef}
             orbitControlsRef={orbitControlsRef as React.MutableRefObject<{ target: THREE.Vector3; update: () => void } | null>}
             perspectiveFov={perspectiveFov}
+            plateFocus={plateFocus}
           />
         )}
         <CameraIntroController
@@ -7488,7 +7949,7 @@ export function SceneCanvas({
           lastEventAtRef={trackpadPoseLastEventAtRef}
           tauMs={cameraTrackpadPoseTauMs}
         />
-        <CameraControlsRecovery />
+        <CameraControlsRecovery interactionEnabled={cameraInteractionEnabled} />
         <CameraFocusController selectedIslandId={overlaySelectedIslandId ?? null} islandMarkers={islandMarkers ?? []} onClearSelection={onClearSelection} />
         {mode === 'support' && supportPathfindingDebugState.enabled && (
           <SupportPathfindingDebugOverlay snapshot={supportPathfindingDebugState.snapshot} />

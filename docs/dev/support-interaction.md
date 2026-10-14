@@ -17,10 +17,6 @@ This directory is the migration foundation for support interaction refactoring.
 - Marquee candidate tracking.
 - Resolved selection snapshot for rendering and tool logic.
 
-### Shared placement preview layer owns
-- Preview mode resolution (`hidden`, `hoverDot`, `tipMarker`, `snappedPreview`, `freePreview`).
-- Preview visibility guards.
-
 ### Shared snapping layer owns
 - Snap target registration and lookup.
 - Resolved snap session state and lock metadata.

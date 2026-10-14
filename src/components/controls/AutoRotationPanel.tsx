@@ -26,6 +26,7 @@ import {
   SUPPORT_BLOCKER_BRUSH_MIN_MM,
   SUPPORT_BLOCKER_BRUSH_MAX_MM,
 } from '@/supports/autoSupport/supportBlockers';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 /** Set while an orient sweep runs. Page-level overlay reads this to show the
  *  "Orienting Model" modal. Module-level (not state) so the panel can flip it
@@ -58,7 +59,8 @@ export function OrientElapsed() {
   }, []);
   const minutes = Math.floor(sec / 60);
   const seconds = sec % 60;
-  return <>Elapsed: {minutes}:{seconds.toString().padStart(2, '0')}</>;
+  const elapsed = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  return <Trans>Elapsed: {elapsed}</Trans>;
 }
 
 /** Module-level labels (React Compiler must not rename Lingui locals). */
@@ -101,6 +103,7 @@ export interface AutoRotationPanelProps {
 }
 export function AutoRotationPanel({ activeModelId, activeModelName, currentRotation, onApplyRotation, onOrientationReport, onBeforeOrientApply, blockersActive, onToggleBlockers }: AutoRotationPanelProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   // Named exactly as the ICU placeholders in the blocker hint below: the Trans
   // macro takes the placeholder names from these identifiers.
   const clearLabel = _(CLEAR_BLOCKERS);
@@ -255,7 +258,7 @@ export function AutoRotationPanel({ activeModelId, activeModelName, currentRotat
             <div className="flex flex-col gap-1">
               <label className="ui-meta flex justify-between">
                 <span>{_(BRUSH_SIZE)}</span>
-                <span>{brushSizeMm.toFixed(1)} mm</span>
+                <span>{fmt.quantity(brushSizeMm, 1, 'mm')}</span>
               </label>
               <input
                 type="range"

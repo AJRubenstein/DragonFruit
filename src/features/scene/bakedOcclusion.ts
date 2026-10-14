@@ -87,16 +87,19 @@ export async function bakeOcclusionForGeometry(
     { headers: { 'Content-Type': 'application/octet-stream' } },
   );
 
-  const bytes = payload instanceof ArrayBuffer
-    ? new Uint8Array(payload)
-    : payload instanceof Uint8Array
-      ? payload
-      : new Uint8Array(payload);
-  // Copy into an aligned buffer: the IPC buffer is not guaranteed to outlive the
-  // call, and a Float32Array view needs 4-byte alignment.
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  const cornerValues = new Float32Array(copy.buffer);
+  // One f32 per soup corner. An ArrayBuffer off the IPC channel is ours and
+  // 4-byte aligned, so that *is* the values; a view or a plain array is neither,
+  // and one copy is what makes it viewable. The corner array is transient either
+  // way, because the per-vertex attribute is built from it below.
+  let cornerValues: Float32Array;
+  if (payload instanceof ArrayBuffer && payload.byteLength % 4 === 0) {
+    cornerValues = new Float32Array(payload);
+  } else {
+    const view = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+    const copy = new Uint8Array(view.byteLength);
+    copy.set(view);
+    cornerValues = new Float32Array(copy.buffer);
+  }
 
   const values = mapCornerValuesToVertices(cornerValues, geometry);
   if (!values) {
@@ -186,4 +189,44 @@ export async function bakeAndAttachOcclusionForGeometry(
   attribute.setUsage(THREE.StaticDrawUsage);
   geometry.setAttribute(BAKED_OCCLUSION_ATTRIBUTE, attribute);
   return true;
+}
+
+/**
+ * Which bake a geometry's `aBakedAo` came from.
+ *
+ * The attribute lands on a geometry that is already in the scene and keeps its
+ * identity, so nothing about the geometry tells React to look again; this is the
+ * signal that it changed. Keyed by the geometry, not by the model: the attribute
+ * belongs to the geometry, a model's geometry can be swapped, and a model that is
+ * deleted takes its counter with it instead of needing one.
+ *
+ * It used to ride on the `models` entries, which meant every bake that landed
+ * replaced that array — and everything derived from it rebuilt: the clearance map
+ * and the raft together measured **17 rebuilds in the fifteen seconds after a
+ * load**. This is render-only state read by `StlMesh`, so it belongs in a store
+ * of its own.
+ */
+const bakedAoVersionByGeometry = new WeakMap<THREE.BufferGeometry, number>();
+const bakedAoVersionListeners = new Set<() => void>();
+
+/** Announce that this geometry now carries a fresh `aBakedAo`. */
+export function bumpBakedOcclusionVersion(geometry: THREE.BufferGeometry): void {
+  bakedAoVersionByGeometry.set(geometry, bakedOcclusionVersion(geometry) + 1);
+  bakedAoVersionListeners.forEach((listener) => listener());
+}
+
+export function bakedOcclusionVersion(geometry: THREE.BufferGeometry): number {
+  return bakedAoVersionByGeometry.get(geometry) ?? 0;
+}
+
+export function subscribeToBakedOcclusionVersions(listener: () => void): () => void {
+  bakedAoVersionListeners.add(listener);
+  return () => {
+    bakedAoVersionListeners.delete(listener);
+  };
+}
+
+/** The server snapshot: no bake has landed in a render that has no window. */
+export function getBakedOcclusionServerVersion(): number {
+  return 0;
 }
