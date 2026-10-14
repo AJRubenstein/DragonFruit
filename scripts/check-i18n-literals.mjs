@@ -61,6 +61,14 @@ const NOT_UI = /\b(Error|console|throw|logger|debug|warn)\b|className|style=/;
 
 const TS_TYPES = new Set(['Promise', 'Array', 'Record', 'Readonly', 'Partial', 'Map', 'Set',
       'React', 'HTMLElement', 'HTMLDivElement', 'HTMLInputElement', 'Omit', 'Pick']);
+const TS_PRIMITIVES = new Set(['void', 'null', 'undefined', 'string', 'number', 'boolean', 'unknown', 'never']);
+
+/** A type annotation caught between `=>`/`<…>` brackets: `& Omit`, `void | Promise`, `THREE.Color`. */
+function looksLikeType(text) {
+      const parts = text.split(/[|&,]/).map((part) => part.trim()).filter(Boolean);
+      return parts.length > 0 && parts.every((part) => TS_TYPES.has(part) || TS_PRIMITIVES.has(part)
+            || /^[A-Z][A-Za-z0-9]*\.[A-Z]\w*$/.test(part));
+}
 const CODEY = /&&|\|\||=>|;\s*$|\breturn\b|\bconst\b|\bfunction\b|\bnew [A-Z]|\{|\}/;
 
 /** Text a person would read, as opposed to code, identifiers, paths or CSS. */
@@ -68,6 +76,7 @@ function looksHuman(raw) {
       const text = raw.trim();
       if (text.length < 2 || text.startsWith('=')) return false;
       if (TS_TYPES.has(text.replace(/^[,\s]+/, ''))) return false;
+      if (looksLikeType(text)) return false;
       if (!/[A-Za-z]{2}/.test(text)) return false;
       if (CODEY.test(text)) return false;
       if (text.includes('(') || text.replace(/\.+$/, '').includes(')') || text.includes(' as ')) return false;

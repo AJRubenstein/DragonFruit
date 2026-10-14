@@ -2,6 +2,10 @@
 
 import { useEffect, useState, useLayoutEffect } from 'react';
 import { Heart } from 'lucide-react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Button, Spinner } from '@/components/atoms';
 import { Tooltip } from '@/components/ui/Tooltip';
 import fallbackSponsors from '@/components/settings/sponsors.json';
@@ -46,6 +50,11 @@ export function getSponsorRank(total?: number | null): { tier: string; borderCol
 // Fallback mark for a sponsor with no avatar image — first letter of the first and
 // last word, with camelCase split so "WickedGrey" → WG and "Kryz Slaughter" → KS.
 // A lone word keeps one letter ("ben" → B), so the mark stays a monogram.
+/** Module-level so React Compiler cannot rename the placeholder (see AGENTS.md). */
+function formatOpenSponsorProfile(translate: (descriptor: MessageDescriptor) => string, name: string): string {
+  return translate(msg`${name} — open sponsor profile`);
+}
+
 function sponsorInitials(name: string): string {
   const letters = name
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -189,6 +198,7 @@ function writeCachedAvatar(src: string, dataUrl: string) {
 }
 
 function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { src: string; profile?: string | null; alt: string; className: string; totalAmountDonated?: number | null }) {
+  const { _ } = useLingui();
   const highResSrc = toHighResUrl(src, profile);
   const [url, setUrl] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -283,7 +293,7 @@ function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { sr
           boxShadow: hasRing && rank.glow !== 'none' ? rank.glow : undefined,
           borderRadius: '9999px',
         }}
-        aria-label="Loading avatar"
+        aria-label={_(msg`Loading avatar`)}
       >
         <span
           className="inline-flex h-full w-full items-center justify-center rounded-full border"
@@ -360,6 +370,7 @@ function CachedAvatar({ src, profile, alt, className, totalAmountDonated }: { sr
 }
 
 export function SponsorsCarousel() {
+  const { _ } = useLingui();
   const [sponsors, setSponsors] = useState<Sponsor[] | null>(() => {
     const cached = readCachedSponsors();
     if (cached && cached.length >= 0) return cached;
@@ -480,14 +491,14 @@ export function SponsorsCarousel() {
     <div
       className="shrink-0 rounded-lg border px-3 py-2"
       style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
-      aria-label="Sponsors"
+      aria-label={_(msg`Sponsors`)}
     >
       <div className="flex items-center justify-between gap-2">
         <h5 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
           <Heart className="h-3 w-3" style={{ color: 'var(--accent-secondary)' }} aria-hidden="true" />
-          Sponsors
+          <Trans>Sponsors</Trans>
           <span className="normal-case tracking-normal font-normal" style={{ color: 'var(--text-muted)', opacity: 0.85 }}>
-            via Open Collective
+            <Trans>via Open Collective</Trans>
           </span>
         </h5>
         <button
@@ -496,7 +507,7 @@ export function SponsorsCarousel() {
           className="inline-flex items-center gap-1 text-[10px] font-medium hover:underline"
           style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
         >
-          Sponsor Us
+          <Trans>Sponsor Us</Trans>
           <Heart className="h-3 w-3" aria-hidden="true" />
         </button>
       </div>
@@ -504,7 +515,7 @@ export function SponsorsCarousel() {
       {isLoadingSponsors ? (
         <div className="mt-2 flex items-center justify-center gap-2 rounded-md border px-3 py-6" style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--surface-1), transparent 20%)', color: 'var(--text-muted)' }}>
           <Spinner size="lg" />
-          <span className="text-[11px]">Loading sponsors…</span>
+          <span className="text-[11px]"><Trans>Loading sponsors…</Trans></span>
         </div>
       ) : !hasSponsors ? (
         <div className="mt-2 flex items-center gap-2 rounded-md border border-dashed px-3 py-2" style={{ borderColor: 'color-mix(in srgb, var(--accent-secondary), var(--border-subtle) 40%)', background: 'color-mix(in srgb, var(--accent-secondary), var(--surface-0) 94%)' }}>
@@ -513,10 +524,10 @@ export function SponsorsCarousel() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium leading-none" style={{ color: 'var(--text-strong)' }}>
-              No sponsors yet — be the first!
+              <Trans>No sponsors yet — be the first!</Trans>
             </p>
             <p className="text-[10px] leading-tight" style={{ color: 'var(--text-muted)' }}>
-              Your name spins here when you back us.
+              <Trans>Your name spins here when you back us.</Trans>
             </p>
           </div>
           <Button
@@ -532,7 +543,7 @@ export function SponsorsCarousel() {
             }}
           >
             <Heart className="h-3 w-3" aria-hidden="true" />
-            Sponsor
+            <Trans>Sponsor</Trans>
           </Button>
         </div>
       ) : (
@@ -563,7 +574,7 @@ export function SponsorsCarousel() {
                     className={`inline-flex shrink-0 items-center justify-center py-1 transition-opacity hover:opacity-80${isCopyStart ? ' ml-6' : ''}`}
                     onClick={() => openExternal(href)}
                     style={{ color: 'var(--text-strong)', background: 'none', border: 'none', cursor: 'pointer' }}
-                    aria-label={`${label} — open sponsor profile`}
+                    aria-label={formatOpenSponsorProfile(_, label)}
                     aria-hidden={isDuplicate ? true : undefined}
                     tabIndex={isDuplicate ? -1 : 0}
                   >

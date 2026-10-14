@@ -253,7 +253,7 @@ export function ArrangePanel({
               step={0.1}
               unit="mm"
               disabled={isApplying}
-              ariaLabel={_(msg`Arrange distance`)}
+              ariaLabel={_(msg`Arrange Distance`)}
               decreaseTitle={_(msg`Decrease spacing`)}
               increaseTitle={_(msg`Increase spacing`)}
             />

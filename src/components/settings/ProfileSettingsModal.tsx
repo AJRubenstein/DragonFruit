@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { Plural, Trans } from '@lingui/react/macro';
 import { createPortal } from 'react-dom';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { AlertTriangle, Box, Check, Square, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Edit3, FlaskConical, Frown, ImagePlus, Info, LayoutGrid, Lock, Plus, Printer, RefreshCw, Search, Trash2, Unlock, Upload, Wifi, WifiOff, X } from 'lucide-react';
@@ -3581,7 +3582,7 @@ export function ProfileSettingsModal({
                   style={accentSecondaryActionStyle92}
                 >
                   <Plus className="w-4 h-4" />
-                  Add Printer
+                  <Trans>Add printer</Trans>
                 </Button>
               </div>
             </div>
@@ -3644,7 +3645,7 @@ export function ProfileSettingsModal({
                         : accentSecondaryActionStyle93}
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      Add Printer
+                      <Trans>Add printer</Trans>
                     </Button>
                   </div>
                 )}
@@ -4776,8 +4777,8 @@ export function ProfileSettingsModal({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   {selectedLibraryPresetIds.size > 0
-                    ? `Add ${selectedLibraryPresetIds.size} Printer${selectedLibraryPresetIds.size !== 1 ? 's' : ''}`
-                    : 'Add Printers'}
+                    ? <Plural value={selectedLibraryPresetIds.size} one="Add # printer" other="Add # printers" />
+                    : <Trans>Add printers</Trans>}
                 </Button>
               </div>
             </div>

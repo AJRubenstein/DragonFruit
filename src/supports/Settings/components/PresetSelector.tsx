@@ -898,7 +898,7 @@ export function PresetSelector({
             {/* ── Restore Defaults Modal ──────────────────────────────────── */}
             <StructuredDialogModal
                 open={restoreConfirmOpen}
-                ariaLabel={_(msg`Restore factory defaults`)}
+                ariaLabel={_(msg`Restore Factory Defaults?`)}
                 title={_(msg`Restore Factory Defaults?`)}
                 subtitle={_(msg`Factory presets will be reset and user presets will be unpinned.`)}
                 icon={

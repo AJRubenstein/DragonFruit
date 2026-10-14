@@ -308,7 +308,7 @@ function DownloadingState({
         </span>
         <span className="min-w-0">
           <span className="block text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
-            <Trans>Downloading Update</Trans>
+            <Trans>Downloading update</Trans>
           </span>
           <span className="block text-sm mt-1.5 font-medium" style={{ color: 'var(--text-muted)' }}>
             {formatUpdateDownloadedBytes(formatBytes(downloaded, fmt), formatBytes(contentLength, fmt), pct, _)}
@@ -461,7 +461,7 @@ function ErrorState({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-            <Trans>Update Failed</Trans>
+            <Trans>Update failed</Trans>
           </span>
           <span className="block text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             {message}

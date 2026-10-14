@@ -782,7 +782,7 @@ const AUTO_AA_PRESET_OPTIONS: ReadonlyArray<{
   { preset: 'raw', label: msg`Disabled`, desc: msg`Raw masks only.` },
   { preset: 'sharp', label: msg`Sharp`, desc: msg`Crisp text and details.` },
   { preset: 'balanced', label: msg`Balanced`, desc: msg`Printer-aware smoothing.` },
-  { preset: 'smooth', label: msg`Smooth`, desc: msg`Soft organic curves.` },
+  { preset: 'smooth', label: msg({ message: 'Smooth', context: 'Anti-aliasing preset' }), desc: msg`Soft organic curves.` },
 ];
 
 // AaAutoPreset is imported from autoAaPhysics.ts
@@ -1053,7 +1053,7 @@ export function SlicingPanel({
     });
   }, [aaMode, aaQualityMode, autoDetectedResinType, blurGraySourceMode]);
 
-  const autoLutCurveLabel = autoDetectedResinType === 'clear' ? _(msg`Clear`) : _(msg`Opaque`);
+  const autoLutCurveLabel = autoDetectedResinType === 'clear' ? _(msg({ message: 'Clear', context: 'Resin type' })) : _(msg({ message: 'Opaque', context: 'Resin type' }));
 
   const sessionAaOverrideEnabled = sessionAaOverrideDraft?.antiAliasingSettings?.enableOverride === true;
   const materialProfileAaOverrideEnabled = activeMaterialProfile?.antiAliasingSettings?.enableOverride === true;
@@ -2869,7 +2869,7 @@ export function SlicingPanel({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label={_(msg`Material anti-aliasing settings`)}
+            aria-label={_(msg`Material Anti-Aliasing Settings`)}
           >
             <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="min-w-0">
@@ -2941,7 +2941,7 @@ export function SlicingPanel({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label={_(msg`Session anti-aliasing override`)}
+            aria-label={_(msg`Session Anti-Aliasing Override`)}
           >
             <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="min-w-0">

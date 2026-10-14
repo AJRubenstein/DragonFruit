@@ -108,6 +108,11 @@ const TAGLINES: MessageDescriptor[] = [
   msg({ message: "Not all slicers are created equal. This one's free!", comment: 'Play on "all men are created equal" from the United States Declaration of Independence (1776).' }),
 ];
 
+/** Build chip under the welcome title; reuses the updater's "Version {version}" wording. */
+function formatVersionChip(translate: (descriptor: MessageDescriptor) => string, version: string, beta: boolean): string {
+  return beta ? translate(msg`Version ${version} — Beta`) : translate(msg`Version ${version}`);
+}
+
 function formatBytes(fmt: UnitFormat, bytes?: number): string | null {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
   if (bytes < 1024) return fmt.quantity(bytes, 0, 'B');
@@ -480,7 +485,7 @@ export function EmptySceneState({
               boxShadow: '0 0 6px color-mix(in srgb, var(--accent), transparent 84%)',
             }}
           >
-            {copied ? '✓ Copied!' : `Version ${APP_VERSION}${IS_BETA_BUILD ? ' — Beta' : ''}`}
+            {copied ? `✓ ${_(msg`Copied!`)}` : formatVersionChip(_, APP_VERSION, IS_BETA_BUILD)}
           </span>
         </Tooltip>
         <h1 className="ui-empty-title" suppressHydrationWarning>{_(taglineDescriptor)}</h1>

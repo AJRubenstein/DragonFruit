@@ -1,6 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useLingui } from '@lingui/react';
+import { msg, plural } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import type { Island } from '@/volumeAnalysis/IslandScan/types';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
@@ -20,7 +24,24 @@ type TreeNode = {
   children: TreeNode[];
 };
 
+type Translate = (descriptor: MessageDescriptor) => string;
+
+// Interpolating messages live at module level so React Compiler cannot rename their
+// placeholders (see AGENTS.md).
+function formatLayerCount(translate: Translate, count: number): string {
+  return translate(msg({ message: plural(count, { one: '(# layer)', other: '(# layers)' }), comment: 'How many layers an island spans, shown in parentheses after its layer range.' }));
+}
+
+function formatChildCount(translate: Translate, count: number): string {
+  return translate(msg({ message: plural(count, { one: '# child', other: '# children' }), comment: 'Badge on an island in the hierarchy: how many child islands merge into it.' }));
+}
+
+function formatMaxArea(translate: Translate, area: string, layer: number): string {
+  return translate(msg({ message: `Max area: ${area} at L${layer}`, comment: '"L" abbreviates "layer", as in the L12-40 layer ranges beside it.' }));
+}
+
 export function IslandHierarchyModal({ islands, isOpen, onClose, layerHeightMm, zOffsetMm }: IslandHierarchyModalProps) {
+  const { _ } = useLingui();
   useEscapeToClose(isOpen, onClose);
 
   if (!isOpen) return null;
@@ -60,16 +81,16 @@ export function IslandHierarchyModal({ islands, isOpen, onClose, layerHeightMm, 
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
           <div>
-            <h2 className="text-base font-semibold" style={{ color: 'var(--text-strong)' }}>Island Hierarchy</h2>
+            <h2 className="text-base font-semibold" style={{ color: 'var(--text-strong)' }}><Trans>Island Hierarchy</Trans></h2>
             <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Parent-child merges across detected islands
+              <Trans>Parent-child merges across detected islands</Trans>
             </p>
           </div>
           <IconButton
             variant="surface"
             size="sm"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={_(msg`Close`)}
           >
             <X className="w-4 h-4" />
           </IconButton>
@@ -78,7 +99,7 @@ export function IslandHierarchyModal({ islands, isOpen, onClose, layerHeightMm, 
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3">
           {tree.length === 0 ? (
-            <p className="text-center py-10 text-sm" style={{ color: 'var(--text-muted)' }}>No islands found.</p>
+            <p className="text-center py-10 text-sm" style={{ color: 'var(--text-muted)' }}><Trans>No islands found.</Trans></p>
           ) : (
             <div className="space-y-2.5">
               {tree.map(node => (
@@ -91,10 +112,10 @@ export function IslandHierarchyModal({ islands, isOpen, onClose, layerHeightMm, 
         {/* Footer */}
         <div className="px-3 py-3 border-t" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
           <div className="text-[11px] space-y-1" style={{ color: 'var(--text-muted)' }}>
-            <p style={{ color: 'var(--text-strong)' }} className="font-semibold">Legend</p>
-            <p>• Root islands have no parent (independent start)</p>
-            <p>• Child islands merge upward into a parent node</p>
-            <p>• Volume shows each island&apos;s individual contribution</p>
+            <p style={{ color: 'var(--text-strong)' }} className="font-semibold"><Trans>Legend</Trans></p>
+            <p><Trans>• Root islands have no parent (independent start)</Trans></p>
+            <p><Trans>• Child islands merge upward into a parent node</Trans></p>
+            <p><Trans>• Volume shows each island’s individual contribution</Trans></p>
           </div>
         </div>
       </div>
@@ -110,6 +131,7 @@ type TreeNodeComponentProps = {
 };
 
 function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeComponentProps) {
+  const { _ } = useLingui();
   const fmt = useLocaleFormat();
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
@@ -179,7 +201,7 @@ function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeCo
             <div className="flex items-center gap-3">
               <span className="font-mono text-sm font-bold" style={{ color: 'var(--accent)' }}>#{node.island.id}</span>
               <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>{layerRange}</span>
-              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>({layerCount} layers)</span>
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatLayerCount(_, layerCount)}</span>
             </div>
 
             <div className="flex items-center gap-3">
@@ -189,7 +211,7 @@ function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeCo
                   className="text-[10px] px-2 py-0.5 rounded"
                   style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                 >
-                  {node.children.length} {node.children.length === 1 ? 'child' : 'children'}
+                  {formatChildCount(_, node.children.length)}
                 </span>
               )}
             </div>
@@ -197,7 +219,7 @@ function TreeNodeComponent({ node, level, layerHeightMm, zOffsetMm }: TreeNodeCo
 
           {/* Max area info */}
           <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-            Max area: {maxArea} at L{worldMaxAreaLayer}
+            {formatMaxArea(_, maxArea, worldMaxAreaLayer)}
           </div>
         </div>
       </div>
