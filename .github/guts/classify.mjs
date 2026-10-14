@@ -63,6 +63,39 @@ export async function fetchIssue(number) {
 // name is noise to a reader but reads as a topic, so keep only the version.
 const stripBuildNames = body => body.replace(/(DragonFruit \S+(?: \(\w+\))?) — \S+ @ [0-9a-f]{7,}/g, '$1')
 
+// The issue forms in .github/ISSUE_TEMPLATE render each question as a "### "
+// heading followed by the answer. These headings appear in one form each, the
+// same ones the title-prefix step in issue-guts.yml checks.
+const FORM_MARKERS = ['### Steps to reproduce', '### What problem are you trying to solve?']
+// Answers that tell Jev nothing: GitHub's filler for a blank field, and the
+// dropdown choices that mean "not applicable".
+const EMPTY_ANSWERS = new Set(['_No response_', 'None', 'Not printer-related', 'Not export-related'])
+const FORM_NOTE =
+  'The report was filled in with an issue form: `form` maps each question to the reporter\'s answer, and unanswered questions are left out. ' +
+  'The answer about where in DragonFruit it happened is the reporter\'s own guess: a useful hint, but often incomplete or off, because reporters pick the screen they were on rather than every part that is broken. Judge each area from what the report describes. ' +
+  'The printer brand, printer model and file format say what the reporter was using; on their own they do not make the problem specific to that printer or format.'
+
+/** question → answer for an issue written with one of the forms, or null. */
+export function parseForm(body) {
+  if (!FORM_MARKERS.some(marker => body.includes(marker))) return null
+  const form = {}
+  for (const section of body.split(/^### /m).slice(1)) {
+    const newline = section.indexOf('\n')
+    if (newline === -1) continue
+    const question = section.slice(0, newline).trim()
+    const answer = section.slice(newline + 1).trim()
+    if (answer && !EMPTY_ANSWERS.has(answer)) form[question] = answer
+  }
+  return form
+}
+
+/** What Jev reads about the issue: the form's answers if it has them, else the raw body. */
+function describeIssue(issue) {
+  const body = stripBuildNames(issue.body ?? '').slice(0, MAX_BODY_CHARS)
+  const form = parseForm(body)
+  return form ? {title: issue.title, form, about_the_form: FORM_NOTE} : {title: issue.title, body}
+}
+
 /** Asks Jev about every area at once; returns {probabilities, model, cost}. */
 export async function classify(issue) {
   const questions = {}
@@ -86,8 +119,7 @@ export async function classify(issue) {
     // The report is untrusted, but Jev can only answer the questions asked.
     state: {
       application: 'DragonFruit, a desktop slicer for resin (MSLA) 3D printers',
-      title: issue.title,
-      body: stripBuildNames(issue.body ?? '').slice(0, MAX_BODY_CHARS),
+      ...describeIssue(issue),
     },
     questions,
   })

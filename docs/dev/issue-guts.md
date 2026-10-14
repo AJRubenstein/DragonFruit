@@ -23,6 +23,7 @@ the areas or their wording, follow [Retuning Issue Guts](issue-guts-tuning.md).
 | `.github/guts/classify.mjs` | Fetches an issue, asks Jev, prints the probabilities, picks the labels. |
 | `.github/workflows/issue-guts.yml` | Runs the classifier on every new issue, or by hand. |
 | `.github/guts/labelled.json` | Hand-labelled issues, the reference the classifier is measured against. |
+| `.github/guts/forms.json` | The user reports in `labelled.json` rewritten as if filed with the bug report form, to measure the form path. |
 | `.github/guts/evaluate.mjs` | Scores Jev against `labelled.json`. |
 | `.github/guts/corrections.mjs` | Finds the labels people changed after the bot. |
 
@@ -36,6 +37,17 @@ the areas or their wording, follow [Retuning Issue Guts](issue-guts-tuning.md).
   (`DragonFruit 0.1.15 (beta) — some/branch @ a6deb763b`) is removed first: a
   branch called `slice-baking-crash` reads as a topic and pulled reports towards
   slicing.
+
+  An issue filed with one of the forms in `.github/ISSUE_TEMPLATE` is sent
+  differently: `parseForm` splits the body at its `### ` headings into a
+  question → answer map, drops the answers that say nothing (`_No response_`,
+  "Not printer-related", "Not export-related"), and Jev gets that map in place
+  of the body, with a note on how to read it. The note says the reporter's
+  "where did it happen" choice is a guess, often incomplete, and that the
+  printer and file format fields alone do not make a problem specific to that
+  printer or format. Issues are recognised by the same headings the workflow's
+  title-prefix step looks for, so a report written by hand, or an old one,
+  still goes as a plain body.
 - **questions**: one `noul` (yes/no) question per area, with the area's
   description as the "yes" criterion. Each answer is an independent probability,
   so an issue can belong to several areas. A single `choice` question would not
@@ -61,7 +73,8 @@ about a wrong Photon Mono 4 profile gets both `printer/material profile` and
 Almost every report says which printer it was printed on, so each family's
 description says it only applies when the problem is specific to those
 printers. Measured, that holds: a slicing bug seen on a Saturn 4 Ultra scored
-under 0.2 on `elegoo`. A family counts as an answer for the fallback too: a
+under 0.2 on `elegoo`, and still got no `elegoo` when filed through the bug
+form with "ELEGOO" and ".goo" picked in the dropdowns. A family counts as an answer for the fallback too: a
 report Jev can only place as "an Anycubic thing" gets `anycubic`, not `other`.
 
 ### Narrow areas inside broad ones
@@ -137,6 +150,8 @@ it found.
 | Held out (16) | tuned, with families | 0.7 | 11/16 | 0.89 | 0.81 | 0.85 |
 | Held out (16) | with `scene tools` | 0.7 | 11/16 | 0.90 | 0.86 | 0.88 |
 | Held out (16) | with `scene tools` | 0.6 | 10/16 | 0.82 | 0.86 | 0.84 |
+| Tuning (34) | `infra`, `printer connection`, wider `ui` (2026-10-13) | 0.7 | 28/34 | 0.93 | 0.95 | 0.94 |
+| Held out (16) | `infra`, `printer connection`, wider `ui` (2026-10-13) | 0.7 | 10/16 | 0.87 | 0.87 | 0.87 |
 
 With 16 issues one wrong label moves precision or recall by about five points,
 so the held-out rows say "no worse", not "better". Most of the misses on the
@@ -156,3 +171,28 @@ labels (four `anycubic`, one `athena`), all found with probabilities from 0.85
 to 0.97 and no family given where it did not belong. There was no positive
 example at all for `elegoo`, `uniformation` or `sirayatech`: for those we only
 know they are not handed out wrongly.
+
+### With the issue forms
+
+On 2026-10-13, still `jev-1.13.0`, before any issue had been filed with the
+forms. The 28 user reports among the 50 were rewritten into the bug form in
+`forms.json`, restating only what each report said; the team's own technical
+issues stay as written, since they would not go through the form.
+
+| Set | Bodies | Threshold | Exact | Precision | Recall | F1 |
+| --- | --- | --- | --- | --- | --- | --- |
+| User reports (28) | as written | 0.7 | 23/28 | 0.95 | 0.93 | 0.94 |
+| User reports (28) | bug form | 0.7 | 23/28 | 1.00 | 0.88 | 0.93 |
+| User reports (28) | bug form | 0.6 | 24/28 | 1.00 | 0.90 | 0.95 |
+| Tuning (34) | bug form where it applies | 0.7 | 25/34 | 0.92 | 0.88 | 0.90 |
+| Held out (16) | bug form where it applies | 0.7 | 11/16 | 0.91 | 0.87 | 0.89 |
+
+The form makes Jev more sure of itself rather than more right: no wrong label
+at all on the 28, and the scores barely move between 0.5 and 0.7, but two
+second labels are lost because Jev leans on the reporter's area choice (`mesh
+repair` on a report filed under "Slicing", `anycubic` on an Anycubic-only
+slicing failure). Telling Jev the choice is often incomplete did not bring them
+back. The threshold stays at 0.7 until real form issues say otherwise; the drop
+on the tuning set is in issues that did not change and sit within 0.05 of the
+threshold.
+

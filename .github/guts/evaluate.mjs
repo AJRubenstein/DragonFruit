@@ -2,12 +2,17 @@
 // Score Jev against the hand-labelled issues in labelled.json. See
 // docs/dev/issue-guts-tuning.md for the procedure this belongs to.
 //
-//   node .github/guts/evaluate.mjs [--split train|holdout|all] [--threshold 0.7]
+//   node .github/guts/evaluate.mjs [--split train|holdout|forms|all] [--threshold 0.7]
+//                                      [--bodies forms|original]
 //                                      [--save run.json | --run run.json]
 //
 // Without --run it classifies every issue in the split (TYPESAFE_API_KEY and
 // GITHUB_TOKEN needed, about $0.0001 per issue); --save keeps those answers so
 // the scoring can be redone, at any threshold, without asking Jev again.
+//
+// Issues with an entry in forms.json are sent as if filed with the bug report
+// form (--bodies forms, the default) or as originally written (--bodies
+// original); --split forms keeps only those.
 
 import {readFileSync, writeFileSync} from 'node:fs'
 import {parseArgs} from 'node:util'
@@ -23,12 +28,17 @@ const {values} = parseArgs({
     threshold: {type: 'string', default: String(DEFAULT_THRESHOLD)},
     run: {type: 'string'},
     save: {type: 'string'},
+    bodies: {type: 'string', default: 'forms'},
   },
 })
 const threshold = Number(values.threshold)
 
+if (!['forms', 'original'].includes(values.bodies)) throw new Error(`--bodies must be forms or original`)
+
 const labelled = JSON.parse(readFileSync(new URL('labelled.json', import.meta.url), 'utf8'))
-const cases = Object.entries(labelled).filter(([, c]) => values.split === 'all' || c.split === values.split)
+const forms = JSON.parse(readFileSync(new URL('forms.json', import.meta.url), 'utf8'))
+const inSplit = (n, c) => values.split === 'all' || (values.split === 'forms' ? n in forms : c.split === values.split)
+const cases = Object.entries(labelled).filter(([n, c]) => inSplit(n, c))
 if (cases.length === 0) throw new Error(`no labelled issues in split "${values.split}"`)
 
 for (const [n, c] of cases) {
@@ -36,11 +46,33 @@ for (const [n, c] of cases) {
   if (unknown.length) throw new Error(`#${n} is labelled with unknown areas: ${unknown.join(', ')}`)
 }
 
+// The questions of .github/ISSUE_TEMPLATE/bug_report.yml, in order.
+const BUG_FORM = [
+  'DragonFruit version',
+  'Operating system',
+  'Printer brand',
+  'Printer model (optional)',
+  'Export / print file format',
+  'RAM and graphics (optional)',
+  'Where in DragonFruit did it happen?',
+  'What happened?',
+  'Steps to reproduce',
+  'How often does it happen?',
+  'Logs, screenshots, and scene files',
+]
+for (const [n, answers] of Object.entries(forms)) {
+  const unknown = Object.keys(answers).filter(q => !BUG_FORM.includes(q))
+  if (n !== '_about' && unknown.length) throw new Error(`forms.json #${n} answers unknown questions: ${unknown.join(', ')}`)
+}
+// The body GitHub writes for a submitted form.
+const renderForm = answers => BUG_FORM.map(q => `### ${q}\n\n${answers[q] ?? '_No response_'}`).join('\n\n')
+
 let run = values.run ? JSON.parse(readFileSync(values.run, 'utf8')) : {}
 if (!values.run) {
   let cost = 0
   for (const [n] of cases) {
     const issue = await fetchIssue(Number(n))
+    if (values.bodies === 'forms' && n in forms) issue.body = renderForm(forms[n])
     const result = await classify(issue)
     run[n] = {title: issue.title, model: result.model, probabilities: result.probabilities}
     cost += result.cost ?? 0
@@ -75,7 +107,7 @@ function score(t) {
 }
 
 const pct = x => x.toFixed(2)
-console.log(`split ${values.split}: ${cases.length} issues, ${Object.values(run)[0]?.model ?? '?'}\n`)
+console.log(`split ${values.split}, ${values.bodies} bodies: ${cases.length} issues, ${Object.values(run)[0]?.model ?? '?'}\n`)
 console.log('threshold  exact   precision  recall  F1')
 for (const t of [...new Set([...SWEEP, threshold])].sort()) {
   const s = score(t)
