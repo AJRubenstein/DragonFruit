@@ -26,8 +26,8 @@ export type UsePrintingPreviewManagerOptions = {
   activePrinterProfile: PrinterProfile | null | undefined;
   /** Total sliced layers; owned by Home/slicing. */
   printingPreviewTotalLayers: number;
-  /** Per-layer preview PNG object URLs; owned by Home/slicing loader. */
-  printingLayerPreviewUrls: Array<string | null>;
+  /** The preview of a layer of the plate on screen, once read; owned by `useSlicedPlates`. */
+  layerPreviewUrlAt: (layerNumber: number) => string | null;
   deps: React.MutableRefObject<PrintingPreviewManagerDeps>;
 };
 
@@ -35,7 +35,7 @@ export function usePrintingPreviewManager({
   scene,
   activePrinterProfile,
   printingPreviewTotalLayers,
-  printingLayerPreviewUrls,
+  layerPreviewUrlAt,
   deps,
 }: UsePrintingPreviewManagerOptions) {
   // ---- moved: stateA ----
@@ -174,8 +174,8 @@ export function usePrintingPreviewManager({
   // ---- moved: selectedUrlPngLoaded ----
   const selectedPrintingLayerPreviewUrl = React.useMemo(() => {
     if (printingDisplayedLayer < 1) return null;
-    return printingLayerPreviewUrls[printingDisplayedLayer - 1] ?? null;
-  }, [printingLayerPreviewUrls, printingDisplayedLayer]);
+    return layerPreviewUrlAt(printingDisplayedLayer);
+  }, [layerPreviewUrlAt, printingDisplayedLayer]);
 
   const isPrintingPngLoaded = React.useMemo(() => {
     if (!selectedPrintingLayerPreviewUrl) return false;
