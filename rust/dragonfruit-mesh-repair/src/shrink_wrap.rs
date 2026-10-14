@@ -78,6 +78,61 @@ pub struct ShrinkWrapReport {
     pub offset_mm: f32,
     pub band_points: usize,
     pub ms: f64,
+    /// True when the caller's sink stopped the run at a phase boundary, so the mesh in the outcome
+    /// is the input untouched rather than a partial resample. A partially-built isosurface shares
+    /// nothing with the input — every triangle is new — so there is no meaningful halfway result to
+    /// hand back.
+    pub cancelled: bool,
+}
+
+/// Announces a pass's phases to a caller's sink and counts them.
+///
+/// Mirrors the `(name, index) -> continue` shape of
+/// [`crate::repair::repair_with_progress`], so the same Tauri sink and the same kind of progress
+/// display drive both passes. `index` is the 1-based position among the phases announced so far;
+/// the later phases are conditional, so a total is not known to the pass itself.
+struct PhaseSink<'a> {
+    sink: Option<&'a mut dyn FnMut(&str, usize) -> bool>,
+    index: usize,
+}
+
+impl<'a> PhaseSink<'a> {
+    fn new(sink: Option<&'a mut dyn FnMut(&str, usize) -> bool>) -> Self {
+        Self { sink, index: 0 }
+    }
+
+    /// Announces the next phase, returning false once the caller has asked to stop.
+    fn phase(&mut self, name: &str) -> bool {
+        self.index += 1;
+        match self.sink.as_mut() {
+            Some(sink) => sink(name, self.index),
+            None => true,
+        }
+    }
+}
+
+/// The outcome of a run the caller stopped, before any work that could describe it ran.
+///
+/// `mesh` is the input unchanged, so a cancelled remesh leaves the scene as it was.
+fn cancelled_outcome(
+    mesh: &IndexedMesh,
+    voxel: f32,
+    offset: f32,
+    started: std::time::Instant,
+) -> ShrinkWrapOutcome {
+    ShrinkWrapOutcome {
+        report: ShrinkWrapReport {
+            input_triangles: mesh.triangles.len(),
+            isosurface_triangles: 0,
+            output_triangles: 0,
+            voxel_mm: voxel,
+            offset_mm: offset,
+            band_points: 0,
+            ms: started.elapsed().as_secs_f64() * 1000.0,
+            cancelled: true,
+        },
+        mesh: mesh.clone(),
+    }
 }
 
 /// The six tetrahedra a cube splits into, corner indices being
@@ -165,11 +220,15 @@ fn build_band(
     bvh: &crate::core::bvh::Bvh,
     voxel: f32,
     band_voxels: i32,
-) -> ahash::AHashMap<(i32, i32, i32), f32> {
+    phases: &mut PhaseSink<'_>,
+) -> Option<ahash::AHashMap<(i32, i32, i32), f32>> {
     use rayon::prelude::*;
 
     // 1. The cells each triangle passes through. A triangle covers about half its own bounding box
     //    in two dimensions, so this is proportional to its area over the voxel size.
+    if !phases.phase("band_mark") {
+        return None;
+    }
     let surface: ahash::AHashSet<(i32, i32, i32)> = mesh
         .triangles
         .par_iter()
@@ -197,6 +256,9 @@ fn build_band(
         });
 
     // 2. Grow it by the band.
+    if !phases.phase("band_grow") {
+        return None;
+    }
     let band_cells: ahash::AHashSet<(i32, i32, i32)> = surface
         .par_iter()
         .fold(ahash::AHashSet::new, |mut acc, &(i, j, k)| {
@@ -220,6 +282,9 @@ fn build_band(
     //    component on a fixture that has two.
     let reach = band_voxels as f32 * voxel;
     let query_reach = reach + voxel;
+    if !phases.phase("band_distance") {
+        return None;
+    }
     let points: Vec<(i32, i32, i32)> = band_cells.into_iter().collect();
     let computed: Vec<((i32, i32, i32), f32)> = points
         .par_iter()
@@ -264,7 +329,7 @@ fn build_band(
     for (key, value) in computed {
         band.insert(key, value);
     }
-    band
+    Some(band)
 }
 
 /// The isosurface of the band at `iso`, as a triangle soup, by marching through the six tetrahedra
@@ -478,6 +543,79 @@ fn taubin(mesh: &mut IndexedMesh, iterations: usize) {
     }
 }
 
+
+/// Drop detached pieces that are a small part of the whole, and return how many went.
+///
+/// A resample has nothing to preserve the way the repair pipeline does. The surface here is new, so
+/// a piece that is a small fraction of the largest one is an artifact of the marching rather than
+/// something the model has, and leaving it is what a user sees as floating debris: measured on a
+/// damaged export, the voxel path produced 559 pieces against 302 in its input, so it was adding
+/// them.
+///
+/// The repair pipeline's own noise rule is absolute-only, because its relative form once deleted
+/// 88,912 support faces from a supported model. There are no supports here. The input is one
+/// model's geometry and support struts are separate meshes, which is why the relative rule is the
+/// right one at this seam and the wrong one at that.
+pub(crate) fn prune_detached_pieces(mesh: &mut IndexedMesh) -> usize {
+    use crate::repair::triangle_components;
+    if mesh.triangles.len() < 8 {
+        return 0;
+    }
+    let components = triangle_components(mesh);
+    let count = components.iter().copied().max().unwrap_or(0) as usize + 1;
+    if count < 2 {
+        return 0;
+    }
+    let mut sizes = vec![0usize; count];
+    for &c in &components {
+        sizes[c as usize] += 1;
+    }
+    let total = mesh.triangles.len();
+    let mut removed = 0;
+    let kept: Vec<[u32; 3]> = mesh
+        .triangles
+        .iter()
+        .enumerate()
+        .filter_map(|(face, tri)| {
+            let size = sizes[components[face] as usize];
+            // Fewer than four triangles is a scrap by any measure; under a twentieth of the whole
+            // is a scrap beside the model.
+            if size < 4 || size * 20 < total {
+                removed += 1;
+                None
+            } else {
+                Some(*tri)
+            }
+        })
+        .collect();
+    if removed == 0 {
+        return 0;
+    }
+    mesh.triangles = kept;
+    // Vertices the removal orphaned would otherwise sit in the file as unreferenced points.
+    let mut used = vec![false; mesh.positions.len()];
+    for tri in &mesh.triangles {
+        for &v in tri.iter() {
+            used[v as usize] = true;
+        }
+    }
+    let mut remap = vec![u32::MAX; mesh.positions.len()];
+    let mut positions = Vec::with_capacity(mesh.positions.len());
+    for (index, keep) in used.iter().enumerate() {
+        if *keep {
+            remap[index] = positions.len() as u32;
+            positions.push(mesh.positions[index]);
+        }
+    }
+    for tri in mesh.triangles.iter_mut() {
+        for v in tri.iter_mut() {
+            *v = remap[*v as usize];
+        }
+    }
+    mesh.positions = positions;
+    removed
+}
+
 /// Orient a closed isosurface by propagating winding across its edges, then turn the whole thing
 /// outward if the field came out inward.
 ///
@@ -541,6 +679,25 @@ fn orient_by_propagation(mesh: &mut IndexedMesh) {
 /// repaired: a mesh with a frustrated seam, a hollowed model whose interior has been turned inside
 /// out, or anything else where the local passes have to refuse rather than damage the object.
 pub fn shrink_wrap(mesh: &IndexedMesh, options: &ShrinkWrapOptions) -> ShrinkWrapOutcome {
+    shrink_wrap_with_progress(mesh, options, None)
+}
+
+/// Resample `mesh`, telling `sink` about each phase as it starts.
+///
+/// The bands and the isosurface take tens of seconds on a large model, so a caller with a UI needs
+/// to know which phase it is in rather than watching a spinner. `sink` is called with the phase's
+/// name and its 1-based position, and its return value says whether to carry on, mirroring
+/// [`crate::repair::repair_with_progress`].
+///
+/// Returning `false` stops the run at that phase boundary — never halfway through one, because a
+/// partially-built isosurface describes nothing — and the outcome is then the input mesh unchanged
+/// with [`ShrinkWrapReport::cancelled`] set. A caller that stops the run has made no change to the
+/// geometry it handed in.
+pub fn shrink_wrap_with_progress(
+    mesh: &IndexedMesh,
+    options: &ShrinkWrapOptions,
+    sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
+) -> ShrinkWrapOutcome {
     let started = std::time::Instant::now();
     let voxel = options.voxel_mm.max(1e-4);
     let offset = options.gap_fill_mm + options.thickness_mm;
@@ -550,24 +707,47 @@ pub fn shrink_wrap(mesh: &IndexedMesh, options: &ShrinkWrapOptions) -> ShrinkWra
     // result fragments into pieces that never meet. Measured with a half-millimetre fill at a
     // tenth-millimetre voxel: eight components where there should have been one.
     let band_voxels = 3 + (offset / voxel).ceil().max(0.0) as i32;
+    let mut phases = PhaseSink::new(sink);
+
     let bvh = Bvh::build(mesh);
-    let band = build_band(mesh, &bvh, voxel, band_voxels);
+    let band = match build_band(mesh, &bvh, voxel, band_voxels, &mut phases) {
+        Some(band) => band,
+        None => return cancelled_outcome(mesh, voxel, offset, started),
+    };
+    if !phases.phase("marching") {
+        return cancelled_outcome(mesh, voxel, offset, started);
+    }
     let soup = marching_tetrahedra(&band, voxel, offset);
     let isosurface_triangles = soup.len();
+    if !phases.phase("weld") {
+        return cancelled_outcome(mesh, voxel, offset, started);
+    }
     let mut out = weld(soup, voxel);
+    if !phases.phase("smooth") {
+        return cancelled_outcome(mesh, voxel, offset, started);
+    }
     taubin(&mut out, 3);
     crate::topology_passes::split_pinched_vertices(&mut out);
+    if !phases.phase("orient") {
+        return cancelled_outcome(mesh, voxel, offset, started);
+    }
     orient_by_propagation(&mut out);
     // Close what is left. The isosurface is closed where the band contains it, but where the model
     // is thinner than the offset the two offset surfaces meet and leave small openings — 1,810
     // boundary edges of 1.28M on the cones before simplification — and closing them is what the
     // hole pass is for. The simplification opens more by collapsing edges across them, so it runs
     // again after that too.
+    if !phases.phase("closing") {
+        return cancelled_outcome(mesh, voxel, offset, started);
+    }
     crate::holes::holes_all(&mut out, 64);
     orient_by_propagation(&mut out);
 
     let before_simplify = out.triangles.len();
     if options.max_triangles > 0 && before_simplify > options.max_triangles {
+        if !phases.phase("simplify") {
+            return cancelled_outcome(mesh, voxel, offset, started);
+        }
         let diag = mesh.bbox().diag() as f64;
         out = crate::repair::decimate_indexed_to_budget(
             out,
@@ -582,7 +762,16 @@ pub fn shrink_wrap(mesh: &IndexedMesh, options: &ShrinkWrapOptions) -> ShrinkWra
         )
         .mesh;
         // Simplification collapses edges, which can open the surface it just closed.
+        if !phases.phase("closing_after_simplify") {
+            return cancelled_outcome(mesh, voxel, offset, started);
+        }
         crate::holes::holes_all(&mut out, 64);
+        orient_by_propagation(&mut out);
+    }
+
+    // Before the outcome is built, so the report's count matches the mesh it describes.
+    let pruned = prune_detached_pieces(&mut out);
+    if pruned > 0 {
         orient_by_propagation(&mut out);
     }
 
@@ -595,6 +784,7 @@ pub fn shrink_wrap(mesh: &IndexedMesh, options: &ShrinkWrapOptions) -> ShrinkWra
             offset_mm: offset,
             band_points: band.len(),
             ms: started.elapsed().as_secs_f64() * 1000.0,
+            cancelled: false,
         },
         mesh: out,
     }
@@ -603,6 +793,36 @@ pub fn shrink_wrap(mesh: &IndexedMesh, options: &ShrinkWrapOptions) -> ShrinkWra
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two pieces: a body of forty triangles and a scrap of one, far apart. The scrap is what a
+    /// band isosurface leaves behind where the band thins, and the body is what the user drew.
+    #[test]
+    fn a_detached_scrap_goes_and_the_body_stays() {
+        let mut positions: Vec<Vec3> = Vec::new();
+        let mut triangles: Vec<[u32; 3]> = Vec::new();
+        // A fan of forty, which is a body beside a scrap by any measure.
+        positions.push(Vec3::new(0.0, 0.0, 0.0));
+        for step in 0..41 {
+            let angle = step as f32 * 0.1;
+            positions.push(Vec3::new(angle.cos(), angle.sin(), 0.0));
+        }
+        for step in 0..40u32 {
+            triangles.push([0, 1 + step, 2 + step]);
+        }
+        // A single triangle a long way off.
+        let base = positions.len() as u32;
+        positions.push(Vec3::new(50.0, 0.0, 0.0));
+        positions.push(Vec3::new(51.0, 0.0, 0.0));
+        positions.push(Vec3::new(50.0, 1.0, 0.0));
+        triangles.push([base, base + 1, base + 2]);
+
+        let mut mesh = IndexedMesh { positions, triangles };
+        let before = mesh.triangles.len();
+        let removed = prune_detached_pieces(&mut mesh);
+        assert_eq!(removed, 1, "the scrap is the one triangle");
+        assert_eq!(mesh.triangles.len(), before - 1);
+        assert_eq!(mesh.positions.len(), 42, "the scrap's vertices go with it");
+    }
 
     fn cube(offset: Vec3, size: f32) -> IndexedMesh {
         let p = [
@@ -858,5 +1078,67 @@ mod tests {
             out.mesh.triangles.len()
         );
         assert!(defects(&out.mesh).bad_edges == 0);
+    }
+
+    /// The progress sink hears every phase, in the engine's order, with 1-based positions — which
+    /// is what the frontend bar is a fraction of.
+    #[test]
+    fn progress_reports_every_phase_in_order() {
+        let mesh = cube(Vec3::new(0.0, 0.0, 0.0), 10.0);
+        let mut seen: Vec<(String, usize)> = Vec::new();
+        let mut sink = |name: &str, index: usize| {
+            seen.push((name.to_string(), index));
+            true
+        };
+        let out = shrink_wrap_with_progress(
+            &mesh,
+            &ShrinkWrapOptions {
+                voxel_mm: 0.1,
+                gap_fill_mm: 0.0,
+                thickness_mm: 0.0,
+                max_triangles: 500,
+            },
+            Some(&mut sink),
+        );
+
+        let names: Vec<&str> = seen.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "band_mark",
+                "band_grow",
+                "band_distance",
+                "marching",
+                "weld",
+                "smooth",
+                "orient",
+                "closing",
+                "simplify",
+                "closing_after_simplify",
+            ],
+        );
+        for (offset, (_, index)) in seen.iter().enumerate() {
+            assert_eq!(*index, offset + 1, "phases are numbered 1-based and in order");
+        }
+        assert!(!out.report.cancelled);
+        assert!(!out.mesh.triangles.is_empty());
+    }
+
+    /// A cancel at a phase boundary leaves the caller's mesh untouched. There is no half-built
+    /// isosurface to hand back, so the outcome is the input with `cancelled` set.
+    #[test]
+    fn a_cancel_returns_the_input_unchanged() {
+        let mesh = cube(Vec3::new(0.0, 0.0, 0.0), 10.0);
+        let mut seen = 0usize;
+        // Continue through the first phase, then stop at the second boundary.
+        let mut sink = |_name: &str, _index: usize| {
+            seen += 1;
+            seen < 2
+        };
+        let out = shrink_wrap_with_progress(&mesh, &ShrinkWrapOptions::default(), Some(&mut sink));
+
+        assert!(out.report.cancelled);
+        assert_eq!(out.report.output_triangles, 0);
+        assert_eq!(out.mesh.triangles, mesh.triangles);
     }
 }

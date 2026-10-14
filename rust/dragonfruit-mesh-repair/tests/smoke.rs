@@ -138,6 +138,12 @@ fn degenerate_triangles_are_culled() {
 /// Orientation, stitch, holes and double faces each disturb what the one before it
 /// settled, so they come round more than once. A refactor that "simplifies" this list
 /// has changed what the repair does, and this is where that shows up.
+///
+/// What is *not* in the list is the stages that would provably do nothing on this input, and
+/// leaving them out is the point rather than a simplification: `double_faces_after_split` is only
+/// worth running when something since the first cull could have made a duplicate — the crossing
+/// split, or rounds 5 and 6 — and on a cube all of those are no-ops. Its place in the order when it
+/// does run is asserted below.
 #[test]
 fn the_pipeline_runs_the_stage_order_it_says_it_does() {
     let outcome = repair(unit_cube(), &RepairOptions::default());
@@ -156,12 +162,55 @@ fn the_pipeline_runs_the_stage_order_it_says_it_does() {
             "double_faces",
             "orient_holes_stitch",
             "orient_holes_all_stitch",
-            "double_faces_after_split",
             "remove_inner_faces",
             "noise_shells",
             "settle",
             "prune_and_classify",
         ]
+    );
+}
+
+/// Where the second double-face pass goes, on the runs that have one.
+///
+/// It comes after the round that produces duplicates and before the faces inside are removed, and
+/// it is the only stage whose presence depends on what the passes before it did.
+#[test]
+fn the_second_double_face_pass_sits_between_the_rounds_and_the_inside() {
+    // A mesh with a crossing: two unit cubes overlapping along one edge. The split refines it and
+    // the second cull therefore has something to judge.
+    let mut mesh = unit_cube();
+    let offset = 0.5_f32;
+    let base = mesh.positions.len() as u32;
+    for position in mesh.positions.clone() {
+        mesh.positions
+            .push(Vec3::new(position.x + offset, position.y, position.z));
+    }
+    for triangle in mesh.triangles.clone() {
+        mesh.triangles
+            .push([triangle[0] + base, triangle[1] + base, triangle[2] + base]);
+    }
+    let options = RepairOptions {
+        resolve_self_intersections: true,
+        ..RepairOptions::default()
+    };
+    let outcome = repair(mesh, &options);
+    let names: Vec<&str> = outcome
+        .report
+        .steps
+        .iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    let after = names.iter().position(|n| *n == "orient_holes_all_stitch");
+    let inside = names.iter().position(|n| *n == "remove_inner_faces");
+    if let Some(at) = names.iter().position(|n| *n == "double_faces_after_split") {
+        assert!(
+            after.expect("rounds ran") < at && at < inside.expect("the inside pass ran"),
+            "the second cull must sit between the rounds and the inside pass, got {names:?}"
+        );
+    }
+    assert!(
+        names.contains(&"split_self_intersections"),
+        "the split was asked for, so its stage has to be reported: {names:?}"
     );
 }
 

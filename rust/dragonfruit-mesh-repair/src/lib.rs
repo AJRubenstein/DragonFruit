@@ -14,10 +14,12 @@ pub use dragonfruit_mesh_core as core;
 pub mod decimation_config;
 pub mod evaluate;
 pub mod holes;
+pub mod tet_wrap;
 pub mod topology_passes;
 pub mod hollowing;
 pub mod io;
 pub mod repair;
+pub mod solid_remesh;
 pub mod report;
 pub mod shells;
 pub mod shrink_wrap;
@@ -37,8 +39,18 @@ pub use crate::repair::{
     ClassificationOutcome, RepairOptions, RepairOutcome, SectionDecimationOutcome,
 };
 pub use crate::report::MeshHealthReport;
-pub use crate::shrink_wrap::{shrink_wrap, ShrinkWrapOptions, ShrinkWrapOutcome, ShrinkWrapReport};
+pub use crate::shrink_wrap::{
+    shrink_wrap, shrink_wrap_with_progress, ShrinkWrapOptions, ShrinkWrapOutcome, ShrinkWrapReport,
+};
 pub use crate::stl_budget::{compute_triangle_budget, TriangleBudget};
+pub use crate::tet_wrap::{
+    tet_surface, tet_surface_with_progress, TetWrapOptions, TetWrapOutcome, TetWrapReport,
+};
+
+pub use crate::solid_remesh::{
+    solid_remesh, solid_remesh_with_progress, SolidRemeshOptions, SolidRemeshOutcome,
+    SolidRemeshReport,
+};
 
 use std::path::Path;
 

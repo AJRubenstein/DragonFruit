@@ -647,98 +647,37 @@ fn refine_face_with_segments(
     //     25% of one face on a two-triangle fixture, and 8,123 of 14,751 faces on 3DBenchy, where
     //     the loss shows up as 0.29% of the surface area. Splitting a convex ring along a chord
     //     keeps both pieces convex, so fanning them is exact.
-    if !segment_pair_locals.is_empty()
-        && segment_pair_locals
-            .iter()
-            .all(|(a, b)| on_edge[*a].is_some() && on_edge[*b].is_some())
-    {
-        let mut ring: Vec<usize> = Vec::with_capacity(pts.len());
-        for ei in 0..3usize {
-            ring.push(ei);
-            let a = pts[ei];
-            let b = pts[(ei + 1) % 3];
-            let mut inserts: Vec<(f64, usize)> = Vec::new();
-            for (pi, oe) in on_edge.iter().enumerate() {
-                if pi >= 3 && *oe == Some(ei as u8) {
-                    inserts.push((param_on_segment(pts[pi], a, b), pi));
-                }
-            }
-            inserts.sort_by(|x, y| x.0.total_cmp(&y.0));
-            for (_, pi) in inserts {
-                ring.push(pi);
-            }
+    //
+    //     A chord with an endpoint off the ring cannot be handled this way, so any face with one
+    //     goes to the CDT. If the CDT then fails the face used to be kept whole, which leaves it
+    //     crossing neighbours that were split and is what makes the result worse than the input on
+    //     a dense tangle. It now falls back to the chords that do end on the ring: a partial exact
+    //     refinement beats none.
+    let boundary_chords: Vec<(usize, usize)> = segment_pair_locals
+        .iter()
+        .copied()
+        .filter(|(a, b)| on_edge[*a].is_some() && on_edge[*b].is_some())
+        .collect();
+    let all_on_ring =
+        !segment_pair_locals.is_empty() && boundary_chords.len() == segment_pair_locals.len();
+    if all_on_ring {
+        if let Some(out) = fan_ring_pieces(&pts, &on_edge, &segment_pair_locals, &global_idx, &local_of)
+        {
+            return Some(out);
         }
-        let mut pieces: Vec<Vec<usize>> = vec![ring];
-        for &(la, lb) in &segment_pair_locals {
-            let Some(at) = pieces
-                .iter()
-                .position(|p| p.contains(&la) && p.contains(&lb))
-            else {
-                return None;
-            };
-            let piece = pieces.swap_remove(at);
-            let ia = piece.iter().position(|&v| v == la).unwrap();
-            let ib = piece.iter().position(|&v| v == lb).unwrap();
-            let (i, j) = if ia < ib { (ia, ib) } else { (ib, ia) };
-            let first: Vec<usize> = piece[i..=j].to_vec();
-            let mut second: Vec<usize> = piece[j..].to_vec();
-            second.extend_from_slice(&piece[..=i]);
-            if first.len() < 3 || second.len() < 3 {
-                return None;
-            }
-            pieces.push(first);
-            pieces.push(second);
-        }
-        let mut out: Vec<[u32; 3]> = Vec::new();
-        for piece in &pieces {
-            for i in 1..piece.len() - 1 {
-                let (a, b, c) = (piece[0], piece[i], piece[i + 1]);
-                let pa = pts[a];
-                let pb = pts[b];
-                let pc = pts[c];
-                let cross = (pb.0 - pa.0) * (pc.1 - pa.1) - (pb.1 - pa.1) * (pc.0 - pa.0);
-                let (ga, gb, gc) = (global_idx[a], global_idx[b], global_idx[c]);
-                if ga == gb || gb == gc || ga == gc {
-                    continue;
-                }
-                if cross >= 0.0 {
-                    out.push([ga, gb, gc]);
-                } else {
-                    out.push([ga, gc, gb]);
-                }
-            }
-        }
-        if out.is_empty() {
-            return None;
-        }
-        // Coverage, for the same reason the CDT's output is not trusted blindly: a triangulation
-        // that does not cover the face it replaces is not a refinement of it. This path is exact by
-        // construction — the ring is convex and each piece is fanned — but the check is what keeps
-        // it that way if the pieces are ever built differently, and it costs one pass over the
-        // output.
-        let expected = ((pts[1].0 - pts[0].0) * (pts[2].1 - pts[0].1)
-            - (pts[1].1 - pts[0].1) * (pts[2].0 - pts[0].0))
-            .abs()
-            * 0.5;
-        let covered: f64 = out
-            .iter()
-            .map(|t| {
-                let (a, b, c) = (
-                    local_of[&t[0]] as usize,
-                    local_of[&t[1]] as usize,
-                    local_of[&t[2]] as usize,
-                );
-                let pa = pts[a];
-                let pb = pts[b];
-                let pc = pts[c];
-                ((pb.0 - pa.0) * (pc.1 - pa.1) - (pb.1 - pa.1) * (pc.0 - pa.0)).abs() * 0.5
-            })
-            .sum();
-        if expected > 0.0 && (covered - expected).abs() > expected * 1e-6 {
-            return None;
-        }
-        return Some(out);
     }
+
+    // What to do when the CDT cannot produce a usable triangulation. Keeping the face whole is
+    // what leaves it crossing neighbours that have already been split, which is why a dense tangle
+    // came out worse than it went in. The chords that do end on the ring are still handled exactly,
+    // so refine along those even if the rest has to stay unresolved.
+    let ring_fallback = |chords: &[(usize, usize)]| -> Option<Vec<[u32; 3]>> {
+        if chords.is_empty() {
+            None
+        } else {
+            fan_ring_pieces(&pts, &on_edge, chords, &global_idx, &local_of)
+        }
+    };
 
     // 4. Run CDT (catch panic defensively; the crate has a few rough edges).
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -746,11 +685,11 @@ fn refine_face_with_segments(
     }));
     let tris = match result {
         Ok(Ok(t)) => t,
-        Ok(Err(_)) => return None,
-        Err(_) => return None,
+        Ok(Err(_)) => return ring_fallback(&boundary_chords),
+        Err(_) => return ring_fallback(&boundary_chords),
     };
     if tris.is_empty() {
-        return None;
+        return ring_fallback(&boundary_chords);
     }
 
     // 5. Ensure CCW in 2D → outward normal in 3D (our (u, v, n) frame is
@@ -773,9 +712,120 @@ fn refine_face_with_segments(
         }
     }
     if out.is_empty() {
-        return None;
+        return ring_fallback(&boundary_chords);
     }
     Some(out)
+}
+
+/// Split the face's boundary ring along each chord and fan every piece.
+///
+/// Exact for any chord whose endpoints both lie on the ring: splitting a convex ring along a chord
+/// leaves both pieces convex, so a fan of each is a triangulation of it. The CDT is not used here
+/// because with extra points sitting collinear on the boundary it returns a triangulation missing a
+/// whole region. Returns `None` if the chords do not split the ring cleanly or the output fails the
+/// coverage check.
+fn fan_ring_pieces(
+    pts: &[(f64, f64)],
+    on_edge: &[Option<u8>],
+    chords: &[(usize, usize)],
+    global_idx: &[u32],
+    local_of: &AHashMap<u32, usize>,
+) -> Option<Vec<[u32; 3]>> {
+// 3b. A face whose chords all start and end on its own boundary is triangulated directly: split
+//     the boundary ring along each chord, then fan each piece.
+//
+//     The CDT is not asked for this case because it gets it wrong. With extra points sitting
+//     collinear on the boundary — which is the common case, since an intersection segment enters
+//     and leaves a face through its edges — it returns a triangulation missing a whole region:
+//     25% of one face on a two-triangle fixture, and 8,123 of 14,751 faces on 3DBenchy, where
+//     the loss shows up as 0.29% of the surface area. Splitting a convex ring along a chord
+//     keeps both pieces convex, so fanning them is exact.
+    let mut ring: Vec<usize> = Vec::with_capacity(pts.len());
+    for ei in 0..3usize {
+        ring.push(ei);
+        let a = pts[ei];
+        let b = pts[(ei + 1) % 3];
+        let mut inserts: Vec<(f64, usize)> = Vec::new();
+        for (pi, oe) in on_edge.iter().enumerate() {
+            if pi >= 3 && *oe == Some(ei as u8) {
+                inserts.push((param_on_segment(pts[pi], a, b), pi));
+            }
+        }
+        inserts.sort_by(|x, y| x.0.total_cmp(&y.0));
+        for (_, pi) in inserts {
+            ring.push(pi);
+        }
+    }
+    let mut pieces: Vec<Vec<usize>> = vec![ring];
+    for &(la, lb) in chords {
+        let Some(at) = pieces
+            .iter()
+            .position(|p| p.contains(&la) && p.contains(&lb))
+        else {
+            return None;
+        };
+        let piece = pieces.swap_remove(at);
+        let ia = piece.iter().position(|&v| v == la).unwrap();
+        let ib = piece.iter().position(|&v| v == lb).unwrap();
+        let (i, j) = if ia < ib { (ia, ib) } else { (ib, ia) };
+        let first: Vec<usize> = piece[i..=j].to_vec();
+        let mut second: Vec<usize> = piece[j..].to_vec();
+        second.extend_from_slice(&piece[..=i]);
+        if first.len() < 3 || second.len() < 3 {
+            return None;
+        }
+        pieces.push(first);
+        pieces.push(second);
+    }
+    let mut out: Vec<[u32; 3]> = Vec::new();
+    for piece in &pieces {
+        for i in 1..piece.len() - 1 {
+            let (a, b, c) = (piece[0], piece[i], piece[i + 1]);
+            let pa = pts[a];
+            let pb = pts[b];
+            let pc = pts[c];
+            let cross = (pb.0 - pa.0) * (pc.1 - pa.1) - (pb.1 - pa.1) * (pc.0 - pa.0);
+            let (ga, gb, gc) = (global_idx[a], global_idx[b], global_idx[c]);
+            if ga == gb || gb == gc || ga == gc {
+                continue;
+            }
+            if cross >= 0.0 {
+                out.push([ga, gb, gc]);
+            } else {
+                out.push([ga, gc, gb]);
+            }
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    // Coverage, for the same reason the CDT's output is not trusted blindly: a triangulation
+    // that does not cover the face it replaces is not a refinement of it. This path is exact by
+    // construction — the ring is convex and each piece is fanned — but the check is what keeps
+    // it that way if the pieces are ever built differently, and it costs one pass over the
+    // output.
+    let expected = ((pts[1].0 - pts[0].0) * (pts[2].1 - pts[0].1)
+        - (pts[1].1 - pts[0].1) * (pts[2].0 - pts[0].0))
+        .abs()
+        * 0.5;
+    let covered: f64 = out
+        .iter()
+        .map(|t| {
+            let (a, b, c) = (
+                local_of[&t[0]] as usize,
+                local_of[&t[1]] as usize,
+                local_of[&t[2]] as usize,
+            );
+            let pa = pts[a];
+            let pb = pts[b];
+            let pc = pts[c];
+            ((pb.0 - pa.0) * (pc.1 - pa.1) - (pb.1 - pa.1) * (pc.0 - pa.0)).abs() * 0.5
+        })
+        .sum();
+    if expected > 0.0 && (covered - expected).abs() > expected * 1e-6 {
+        return None;
+    }
+    return Some(out);
 }
 
 /// Map a global mesh vertex index to a local CDT point index. If not already

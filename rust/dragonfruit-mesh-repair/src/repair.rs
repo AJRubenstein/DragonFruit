@@ -235,7 +235,13 @@ pub fn repair_with_progress(
     // than passed off as a repair.
     begin!("stitch");
     let t = std::time::Instant::now();
-    let (welded, collapsed, refused) = stitch_vertices(&mut mesh, options.weld_epsilon);
+    // Strict first, then loose - the reference stitches twice and in this order, and the order is
+    // the point: the strict pass joins what agrees on winding, and the loose one, later, joins the
+    // rest. Doing it the other way round lets the loose weld reach vertices the strict pass would
+    // have kept apart.
+    let (stitched_oriented, refused_oriented) = stitch_vertices_oriented(&mut mesh, options.weld_epsilon);
+    let (welded, collapsed, refused_loose) = stitch_vertices(&mut mesh, options.weld_epsilon);
+    let (welded, collapsed, refused) = (welded + stitched_oriented, collapsed, refused_loose || refused_oriented);
     stage!(
         "stitch",
         welded + collapsed,
@@ -255,8 +261,13 @@ pub fn repair_with_progress(
     //    of the pipeline.
     begin!("holes_trivial");
     let t = std::time::Instant::now();
-    let trivial = crate::holes::holes_trivial(&mut mesh);
-    stage!("holes_trivial", trivial, None, t);
+    let (trivial, refused_trivial) = fill_holes_guarded(&mut mesh, 0, true);
+    stage!(
+        "holes_trivial",
+        trivial,
+        refused_trivial.then(|| "refused: capping would have left a worse mesh".to_string()),
+        t
+    );
 
     // 4. Double faces.
     begin!("double_faces");
@@ -276,13 +287,15 @@ pub fn repair_with_progress(
     begin!("orient_holes_stitch");
     let t = std::time::Instant::now();
     let flipped = repair_orientation(&mut mesh);
-    let trivial = crate::holes::holes_trivial(&mut mesh);
+    let (trivial, refused_trivial) = fill_holes_guarded(&mut mesh, 0, true);
     let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
+    let round_after_first_cull = flipped + trivial + welded + collapsed;
     stage!(
         "orient_holes_stitch",
-        flipped + trivial + welded + collapsed,
+        round_after_first_cull,
         Some(format!(
-            "{flipped} face(s) flipped, {trivial} trivial hole face(s), {welded} vertex/vertices welded, {collapsed} face(s) collapsed"
+            "{flipped} face(s) flipped, {trivial} trivial hole face(s), {welded} vertex/vertices welded, {collapsed} face(s) collapsed{}",
+            if refused_trivial { ", hole fill refused" } else { "" }
         )),
         t
     );
@@ -291,13 +304,15 @@ pub fn repair_with_progress(
     begin!("orient_holes_all_stitch");
     let t = std::time::Instant::now();
     let flipped = repair_orientation(&mut mesh);
-    let filled = crate::holes::holes_all(&mut mesh, options.fill_holes_max_edges);
+    let (filled, refused_fill) = fill_holes_guarded(&mut mesh, options.fill_holes_max_edges, false);
     let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
+    let round_after_first_cull = round_after_first_cull + flipped + filled + welded + collapsed;
     stage!(
         "orient_holes_all_stitch",
         flipped + filled + welded + collapsed,
         Some(format!(
-            "{flipped} face(s) flipped, {filled} hole face(s), {welded} vertex/vertices welded, {collapsed} face(s) collapsed"
+            "{flipped} face(s) flipped, {filled} hole face(s), {welded} vertex/vertices welded, {collapsed} face(s) collapsed{}",
+            if refused_fill { ", hole fill refused" } else { "" }
         )),
         t
     );
@@ -312,6 +327,7 @@ pub fn repair_with_progress(
     //    and the volume up 132%. On the corbu model it took bad edges 822 to 16,704 and the volume
     //    up 852%. Both were kept. Asked for on a mesh it cannot handle, it now comes out as it
     //    went in and says so.
+    let mut split_refined = false;
     if options.resolve_self_intersections {
         begin!("split_self_intersections");
         let t = std::time::Instant::now();
@@ -326,6 +342,7 @@ pub fn repair_with_progress(
         if refused {
             mesh = before;
         }
+        split_refined = !refused && stats.refined_faces > 0;
         stage!(
             "split_self_intersections",
             if refused { 0 } else { stats.refined_faces },
@@ -347,18 +364,30 @@ pub fn repair_with_progress(
         );
     }
 
-    // 8. Double faces again: the split produces them.
-    begin!("double_faces_after_split");
-    let t = std::time::Instant::now();
-    let (doubles, refused) = cull_faces(&mut mesh);
-    stage!(
-        "double_faces_after_split",
-        doubles,
-        refused.then(
-            || "refused: removing the duplicate faces would have opened the mesh".to_string()
-        ),
-        t
-    );
+    // 8. Double faces again, when something since the first cull could have made one.
+    //
+    //    Step 4 is the last thing that looked at duplicates, and only two things can have changed
+    //    the mesh since: rounds 5 and 6, and the crossings split. When both rounds report that they
+    //    changed nothing, and the split refined nothing, the mesh arriving here is byte-identical to
+    //    the one step 4 already judged — and this cull is deterministic, so it would answer the same
+    //    way a second time. On the corpus that cost 0.7s to 2.3s per file to return the same
+    //    `refused` a second time, on every file, because the split is off by default.
+    //
+    //    The two rounds' counts are exact: each is the sum of the passes in it, and a refused pass
+    //    contributes zero because it reverted.
+    if split_refined || round_after_first_cull > 0 {
+        begin!("double_faces_after_split");
+        let t = std::time::Instant::now();
+        let (doubles, refused) = cull_faces(&mut mesh);
+        stage!(
+            "double_faces_after_split",
+            doubles,
+            refused.then(
+                || "refused: removing the duplicate faces would have opened the mesh".to_string()
+            ),
+            t
+        );
+    }
 
     // 9. Remove the faces that are inside. This is the stage that resolves
     //    self-intersections and non-manifoldness together: a face inside the solid
@@ -1127,6 +1156,187 @@ fn component_is_closed(mesh: &IndexedMesh, comps: &[u32], comp: u32) -> bool {
     edges.values().all(|&n| n == 2)
 }
 
+/// What closed components sit inside other components, and how much they enclose.
+///
+/// A cavity is a closed shell inside the material. A model can carry one deliberately, as a hollowed
+/// figure does, and a damaged file can carry one as an accident, such as a cavity modelled inside a
+/// part whose wall it also breaks through. Either way it is worth reporting before anything removes
+/// it: the choice between a hollow model and a solid one is the caller's, not the pipeline's.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CavityScan {
+    /// Number of closed components sitting inside another component: a cavity as modelled on purpose.
+    pub components: usize,
+    /// Number of interior components that are *not* closed: a cavity whose shell is broken, which is
+    /// what a cavity breaking through the outer wall looks like. It is still a cavity to anyone
+    /// looking at the model, and it cannot be removed by the cull above, which requires closedness
+    /// precisely so it does not delete a buried sheet. Reported so a caller sees the difference.
+    pub broken_components: usize,
+    /// Their total triangle count, so a caller can weigh the deletion.
+    pub triangles: usize,
+    /// The volume they enclose, unsigned. This is the material filling them would add.
+    pub volume: f64,
+}
+
+/// Drop pairs of triangles that share three vertices and wind opposite ways.
+///
+/// Such a pair is a sheet with no thickness: two copies of one surface facing opposite directions,
+/// enclosing nothing. They are how a hole gets "plugged" in a file like this one, where an internal
+/// cavity breaks through the outer wall and the break is covered with zero-depth geometry rather
+/// than filled with material. Two things follow. They enclose no volume, so removing them cannot
+/// change what is solid, and they are the reason a constrained decomposition refuses the input: it
+/// will not accept a complex whose facets lie on top of one another.
+///
+/// Removing them leaves the hole they covered open. That is intended here and nowhere else: this
+/// path resamples, so the decomposition closes the hole by choosing a surface through it. Repair,
+/// which may not invent geometry, must keep refusing this model.
+pub fn drop_zero_depth_sheets(triangles: &mut Vec<[u32; 3]>) -> usize {
+    let mut by_vertices: ahash::AHashMap<[u32; 3], Vec<usize>> =
+        ahash::AHashMap::with_capacity(triangles.len());
+    for (i, t) in triangles.iter().enumerate() {
+        let mut key = *t;
+        key.sort_unstable();
+        by_vertices.entry(key).or_default().push(i);
+    }
+    let mut drop = vec![false; triangles.len()];
+    for indices in by_vertices.values() {
+        if indices.len() < 2 {
+            continue;
+        }
+        // Opposite winding is the same three vertices in an opposite cyclic order, which a rotation
+        // of one triangle cannot produce. Tiny groups, so comparing each against the first is enough.
+        let first = triangles[indices[0]];
+        let rotated = |t: [u32; 3]| {
+            [
+                [t[0], t[1], t[2]],
+                [t[1], t[2], t[0]],
+                [t[2], t[0], t[1]],
+            ]
+        };
+        let first_order = rotated(first);
+        for &i in &indices[1..] {
+            let other = triangles[i];
+            let opposite = !first_order.contains(&other)
+                && (rotated(other).contains(&[first[0], first[2], first[1]])
+                    || rotated(other).contains(&[first[1], first[0], first[2]]));
+            if opposite {
+                drop[i] = true;
+                drop[indices[0]] = true;
+            }
+        }
+    }
+    let before = triangles.len();
+    let mut i = 0usize;
+    triangles.retain(|_| {
+        let keep = !drop[i];
+        i += 1;
+        keep
+    });
+    before - triangles.len()
+}
+
+/// Classify the components: those that are closed and almost entirely inside another, and those
+/// that are mostly inside another but not closed.
+///
+/// Shared so the scan and the removal cannot disagree about what a cavity is.
+fn classify_cavity_components(mesh: &IndexedMesh) -> (Vec<u32>, Vec<u32>) {
+    let comps = triangle_components(mesh);
+    let interior = compute_interior_face_flags_against_other_components(mesh, &comps);
+    let n_comps = comps.iter().copied().max().unwrap_or(0) as usize + 1;
+    let mut comp_total = vec![0usize; n_comps];
+    let mut comp_interior = vec![0usize; n_comps];
+    for (fi, &is_interior) in interior.iter().enumerate() {
+        let c = comps[fi] as usize;
+        comp_total[c] += 1;
+        if is_interior {
+            comp_interior[c] += 1;
+        }
+    }
+    let mut closed = Vec::new();
+    let mut broken = Vec::new();
+    for c in 0..n_comps as u32 {
+        let tot = comp_total[c as usize];
+        let int = comp_interior[c as usize];
+        if tot == 0 {
+            continue;
+        }
+        if !component_is_closed(mesh, &comps, c) {
+            // Half its faces buried in another component is a shell that is mostly inside it. The
+            // closedness test cannot see this one, and neither can a threshold tuned for the cull.
+            if int * 2 >= tot {
+                broken.push(c);
+            }
+            continue;
+        }
+        if int * 20 >= tot * 19 {
+            closed.push(c);
+        }
+    }
+    (closed, broken)
+}
+
+/// Find the cavities. Same rule the cull uses - a closed component whose faces are almost all
+/// interior to another component - plus the broken ones, reported separately.
+pub fn scan_cavities(mesh: &IndexedMesh) -> CavityScan {
+    if mesh.triangles.len() < 4 {
+        return CavityScan::default();
+    }
+    let (closed, broken) = classify_cavity_components(mesh);
+    let comps = triangle_components(mesh);
+    let mut scan = CavityScan {
+        components: closed.len(),
+        broken_components: broken.len(),
+        ..CavityScan::default()
+    };
+    for c in closed.iter().chain(broken.iter()).copied() {
+        let mut volume = 0.0f64;
+        for (fi, tri) in mesh.triangles.iter().enumerate() {
+            if comps[fi] != c {
+                continue;
+            }
+            scan.triangles += 1;
+            let a = mesh.positions[tri[0] as usize];
+            let b = mesh.positions[tri[1] as usize];
+            let d = mesh.positions[tri[2] as usize];
+            volume += (a.x as f64 * (b.y as f64 * d.z as f64 - b.z as f64 * d.y as f64)
+                - a.y as f64 * (b.x as f64 * d.z as f64 - b.z as f64 * d.x as f64)
+                + a.z as f64 * (b.x as f64 * d.y as f64 - b.y as f64 * d.x as f64))
+                / 6.0;
+        }
+        scan.volume += volume.abs();
+    }
+    scan
+}
+
+/// Delete the cavity components, returning the triangle count removed.
+///
+/// `include_broken` decides whether a cavity whose shell is broken counts, which is the difference
+/// between filling a modelled hollow and making a damaged model solid. Deleting one removes surface
+/// rather than material: the cavity encloses nothing, so what remains is the outer shell, solid
+/// except where the cavity broke through it. Closing that is the resampler's job, which may invent
+/// geometry; repair keeps refusing this model.
+pub fn remove_cavities(mesh: &mut IndexedMesh, include_broken: bool) -> usize {
+    if mesh.triangles.len() < 4 {
+        return 0;
+    }
+    let (closed, broken) = classify_cavity_components(mesh);
+    let mut drop: AHashSet<u32> = closed.into_iter().collect();
+    if include_broken {
+        drop.extend(broken);
+    }
+    if drop.is_empty() {
+        return 0;
+    }
+    let comps = triangle_components(mesh);
+    let before = mesh.triangles.len();
+    let mut i = 0usize;
+    mesh.triangles.retain(|_| {
+        let keep = !drop.contains(&comps[i]);
+        i += 1;
+        keep
+    });
+    before - mesh.triangles.len()
+}
+
 fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
     if mesh.triangles.len() < 4 {
         return (0, 0);
@@ -1192,18 +1402,31 @@ fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
 }
 // --- individual passes ---------------------------------------------------
 
-/// A vertex weld and the collapse it creates, refused when it would leave the mesh worse.
+/// Keep a pass's work only when it did not make any of the five classes worse.
 ///
-/// A weld is a heuristic and it can leave a mesh worse than it found it. Joining two
-/// surfaces a hair apart is the point, and where three of them meet the junction is
-/// non-manifold; the reference resolves that with a boolean union and there is no union
-/// here. So the weld answers for its own work: it is kept only when it did not make any
-/// of the five classes worse, and the refusal is returned so a stage can say so rather
-/// than report a repair it did not make.
+/// Called *after* the pass, not around it, and that is the whole point. `evaluate` builds a full
+/// half-edge topology — about a millisecond per thousand triangles — so measuring a mesh before a
+/// pass that then changes nothing is the pass's own cost doubled. Most passes on most files change
+/// nothing, and on the corpus that wasted measurement was seconds per file: a woven part spent 5.1s
+/// of 8.8s in three rounds that reported `changed=0`.
 ///
-/// The guard is here rather than at the call sites because four stages stitch, and one
-/// of them forgetting to check is how a mesh came out of a repair with more non-manifold
-/// edges than it went in with.
+/// Weighing a pass only when it has something to weigh is free: `before` is a clone, which for a
+/// million triangles is three `Vec` copies, and the pass's own answer already says whether it
+/// touched anything.
+///
+/// `before` is the mesh as the pass found it, and `changed` what the pass did. Returns what to
+/// report and whether the pass was refused.
+fn judge(mesh: &mut IndexedMesh, before: IndexedMesh, changed: usize) -> (usize, bool) {
+    if changed == 0 {
+        return (0, false);
+    }
+    if crate::evaluate::evaluate(mesh).worse_than(&crate::evaluate::evaluate(&before)) {
+        *mesh = before;
+        return (0, true);
+    }
+    (changed, false)
+}
+
 /// The face cull. Two classes of face live in here and they behave nothing alike, so they are
 /// judged separately.
 ///
@@ -1229,16 +1452,10 @@ fn cull_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
 /// a hole keeps it rather than trading a hidden hole for a visible one.
 fn cull_repeated_vertex_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
     let before = mesh.clone();
-    let health = crate::evaluate::evaluate(&before);
     let count = mesh.triangles.len();
     mesh.triangles
         .retain(|t| !(t[0] == t[1] || t[1] == t[2] || t[0] == t[2]));
-    let removed = count - mesh.triangles.len();
-    if removed > 0 && crate::evaluate::evaluate(mesh).worse_than(&health) {
-        *mesh = before;
-        return (0, true);
-    }
-    (removed, false)
+    judge(mesh, before, count - mesh.triangles.len())
 }
 
 /// Duplicate faces and collinear faces, refused when either would leave the mesh worse.
@@ -1256,45 +1473,195 @@ fn cull_repeated_vertex_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
 /// refused for it; with the fill the same removal has somewhere to go.
 fn cull_duplicate_and_zero_area_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
     let before = mesh.clone();
-    let health = crate::evaluate::evaluate(&before);
     let removed = cull_degenerate_and_duplicate(mesh);
-    let mut filled = 0;
-    if removed > 0 {
-        // No cap, for the same reason the split fills its rims uncapped: these are not holes in the
-        // mesh as it arrived, they are what the removal exposed.
-        filled = crate::holes::holes_all(mesh, usize::MAX);
-        // And the rims meet at pinches, which the fill skips by design because a pinched loop is not
-        // a simple cycle. Splitting the pinch makes those loops simple, which is the same recipe the
-        // split uses on its own rims.
-        let pinches = crate::topology_passes::split_pinched_vertices(mesh);
-        if pinches > 0 {
-            filled += crate::holes::holes_all(mesh, usize::MAX);
-        }
-        if filled > 0 {
-            let _ = unify_winding(mesh);
-        }
+    if removed == 0 {
+        return (0, false);
     }
-    if removed > 0 && crate::evaluate::evaluate(mesh).worse_than(&health) {
-        *mesh = before;
-        return (0, true);
+    // No cap, for the same reason the split fills its rims uncapped: these are not holes in the
+    // mesh as it arrived, they are what the removal exposed.
+    let mut filled = crate::holes::holes_all(mesh, usize::MAX);
+    // And the rims meet at pinches, which the fill skips by design because a pinched loop is not a
+    // simple cycle. Splitting the pinch makes those loops simple, which is the same recipe the
+    // split uses on its own rims.
+    let pinches = crate::topology_passes::split_pinched_vertices(mesh);
+    if pinches > 0 {
+        filled += crate::holes::holes_all(mesh, usize::MAX);
     }
-    (removed + filled, false)
+    if filled > 0 {
+        let _ = unify_winding(mesh);
+    }
+    judge(mesh, before, removed + filled)
+}
+
+/// Stitch only where the winding agrees, and answer for it the same way the loose stitch does.
+///
+/// This is the reference's *first* stitch: orientation respected. Its second, later in its script, is
+/// the loose one, and that is what [`stitch_vertices`] is. Running the strict pass first is what
+/// lets the loose pass be reached at all on a model like corbu, where a blind weld joins surfaces
+/// that face opposite ways and manufactures non-manifold edges.
+/// Fill holes, and answer for it the way every other destructive pass does.
+///
+/// This pass had no guard, and that is not a detail. A change to it once opened 1376 boundary edges
+/// across 35 loops on a model that had none, and nothing stopped it: the damage was simply carried
+/// through the rest of the pipeline and reported at the end. Every other pass that can damage a mesh
+/// is checked against the same five classes before it is kept; these were the exception.
+///
+/// `trivial_only` selects the pass; a refusal is returned so the caller can report it rather than
+/// pass it off as a fill.
+fn fill_holes_guarded(mesh: &mut IndexedMesh, max_edges: usize, trivial_only: bool) -> (usize, bool) {
+    let before = mesh.clone();
+    let filled = if trivial_only {
+        crate::holes::holes_trivial(mesh)
+    } else {
+        crate::holes::holes_all(mesh, max_edges)
+    };
+    judge(mesh, before, filled)
+}
+
+/// A vertex weld and the collapse it creates, refused when it would leave the mesh worse.
+///
+/// A weld is a heuristic and it can leave a mesh worse than it found it. Joining two
+/// surfaces a hair apart is the point, and where three of them meet the junction is
+/// non-manifold; the reference resolves that with a boolean union and there is no union
+/// here. So the weld answers for its own work: it is kept only when it did not make any
+/// of the five classes worse, and the refusal is returned so a stage can say so rather
+/// than report a repair it did not make.
+///
+/// The guard is here rather than at the call sites because four stages stitch, and one
+/// of them forgetting to check is how a mesh came out of a repair with more non-manifold
+/// edges than it went in with.
+fn stitch_vertices_oriented(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, bool) {
+    let before = mesh.clone();
+    let welded = weld_vertices_oriented(mesh, epsilon);
+    judge(mesh, before, welded)
 }
 
 fn stitch_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, usize, bool) {
     let before = mesh.clone();
-    let health = crate::evaluate::evaluate(&before);
     let welded = weld_vertices(mesh, epsilon);
-    let (collapsed, _) = cull_faces(mesh);
-    // Either half can do the damage: the weld joins surfaces, and the collapse that follows
-    // removes faces. Guarding on the weld alone let a run that welded nothing remove 996
-    // duplicate faces and leave the mesh with nine non-manifold edges and three boundary
-    // edges it did not have.
-    if (welded > 0 || collapsed > 0) && crate::evaluate::evaluate(mesh).worse_than(&health) {
-        *mesh = before;
-        return (0, 0, true);
+    // No face culling here, and that is a deliberate departure from what this pass used to do.
+    //
+    // Culling duplicates after the weld removes faces, and removing a face opens the surface where its
+    // neighbours no longer pair. The openings are real boundary loops, and the hole pass fills them -
+    // flat, because a loop's minimum-area triangulation is a facet. That is where this engine's
+    // "successful" repairs of a model like corbu got their flat faces inside a cavity: measured on
+    // corbu, the stitch reported 653 changes and the hole pass then filled 141 faces' worth of loops;
+    // with the cull removed the stitch reports **0 changes**, because the weld alone found nothing at
+    // this tolerance, and the hole pass fills **0**. The mesh closes either way - what changes is that
+    // it closes by not being opened, rather than by being capped.
+    //
+    // The reference does the same: its stitch step welds and nothing else, and its duplicate removal
+    // is a separate later step. Which is also where ours is - `cull_faces` runs on its own at the
+    // double-faces stage.
+    //
+    // `collapsed` stays in the signature and is always zero so the stage's report keeps its shape.
+    let (welded, refused) = judge(mesh, before, welded);
+    (welded, 0, refused)
+}
+
+/// Area-weighted normal per vertex, which is what "which way does the surface face here" means.
+fn vertex_normals(mesh: &IndexedMesh) -> Vec<Vec3> {
+    let mut normals = vec![Vec3::new(0.0, 0.0, 0.0); mesh.positions.len()];
+    for t in &mesh.triangles {
+        let (a, b, c) = (
+            mesh.positions[t[0] as usize],
+            mesh.positions[t[1] as usize],
+            mesh.positions[t[2] as usize],
+        );
+        // The cross product's length is twice the area, so accumulating it un-normalised weights
+        // each face by the area it contributes - which is the point.
+        let n = b.sub(a).cross(c.sub(a));
+        for &v in t.iter() {
+            let slot = &mut normals[v as usize];
+            slot.x += n.x;
+            slot.y += n.y;
+            slot.z += n.z;
+        }
     }
-    (welded, collapsed, false)
+    normals
+}
+
+/// Weld by position, but only where the winding agrees.
+///
+/// The reference's automatic repair stitches twice: once respecting the orientation, then again with
+/// the orientation ignored. The first joins only vertices whose incident faces already agree on which
+/// way the surface faces there; the second joins the rest regardless. This engine was loose-only,
+/// which is why forcing it wider on corbu manufactured non-manifold edges and the run refused: a blind
+/// weld across a break-through sheet joins two surfaces facing opposite ways, and that is not a
+/// repair.
+///
+/// Vertices within `epsilon` of each other are clustered by the direction their surface faces, and
+/// only same-facing vertices merge. `epsilon` is relative to the bbox diagonal, as everywhere else.
+fn weld_vertices_oriented(mesh: &mut IndexedMesh, epsilon: f32) -> usize {
+    if mesh.triangles.is_empty() {
+        return 0;
+    }
+    let diag = mesh.bbox().diag().max(1e-6);
+    let step = (epsilon * diag).max(1e-7);
+    let inv_step = 1.0 / step;
+
+    let normals = vertex_normals(mesh);
+    let mut cells: AHashMap<(i32, i32, i32), Vec<u32>> =
+        AHashMap::with_capacity(mesh.positions.len());
+    for (i, p) in mesh.positions.iter().enumerate() {
+        cells
+            .entry((
+                (p.x * inv_step).round() as i32,
+                (p.y * inv_step).round() as i32,
+                (p.z * inv_step).round() as i32,
+            ))
+            .or_default()
+            .push(i as u32);
+    }
+
+    let mut new_positions: Vec<Vec3> = Vec::with_capacity(mesh.positions.len());
+    let mut remap: Vec<u32> = Vec::with_capacity(mesh.positions.len());
+    // A representative per merged group, so each group is created once.
+    let mut merged_into: AHashMap<(i32, i32, i32), Vec<(u32, Vec3)>> = AHashMap::new();
+
+    for (i, p) in mesh.positions.iter().enumerate() {
+        let key = (
+            (p.x * inv_step).round() as i32,
+            (p.y * inv_step).round() as i32,
+            (p.z * inv_step).round() as i32,
+        );
+        let n = normals[i];
+        let groups = merged_into.entry(key).or_default();
+        // Same cell *and* same facing: the dot product is positive when the two surfaces point the
+        // same way, and a zero-length normal (a vertex with no faces, or fully degenerate ones)
+        // agrees with anything, because it says nothing.
+        let n_len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
+        let slot = groups.iter().find_map(|(idx, m)| {
+            let m_len = (m.x * m.x + m.y * m.y + m.z * m.z).sqrt();
+            let agreement = if n_len == 0.0 || m_len == 0.0 {
+                1.0
+            } else {
+                (n.x * m.x + n.y * m.y + n.z * m.z) / (n_len * m_len)
+            };
+            if agreement > 0.0 { Some(*idx) } else { None }
+        });
+        match slot {
+            Some(idx) => remap.push(idx),
+            None => {
+                let idx = new_positions.len() as u32;
+                new_positions.push(*p);
+                groups.push((idx, n));
+                remap.push(idx);
+            }
+        }
+    }
+
+    let merged = mesh.positions.len() - new_positions.len();
+    if merged == 0 {
+        return 0;
+    }
+    for tri in mesh.triangles.iter_mut() {
+        for v in tri.iter_mut() {
+            *v = remap[*v as usize];
+        }
+    }
+    mesh.positions = new_positions;
+    merged
 }
 
 fn weld_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> usize {
@@ -1815,16 +2182,20 @@ fn unify_winding(mesh: &mut IndexedMesh) -> usize {
         return 0;
     }
     let before = mesh.clone();
-    let inconsistent_before = Topology::build(&before).inconsistent_edges();
-    let volume_before = mesh.signed_volume();
     let flipped = unify_winding_once(mesh);
+    if flipped == 0 {
+        return 0;
+    }
+    // Both measurements below are paid only when the pass flipped something, for the same reason
+    // `judge` is called after its pass: a mesh nothing was done to has nothing to weigh.
+    //
     // Flipping a set of faces only changes the edges on its boundary, so on a mesh whose
     // disagreements form a cycle no assignment satisfies, every call flips the same faces
     // and the count never moves. That is an oscillation, not a repair: measured on
     // 3DBenchy, 355 faces flipped on every call while the count stayed at 355. Keeping the
     // work only when the count dropped makes the pass idempotent, and a mesh it cannot
     // settle comes out as it went in.
-    if flipped > 0 && Topology::build(mesh).inconsistent_edges() >= inconsistent_before {
+    if Topology::build(mesh).inconsistent_edges() >= Topology::build(&before).inconsistent_edges() {
         *mesh = before;
         return 0;
     }
@@ -1833,8 +2204,8 @@ fn unify_winding(mesh: &mut IndexedMesh) -> usize {
     // out. Measured on the corbu model, where this moved the volume 245 on a 98-unit model and
     // the component vote below had already refused to do the same thing. Consistency is worth
     // having and the model is worth more.
-    if flipped > 0 && (mesh.signed_volume() - volume_before).abs() > volume_before.abs().max(1e-9) * 0.01
-    {
+    let volume_before = before.signed_volume();
+    if (mesh.signed_volume() - volume_before).abs() > volume_before.abs().max(1e-9) * 0.01 {
         *mesh = before;
         return 0;
     }
@@ -3390,6 +3761,60 @@ pub struct DecimationOutcome {
     pub achieved_error: f32,
 }
 
+/// Simplify to an error tolerance, in `meshopt`'s units: a fraction of the mesh's extent.
+///
+/// [`decimate_indexed_to_budget`] is budget-driven. It returns immediately when the mesh is already
+/// within its triangle budget, and it clamps the requested error to a tier list that stops at 0.025,
+/// so it cannot express "simplify by this much and nothing else". Passing it a budget of
+/// `usize::MAX` to mean "no count limit" therefore simplifies *nothing at all*, at any tolerance -
+/// which is exactly what a surfacing pass did until this existed.
+///
+/// Nothing else is applied: no count target, no sections. The error is the only criterion, and it is
+/// not a percentage of anything intuitive. Measured on a 170,790-triangle model: 0.0001 removes two
+/// percent of it, 0.001 removes twenty-eight, 0.005 removes ninety-three, and 0.05 leaves 190
+/// triangles of 170,790. The default is 0.001 because that is a reduction a person can see without
+/// the model being gone, and the value in a reference implementation's dialog is not this quantity.
+pub fn simplify_to_error(mesh: IndexedMesh, target_error: f32) -> IndexedMesh {
+    if target_error <= 0.0 || mesh.triangles.len() < 8 {
+        return mesh;
+    }
+    let indices: Vec<u32> = mesh
+        .triangles
+        .iter()
+        .flat_map(|t| [t[0], t[1], t[2]])
+        .collect();
+    let locks = vec![false; mesh.positions.len()];
+    let Ok(adapter) =
+        meshopt::VertexDataAdapter::new(bytemuck::cast_slice::<_, u8>(&mesh.positions), 12, 0)
+    else {
+        return mesh;
+    };
+    // Zero is the count target, and it is not a mistake: `meshopt` collapses while the result is
+    // still above the target *and* the error is still within tolerance, so a target of zero means
+    // the error is the only thing that stops it. A target of `u32::MAX` reads as "already reached"
+    // and returns the mesh untouched - silently in a release build, where the assert that would
+    // have caught it is compiled out.
+    let decimated = meshopt::simplify_with_locks(
+        &indices,
+        &adapter,
+        &locks,
+        0,
+        target_error,
+        meshopt::SimplifyOptions::LockBorder | meshopt::SimplifyOptions::Regularize,
+        None,
+    );
+    if decimated.len() < 12 {
+        return mesh;
+    }
+    IndexedMesh {
+        positions: mesh.positions,
+        triangles: decimated
+            .chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]])
+            .collect(),
+    }
+}
+
 pub fn decimate_indexed_to_budget(mesh: IndexedMesh, budget: &TriangleBudget) -> DecimationOutcome {
     if !budget.is_decimated || mesh.triangles.len() <= budget.budget_tris {
         return DecimationOutcome {
@@ -4103,5 +4528,64 @@ mod orient_probe {
                 samples.len()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod simplify_to_error_tests {
+    use super::*;
+    use crate::Vec3;
+
+    /// A dense sphere soup. Every triangle is small and the surface is smooth, so a relative error
+    /// tolerance has somewhere to collapse.
+    fn dense_sphere(radius: f32, stacks: usize, slices: usize) -> IndexedMesh {
+        let mut positions = Vec::new();
+        let mut triangles = Vec::new();
+        let point = |i: usize, j: usize| {
+            let phi = std::f32::consts::PI * (i as f32 / stacks as f32);
+            let theta = 2.0 * std::f32::consts::PI * (j as f32 / slices as f32);
+            Vec3::new(
+                radius * phi.sin() * theta.cos(),
+                radius * phi.sin() * theta.sin(),
+                radius * phi.cos(),
+            )
+        };
+        let mut corner = |p: Vec3, positions: &mut Vec<Vec3>| {
+            let id = positions.len() as u32;
+            positions.push(p);
+            id
+        };
+        for i in 0..stacks {
+            for j in 0..slices {
+                let (p00, p10, p11, p01) = (
+                    point(i, j),
+                    point(i + 1, j),
+                    point(i + 1, (j + 1) % slices),
+                    point(i, (j + 1) % slices),
+                );
+                for tri in [[p00, p11, p10], [p00, p01, p11]] {
+                    let a = corner(tri[0], &mut positions);
+                    let b = corner(tri[1], &mut positions);
+                    let c = corner(tri[2], &mut positions);
+                    triangles.push([a, b, c]);
+                }
+            }
+        }
+        IndexedMesh { positions, triangles }
+    }
+
+    #[test]
+    fn a_relative_error_tolerance_actually_removes_triangles() {
+        let mut mesh = dense_sphere(1.0, 60, 80);
+        // Weld first: `meshopt` collapses edges, and an edge needs two triangles to share it. A
+        // soup with a fresh vertex per corner has no shared edges and nothing to collapse.
+        mesh.weld_by_position();
+        let before = mesh.triangles.len();
+        assert!(before > 5000, "the fixture should be dense, got {before}");
+        let after = simplify_to_error(mesh, 0.05).triangles.len();
+        assert!(
+            after < before,
+            "a five percent error tolerance must remove triangles: {before} -> {after}"
+        );
     }
 }
