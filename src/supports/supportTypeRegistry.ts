@@ -779,7 +779,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: true,
         canBeGridHost: false,
-        hostsKickstand: false,
+        hostsKickstand: true,
         isAutoPlaced: true,
         hasSegments: true,
         label: 'Twigs',
@@ -823,7 +823,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
-        hostsKickstand: false,
+        hostsKickstand: true,
         isAutoPlaced: true,
         hasSegments: true,
         label: 'Sticks',
@@ -930,7 +930,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
-        hostsKickstand: false,
+        hostsKickstand: true,
         isAutoPlaced: true,
         hasSegments: true,
         label: 'Stumps',
@@ -2562,15 +2562,20 @@ export function typesDeclaringOwnHistoryEntryWithoutUpdate(): readonly SupportTy
  * Mirrors each descriptor's `hostsKickstand` with the literals kept, so the host
  * union narrows instead of widening to every type. `derivedTypeSubsets.test.ts`
  * holds the two in step.
+ *
+ * A kickstand's host knot rides a shaft, so the types that carry one are the
+ * hosts: those with real segments, plus a brace, whose span is a selectable
+ * pseudo-shaft. A leaf is the one knot host left out -- its pseudo-shaft is a
+ * contact cone, not a span.
  */
 export const KICKSTAND_HOST_BY_TYPE = {
     trunk: true,
     branch: true,
     leaf: false,
-    twig: false,
-    stick: false,
+    twig: true,
+    stick: true,
     brace: true,
-    stump: false,
+    stump: true,
     kickstand: true,
 } as const satisfies Record<SupportTypeId, boolean>;
 
