@@ -230,9 +230,9 @@ export interface SupportTypeDescriptor {
     /**
      * Whether a kickstand's host knot may ride this type's segments.
      *
-     * A kickstand braces a shaft standing in the print, which another kickstand
-     * is. Read through `KICKSTAND_HOST_TYPES`, or `KICKSTAND_HOST_BY_TYPE` for
-     * the union.
+     * A kickstand braces a span standing in the print: another kickstand, or a
+     * brace, whose knots ride its pseudo-shaft. Read through
+     * `KICKSTAND_HOST_TYPES`, or `KICKSTAND_HOST_BY_TYPE` for the union.
      */
     hostsKickstand: boolean;
     /**
@@ -873,7 +873,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         repairsHostDiameterOnAdd: false,
         mayReachSideways: false,
         canBeGridHost: false,
-        hostsKickstand: false,
+        hostsKickstand: true,
         isAutoPlaced: false,
         hasSegments: false,
         label: 'Braces',
@@ -2232,7 +2232,7 @@ export const JOINT_DRAG_PREVIEW_BY_TYPE = {
     leaf: false,
     twig: false,
     stick: false,
-    brace: false,
+    brace: true,
     stump: false,
     kickstand: true,
 } as const satisfies Record<SupportTypeId, boolean>;
@@ -2569,7 +2569,7 @@ export const KICKSTAND_HOST_BY_TYPE = {
     leaf: false,
     twig: false,
     stick: false,
-    brace: false,
+    brace: true,
     stump: false,
     kickstand: true,
 } as const satisfies Record<SupportTypeId, boolean>;
