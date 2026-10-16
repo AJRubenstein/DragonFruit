@@ -224,6 +224,19 @@ back was the crossing soup re-triangulated at a scale nothing in the model share
 underside: 1.2e-5 and 1e-5 both star every pocket, 1e-4 and coarser are clean, and 1e-4 keeps the most
 detail at 499,168 triangles against the 603,772 the default produced.
 
+The resolve also triangulates a flat region as one polygon, so a plate's whole underside came back as
+a fan of needles bridging its pockets, and `as_original` cannot help: on a round trip there is no
+operand for the provenance to point at, and the construction is what re-triangulated. The rebuild
+therefore ends with the loader's own refinement ([`crate::io::refine_coarse_faces`]), at its
+threshold and budget, so it hands back a surface at the density a read would have given it. Measured
+over that file's base, faces within 1 mm of the bottom:
+
+| base | faces | median edge | p99 | longest |
+| --- | --- | --- | --- | --- |
+| the input | 13,078 | 0.536 mm | 3.011 mm | 3.155 mm |
+| the resolve alone | 7,717 | 0.309 mm | 14.563 mm | 27.028 mm |
+| the resolve plus the refinement | 15,131 | 0.580 mm | 3.031 mm | 3.151 mm |
+
 ## The third mode: surface to solid
 
 This mode is neither a resampler nor a decomposition. It closes what is open, resolves the mesh into
