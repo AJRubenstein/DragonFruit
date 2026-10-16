@@ -95,14 +95,19 @@ union of the outer surface, which is the one thing this engine does not have in 
 | | this engine, rebuild then repair |
 | --- | --- |
 | inconsistent / non-manifold / loops / pinches | **0 / 0 / 0 / 0** |
-| parts | 5 |
-| volume | 98.736 |
-| triangles | 1,018,668 |
-| capping faces added | **29** |
+| parts | 12 |
+| volume | 98.602 |
+| triangles | 153,034 (from 153,044) |
+| self-intersecting faces | 4,724, left as a note |
+| the whole repair's changes | **721 + 10** |
 
-Twenty-nine caps against the local pipeline's 3,438 plus 1,457 — because nothing is being closed flat. The
-surface is resolved into a solid instead, which is what the reference does, and it is where the flat
-sheets inside the cavity and the fanned gap came from.
+The changed column is the point: 701 faces flipped by the orientation pass and 10 culled as duplicate
+faces, and every other stage reports **0**. The local pipeline's comparable run changes 3,736 vertices and
+fills 2,951 holes, which is what closing a surface looks like — and it is where the flat sheets inside the
+cavity and the fanned gap came from. The rebuilt mesh is already closed, so nothing has to be.
+
+The one residual is the self-intersection note, which is deliberate: it is not one of the five classes, it
+does not stop a print, and the surface is only rewritten when the caller asks for it.
 
 The tolerance matters more than anything else in that chain: the mode's default of `0.001` simplifies the
 surface before resolving it and takes this file from 961,504 triangles to 158,190, throwing the detail
@@ -153,29 +158,106 @@ a pass is kept only when the total strictly drops, so it cannot wander. Measured
 It costs about a third of a run on those files and nothing on files that are already clean, because a
 mesh with no defects breaks out before the first attempt. Eleven of the twelve corpus files are unchanged.
 
+### The file is not the mesh: every export here is a soup
+
+Every export path this engine has produces a triangle soup — an STL carries no vertex indices, and the
+staged `positions.bin` is nine floats per triangle — and the loader welds a soup at
+`DEFAULT_MERGE_EPSILON` relative to the diagonal. So **a weld is applied to the repair's own output the
+moment a caller saves it**, and a weld coarser than the repair's work undoes that work.
+
+It was `1e-5`, and that is coarser than a dense mesh can take. Measured on the reported model: the
+rebuild-then-repair output is `0/0/0/0` in memory and comes back from an STL with **177 winding edges**.
+The weld joins vertices the repair had deliberately kept apart — a separated non-manifold junction, a
+patch rim — and puts the resolved defects back into the file the user renders. At `1e-6` the same file
+round-trips as `0/0/0/0`.
+
+Two consequences worth keeping straight:
+
+- **A render is of the file, not of the mesh.** Counters read in memory can be perfect while the file
+  handed over is not, and that gap is what "the repair says success and it looks wrong" turns out to be
+  made of. Any claim about output quality has to be made from the file.
+
+**Closed, and it changed two results.** The pipeline now ends welded, and the weld's own damage earns one
+more pass of the ordered stages. Measured on corbu, in memory and re-read from the file — they agree now,
+which they did not before:
+
+| corbu | in memory | as a file |
+| --- | --- | --- |
+| the ordered stages alone | 26 / 25 / 0 / 48 | 64 / 117 / 1 / 193 |
+| + the weld at the end | 26 / 117 / 1 / 193 | 26 / 117 / 1 / 193 |
+| + the weld's damage settled | **0 / 0 / 0 / 0** | **0 / 0 / 0 / 0** |
+
+The middle row is the finding. Welding the *output* turns the repair's own state into the file's, and the
+counts go from a plausibly-clean `26/25/0/48` to `117/193`. Those were always the file's numbers: measured
+straight off the previous build's output, corbu is **64/117/1/193** with 81 faces carrying a repeated
+vertex, and Harbinger is **103 winding edges and 244 repeated-vertex faces** — against `0/0/0/0` reported
+in memory. "The repair says success and it looks wrong" is exactly this and nothing else.
+
+Three things that are *not* the fix, each measured:
+
+- **Displacing every coincident copy.** The pipeline's own separations are four loader cells apart, so they
+  survive the weld; the *pinch* copies sit at exactly the same position, and a pinch is how a support
+  attaches to the model it supports. Moving one separates a shell from the shell it touches — measured on
+  the supported file in the corpus, components 3,148 to 5,442 and classes `0/0/0/0` to `44/132/220`. The
+  copies stay where they are, and the weld merges them back, which is what a re-read does with them anyway.
+- **Welding the union's output.** Most of a supported model's coincident vertices are the boolean's: it
+  returns the positions of both operands, so a vertex the two sides share comes back twice — 28,009 of
+  137,987, measured. Welding there merges duplicate *faces* into existence early enough for the double-face
+  stage to cull them, which cost that file 11,148 faces and took its parts from 43 to 239.
+- **Moving the weld rather than the passes.** The defect loop does not repair a weld: run against the
+  welded output, `repair_rounds` changed nothing. The *ordered stages* do, and their counts say which —
+  the non-manifold split at 1,288 and the settle at 1,745.
+
+So a pass whose weld merged or culled anything earns one more pass of the ordered stages, and a mesh the
+weld leaves alone costs exactly what it did before. The result, in memory and re-read from the file (they
+agree on every row), with what the previous build's *file* measured for comparison:
+
+| file | triangles | winding / non-manifold / loops / pinches | the previous build, as a file |
+| --- | --- | --- | --- |
+| corbu | 1,020,820 | **0 / 0 / 0 / 0** | 64 / 117 / 1 / 193 |
+| poussin | 170,790 | **0 / 0 / 0 / 0** | 0 / 0 / 0 / 0 |
+| `COOKIE_b4` | 185,312 | **0 / 0 / 0 / 0** | 0 / 0 / 0 / 0, 50 repeated-vertex faces |
+| 3DBenchy | 405,420 | **0 / 0 / 0 / 0** | 0 / 0 / 0 / 0, 11 |
+| Harbinger | 3,069,776 | **0 / 0 / 0 / 0** | **103 / 0 / 0 / 0**, 244 |
+
+Two files were never fixed and read as fixed — corbu and Harbinger — and both are fixed now, in the file as
+well as in the report. `fully_repaired` is true on all five.
+
+The invariant is asserted rather than only measured: `prune_and_classify` ends by checking that no two
+distinct vertices share a loader cell, in debug builds, so a pass added later that leaves a copy in place
+fails a fixture rather than shipping. Two notes for whoever reads a number off this engine next: a class
+count taken in memory is now also the count in the file, but **only** through the pipeline that ends welded
+— the `analyze` subcommand on a file with no repair still reports the file; and the second pass is not free,
+it is the ordered stages again, so it costs a run whose weld had work to do.
+
 ### What is still different, measured
+
+Re-measured after the round-trip work, on corbu, from both the mesh and the file (they now agree):
 
 | | winding / non-manifold / loops / pinches | parts | volume | self-intersecting | degenerate |
 | --- | --- | --- | --- | --- | --- |
 | input | 113 / 1364 / 14 / 1390 | 8 | 97.727 | 14,432 | 653 |
-| the reference's output | **0 / 0 / 0 / 0** | **2** | 97.928 | **9,892** | **3** |
-| this engine, local pipeline | 163 / 1363 / 0 / 1389 | 5 | 117.442 | 16,951 | 366 |
-| this engine, rebuild then repair | 177 / **0 / 0 / 0** | 5 | 98.736 | **18,639** | 502 |
+| the reference's output | **0 / 0 / 0 / 0** | **2** | 97.928 | 9,892 | 3 |
+| this engine, local pipeline | **0 / 0 / 0 / 0** | 5 | — | 18,561 | 0 |
+| this engine, rebuild then repair | **0 / 0 / 0 / 0** | 5 | 98.736 | 18,582 | 0 |
 
-Four classes and the volume match on the rebuild path. Three things do not, and the first two are what a
-render shows as stray triangles:
+Every class is zero on both paths now, and the file matches the report. What is left:
 
-- **Self-intersecting faces.** Their repair *halves* them, 14,432 to 9,892. Ours nearly doubles them,
-  because the boolean re-triangulates the sheets it resolves and leaves them overlapping. This is not one
-  of the five classes, but it is what a mesh of loose slivers looks like.
-- **Winding.** Ours comes out at 177 and 163, both *worse* than the input's 113, against their 0. The
-  per-component orientation pass runs and does not settle it, and `unify_winding` refuses to keep a flip
-  that does not reduce the count, so a set of disagreements that form a cycle stays.
-- **Degenerate faces**, 502 against their 3, and **parts**, 5 against 2.
+- **Parts, 5 against their 2.** Still the largest difference, and still the one the kernel notes explain:
+  their boolean removes the triangles contained in the other operand and then joins the boundary-loop
+  pairs, with both sides refined first so the loops match in edge length before anything is joined.
+  Nothing here merges a contained shell into its container. The behaviour is in *How the reference's
+  repair is driven* below; the names and addresses are in the evidence file.
+- **Self-intersecting faces, 18,561 and 18,582 against their 9,892.** Ours are *up* from the input's
+  14,432 where theirs are down to 9,892 — this is not one of the five classes, and it does not stop a
+  print, but it is what a mesh of loose slivers looks like, so it is the number to watch when a render
+  looks rough. The reference's repair *acts* on crossings; this engine leaves them and says so.
+- **Volume.** 98.736 against 97.928 on the rebuild path — 1.0% high, where the input reads 97.727. The
+  local pipeline's volume is not comparable and is not quoted: its part count and its surface differ
+  enough that the number no longer means the same thing.
 
-The self-intersection split was tried on the rebuilt mesh and refused by its own guard: 24,876
-intersecting pairs, 13,638 faces refined, 37,106 new vertices, and the refined surface is worse by the
-five classes.
+**Counters, not renders.** Every number here is a count. The standing rule for this work applies: a change
+that improves a counter and cannot be seen in a render is not known to be an improvement.
 
 ### A fan is not the difference any more
 
@@ -307,11 +389,20 @@ passes last ran, so it was not provably a repeat. The tests that remain are the 
 
 ## Next steps
 
-1. The absolute stitch ladder: replace the derived weld tolerance with the reference's absolute
-   one, so loading a file one way or another cannot move it.
-2. The ordered script: one instance of each pass, in the target order, instead of rounds.
-3. The degenerate criterion, topological rather than by area.
-4. `Gusano_de_Dune_70%.stl`, and a last-resort rebuild for a mesh no local pass can settle.
+0. **Closed: the round trip, and corbu and Harbinger with it.** The pipeline ends welded, the weld's damage
+   earns one more pass of the ordered stages, and the invariant is asserted in debug builds. All five files
+   measure `0/0/0/0` in memory and re-read from the file. See *The file is not the mesh* above.
+1. **Contained shells, and the part count.** 12 parts against the reference's 2, 6 on the local pipeline,
+   and it is the largest difference left. Their boolean removes what is contained, then joins the
+   boundary-loop pairs, and refines both sides first so the loops match in edge length. Nothing here
+   merges a shell into the shell that contains it. See *Why their boolean joins cleanly* in the evidence
+   file for the two operators that do it.
+2. The absolute stitch ladder: replace the derived weld tolerance with the reference's absolute one, so
+   loading a file one way or another cannot move it.
+3. The ordered script: one instance of each pass, in the target order, instead of rounds.
+4. The degenerate criterion, topological rather than by area — and do not move it after the fills; that
+   is measured out.
+5. `Gusano_de_Dune_70%.stl`, and a last-resort rebuild for a mesh no local pass can settle.
 
 ## Where the evidence lives
 

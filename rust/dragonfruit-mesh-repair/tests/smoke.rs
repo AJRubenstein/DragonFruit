@@ -470,9 +470,6 @@ fn a_shared_edge_is_separated() {
         .iter()
         .map(|step| step.name.as_str())
         .collect();
-    for step in &outcome.report.steps {
-        eprintln!("[stages] {:<26} changed={:<6} {}", step.name, step.changed, step.notes.clone().unwrap_or_default());
-    }
     let union_at = names
         .iter()
         .position(|name| *name == "union_overlapping_parts")

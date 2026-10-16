@@ -133,9 +133,26 @@ pub fn refine_coarse_faces(mesh: IndexedMesh) -> IndexedMesh {
     )
 }
 
-/// Default merge epsilon used when reading unindexed soup (STL). Expressed
-/// as a fraction of the mesh bbox diagonal.
-pub const DEFAULT_MERGE_EPSILON: f32 = 1e-5;
+/// Default merge epsilon used when reading an unindexed soup. Relative to the bbox diagonal.
+///
+/// **This constant decides whether a repaired mesh survives being written and read back**, because every
+/// export path here produces a soup: an STL carries no vertex indices, and the staged `positions.bin` is
+/// nine floats per triangle. So the weld applied here is applied again to the repair's own output the
+/// moment a caller saves it, and a weld coarser than the repair's work undoes that work.
+///
+/// It was `1e-5`, and that was coarser than a dense mesh can take. On the reported 1.02M-triangle model
+/// the repair's output is `0/0/0/0` in memory and comes back from an STL with **177 winding edges** at
+/// `1e-5`: the weld joins vertices the repair had deliberately kept apart — a separated non-manifold
+/// junction, a patch rim — and the defects the repair resolved reappear in the file the user renders. At
+/// `1e-6` the same file round-trips as `0/0/0/0`.
+///
+/// The other side of the trade is that a sloppy export (one that writes the same position twice with
+/// different floats) now arrives less welded, so the repair sees more boundaries and does more work.
+/// That is the right way round: the repair's own stitch is what welds a mesh, at a tolerance derived from
+/// the mesh, and the loader welding coarser than that is the loader doing the repair's job badly. On the
+/// corpus this costs one extra component on one 952-part file and nothing else, and several files get
+/// faster because they have less to repair.
+pub const DEFAULT_MERGE_EPSILON: f32 = 1e-6;
 
 #[cfg(test)]
 mod tests {

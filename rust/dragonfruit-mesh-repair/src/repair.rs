@@ -187,13 +187,25 @@ impl RepairOptions {
 }
 
 impl ResolvedOptions {
-    /// How far the non-manifold split moves the surfaces it separates.
+    /// How far the split moves a separated surface.
     ///
-    /// Four weld steps, so it exceeds the step of every weld this pipeline will apply afterwards. The
-    /// displacement is what stops a re-read merging the separated surfaces back, and a weld whose step
-    /// were larger than the displacement would find them again.
-    fn split_offset(&self) -> f32 {
-        (4.0 * self.weld_step).max(1e-7)
+    /// Two things set the floor. One is this pipeline's own weld: four of its steps, which is what stops a
+    /// re-read welding the separated surfaces back. The other is the **loader's** weld, which is larger,
+    /// and it is the one that decides what a caller sees.
+    ///
+    /// The loader welds a triangle soup at `DEFAULT_MERGE_EPSILON` relative to the bbox diagonal, and a
+    /// soup is what every export path here produces: an STL carries no vertex indices, and the staged
+    /// `positions.bin` is nine floats per triangle. So a mesh whose separated surfaces are closer
+    /// together than the loader's weld does not survive a round trip through a file — the loader welds
+    /// them back, and the defects the split resolved reappear in the file the user renders.
+    ///
+    /// Measured on the reported model: in memory the rebuild-then-repair output is 0/0/0/0, the split had
+    /// displaced separated surfaces by 8e-5 mm, the loader welds at 1.9e-4 mm, and the STL that came out
+    /// of it had 177 winding edges. The separation has to beat the weld that will read it.
+    fn split_offset(&self, mesh: &IndexedMesh) -> f32 {
+        let own = 4.0 * self.weld_step;
+        let loader = 4.0 * crate::io::DEFAULT_MERGE_EPSILON * mesh.bbox().diag().max(1e-6);
+        own.max(loader).max(1e-7)
     }
 }
 
@@ -227,6 +239,37 @@ impl OrientationGate {
         self.changed_since = 0;
         flipped
     }
+}
+
+/// How many vertices share a loader weld cell with another index.
+///
+/// A separation two surfaces keep between them is a *distinct index at the same position*, and every
+/// export path here is a triangle soup whose loader welds by position, so any pair this counts is a
+/// separation the next read undoes. The pipeline welds its output and asserts on this in debug builds;
+/// see the end of `prune_and_classify`.
+fn coincident_count(mesh: &IndexedMesh) -> usize {
+    // The loader multiplies by the reciprocal of the step; dividing by it instead rounds differently on
+    // the last ulp, which is enough to put a vertex on the other side of a cell boundary from where the
+    // loader puts it. Same expression, so the same answer.
+    let step = (crate::io::DEFAULT_MERGE_EPSILON * mesh.bbox().diag().max(1e-6)).max(1e-7);
+    let inv_step = 1.0 / step;
+    let mut first: ahash::AHashMap<(i32, i32, i32), u32> = ahash::AHashMap::new();
+    let mut collisions = 0usize;
+    for (i, p) in mesh.positions.iter().enumerate() {
+        let key = (
+            (p.x * inv_step).round() as i32,
+            (p.y * inv_step).round() as i32,
+            (p.z * inv_step).round() as i32,
+        );
+        match first.get(&key) {
+            Some(&j) if j != i as u32 => collisions += 1,
+            Some(_) => {}
+            None => {
+                first.insert(key, i as u32);
+            }
+        }
+    }
+    collisions
 }
 
 /// Passes the defect loop may run, across all its classes.
@@ -298,7 +341,7 @@ fn repair_one_defect_class(
     match class {
         DefectClass::NonManifoldEdges => {
             let walls = crate::topology_passes::remove_coincident_faces(mesh);
-            let split = crate::topology_passes::split_non_manifold_edges(mesh, options.split_offset());
+            let split = crate::topology_passes::split_non_manifold_edges(mesh, options.split_offset(mesh));
             let filled = crate::holes::holes_all(mesh, usize::MAX);
             crate::topology_passes::split_pinched_vertices(mesh);
             let refilled = crate::holes::holes_all(mesh, usize::MAX);
@@ -345,10 +388,43 @@ pub fn repair(mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
 /// A repair runs for seconds and a large mesh for minutes, so a caller with a UI
 /// wants to know which stage it is in rather than watching a spinner.
 pub fn repair_with_progress(
+    mesh: IndexedMesh,
+    options: &RepairOptions,
+    sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
+) -> RepairOutcome {
+    // The ordered stages, then — if the weld the pipeline ends with changed the mesh — the ordered stages
+    // again.
+    //
+    // The weld is not decoration: every export path here is a triangle soup and the loader welds a soup at
+    // `DEFAULT_MERGE_EPSILON`, so a repair that ends finer than that hands over a mesh the next read
+    // changes. But the weld has a cost, and the *stages* are what repair it, not the defect loop: measured
+    // on the reported model, one pass ended 26/117/1/193 in memory and in the file, and one more pass took
+    // it to 0/0/0/0 in both. A second pass runs only when the weld actually merged or culled something.
+    let (first, weld_changed) = repair_passes(mesh, options, sink);
+    // The settle pass takes no sink: it is bounded, and a cancel that arrived during the first pass has
+    // already been honoured.
+    if !weld_changed {
+        return first;
+    }
+    let (settled, _) = repair_passes(first.mesh, options, None);
+    let RepairOutcome { mesh, mut report } = settled;
+    report.pre = first.report.pre;
+    report.total_ms = first.report.total_ms + report.total_ms;
+    let mut steps = first.report.steps;
+    steps.extend(report.steps);
+    report.steps = steps;
+    RepairOutcome { mesh, report }
+}
+
+/// One pass of the ordered pipeline.
+///
+/// Both passes report the engine's own stage codes rather than a qualifier, because the frontend keys its
+/// labels on them; a second pass is visible as a second run of the same names, which is what it is.
+fn repair_passes(
     mut mesh: IndexedMesh,
     options: &RepairOptions,
     mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
-) -> RepairOutcome {
+) -> (RepairOutcome, bool) {
     let t_start = std::time::Instant::now();
 
     // From here the pipeline reads concrete tolerances: anything the caller left to the engine is
@@ -382,7 +458,7 @@ pub fn repair_with_progress(
                     report.cancelled = true;
                     report.post = analyze(&mesh);
                     report.total_ms = t_start.elapsed().as_secs_f64() * 1000.0;
-                    return RepairOutcome { mesh, report };
+                    return (RepairOutcome { mesh, report }, false);
                 }
             }
         }};
@@ -711,7 +787,7 @@ pub fn repair_with_progress(
         begin!("split_non_manifold_edges");
         let t = std::time::Instant::now();
         let mut candidate = mesh.clone();
-        let offset = options.split_offset();
+        let offset = options.split_offset(&candidate);
         let walls = crate::topology_passes::remove_coincident_faces(&mut candidate);
         let split = walls + crate::topology_passes::split_non_manifold_edges(&mut candidate, offset);
         crate::topology_passes::remove_open_fragments(&mut candidate, 16);
@@ -946,9 +1022,27 @@ pub fn repair_with_progress(
     // a class that is not.
     begin!("repair_rounds");
     let t = std::time::Instant::now();
+    // First, weld at the **loader's** tolerance, not this pipeline's.
+    //
+    // Every export path here produces a triangle soup — an STL has no vertex indices and the staged
+    // `positions.bin` is nine floats per triangle — and the loader welds a soup at
+    // `DEFAULT_MERGE_EPSILON` relative to the diagonal. So the mesh a caller gets back from a file is
+    // the mesh *this* weld produces, and a pipeline that ends finer than that is handing over a mesh it
+    // has not finished: measured on the reported model, the repair's own output is 0/0/0/0 in memory and
+    // 177 winding edges the moment it goes through an STL, because the loader joins vertices the
+    // pipeline had kept apart.
+    //
+    // So the pipeline ends where a re-read begins. What this weld breaks, the loop below repairs, and
+    // what the loop does afterwards keeps its distance from the loader's weld by construction — the split
+    // displaces by four of them. Guarded like everything else.
+    let loader_epsilon = crate::io::DEFAULT_MERGE_EPSILON * mesh.bbox().diag().max(1e-6);
+    let (welded_to_loader, _collapsed_loader, refused_loader) = stitch_vertices(&mut mesh, loader_epsilon);
     let mut rounds = 0usize;
-    let mut repaired = 0usize;
+    let mut repaired = welded_to_loader;
     let mut notes = Vec::new();
+    if refused_loader {
+        notes.push("the loader's weld was refused".to_string());
+    }
     let mut best = crate::evaluate::evaluate(&mesh).total();
     let first_total = best;
     // Attempts rather than rounds: a class that cannot improve the mesh costs an attempt, and the loop
@@ -957,6 +1051,30 @@ pub fn repair_with_progress(
     for _ in 0..MAX_REPAIR_ATTEMPTS {
         if best == 0 {
             break;
+        }
+        // The loader's weld is *inside* the loop, not only before it.
+        //
+        // Welding once, before the loop, leaves the loop's own damage in the mesh: measured on the reported
+        // model, its output read 26/25/0/48 in memory and 64/117/1/193 as a file, and repairing that welded
+        // file took it to 0/0/0/0 — the loop repairs exactly what the weld broke. So each round starts from
+        // the welded mesh and is judged against the total the weld left, which is what converges instead of
+        // oscillating. The reference's own repair iterates its weld-and-delete pass with every other class
+        // for the same reason.
+        //
+        // The copies a separation leaves at the same position are the copies this merges back. That is
+        // deliberate: a pinch is how a support attaches to the model it supports, and displacing one
+        // separates a shell from the shell it touches — measured on the supported file in the corpus, that
+        // took its components from 3,148 to 5,442 and its classes from 0/0/0/0 to 44/132/220.
+        if rounds > 0 {
+            let (welded_round, _collapsed_round, _refused_round) =
+                stitch_vertices(&mut mesh, loader_epsilon);
+            let (collapsed_faces, refused_collapsed) = cull_repeated_vertex_faces(&mut mesh);
+            if refused_collapsed {
+                notes.push("a round's collapsed faces were refused".to_string());
+            }
+            repaired += welded_round;
+            best = crate::evaluate::evaluate(&mesh).total();
+            let _ = collapsed_faces;
         }
         let before = crate::evaluate::evaluate(&mesh);
         let mut progressed = false;
@@ -1003,6 +1121,52 @@ pub fn repair_with_progress(
     begin!("prune_and_classify");
     let t = std::time::Instant::now();
     let pruned = prune_unused_vertices(&mut mesh);
+    // And the weld itself, at the loader's own tolerance, as the pipeline's last act.
+    //
+    // The loop above separates surfaces, fills rims and splits pinches, and the copies it leaves exactly
+    // coincident are pairs any soup re-read merges: measured on the reported model, 26/25/0/48 in memory
+    // against 64/117/1/193 as a file. Welding here is what makes the report's numbers the file's numbers,
+    // and it is deliberately the *weld* rather than a pass that displaces each pair: a pinch is how a
+    // support attaches to the model, so moving a copy off one separates a shell from the shell it touches
+    // — measured on the supported file in the corpus, that came out 0/0/0/0 to 44/132/220 with its
+    // components 3,148 to 5,442. The weld merges those copies back into the single vertex they were, which
+    // is what a re-read does with them anyway.
+    let vertices_before_weld = mesh.positions.len();
+    {
+        let soup = mesh.to_triangle_soup();
+        mesh = IndexedMesh::from_triangle_soup(&soup, crate::io::DEFAULT_MERGE_EPSILON);
+    }
+    // The weld has a cost, and it is the same cost the loader charges: two corners of one triangle that
+    // land in the same cell make a face with a repeated vertex, and such a face contributes both (a, b)
+    // and (b, a), so it reads as a winding disagreement and as a non-manifold edge. Measured: corbu 0 ->
+    // 81 of them and 0 -> 64 winding edges, Harbinger 0 -> 244 and 0 -> 103.
+    //
+    // The reference's own order is exactly this: weld by position, then delete every face whose vertex
+    // references repeat. Its criterion is in this engine already, one stage earlier, which is why the
+    // count could only ever have come from the weld. Deleting them is what lets the winding settle, and
+    // the deletion is judged like every other pass, so a cull that opened the mesh would be refused.
+    let (collapsed_faces, refused_collapsed) = cull_repeated_vertex_faces(&mut mesh);
+    let settled_winding = if collapsed_faces > 0 {
+        unify_winding(&mut mesh)
+    } else {
+        0
+    };
+    if refused_collapsed {
+        notes.push("the weld's collapsed faces were refused".to_string());
+    }
+    let _ = settled_winding;
+    // Whether the weld had anything to do. A weld that merged or culled nothing leaves the mesh exactly as
+    // the stages handed it over, and asking for another pass over it would only re-derive the same answer.
+    let weld_changed = mesh.positions.len() < vertices_before_weld || collapsed_faces > 0;
+
+    // The invariant, asserted where it has to hold rather than left to a caller to discover: no two
+    // distinct vertices may share a loader cell, because the next read would merge them and the file
+    // would stop being the mesh that was measured. Debug builds only — the check is a full hash pass.
+    debug_assert_eq!(
+        coincident_count(&mesh),
+        0,
+        "the pipeline handed over a mesh the loader would weld, so the file is not what was measured"
+    );
     let class_res =
         classify_and_reorder_model_support_triangles(&mut mesh, options.assume_support_geometry);
     if let Some((model_tri_count, likely_support_geometry)) = class_res.split {
@@ -1088,7 +1252,7 @@ pub fn repair_with_progress(
 
     report.total_ms = t_start.elapsed().as_secs_f64() * 1000.0;
 
-    RepairOutcome { mesh, report }
+    (RepairOutcome { mesh, report }, weld_changed)
 }
 
 /// Extract the model section — the first `model_tri_count` triangles, or every
@@ -2663,6 +2827,12 @@ fn union_groups(mesh: &IndexedMesh, options: &ResolvedOptions) -> (usize, Indexe
         }
     }
     candidate.triangles = recombined;
+
+    // The union's output carries the positions of both operands, so a vertex the two sides shared comes
+    // back twice — 28,009 of a 137,987-vertex model, measured. Welding it here was tried and is not where
+    // it belongs: it merges duplicate faces into existence early enough for the double-face stage to count
+    // them as duplicates and cull them, which on that model cost 11,148 faces and took its parts from 43 to
+    // 239. The pipeline's last act is that same weld, one stage later, after every pass has had its say.
     (unioned, candidate)
 }
 
