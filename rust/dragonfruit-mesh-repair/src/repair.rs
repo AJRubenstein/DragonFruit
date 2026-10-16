@@ -694,20 +694,26 @@ pub fn repair_separate_parts(
     let joined = groups.iter().filter(|g| g.len() > 1).count();
     let before = analyze(mesh);
     let started = std::time::Instant::now();
-    let mut parts = Vec::with_capacity(groups.len());
-    for (index, group) in groups.iter().enumerate() {
-        if let Some(sink) = progress.as_deref_mut() {
-            sink(index + 1, &format!("part {} of {}", index + 1, groups.len()));
-        }
-        let part = sub_mesh_of_components(mesh, &components, group);
-        let before = analyze(&part);
-        let outcome = repair(part, options);
-        parts.push(PartOutcome {
-            index,
-            before,
-            outcome: Box::new(outcome),
-        });
+    if let Some(sink) = progress.as_deref_mut() {
+        sink(0, &format!("repairing {} part(s)", groups.len()));
     }
+    // The parts do not meet, so nothing done to one of them can change the answer for another: they
+    // are independent pipelines and they run at once.
+    //
+    let mut parts: Vec<PartOutcome> = groups
+        .par_iter()
+        .enumerate()
+        .map(|(index, group)| {
+            let part = sub_mesh_of_components(mesh, &components, group);
+            let before = analyze(&part);
+            let outcome = repair(part, options);
+            PartOutcome {
+                index,
+                before,
+                outcome: Box::new(outcome),
+            }
+        })
+        .collect();
     Some(PartsRepair {
         parts,
         joined,
