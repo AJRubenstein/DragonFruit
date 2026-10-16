@@ -1571,13 +1571,21 @@ fn repair_passes(
     // Last, after every other pass has had its turn: re-tessellate a localised winding defect. It
     // refuses when the move would add parts or move the volume, which is what the Cones needs and
     // Harbinger does not.
+    // Both passes below open by asking `frustrated_edges`, which is a graph walk over the winding
+    // parity, and neither can find anything unless some edge's two faces disagree, which is what
+    // `solve_winding_cut` returns on one layer down. The verdict answers that question, and the
+    // stages above have just asked it about this exact state, so the memo makes it free. Measured on
+    // `poussin.stl`: 200 ms of the settle was these two arriving at nothing.
+    let winding_clean = crate::evaluate::evaluate(&mesh).inconsistent_edges == 0;
     let mut retessellated = 0usize;
-    for _ in 0..8 {
-        let n = retessellate_unsatisfiable(&mut mesh);
-        if n == 0 {
-            break;
+    if !winding_clean {
+        for _ in 0..8 {
+            let n = retessellate_unsatisfiable(&mut mesh);
+            if n == 0 {
+                break;
+            }
+            retessellated += n;
         }
-        retessellated += n;
     }
     let settled = if retessellated > 0 {
         repair_orientation(&mut mesh)
@@ -1592,7 +1600,7 @@ fn repair_passes(
     let mut cut = 0usize;
     let mut cut_settled = 0usize;
     let mut cut_refilled = 0usize;
-    if options.cut_unsatisfiable_edges {
+    if options.cut_unsatisfiable_edges && !winding_clean {
         let before_cut = mesh.clone();
         let health = crate::evaluate::evaluate(&before_cut);
         let volume_before = before_cut.signed_volume();

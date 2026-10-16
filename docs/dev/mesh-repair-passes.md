@@ -61,6 +61,12 @@ consequence worth knowing is in the report: `timings_ms` is the cost of the comp
 produced the verdict, so a cached verdict carries the earlier call's numbers, because that is
 what it cost and it was not paid again.
 
+Reading the same verdict is what skips three more pieces of work. `remove_inner_faces` returns
+before its ray casts when the mesh is one component, because one component cannot be inside
+another. The settle's two last-resort passes, the re-tessellation and the cut, are skipped when
+no edge disagrees, which is the question they would each walk the winding parity to ask; the cut
+below them already returns on the same test.
+
 `tests/smoke.rs` pins this list in `the_pipeline_runs_the_stage_order_it_says_it_does`.
 If a change to the order is deliberate, that test is where you say so.
 
