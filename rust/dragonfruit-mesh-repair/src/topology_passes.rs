@@ -1628,6 +1628,69 @@ mod tests {
         );
     }
 
+    /// Two boxes standing apart are two parts, and each is repaired on its own.
+    ///
+    /// The unit matters: the plate in the corpus gets one verdict for all 25 of its objects when it
+    /// is repaired whole, which says nothing about which object is the problem. Per part it says
+    /// `26 of 39 repaired` and names the 13 that carry their own winding defect.
+    #[test]
+    fn separate_boxes_are_repaired_as_parts() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(1.0, 1.0, 1.0));
+        let (more_positions, more_triangles) = box_mesh(v(5.0, 5.0, 5.0), v(6.0, 6.0, 6.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let parts = crate::repair::repair_separate_parts(
+            &mesh,
+            &crate::repair::RepairOptions::default(),
+            None,
+        )
+        .expect("two boxes that do not meet are two parts");
+        assert_eq!(parts.parts.len(), 2);
+        assert_eq!(parts.joined, 0, "neither part is several shells");
+        for part in &parts.parts {
+            assert_eq!(part.before.triangle_count, 12);
+            assert!(
+                part.outcome.report.fully_repaired,
+                "a closed box needs no repair: {:?}",
+                part.outcome.report.residual_issues
+            );
+            assert_eq!(part.outcome.mesh.triangles.len(), 12);
+        }
+    }
+
+    /// Two boxes that cross are one object, and are not split: repairing them apart would separate
+    /// the surfaces the repair is supposed to join.
+    #[test]
+    fn crossing_boxes_are_not_split() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(2.0, 2.0, 2.0));
+        let (more_positions, more_triangles) = box_mesh(v(1.0, 1.0, 1.0), v(3.0, 3.0, 3.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        assert!(
+            crate::repair::repair_separate_parts(
+                &mesh,
+                &crate::repair::RepairOptions::default(),
+                None
+            )
+            .is_none(),
+            "one object between them, so there is nothing to separate"
+        );
+    }
+
     /// The union's own answer on that fixture: nothing to union, and two separate solids reported.
     #[cfg(feature = "manifold")]
     #[test]

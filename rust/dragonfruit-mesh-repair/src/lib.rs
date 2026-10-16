@@ -35,8 +35,9 @@ pub use crate::hollowing::{
     HollowSession, OpenFace,
 };
 pub use crate::repair::{
-    classify_support_split, decimate_sections_to_budget, repair, repair_with_progress,
-    ClassificationOutcome, RepairOptions, RepairOutcome, SectionDecimationOutcome,
+    classify_support_split, decimate_sections_to_budget, repair, repair_separate_parts,
+    repair_with_progress, ClassificationOutcome, PartOutcome, PartsRepair, RepairOptions,
+    RepairOutcome, SectionDecimationOutcome,
 };
 pub use crate::report::MeshHealthReport;
 pub use crate::shrink_wrap::{

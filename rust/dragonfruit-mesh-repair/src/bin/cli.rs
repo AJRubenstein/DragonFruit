@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use dragonfruit_mesh_repair::{
-    analyze, io::write_positions_file, repair_path, repair_with_progress, IndexedMesh,
-    MeshRepairError, RepairOptions,
+    analyze, io::write_positions_file, repair_path, repair_separate_parts, repair_with_progress,
+    IndexedMesh, MeshRepairError, RepairOptions,
 };
 
 #[derive(Debug, Parser)]
@@ -99,6 +99,23 @@ enum Command {
     Cavities {
         input: PathBuf,
         #[arg(long)]
+        pretty: bool,
+    },
+    /// Repair a plate: separate the shells that do not meet, repair each one on its own, and write
+    /// one STL per part.
+    ///
+    /// A print plate is not one model — the reported plate is 25 objects over 29 closed shells — and a
+    /// repair of the whole file gives one verdict for all of them. Measured on that file, 16 of the
+    /// shells come out `fully_repaired` on their own and 13 do not, and the 13 are the ones whose own
+    /// topology contradicts itself, so the split is what tells a caller which part is the problem.
+    /// Shells that meet another shell are left together: between them they are one object.
+    Parts {
+        input: PathBuf,
+        /// Directory for the parts: one STL and one JSON report each, plus `parts.json`.
+        out_dir: PathBuf,
+        #[arg(long, default_value_t = false)]
+        resolve_self_intersections: bool,
+        #[arg(long, default_value_t = false)]
         pretty: bool,
     },
     /// Run the full repair pipeline and emit repaired mesh + report.
@@ -283,6 +300,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 serde_json::to_string_pretty(&report)?
             } else {
                 serde_json::to_string(&report)?
+            };
+            println!("{s}");
+        }
+        Command::Parts {
+            input,
+            out_dir,
+            resolve_self_intersections,
+            pretty,
+        } => {
+            let options = RepairOptions {
+                resolve_self_intersections,
+                ..RepairOptions::default()
+            };
+            let mesh = load_mesh(&input, raw)?;
+            let Some(parts) = repair_separate_parts(&mesh, &options, None) else {
+                println!(
+                    "{{\"parts\":0,\"note\":\"the mesh is one object, or its shells meet each other; nothing to separate\"}}"
+                );
+                return Ok(());
+            };
+            std::fs::create_dir_all(&out_dir)?;
+            let stem = input
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "part".to_string());
+            let mut summary = Vec::new();
+            for part in &parts.parts {
+                let file = out_dir.join(format!("{stem}.part{:02}.stl", part.index));
+                dragonfruit_mesh_repair::io::stl::write_binary(&part.outcome.mesh, &file)?;
+                let report = out_dir.join(format!("{stem}.part{:02}.json", part.index));
+                std::fs::write(&report, serde_json::to_string(&part.outcome.report)?)?;
+                summary.push(serde_json::json!({
+                    "index": part.index,
+                    "file": file.to_string_lossy(),
+                    "triangles_before": part.before.triangle_count,
+                    "triangles_after": part.outcome.report.post.triangle_count,
+                    "fully_repaired": part.outcome.report.fully_repaired,
+                    "residual_issues": part.outcome.report.residual_issues,
+                }));
+            }
+            let value = serde_json::json!({
+                "input": input.to_string_lossy(),
+                "parts": parts.parts.len(),
+                "repaired": parts.repaired(),
+                "joined": parts.joined,
+                "part": summary,
+            });
+            let s = if pretty {
+                serde_json::to_string_pretty(&value)?
+            } else {
+                serde_json::to_string(&value)?
             };
             println!("{s}");
         }

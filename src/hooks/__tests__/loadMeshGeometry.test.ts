@@ -332,3 +332,99 @@ describe('processGeometry classification bypass', () => {
     assert.equal(result.meshDefects?.modelSectionGeometry, undefined);
   });
 });
+
+describe('processGeometry parts flow', () => {
+  /**
+   * A plate imports as one model with many components, and the whole-file repair returns one verdict
+   * for all of them. When the caller asks for the parts flow, the import has to go through the
+   * part-by-part runner — not the whole-file one — and the joined result is what lands in the scene.
+   */
+  it('runs the part-by-part repair when the user asks for it', async () => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([
+      0,0,0, 1,0,0, 0,1,0,
+      0,0,1, 1,0,1, 0,1,1,
+    ], 3));
+
+    let partsCalled = false;
+    let confirmAsked = 0;
+    const report = { ...makeReport(), fully_repaired: true, parts: [
+      { index: 0, triangles_before: 2, triangles_after: 2, fully_repaired: true, residual_issues: [] },
+      { index: 1, triangles_before: 2, triangles_after: 2, fully_repaired: false, residual_issues: ['inconsistent winding'] },
+    ] };
+
+    const result = await processGeometry(geom, {
+      sourcePath: 'C:/models/plate.stl',
+      _isTauriRuntime: () => true,
+      _analyzeFromGeometry: async () => ({
+        triangle_count: 2,
+        vertex_count: 6,
+        non_manifold_edges: 0,
+        non_manifold_vertices: 0,
+        boundary_edges: 0,
+        boundary_loops: 0,
+        inconsistent_edges: 12,
+        degenerate_triangles: 0,
+        duplicate_triangles: 0,
+        component_count: 7,
+        self_intersections: 0,
+        signed_volume: 1,
+        is_watertight: true,
+        timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+      }),
+      onConfirmHeavyRepair: async () => {
+        confirmAsked += 1;
+        return 'repair_parts';
+      },
+      // `_repairFromGeometry` is deliberately not injected: injecting it is what switches the import
+      // off the loader path, and the loader path is the one the parts runner needs (it reads the file).
+      _repairPartsFromPath: async () => {
+        partsCalled = true;
+        return { report, positions: new Float32Array([0,0,0, 1,0,0, 0,1,0, 0,0,1, 1,0,1, 0,1,1]) };
+      },
+    });
+
+    assert.equal(confirmAsked, 1, 'the user is asked before a heavy repair');
+    assert.equal(partsCalled, true, 'the part-by-part runner is the one that runs');
+    assert.equal(result.meshDefects?.nativeRepairReport?.parts?.length, 2);
+  });
+
+  it('falls back to the whole-file repair when the import has no source path', async () => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 1,0,0, 0,1,0], 3));
+
+    let partsCalled = false;
+    let wholeCalled = false;
+    await processGeometry(geom, {
+      _isTauriRuntime: () => true,
+      _analyzeFromGeometry: async () => ({
+        triangle_count: 1,
+        vertex_count: 3,
+        non_manifold_edges: 0,
+        non_manifold_vertices: 0,
+        boundary_edges: 0,
+        boundary_loops: 0,
+        inconsistent_edges: 3,
+        degenerate_triangles: 0,
+        duplicate_triangles: 0,
+        component_count: 4,
+        self_intersections: 0,
+        signed_volume: 1,
+        is_watertight: true,
+        timings_ms: { topology_ms: 0, self_intersections_ms: 0, components_ms: 0, total_ms: 0 },
+      }),
+      onConfirmHeavyRepair: async () => 'repair_parts',
+      _repairFromGeometry: async () => {
+        wholeCalled = true;
+        return null;
+      },
+      _repairPartsFromPath: async () => {
+        partsCalled = true;
+        return null;
+      },
+    });
+
+    assert.equal(partsCalled, false, 'no source path, so the parts runner cannot read the file');
+    assert.equal(wholeCalled, true, 'the staged whole-file repair runs instead');
+  });
+});

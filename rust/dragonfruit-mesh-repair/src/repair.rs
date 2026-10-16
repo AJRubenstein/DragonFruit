@@ -14,6 +14,8 @@
 //! opt-in path; full arrangement classification/extraction is still WIP.
 //! Residual counts flow into [`MeshHealthReport::residual_issues`].
 
+use std::collections::BTreeMap;
+
 use ahash::{AHashMap, AHashSet};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -371,6 +373,232 @@ pub struct RepairOutcome {
 }
 
 pub type ClassificationOutcome = RepairOutcome;
+
+/// One part of a mesh that is several parts, repaired on its own.
+#[derive(Debug)]
+pub struct PartOutcome {
+    /// Where the part sat in the input's component order.
+    pub index: usize,
+    /// How the part stood before its repair.
+    pub before: crate::analysis::MeshAnalysis,
+    /// The part's own repair. Its `mesh` is the repaired part, which is what a caller writes out or
+    /// keeps; its `report` is the verdict for that part alone.
+    pub outcome: Box<RepairOutcome>,
+}
+
+/// A mesh that is several separate parts, each one repaired on its own.
+#[derive(Debug)]
+pub struct PartsRepair {
+    pub parts: Vec<PartOutcome>,
+    /// Components that were left out of the split because they meet another component: they are one
+    /// object between them, and repairing them apart would repair neither.
+    pub joined: usize,
+    /// How the whole input stood, for the report the caller hands on.
+    pub before: crate::analysis::MeshAnalysis,
+    pub elapsed_ms: f64,
+}
+
+impl PartsRepair {
+    /// How many of the parts came out of their own repair fully repaired.
+    pub fn repaired(&self) -> usize {
+        self.parts
+            .iter()
+            .filter(|p| p.outcome.report.fully_repaired)
+            .count()
+    }
+
+    /// Every part's repaired mesh, joined into one mesh in the input's part order.
+    ///
+    /// This is what a caller stages or writes when it wants a single model back: the parts are
+    /// repaired separately and returned together, at the positions they arrived at.
+    pub fn combined_mesh(&self) -> IndexedMesh {
+        let mut positions: Vec<Vec3> = Vec::new();
+        let mut triangles: Vec<[u32; 3]> = Vec::new();
+        for part in &self.parts {
+            let base = positions.len() as u32;
+            positions.extend_from_slice(&part.outcome.mesh.positions);
+            triangles.extend(part.outcome.mesh.triangles.iter().map(|t| {
+                [t[0] + base, t[1] + base, t[2] + base]
+            }));
+        }
+        IndexedMesh {
+            positions,
+            triangles,
+        }
+    }
+
+    /// The report a caller hands to a UI or a file: the whole input's analysis, the joined result's,
+    /// and one entry per part saying which object was the problem.
+    pub fn report(&self, source_path: Option<String>) -> MeshHealthReport {
+        let mut report = MeshHealthReport::new(self.before.clone());
+        report.source_path = source_path;
+        report.post = analyze(&self.combined_mesh());
+        report.parts = self
+            .parts
+            .iter()
+            .map(|part| crate::report::MeshPartReport {
+                index: part.index,
+                triangles_before: part.before.triangle_count,
+                triangles_after: part.outcome.report.post.triangle_count,
+                fully_repaired: part.outcome.report.fully_repaired,
+                residual_issues: part
+                    .outcome
+                    .report
+                    .residual_issues
+                    .iter()
+                    .take(2)
+                    .cloned()
+                    .collect(),
+            })
+            .collect();
+        report.fully_repaired = self.parts.iter().all(|p| p.outcome.report.fully_repaired);
+        let failed = self.parts.len() - self.repaired();
+        report.residual_issues.push(format!(
+            "the file is {} separate part(s); each was repaired on its own and {} of them are fully repaired{}",
+            self.parts.len(),
+            self.repaired(),
+            if failed > 0 {
+                format!(
+                    ", and the {failed} that are not are listed under the parts: a part that fails on its own is not something the whole-file pass can fix"
+                )
+            } else {
+                String::new()
+            }
+        ));
+        for part in &self.parts {
+            if part.outcome.report.fully_repaired {
+                continue;
+            }
+            let reason = part
+                .outcome
+                .report
+                .residual_issues
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "not fully repaired".to_string());
+            report.residual_issues.push(format!(
+                "part {} ({} triangles): {reason}",
+                part.index, part.outcome.report.post.triangle_count
+            ));
+        }
+        report.steps.push(RepairStepReport {
+            name: "repair_parts".to_string(),
+            changed: self.parts.len() as u32,
+            notes: Some(format!(
+                "{} part(s) repaired separately, {} joined into {} object(s)",
+                self.parts.len(),
+                self.joined,
+                self.joined
+            )),
+            elapsed_ms: self.elapsed_ms,
+        });
+        report.total_ms = self.elapsed_ms;
+        report
+    }
+}
+
+/// Repair a mesh that is several separate parts by repairing each one on its own.
+///
+/// A print plate is not one model. Measured on the plate in the corpus: 29 closed shells by the
+/// vertex count, 118 by the engine's edge count, and a slicer lists 25 objects — because an object
+/// is one *or several* shells, and the shells of one object are the ones that meet each other. So
+/// the parts here are the groups of components that meet, and components that meet nothing are parts
+/// of their own.
+///
+/// Repairing the file whole gives one verdict for all of them, which is a verdict on the wrong unit:
+/// it says the plate is broken when most of it is fine, and it says nothing about which part is not.
+/// Per part, the answer is specific — on that plate, 16 shells repair cleanly on their own and the
+/// ones that do not are the parts whose own topology contradicts itself.
+///
+/// Returns `None` when the mesh is one object: nothing to separate, and the caller's own pipeline is
+/// the right one.
+pub fn repair_separate_parts(
+    mesh: &IndexedMesh,
+    options: &RepairOptions,
+    mut progress: Option<&mut dyn FnMut(usize, &str)>,
+) -> Option<PartsRepair> {
+    let components = triangle_components(mesh);
+    let n_comps = components.iter().copied().max().map_or(0, |m| m as usize + 1);
+    if n_comps < 2 {
+        return None;
+    }
+    // Components that meet are one object: a part is a group of them, not a single shell. The graph
+    // is the crossing relation, which is the same test the union uses to decide its operands.
+    let crossing = crate::topology_passes::crossing_component_pairs(mesh, &components);
+    let mut parent: Vec<u32> = (0..n_comps as u32).collect();
+    fn find(parent: &mut [u32], mut i: u32) -> u32 {
+        while parent[i as usize] != i {
+            parent[i as usize] = parent[parent[i as usize] as usize];
+            i = parent[i as usize];
+        }
+        i
+    }
+    for (a, b) in crossing.iter() {
+        let (ra, rb) = (find(&mut parent, *a), find(&mut parent, *b));
+        if ra != rb {
+            parent[rb as usize] = ra;
+        }
+    }
+    let mut by_group: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for c in 0..n_comps as u32 {
+        by_group.entry(find(&mut parent, c)).or_default().push(c);
+    }
+    if by_group.len() < 2 {
+        return None;
+    }
+    let groups: Vec<Vec<u32>> = by_group.into_values().collect();
+    let joined = groups.iter().filter(|g| g.len() > 1).count();
+    let before = analyze(mesh);
+    let started = std::time::Instant::now();
+    let mut parts = Vec::with_capacity(groups.len());
+    for (index, group) in groups.iter().enumerate() {
+        if let Some(sink) = progress.as_deref_mut() {
+            sink(index + 1, &format!("part {} of {}", index + 1, groups.len()));
+        }
+        let part = sub_mesh_of_components(mesh, &components, group);
+        let before = analyze(&part);
+        let outcome = repair(part, options);
+        parts.push(PartOutcome {
+            index,
+            before,
+            outcome: Box::new(outcome),
+        });
+    }
+    Some(PartsRepair {
+        parts,
+        joined,
+        before,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+    })
+}
+
+/// The faces of one group of components, as a mesh of their own: positions remapped so the part
+/// carries no vertex it does not use, which is what the reports and the exports read.
+fn sub_mesh_of_components(mesh: &IndexedMesh, components: &[u32], group: &[u32]) -> IndexedMesh {
+    let wanted: AHashSet<u32> = group.iter().copied().collect();
+    let mut map: AHashMap<u32, u32> = AHashMap::new();
+    let mut positions: Vec<Vec3> = Vec::new();
+    let mut triangles: Vec<[u32; 3]> = Vec::new();
+    for (fi, tri) in mesh.triangles.iter().enumerate() {
+        if !wanted.contains(&components[fi]) {
+            continue;
+        }
+        let mut mapped = [0u32; 3];
+        for (k, &v) in tri.iter().enumerate() {
+            let next = positions.len() as u32;
+            let id = *map.entry(v).or_insert_with(|| {
+                positions.push(mesh.positions[v as usize]);
+                next
+            });
+            mapped[k] = id;
+        }
+        triangles.push(mapped);
+    }
+    IndexedMesh {
+        positions,
+        triangles,
+    }
+}
 
 /// Runs the pass set with no progress reporting.
 pub fn repair(mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {

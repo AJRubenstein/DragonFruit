@@ -1227,6 +1227,13 @@ function geometryPositionsAsSoup(geometry: THREE.BufferGeometry): Float32Array |
 export type MeshRepairConfirmPrompt = {
   fileName: string;
   analysis: MeshAnalysisJson;
+  /**
+   * Whether the file can be repaired part by part. A plate imports as one model with many
+   * components, and repairing it whole returns one verdict for all of them; the parts flow returns
+   * a verdict per object instead. Offered only when the import has a file behind it, since the
+   * parts flow reads the source.
+   */
+  canRepairParts: boolean;
 };
 
 /** A scene refused because it was saved by a VOXL generation we no longer read. */
@@ -1260,7 +1267,7 @@ export type PrinterMismatchPrompt = {
   currentIsSmaller: boolean;
 };
 
-type MeshRepairConfirmChoice = 'repair' | 'load_as_is' | 'cancel_import';
+type MeshRepairConfirmChoice = 'repair' | 'repair_parts' | 'load_as_is' | 'cancel_import';
 
 type ModelClipboardEntry = {
   sourceId: string;
@@ -2819,9 +2826,25 @@ export function useSceneCollectionManager(options?: {
               }
             },
             onConfirmHeavyRepair: async (analysis: MeshAnalysisJson) => {
-              const choice = await requestMeshRepairConfirmation({ fileName: file.name, analysis });
+              const choice = await requestMeshRepairConfirmation({
+                fileName: file.name,
+                analysis,
+                canRepairParts: Boolean((file as File & { filePath?: string }).filePath),
+              });
               if (choice === 'cancel_import') {
                 throw new Error('MESH_IMPORT_CANCELLED_BY_USER');
+              }
+              if (choice === 'repair_parts') {
+                setImportProgress({
+                  active: true,
+                  type: 'mesh',
+                  label: importLabelAutoRepairing(files.length, _),
+                  detail: files.length > 1
+                    ? importDetailIndexedFile(i + 1, files.length, file.name, _)
+                    : importDetailAutoRepairingFile(file.name, _),
+                  progress: null,
+                });
+                return 'repair_parts';
               }
               if (choice === 'repair') {
                 setImportProgress({
@@ -2834,7 +2857,7 @@ export function useSceneCollectionManager(options?: {
                   progress: null,
                 });
               }
-              return choice === 'repair';
+              return choice === 'load_as_is' ? 'skip' : choice;
             },
           } satisfies ProcessGeometryOptions;
 

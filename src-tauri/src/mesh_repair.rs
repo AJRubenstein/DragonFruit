@@ -29,7 +29,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
-    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_with_progress,
+    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_separate_parts,
+    repair_with_progress,
     shrink_wrap_with_progress, solid_remesh_with_progress, tet_surface_with_progress, HolePunchOptions,
     HollowOptions, HollowSession, IndexedMesh, RepairOptions, ShrinkWrapOptions, SolidRemeshOptions,
     TetWrapOptions,
@@ -503,6 +504,65 @@ pub async fn mesh_repair_from_path(
     .map_err(|e| format!("repair task panicked: {e}"))??;
     release_cancel(progress_token.as_ref());
     report.source_path = Some(source_path);
+    replace_staging_with_mesh(&mesh)?;
+    serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
+}
+
+/// Repairs a plate part by part: the shells that meet stay together as one object, each object is
+/// repaired on its own, and the result is staged as one mesh with a per-object verdict.
+///
+/// A plate is not one model — the reported one is 25 objects over 118 components — and repairing it
+/// whole returns one verdict for all of them, which tells a user nothing they can act on. This is
+/// the same flow the `parts` CLI command runs; the difference is that the app hands the joined
+/// result back through the staging buffer instead of writing files.
+#[tauri::command]
+pub async fn mesh_repair_parts_from_path(
+    file_path: String,
+    options_json: String,
+    progress_token: Option<String>,
+    app: crate::DragonFruitAppHandle,
+) -> Result<String, String> {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!(
+            "mesh_repair_parts_from_path: not found: {}",
+            path.display()
+        ));
+    }
+    let options = parse_options(&options_json)?;
+    let source_path = file_path.clone();
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
+    let parts = tauri::async_runtime::spawn_blocking(move || {
+        let mesh = io::load_mesh_from_path(&path).map_err(|e| e.to_string())?;
+        let mut announced = 0usize;
+        let mut sink = |index: usize, name: &str| {
+            announced = index;
+            if let Some(token) = token.as_deref() {
+                let _ = app.emit(
+                    "mesh-repair-progress",
+                    serde_json::json!({ "token": token, "name": name, "index": index }),
+                );
+            }
+        };
+        let parts =
+            repair_separate_parts(&mesh, &options, Some(&mut sink)).ok_or_else(|| {
+                "mesh_repair_parts_from_path: the mesh is one object, or its shells meet each other"
+                    .to_string()
+            })?;
+        let _ = announced;
+        Ok::<_, String>(parts)
+    })
+    .await
+    .map_err(|e| format!("repair parts task panicked: {e}"))??;
+    let cancelled = cancel
+        .as_ref()
+        .map(|flag| flag.load(Ordering::SeqCst))
+        .unwrap_or(false);
+    release_cancel(progress_token.as_ref());
+    let mesh = parts.combined_mesh();
+    let mut report = parts.report(Some(source_path));
+    report.cancelled = cancelled;
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
 }

@@ -369,6 +369,58 @@ reading the code:
 
 The pass stays off until the mixed-chord case is handled the same way.
 
+## Repairing a plate: the parts flow
+
+A print plate is not one model, and a repair of the whole file gives one verdict for all of its
+objects. Measured on the plate in the corpus (`Untitled2.stl`, 656,922 triangles as loaded): 118
+components by the engine's edge test, 29 by vertex connectivity, and a slicer lists **25 objects** —
+because an object is one *or several* shells, and the shells of one object are the ones that meet
+each other. Repairing it whole leaves 1,389 inconsistently wound edges and says the surface "cannot be
+wound consistently", which is true of the file and useless to the user: it does not say which object
+is the problem, and 26 of the parts are fine.
+
+So there is a flow that separates the parts first:
+
+- `dragonfruit_mesh_repair::repair_separate_parts(&mesh, &options, progress)` — `repair.rs`. Groups the
+  components by contact (`topology_passes::crossing_component_pairs`: a triangle of one crossing a
+  triangle of the other), repairs each group on its own, and returns `PartsRepair` — one `PartOutcome`
+  per part, each with the part's own `RepairOutcome` (its `mesh`, its `report`, its verdict).
+  `PartsRepair::repaired()` counts the parts that came out `fully_repaired`. `None` means the mesh is
+  one object and the caller's own pipeline is the right one.
+- `dragonfruit-mesh-repair parts <input> <out_dir>` — the same flow from the CLI, writing
+  `<stem>.partNN.stl` and `<stem>.partNN.json` per part and a `parts.json`-shaped summary to stdout.
+
+Measured on that plate: **39 parts, 26 `fully_repaired`, 13 not** — and the 13 name their own defect
+(39 to 361 same-direction edges each, adding up to the file's 1,389). Two things about the grouping are
+load-bearing. Components that **meet** are one part: they are one object between them, and repairing
+them apart separates surfaces the repair is meant to join — the same relation the union uses to pick
+its operands. And a part is repaired with the pipeline's own rules, so a part smaller than the noise
+threshold is still culled, which is why some parts report `4 -> 0` triangles and `fully_repaired`.
+
+What this does not do is make a broken part repairable. The 13 that fail do so for the class the plan
+records: their own topology demands an odd flip, which is what their self-intersections leave behind.
+
+### In the app
+
+The flow is wired into the import path, at the point where a heavy repair is already offered:
+
+- `MeshRepairConfirmModal` carries a third action, **Repair parts separately**, shown when the
+  pre-repair analysis reports more than one component *and* the import has a source path behind it
+  (`MeshRepairConfirmPrompt.canRepairParts`). The parts runner reads the file, so an import that only
+  has staged geometry cannot use it; the hook says so on the console and repairs whole instead.
+- `ProcessGeometryOptions.onConfirmHeavyRepair` returns `'repair' | 'repair_parts' | 'skip'`
+  (`HeavyRepairChoice`) rather than a boolean, and `useStlGeometry` routes `'repair_parts'` through
+  `repairPartsFromPath`.
+- `mesh_repair_parts_from_path` is the IPC command: it repairs the parts, **joins them back into one
+  mesh**, stages that, and returns a `MeshHealthReport` with `parts` filled in — so the scene carries
+  one model, as every other import does, and the report is per object.
+- `MeshRepairReportModal` renders `report.parts` as its own section: "N of M parts repaired", one line
+  per part, with the failing ones carrying their own reason.
+
+The report fields a caller reads are `MeshHealthReport::parts` (`MeshPartReport` in Rust,
+`MeshRepairPartSummary` in TS): `index`, `triangles_before`, `triangles_after`, `fully_repaired` and
+the part's own `residual_issues`.
+
 ## Two things that are not what they look like
 
 ### The inner-face removal is component-level, and that is not a shortcut

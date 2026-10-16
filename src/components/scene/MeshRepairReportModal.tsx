@@ -5,7 +5,11 @@ import { CheckCircle2, XCircle, X, Wrench, ClipboardCopy, ChevronDown, ChevronRi
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { Button, IconButton } from '@/components/atoms';
 import type { MeshRepairReportEntry } from '@/features/scene/useSceneCollectionManager';
-import type { MeshAnalysisJson } from '@/utils/meshRepair';
+import type {
+  MeshAnalysisJson,
+  MeshHealthReport,
+  MeshRepairPartSummary,
+} from '@/utils/meshRepair';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -325,11 +329,29 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
   );
 }
 
+function partsRepairedCount(report: MeshHealthReport): number {
+  return (report.parts ?? []).filter((part) => part.fully_repaired).length;
+}
+
+/**
+ * Interpolated translations live in module-scope helpers, not inline in the component: React
+ * Compiler renames the interpolated locals in production builds, which desyncs the message id from
+ * the compiled catalog and renders the placeholders raw. See `docs/dev/backlog.md`.
+ */
+function partsSummaryLabel(repaired: number, total: number, translate: Translate): string {
+  return translate(msg`${repaired} of ${total} parts repaired`);
+}
+
+function partLabel(part: MeshRepairPartSummary, translate: Translate): string {
+  return translate(msg`Part ${part.index + 1}: ${part.triangles_after} triangles`);
+}
+
 function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
   const { _ } = useLingui();
   const { modelName, report } = entry;
   const wins = React.useMemo(() => summarizeRepairWins(report, _), [report, _]);
   const [showResidualIssues, setShowResidualIssues] = React.useState(false);
+  const [showParts, setShowParts] = React.useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = React.useState(false);
 
   const summaryText = report.fully_repaired
@@ -396,6 +418,33 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
           ))}
         </ul>
       </div>
+
+      {report.parts && report.parts.length > 0 ? (
+        <DrawerSection
+          title={_(msg`Parts`)}
+          subtitle={_(msg`Each object was repaired on its own.`)}
+          open={showParts}
+          onToggle={() => setShowParts((value) => !value)}
+          tone={partsRepairedCount(report) === report.parts.length ? 'neutral' : 'warning'}
+          compact
+        >
+          <p className="mb-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            {partsSummaryLabel(partsRepairedCount(report), report.parts.length, _)}
+          </p>
+          <ul className="space-y-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-strong)' }}>
+            {report.parts.map((part) => (
+              <li key={part.index}>
+                {part.fully_repaired ? '✓' : '•'} {partLabel(part, _)}
+                {part.fully_repaired
+                  ? null
+                  : part.residual_issues.length > 0
+                    ? ` — ${part.residual_issues[0]}`
+                    : ''}
+              </li>
+            ))}
+          </ul>
+        </DrawerSection>
+      ) : null}
 
       {report.residual_issues.length > 0 && (
         <DrawerSection

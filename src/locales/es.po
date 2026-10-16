@@ -49,7 +49,7 @@ msgstr "{count, plural, one {# material} other {# materiales}}"
 msgid "{count, plural, one {# mesh will be exported.} other {# meshes will be exported.}}"
 msgstr "{count, plural, one {Se exportará # malla.} other {Se exportarán # mallas.}}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:108
+#: src/components/scene/MeshRepairReportModal.tsx:112
 msgid "{count, plural, one {# mesh} other {# meshes}} · {duration} · {repaired} clean · {residual} with issues"
 msgstr "{count, plural, one {# malla} other {# mallas}} · {duration} · {repaired} limpias · {residual} con problemas"
 
@@ -261,7 +261,7 @@ msgid "{pixels}px XY · {layers}L Z"
 msgstr "{pixels} px en XY · {layers} capas en Z"
 
 #. {plateName} is the locked build plate, named as the Models panel names it: its own name, or "Plate 1".
-#: src/app/page.tsx:765
+#: src/app/page.tsx:769
 msgid "{plateName} is locked."
 msgstr "{plateName} está bloqueada."
 
@@ -277,6 +277,10 @@ msgstr "{printer} está desconectada"
 #: src/features/slicing/components/SlicingPanel.tsx:267
 msgid "{rate} layers/s"
 msgstr "{rate} capas/s"
+
+#: src/components/scene/MeshRepairReportModal.tsx:342
+msgid "{repaired} of {total} parts repaired"
+msgstr ""
 
 #. Counter above the managed printer list: how many printers are saved and how many are reachable.
 #: src/components/settings/FleetManagement.tsx:16
@@ -334,7 +338,7 @@ msgctxt "Undo history entry"
 msgid "{supportType, select, trunk {Move trunk tip} branch {Move branch tip} leaf {Move leaf tip} twig {Move twig tip} stick {Move stick tip} brace {Move brace tip} stump {Move stump tip} kickstand {Move kickstand tip} other {Move support tip}}"
 msgstr "{supportType, select, trunk {Mover punta del tronco} branch {Mover punta de la rama} leaf {Mover punta de la hoja} twig {Mover punta de la ramita} stick {Mover punta de la varilla} brace {Mover punta del arriostre} stump {Mover punta del tocón} kickstand {Mover punta de la pata lateral} other {Mover punta del soporte}}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:114
+#: src/components/scene/MeshRepairReportModal.tsx:118
 msgctxt "Mesh repair summary, triangle count"
 msgid "{trianglesBefore} → {trianglesAfter} tris"
 msgstr "{trianglesBefore} → {trianglesAfter} triángulos"
@@ -477,7 +481,7 @@ msgstr "<0>{overwriteCollisionCount}</0> archivos que va a escribir este proceso
 msgid "<0>{recordedLabel}</0> has a build volume of {0} × {1} × {2} mm."
 msgstr "tiene un volumen de impresión de"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:94
+#: src/components/scene/MeshRepairConfirmModal.tsx:131
 msgid "<0>Disclaimer:</0> Repair is recommended. Loading this mesh as-is may cause slicing errors or print failures, and successful output cannot be guaranteed."
 msgstr "<0>Aviso:</0> Se recomienda repararla. Cargar esta malla tal cual puede provocar errores de laminado o fallos de impresión, y no se garantiza un resultado correcto."
 
@@ -636,7 +640,7 @@ msgctxt "Undo history entry"
 msgid "Add hole"
 msgstr "Añadir agujero"
 
-#: src/app/page.tsx:2613
+#: src/app/page.tsx:2617
 msgid "Add joint"
 msgstr "Añadir unión"
 
@@ -733,9 +737,9 @@ msgstr "Avanzado (calibración)"
 msgid "Advanced mode"
 msgstr "Modo avanzado"
 
-#: src/components/scene/MeshRepairReportModal.tsx:427
-#: src/components/scene/MeshRepairReportModal.tsx:466
-#: src/components/scene/MeshRepairReportModal.tsx:626
+#: src/components/scene/MeshRepairReportModal.tsx:476
+#: src/components/scene/MeshRepairReportModal.tsx:515
+#: src/components/scene/MeshRepairReportModal.tsx:675
 msgid "After"
 msgstr "Después"
 
@@ -784,11 +788,11 @@ msgstr "Ya es óptimo para este objetivo."
 msgid "Ambient Occlusion"
 msgstr "Oclusión ambiental"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:76
+#: src/components/scene/MeshRepairConfirmModal.tsx:105
 msgid "Analysis"
 msgstr "Análisis"
 
-#: src/app/page.tsx:12048
+#: src/app/page.tsx:12052
 msgid "Analyzing Model Islands & Minima"
 msgstr "Analizando islas y mínimos del modelo"
 
@@ -814,7 +818,7 @@ msgid "Anti-aliasing: nothing to anti-alias."
 msgstr "Antialiasing: nada que suavizar."
 
 #. placeholder {0}: report.steps.length
-#: src/components/scene/MeshRepairReportModal.tsx:170
+#: src/components/scene/MeshRepairReportModal.tsx:174
 msgid "Applied {0, plural, one {# automated repair step} other {# automated repair steps}} and re-validated the mesh."
 msgstr "Se {0, plural, one {aplicó # paso de reparación automática} other {aplicaron # pasos de reparación automática}} y se volvió a validar la malla."
 
@@ -838,7 +842,7 @@ msgctxt "Undo history entry"
 msgid "Apply orientation suggestion"
 msgstr "Aplicar la orientación sugerida"
 
-#: src/app/page.tsx:8567
+#: src/app/page.tsx:8571
 msgid "Apply the holes to every visible model, or open the Hollow tool to review and apply them per model."
 msgstr "Aplica los agujeros a todos los modelos visibles, o abre la herramienta Vaciar para revisarlos y aplicarlos modelo a modelo."
 
@@ -846,7 +850,7 @@ msgstr "Aplica los agujeros a todos los modelos visibles, o abre la herramienta 
 msgid "Apply this preset to the auto-support settings"
 msgstr "Aplica este preajuste a los ajustes de autosoportes"
 
-#: src/app/page.tsx:8578
+#: src/app/page.tsx:8582
 msgid "Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually."
 msgstr "Aplicar a todos integra los agujeros en todos los modelos visibles a los que se puedan aplicar. También puedes abrir la herramienta Vaciar para revisarlos y aplicarlos uno a uno."
 
@@ -854,19 +858,19 @@ msgstr "Aplicar a todos integra los agujeros en todos los modelos visibles a los
 msgid "Applying Array Arrange…"
 msgstr "Aplicando la organización en matriz…"
 
-#: src/app/page.tsx:1922
+#: src/app/page.tsx:1926
 msgid "Applying Hole Punches..."
 msgstr "Aplicando agujeros..."
 
-#: src/app/page.tsx:1900
+#: src/app/page.tsx:1904
 msgid "Applying Hollowing and Hole Punches..."
 msgstr "Aplicando vaciado y agujeros..."
 
-#: src/app/page.tsx:1912
+#: src/app/page.tsx:1916
 msgid "Applying Hollowing..."
 msgstr "Aplicando vaciado..."
 
-#: src/app/page.tsx:1941
+#: src/app/page.tsx:1945
 msgid "Applying Model Changes..."
 msgstr "Aplicando cambios al modelo..."
 
@@ -874,7 +878,7 @@ msgstr "Aplicando cambios al modelo..."
 msgid "Applying Solid Areas"
 msgstr "Aplicando zonas macizas"
 
-#: src/app/page.tsx:1932
+#: src/app/page.tsx:1936
 msgid "Applying Solid Areas..."
 msgstr "Aplicando zonas macizas..."
 
@@ -890,7 +894,7 @@ msgstr "Aplicando..."
 msgid "Applying…"
 msgstr "Aplicando…"
 
-#: src/app/page.tsx:12143
+#: src/app/page.tsx:12147
 msgid "Are you sure you want to remove every model from the plate?"
 msgstr "¿Seguro que quieres quitar todos los modelos de la placa?"
 
@@ -1068,7 +1072,7 @@ msgstr "Autoelevar: NO"
 msgid "Auto-Lift ON"
 msgstr "Autoelevar: SÍ"
 
-#: src/app/page.tsx:2633
+#: src/app/page.tsx:2637
 #: src/components/settings/GeneralSettingsTab.tsx:500
 #: src/components/settings/GeneralSettingsTab.tsx:504
 #: src/components/ui/EditorContextMenu.tsx:120
@@ -1176,7 +1180,7 @@ msgstr "Los archivos de guardado automático solo existen en la versión de escr
 msgid "Autosave idle delay"
 msgstr "Espera antes de guardar"
 
-#: src/app/page.tsx:1266
+#: src/app/page.tsx:1270
 msgid "Autosave is not working"
 msgstr "El guardado automático no funciona"
 
@@ -1317,13 +1321,13 @@ msgstr "Base acampanada"
 msgid "Beds per row"
 msgstr "Placas por fila"
 
-#: src/components/scene/MeshRepairReportModal.tsx:426
-#: src/components/scene/MeshRepairReportModal.tsx:465
-#: src/components/scene/MeshRepairReportModal.tsx:625
+#: src/components/scene/MeshRepairReportModal.tsx:475
+#: src/components/scene/MeshRepairReportModal.tsx:514
+#: src/components/scene/MeshRepairReportModal.tsx:674
 msgid "Before"
 msgstr "Antes"
 
-#: src/components/scene/MeshRepairReportModal.tsx:419
+#: src/components/scene/MeshRepairReportModal.tsx:468
 msgid "Before/after analysis and repair steps."
 msgstr "Análisis de antes y después, y pasos de reparación."
 
@@ -1372,18 +1376,18 @@ msgstr "La operación booleana necesita una malla cerrada (manifold)"
 msgid "Bottom"
 msgstr "Abajo"
 
-#: src/components/scene/MeshRepairReportModal.tsx:682
-#: src/components/scene/MeshRepairReportModal.tsx:723
+#: src/components/scene/MeshRepairReportModal.tsx:731
+#: src/components/scene/MeshRepairReportModal.tsx:772
 msgctxt "Mesh analysis row"
 msgid "Boundary edges"
 msgstr "Aristas de borde"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:80
+#: src/components/scene/MeshRepairConfirmModal.tsx:109
 msgid "Boundary loops"
 msgstr "Contornos abiertos"
 
-#: src/components/scene/MeshRepairReportModal.tsx:683
-#: src/components/scene/MeshRepairReportModal.tsx:724
+#: src/components/scene/MeshRepairReportModal.tsx:732
+#: src/components/scene/MeshRepairReportModal.tsx:773
 msgctxt "Mesh analysis row"
 msgid "Boundary loops"
 msgstr "Contornos abiertos"
@@ -1504,7 +1508,7 @@ msgstr "Modo de vista de la cámara: {currentLabel}"
 msgid "Can't open this scene"
 msgstr "No se puede abrir esta escena"
 
-#: src/app/page.tsx:12104
+#: src/app/page.tsx:12108
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:470
 #: src/components/controls/autoSupport/AutoSupportPresets.tsx:666
 #: src/components/controls/AutoSupportPanel.tsx:652
@@ -1542,7 +1546,7 @@ msgstr "Cancelar"
 msgid "Cancel delete"
 msgstr "Cancelar el borrado"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:43
+#: src/components/scene/MeshRepairConfirmModal.tsx:62
 msgid "Cancel importing this model"
 msgstr "Cancelar la importación de este modelo"
 
@@ -1563,8 +1567,8 @@ msgstr "Cancelar la restauración"
 msgid "Cancel Slicing"
 msgstr "Cancelar el laminado"
 
-#: src/app/page.tsx:5878
-#: src/app/page.tsx:5879
+#: src/app/page.tsx:5882
+#: src/app/page.tsx:5883
 msgid "Canceling upload…"
 msgstr "Cancelando la subida…"
 
@@ -1747,7 +1751,7 @@ msgstr "Clasificando cascarones de malla…"
 msgid "Clean (no pending recovery)"
 msgstr "Limpio (nada que recuperar)"
 
-#: src/components/scene/MeshRepairReportModal.tsx:159
+#: src/components/scene/MeshRepairReportModal.tsx:163
 msgid "Cleaned up {cleanedNonManifoldEdges, plural, one {# non-manifold edge} other {# non-manifold edges}}."
 msgstr "{cleanedNonManifoldEdges, plural, one {Se limpió # arista no manifold} other {Se limpiaron # aristas no manifold}}."
 
@@ -1779,12 +1783,12 @@ msgstr "«Borrar todo» ha fallado. Mira la consola para más detalles."
 
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
 #. Tooltip on the bin beside the build plate, which removes every model on it. Undo brings them back.
-#: src/app/page.tsx:11281
+#: src/app/page.tsx:11285
 #: src/components/scene/SceneCanvas/SceneCanvas.tsx:1776
 msgid "Clear build plate"
 msgstr "Vaciar la placa de impresión"
 
-#: src/app/page.tsx:12093
+#: src/app/page.tsx:12097
 msgid "Clear Build Plate?"
 msgstr "¿Vaciar la placa de impresión?"
 
@@ -1802,7 +1806,7 @@ msgstr "Quitar el vaciado"
 msgid "Clear Override"
 msgstr "Quitar la anulación"
 
-#: src/app/page.tsx:12134
+#: src/app/page.tsx:12138
 msgid "Clear Plate"
 msgstr "Vaciar placa"
 
@@ -1864,12 +1868,12 @@ msgstr "ID de cliente"
 #: src/components/modals/SliceCompletedModal.tsx:93
 #: src/components/organisms/modals/PrintingModals.tsx:1092
 #: src/components/printers/PrinterVariantPickerModal.tsx:422
-#: src/components/scene/MeshRepairReportModal.tsx:277
+#: src/components/scene/MeshRepairReportModal.tsx:281
 #: src/features/slicing/components/LutCurveEditor.tsx:1269
 msgid "Close"
 msgstr "Cerrar"
 
-#: src/app/page.tsx:12099
+#: src/app/page.tsx:12103
 msgid "Close clear-plate confirmation"
 msgstr "Cerrar la confirmación de vaciado"
 
@@ -1946,7 +1950,7 @@ msgstr "Cerrar programa"
 msgid "Close rename curve profile dialog"
 msgstr "Cerrar el diálogo para renombrar el perfil de curva"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:303
+#: src/components/organisms/modals/MeshRepairModals.tsx:304
 msgid "Close repair mesh dialog"
 msgstr "Cerrar el diálogo de reparación de malla"
 
@@ -2003,7 +2007,7 @@ msgstr "Cerrar ventana"
 msgid "Close without applying the edits made in this dialog"
 msgstr "Cierra sin aplicar los cambios hechos en esta ventana"
 
-#: src/components/scene/MeshRepairReportModal.tsx:153
+#: src/components/scene/MeshRepairReportModal.tsx:157
 msgid "Closed {closedHoles, plural, one {# open hole} other {# open holes}}."
 msgstr "{closedHoles, plural, one {Se cerró # agujero abierto} other {Se cerraron # agujeros abiertos}}."
 
@@ -2096,12 +2100,12 @@ msgstr "¡Próximamente!"
 msgid "Compiling results"
 msgstr "Recopilando resultados"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:78
+#: src/components/scene/MeshRepairConfirmModal.tsx:107
 msgid "Components"
 msgstr "Componentes"
 
-#: src/components/scene/MeshRepairReportModal.tsx:679
-#: src/components/scene/MeshRepairReportModal.tsx:720
+#: src/components/scene/MeshRepairReportModal.tsx:728
+#: src/components/scene/MeshRepairReportModal.tsx:769
 msgctxt "Mesh analysis row"
 msgid "Components"
 msgstr "Componentes"
@@ -2153,7 +2157,7 @@ msgstr "Confirmar la cancelación"
 msgid "Confirm cancel print"
 msgstr "Confirmar la cancelación de la impresión"
 
-#: src/app/page.tsx:12092
+#: src/app/page.tsx:12096
 msgid "Confirm clearing the build plate"
 msgstr "Confirmar el vaciado de la placa de impresión"
 
@@ -2173,7 +2177,7 @@ msgstr "Confirmar el borrado del archivo reciente"
 msgid "Confirm delete snapshot"
 msgstr "Confirmar el borrado de la instantánea"
 
-#: src/app/page.tsx:12091
+#: src/app/page.tsx:12095
 msgid "Confirm deleting the plate"
 msgstr "Confirmar la eliminación de la placa"
 
@@ -2301,7 +2305,7 @@ msgstr "Regiones contorneadas"
 msgid "Contrast"
 msgstr "Contraste"
 
-#: src/app/page.tsx:8858
+#: src/app/page.tsx:8862
 msgid "Converting support data and model metadata"
 msgstr "Convirtiendo los datos de soportes y los metadatos del modelo"
 
@@ -2315,11 +2319,11 @@ msgstr "Frío"
 msgid "Copy"
 msgstr "Copiar"
 
-#: src/components/scene/MeshRepairReportModal.tsx:310
+#: src/components/scene/MeshRepairReportModal.tsx:314
 msgid "Copy full JSON to clipboard"
 msgstr "Copiar el JSON completo al portapapeles"
 
-#: src/components/scene/MeshRepairReportModal.tsx:313
+#: src/components/scene/MeshRepairReportModal.tsx:317
 msgid "Copy JSON"
 msgstr "Copiar JSON"
 
@@ -2339,7 +2343,7 @@ msgstr "Copia el preajuste seleccionado con otro nombre"
 msgid "Copy the whole report to the clipboard"
 msgstr "Copia el informe completo al portapapeles"
 
-#: src/components/scene/MeshRepairReportModal.tsx:162
+#: src/components/scene/MeshRepairReportModal.tsx:166
 msgid "Corrected {correctedWindingIssues, plural, one {# winding issue} other {# winding issues}}."
 msgstr "{correctedWindingIssues, plural, one {Se corrigió # problema de orientación de caras} other {Se corrigieron # problemas de orientación de caras}}."
 
@@ -2352,11 +2356,11 @@ msgstr "No se han podido leer los datos de la impresora."
 msgid "Could not reopen this file from cache."
 msgstr "No se pudo reabrir este archivo desde la caché."
 
-#: src/features/scene/useSceneCollectionManager.ts:7105
+#: src/features/scene/useSceneCollectionManager.ts:7128
 msgid "Could not restore the model."
 msgstr "No se pudo restaurar el modelo."
 
-#: src/app/page.tsx:5128
+#: src/app/page.tsx:5132
 msgid "Could not save the scene"
 msgstr "No se ha podido guardar la escena"
 
@@ -2549,7 +2553,7 @@ msgstr "Colores de la herramienta de corte"
 msgid "Cutter poly count — higher is a denser cut mesh. Contour cut only."
 msgstr "Número de polígonos de la cuchilla: más alto, malla de corte más densa. Solo en corte por contorno."
 
-#: src/app/page.tsx:1924
+#: src/app/page.tsx:1928
 msgid "Cutting hole punches into the current model geometry."
 msgstr "Abriendo los agujeros en la geometría actual del modelo."
 
@@ -2627,8 +2631,8 @@ msgstr "Pared de balsa predeterminada"
 msgid "Defective — {0} errors"
 msgstr "Defectuoso — {0} errores"
 
-#: src/components/scene/MeshRepairReportModal.tsx:685
-#: src/components/scene/MeshRepairReportModal.tsx:726
+#: src/components/scene/MeshRepairReportModal.tsx:734
+#: src/components/scene/MeshRepairReportModal.tsx:775
 msgctxt "Mesh analysis row"
 msgid "Degenerate tris"
 msgstr "Triángulos degenerados"
@@ -2698,7 +2702,7 @@ msgctxt "Undo history entry"
 msgid "Delete models and plates"
 msgstr "Eliminar modelos y placas"
 
-#: src/app/page.tsx:12134
+#: src/app/page.tsx:12138
 #: src/components/controls/ModelManagerPanel.tsx:479
 #: src/components/controls/ModelManagerPanel.tsx:766
 #: src/components/controls/ModelManagerPanel.tsx:787
@@ -2762,11 +2766,11 @@ msgid "Delete this model's existing supports and place the new ones"
 msgstr "Elimina los soportes que ya tiene este modelo y coloca los nuevos"
 
 #. Tooltip on the bin beside the build plate when the plate can go: it removes the bed and the models standing on it. Undo brings them back.
-#: src/app/page.tsx:11280
+#: src/app/page.tsx:11284
 msgid "Delete this plate"
 msgstr "Eliminar esta placa"
 
-#: src/app/page.tsx:12093
+#: src/app/page.tsx:12097
 #: src/components/controls/ModelManagerPanel.tsx:767
 msgid "Delete this plate?"
 msgstr "¿Eliminar esta plata?"
@@ -2826,7 +2830,7 @@ msgstr "Detectando el modelo…"
 msgid "Detection"
 msgstr "Detección"
 
-#: src/app/page.tsx:5800
+#: src/app/page.tsx:5804
 msgid "Device still processing"
 msgstr "La impresora sigue procesando"
 
@@ -2891,9 +2895,9 @@ msgstr "Cuenta de GitHub desconectada."
 msgid "Discovered Printers"
 msgstr "Impresoras encontradas"
 
-#: src/app/page.tsx:12191
+#: src/app/page.tsx:12195
 #: src/components/modals/ManifoldWarningModal.tsx:38
-#: src/components/scene/MeshRepairReportModal.tsx:320
+#: src/components/scene/MeshRepairReportModal.tsx:324
 #: src/features/updater/GlobalUpdateIndicator.tsx:234
 msgid "Dismiss"
 msgstr "Cerrar"
@@ -2985,7 +2989,7 @@ msgstr "Arrastrar punto de corte"
 msgid "DragonFruit app menu"
 msgstr "Menú de aplicación de DragonFruit"
 
-#: src/components/scene/MeshRepairReportModal.tsx:337
+#: src/components/scene/MeshRepairReportModal.tsx:359
 msgid "DragonFruit could not fully repair this mesh — it is still not a valid manifold and may cause problems later in your workflow."
 msgstr "DragonFruit no pudo reparar del todo esta malla: sigue sin ser una malla cerrada válida y puede dar problemas más adelante."
 
@@ -3010,7 +3014,7 @@ msgstr "DragonFruit es un laminador libre y de código abierto para impresión 3
 msgid "DragonFruit menu"
 msgstr "Menú de DragonFruit"
 
-#: src/components/scene/MeshRepairReportModal.tsx:336
+#: src/components/scene/MeshRepairReportModal.tsx:358
 msgid "DragonFruit repaired this mesh and replaced the model in your current scene."
 msgstr "DragonFruit ha reparado esta malla y ha sustituido el modelo en la escena actual."
 
@@ -3031,7 +3035,7 @@ msgstr "Bajar"
 msgid "Drop supported files"
 msgstr "Suelta archivos compatibles"
 
-#: src/app/page.tsx:11226
+#: src/app/page.tsx:11230
 msgid "Drop supported files to import"
 msgstr "Suelta aquí los ficheros compatibles para importarlos"
 
@@ -3045,8 +3049,8 @@ msgctxt "Undo history entry"
 msgid "Duplicate {modelName}"
 msgstr "Duplicar {modelName}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:686
-#: src/components/scene/MeshRepairReportModal.tsx:727
+#: src/components/scene/MeshRepairReportModal.tsx:735
+#: src/components/scene/MeshRepairReportModal.tsx:776
 msgctxt "Mesh analysis row"
 msgid "Duplicate tris"
 msgstr "Triángulos duplicados"
@@ -3055,6 +3059,10 @@ msgstr "Triángulos duplicados"
 msgctxt "Plate ordering mode: a grid that grows to stay square."
 msgid "Dynamic"
 msgstr "Dinámica"
+
+#: src/components/scene/MeshRepairReportModal.tsx:425
+msgid "Each object was repaired on its own."
+msgstr ""
 
 #: src/components/settings/SettingsModal.tsx:1272
 msgid "Early-access and experimental features"
@@ -3122,7 +3130,7 @@ msgctxt "Undo history entry"
 msgid "Edit trunk"
 msgstr "Editar tronco"
 
-#: src/app/page.tsx:2619
+#: src/app/page.tsx:2623
 msgid "Editor"
 msgstr "Editor"
 
@@ -3369,7 +3377,7 @@ msgstr "Exportar la curva seleccionada"
 msgid "Export the selected preset as a JSON file"
 msgstr "Exporta el preajuste seleccionado como archivo JSON"
 
-#: src/app/page.tsx:12081
+#: src/app/page.tsx:12085
 #: src/features/export/components/ExportPanel.tsx:761
 msgid "Exporting…"
 msgstr "Exportando…"
@@ -3494,7 +3502,7 @@ msgid "Fewest Supports"
 msgstr "Menos soportes"
 
 #: src/components/organisms/modals/PrintingModals.tsx:514
-#: src/components/scene/MeshRepairConfirmModal.tsx:68
+#: src/components/scene/MeshRepairConfirmModal.tsx:97
 msgid "File"
 msgstr "Archivo"
 
@@ -3555,11 +3563,11 @@ msgctxt "Plate ordering mode: a fixed number of beds per row."
 msgid "Fixed"
 msgstr "Fija"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:295
+#: src/components/organisms/modals/MeshRepairModals.tsx:296
 msgid "Fixes geometry issues before you keep working."
 msgstr "Corrige problemas de geometría antes de continuar."
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:294
+#: src/components/organisms/modals/MeshRepairModals.tsx:295
 msgid "Fixing geometry issues."
 msgstr "Corrigiendo los problemas de geometría."
 
@@ -3610,7 +3618,7 @@ msgstr "Invertir la espiga"
 msgid "Follow the plate a model lands on"
 msgstr "Seguir la placa donde cae un modelo"
 
-#: src/components/scene/MeshRepairReportModal.tsx:402
+#: src/components/scene/MeshRepairReportModal.tsx:451
 msgid "Follow-up notes"
 msgstr "Notas adicionales"
 
@@ -3694,7 +3702,7 @@ msgstr "Generar soportes"
 msgid "Generate supports automatically on scan"
 msgstr "Generar los soportes automáticamente al escanear"
 
-#: src/app/page.tsx:12060
+#: src/app/page.tsx:12064
 msgid "Generating Supports"
 msgstr "Generando soportes"
 
@@ -3723,7 +3731,7 @@ msgstr "Dale un nombre a esta placa de impresión"
 msgid "Go back to the settings dialog"
 msgstr "Vuelve a la ventana de ajustes"
 
-#: src/app/page.tsx:12183
+#: src/app/page.tsx:12187
 msgid "Go to Settings → 3D Mouse to configure or block it."
 msgstr "Ve a Ajustes → Ratón 3D para configurarlo o bloquearlo."
 
@@ -3897,7 +3905,7 @@ msgstr "Profundidad del agujero en milímetros"
 msgid "Hole Punching"
 msgstr "Agujeros"
 
-#: src/components/scene/MeshRepairReportModal.tsx:123
+#: src/components/scene/MeshRepairReportModal.tsx:127
 msgctxt "Mesh repair summary"
 msgid "holes {holesBefore} → {holesAfter}"
 msgstr "agujeros {holesBefore} → {holesAfter}"
@@ -4050,7 +4058,7 @@ msgstr "Si GitHub tiene una copia más reciente, DragonFruit detiene la sincroni
 msgid "If you quit now, your unsaved LUT curve changes will be lost."
 msgstr "Si sales ahora, perderás los cambios sin guardar de la curva LUT."
 
-#: src/components/scene/MeshRepairReportModal.tsx:375
+#: src/components/scene/MeshRepairReportModal.tsx:397
 msgid "If you want them, a few follow-up notes are tucked below."
 msgstr "Si te interesan, debajo tienes algunas notas adicionales."
 
@@ -4126,8 +4134,8 @@ msgstr "Incluir balsa"
 msgid "Include Supports"
 msgstr "Incluir soportes"
 
-#: src/components/scene/MeshRepairReportModal.tsx:684
-#: src/components/scene/MeshRepairReportModal.tsx:725
+#: src/components/scene/MeshRepairReportModal.tsx:733
+#: src/components/scene/MeshRepairReportModal.tsx:774
 msgctxt "Mesh analysis row"
 msgid "Inconsistent edges"
 msgstr "Aristas incoherentes"
@@ -4372,7 +4380,7 @@ msgstr "Continúa sin impresora. Puedes añadir una más adelante."
 msgid "Keep Hollow"
 msgstr "Mantener hueco"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:371
+#: src/components/organisms/modals/MeshRepairModals.tsx:372
 msgid "Keep Original"
 msgstr "Conservar el original"
 
@@ -4446,7 +4454,7 @@ msgid "Last remote backup"
 msgstr "Última copia remota"
 
 #. {timestamp} is a locale-formatted date and time.
-#: src/app/page.tsx:752
+#: src/app/page.tsx:756
 msgid "Last successful autosave: {timestamp}. Save your project manually."
 msgstr "Último guardado automático correcto: {timestamp}. Guarda tu proyecto a mano."
 
@@ -4502,11 +4510,11 @@ msgstr "Capas:"
 msgid "Layout Mode"
 msgstr "Modo de disposición"
 
-#: src/app/page.tsx:12201
+#: src/app/page.tsx:12205
 msgid "Leaf Fanning Active: Click model to sprout leaf"
 msgstr "Abanico de hojas activo: haz clic en el modelo para que brote una hoja"
 
-#: src/app/page.tsx:12202
+#: src/app/page.tsx:12206
 msgid "Leaf Fanning: Click a support shaft to lock anchor knot"
 msgstr "Abanico de hojas: haz clic en el fuste de un soporte para fijar el nudo de anclaje"
 
@@ -4532,7 +4540,7 @@ msgstr "Izq."
 msgid "Length"
 msgstr "Longitud"
 
-#: src/app/page.tsx:8898
+#: src/app/page.tsx:8902
 msgid "Letting DragonFruit finish its startup animation before loading your scene."
 msgstr "Dejando que DragonFruit termine su animación de arranque antes de cargar la escena."
 
@@ -4604,7 +4612,7 @@ msgstr "Carga un modelo para recibir una sugerencia de orientación."
 
 #: src/components/organisms/modals/SceneFileModals.tsx:296
 #: src/components/organisms/modals/SceneFileModals.tsx:306
-#: src/components/scene/MeshRepairConfirmModal.tsx:53
+#: src/components/scene/MeshRepairConfirmModal.tsx:72
 msgid "Load As-Is"
 msgstr "Cargar tal cual"
 
@@ -4653,7 +4661,7 @@ msgstr "Cargando los materiales de la impresora seleccionada…"
 msgid "Loading Mesh Files…"
 msgstr "Cargando ficheros de malla…"
 
-#: src/app/page.tsx:8848
+#: src/app/page.tsx:8852
 #: src/features/scene/sceneImportMessages.ts:23
 msgid "Loading Mesh…"
 msgstr "Cargando malla…"
@@ -4666,9 +4674,9 @@ msgstr "Cargando los archivos de impresión recientes…"
 msgid "Loading remote material…"
 msgstr "Cargando el material remoto…"
 
-#: src/app/page.tsx:5009
-#: src/app/page.tsx:8848
-#: src/app/page.tsx:8857
+#: src/app/page.tsx:5013
+#: src/app/page.tsx:8852
+#: src/app/page.tsx:8861
 msgid "Loading Scene…"
 msgstr "Cargando escena…"
 
@@ -4806,7 +4814,7 @@ msgstr "Superficies sin reflejos para imprimir de madrugada."
 msgid "LUT: {curveName}"
 msgstr "LUT: {curveName}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:150
+#: src/components/scene/MeshRepairReportModal.tsx:154
 msgid "Made the mesh watertight."
 msgstr "La malla ahora es estanca."
 
@@ -5003,15 +5011,15 @@ msgstr "Se ha detectado un problema en la malla"
 msgid "Mesh quality too low"
 msgstr "La calidad de la malla es demasiado baja"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:38
+#: src/components/scene/MeshRepairConfirmModal.tsx:57
 msgid "Mesh repair confirmation"
 msgstr "Confirmación de reparación de malla"
 
-#: src/components/scene/MeshRepairReportModal.tsx:252
+#: src/components/scene/MeshRepairReportModal.tsx:256
 msgid "Mesh repair report"
 msgstr "Informe de reparación de malla"
 
-#: src/components/scene/MeshRepairReportModal.tsx:224
+#: src/components/scene/MeshRepairReportModal.tsx:228
 msgid "Mesh Repair Report"
 msgstr "Informe de reparación de malla"
 
@@ -5104,7 +5112,7 @@ msgstr "Reflejar en {axes}"
 msgid "Mode"
 msgstr "Modo"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:316
+#: src/components/organisms/modals/MeshRepairModals.tsx:317
 msgctxt "Mesh repair dialog field"
 msgid "Model"
 msgstr "Modelo"
@@ -5167,7 +5175,7 @@ msgstr "Dimensionado a escala del modelo"
 msgid "Models"
 msgstr "Modelos"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:315
+#: src/components/organisms/modals/MeshRepairModals.tsx:316
 msgctxt "Mesh repair dialog field"
 msgid "Models"
 msgstr "Modelos"
@@ -5324,7 +5332,7 @@ msgstr "Nunca"
 msgid "New Curve"
 msgstr "Curva nueva"
 
-#: src/app/page.tsx:12182
+#: src/app/page.tsx:12186
 msgid "New input device detected."
 msgstr "Se ha detectado un dispositivo de entrada nuevo."
 
@@ -5352,13 +5360,13 @@ msgstr "Nueva escena"
 msgid "Next (N)"
 msgstr "Siguiente (N)"
 
-#: src/components/scene/MeshRepairReportModal.tsx:118
+#: src/components/scene/MeshRepairReportModal.tsx:122
 msgctxt "Mesh repair summary; NME = non-manifold edges"
 msgid "NME {edgesBefore} → {edgesAfter}"
 msgstr "aristas no manifold {edgesBefore} → {edgesAfter}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:689
-#: src/components/scene/MeshRepairReportModal.tsx:730
+#: src/components/scene/MeshRepairReportModal.tsx:738
+#: src/components/scene/MeshRepairReportModal.tsx:779
 msgid "no"
 msgstr "no"
 
@@ -5386,7 +5394,7 @@ msgstr "No hay ninguna impresión en curso."
 msgid "No active printer"
 msgstr "Sin impresora activa"
 
-#: src/app/page.tsx:1270
+#: src/app/page.tsx:1274
 msgid "No autosave has succeeded this session. Save your project manually."
 msgstr "Ningún guardado automático ha funcionado en esta sesión. Guarda tu proyecto a mano."
 
@@ -5402,8 +5410,8 @@ msgstr "Sin arriostrado"
 msgid "No braces to remove on this model."
 msgstr "Este modelo no tiene riostras que quitar."
 
-#: src/app/page.tsx:5845
-#: src/app/page.tsx:5851
+#: src/app/page.tsx:5849
+#: src/app/page.tsx:5855
 msgid "No connected printer is available for upload."
 msgstr "No hay ninguna impresora conectada disponible para subir."
 
@@ -5482,8 +5490,8 @@ msgstr "No hay modelos cargados"
 msgid "No networked printers with valid IP addresses were found in this fleet"
 msgstr "No se ha encontrado en esta flota ninguna impresora en red con una dirección IP válida"
 
-#: src/app/page.tsx:4561
-#: src/app/page.tsx:4585
+#: src/app/page.tsx:4565
+#: src/app/page.tsx:4589
 msgid "No online printer is available for upload."
 msgstr "No hay ninguna impresora en línea disponible para subir."
 
@@ -5491,11 +5499,11 @@ msgstr "No hay ninguna impresora en línea disponible para subir."
 msgid "No printer connected"
 msgstr "Sin impresora conectada"
 
-#: src/app/page.tsx:5903
+#: src/app/page.tsx:5907
 msgid "No printer IP address available for Print Now."
 msgstr "No hay dirección IP de impresora para Imprimir ahora."
 
-#: src/app/page.tsx:5588
+#: src/app/page.tsx:5592
 msgid "No printer IP address available for send operation."
 msgstr "No hay dirección IP de impresora para el envío."
 
@@ -5530,7 +5538,7 @@ msgstr "Todavía no has guardado ninguna impresora. Añade una abajo para empeza
 msgid "No recent files"
 msgstr "No hay archivos recientes"
 
-#: src/app/page.tsx:4463
+#: src/app/page.tsx:4467
 msgid "No resin selected"
 msgstr "Ninguna resina seleccionada"
 
@@ -5538,7 +5546,7 @@ msgstr "Ninguna resina seleccionada"
 msgid "No snapshots yet. Run \"Backup Now\" to create your first local snapshot."
 msgstr "Todavía no hay instantáneas. Usa «Copiar ahora» para crear la primera copia local."
 
-#: src/features/scene/useSceneCollectionManager.ts:7078
+#: src/features/scene/useSceneCollectionManager.ts:7101
 msgid "No source file to restore this model from."
 msgstr "No hay un archivo de origen desde el que restaurar este modelo."
 
@@ -5558,18 +5566,18 @@ msgstr "No hay ninguna actualización disponible"
 msgid "No visible models available for slicing."
 msgstr "No hay modelos visibles que laminar."
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:79
+#: src/components/scene/MeshRepairConfirmModal.tsx:108
 msgid "Non-manifold edges"
 msgstr "Aristas no manifold"
 
-#: src/components/scene/MeshRepairReportModal.tsx:680
-#: src/components/scene/MeshRepairReportModal.tsx:721
+#: src/components/scene/MeshRepairReportModal.tsx:729
+#: src/components/scene/MeshRepairReportModal.tsx:770
 msgctxt "Mesh analysis row"
 msgid "Non-manifold edges"
 msgstr "Aristas no manifold"
 
-#: src/components/scene/MeshRepairReportModal.tsx:681
-#: src/components/scene/MeshRepairReportModal.tsx:722
+#: src/components/scene/MeshRepairReportModal.tsx:730
+#: src/components/scene/MeshRepairReportModal.tsx:771
 msgctxt "Mesh analysis row"
 msgid "Non-manifold verts"
 msgstr "Vértices no manifold"
@@ -5602,7 +5610,7 @@ msgstr "Aún sin crear"
 msgid "Not selected"
 msgstr "Sin seleccionar"
 
-#: src/components/scene/MeshRepairReportModal.tsx:137
+#: src/components/scene/MeshRepairReportModal.tsx:141
 msgctxt "Mesh repair summary"
 msgid "not watertight"
 msgstr "no estanca"
@@ -5782,7 +5790,7 @@ msgstr "Un archivo por modelo"
 msgid "One file per plate"
 msgstr "Un archivo por placa"
 
-#: src/app/page.tsx:8577
+#: src/app/page.tsx:8581
 msgid "One or more models have hole punches that haven’t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output."
 msgstr "Uno o varios modelos tienen agujeros sin aplicar. Los agujeros tienen que integrarse en la geometría antes de laminar; si no, no aparecerán en el resultado."
 
@@ -5885,7 +5893,7 @@ msgstr "Abrir los perfiles de impresora"
 msgid "Open scene…"
 msgstr "Abrir escena…"
 
-#: src/app/page.tsx:8568
+#: src/app/page.tsx:8572
 msgid "Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh."
 msgstr "Abre la herramienta Vaciar para aplicar el vaciado, o continúa y los soportes seguirán la malla actual."
 
@@ -5893,11 +5901,11 @@ msgstr "Abre la herramienta Vaciar para aplicar el vaciado, o continúa y los so
 msgid "Opening"
 msgstr "Abriendo"
 
-#: src/app/page.tsx:8895
+#: src/app/page.tsx:8899
 msgid "Opening scene…"
 msgstr "Abriendo escena…"
 
-#: src/components/scene/MeshRepairReportModal.tsx:403
+#: src/components/scene/MeshRepairReportModal.tsx:452
 msgid "Optional details if you want them."
 msgstr "Detalles opcionales, por si te interesan."
 
@@ -5914,7 +5922,7 @@ msgstr "Orientar plano sobre la placa"
 msgid "Orient Model"
 msgstr "Orientar modelo"
 
-#: src/app/page.tsx:12071
+#: src/app/page.tsx:12075
 msgid "Orienting Model"
 msgstr "Orientando el modelo"
 
@@ -6009,6 +6017,16 @@ msgstr "Pinta zonas vetadas para los soportes. Un contacto bloqueado se rechaza 
 msgctxt "Undo history entry"
 msgid "Paint support blocker"
 msgstr "Pintar bloqueo de soportes"
+
+#. placeholder {0}: part.index + 1
+#. placeholder {1}: part.triangles_after
+#: src/components/scene/MeshRepairReportModal.tsx:346
+msgid "Part {0}: {1} triangles"
+msgstr ""
+
+#: src/components/scene/MeshRepairReportModal.tsx:424
+msgid "Parts"
+msgstr ""
 
 #: src/components/modals/ManifoldWarningModal.tsx:52
 msgid "Parts of this mesh are not closed — edges are left open, faces cross through each other, or surfaces do not quite meet. Slicing and support placement expect a sealed solid, so defects can reach the print without showing up here first."
@@ -6128,7 +6146,7 @@ msgstr "Punto de anclaje"
 msgid "Placement message."
 msgstr "Mensaje de colocación."
 
-#: src/app/page.tsx:12061
+#: src/app/page.tsx:12065
 msgid "Placing and bracing supports…"
 msgstr "Colocando y arriostrando los soportes…"
 
@@ -6187,7 +6205,7 @@ msgstr "Ten paciencia mientras calculamos el relleno válido más denso."
 msgid "Please be patient while we process your models."
 msgstr "Ten paciencia mientras procesamos tus modelos."
 
-#: src/app/page.tsx:1903
+#: src/app/page.tsx:1907
 msgid "Please be patient while we rebuild the model."
 msgstr "Ten paciencia mientras reconstruimos el modelo."
 
@@ -6208,10 +6226,10 @@ msgstr "Usa: {extensions}"
 msgid "Please verify before continuing:"
 msgstr "Comprueba lo siguiente antes de continuar:"
 
-#: src/app/page.tsx:1915
-#: src/app/page.tsx:1925
-#: src/app/page.tsx:1935
-#: src/app/page.tsx:1944
+#: src/app/page.tsx:1919
+#: src/app/page.tsx:1929
+#: src/app/page.tsx:1939
+#: src/app/page.tsx:1948
 #: src/features/scene/arrange/useArrangeManager.ts:176
 msgid "Please wait a moment."
 msgstr "Espera un momento."
@@ -6370,8 +6388,8 @@ msgstr "Comprobación previa a la impresión"
 msgid "Print start failed: {reason}"
 msgstr "No se ha podido iniciar la impresión: {reason}"
 
-#: src/app/page.tsx:4629
-#: src/app/page.tsx:5923
+#: src/app/page.tsx:4633
+#: src/app/page.tsx:5927
 msgid "Print started"
 msgstr "Impresión iniciada"
 
@@ -6495,7 +6513,7 @@ msgstr "Copias privadas en GitHub"
 msgid "Private repo ready"
 msgstr "Repositorio privado listo"
 
-#: src/app/page.tsx:4631
+#: src/app/page.tsx:4635
 msgid "Processing"
 msgstr "Procesando"
 
@@ -6503,9 +6521,9 @@ msgstr "Procesando"
 msgid "Processing {count, plural, one {# model} other {# models}}"
 msgstr "Procesando {count, plural, one {# modelo} other {# modelos}}"
 
-#: src/app/page.tsx:1894
-#: src/app/page.tsx:12051
-#: src/app/page.tsx:12063
+#: src/app/page.tsx:1898
+#: src/app/page.tsx:12055
+#: src/app/page.tsx:12067
 msgid "Processing 1 model"
 msgstr "Procesando 1 modelo"
 
@@ -6517,11 +6535,11 @@ msgstr "Procesando la importación…"
 msgid "Processing on {backend}… elapsed {elapsed}"
 msgstr "Procesando en {backend}… transcurrido {elapsed}"
 
-#: src/app/page.tsx:4626
+#: src/app/page.tsx:4630
 msgid "Processing on device"
 msgstr "Procesando en la impresora"
 
-#: src/app/page.tsx:5697
+#: src/app/page.tsx:5701
 msgid "Processing on device…"
 msgstr "Procesando en la impresora…"
 
@@ -6603,7 +6621,7 @@ msgstr "Repetir el escaneo por líneas"
 msgid "Re-slice required after profile change"
 msgstr "Es necesario volver a laminar tras cambiar de perfil"
 
-#: src/app/page.tsx:5010
+#: src/app/page.tsx:5014
 msgid "Reading autosaved scene…"
 msgstr "Leyendo la escena guardada automáticamente…"
 
@@ -6616,12 +6634,12 @@ msgstr "Listo"
 msgid "Ready for your next adventure?"
 msgstr "¿Todo listo para tu próxima aventura?"
 
-#: src/app/page.tsx:4627
-#: src/app/page.tsx:5792
+#: src/app/page.tsx:4631
+#: src/app/page.tsx:5796
 msgid "Ready to print"
 msgstr "Lista para imprimir"
 
-#: src/app/page.tsx:1914
+#: src/app/page.tsx:1918
 msgid "Rebuilding the model geometry with the latest hollowing settings."
 msgstr "Reconstruyendo la geometría del modelo con los últimos ajustes de vaciado."
 
@@ -6630,7 +6648,7 @@ msgstr "Reconstruyendo la geometría del modelo con los últimos ajustes de vaci
 msgid "Rebuilding the surface"
 msgstr ""
 
-#: src/app/page.tsx:11929
+#: src/app/page.tsx:11933
 msgid "Rebuilding the surface."
 msgstr ""
 
@@ -6694,7 +6712,7 @@ msgstr "Reducir intersecciones"
 msgid "Reduce Total Copies to 1 before arranging"
 msgstr "Reduce el total de copias a 1 antes de organizar"
 
-#: src/components/scene/MeshRepairReportModal.tsx:167
+#: src/components/scene/MeshRepairReportModal.tsx:171
 msgid "Reduced disconnected mesh sections from {before} to {after}."
 msgstr "Se redujeron las partes sueltas de la malla de {before} a {after}."
 
@@ -6741,9 +6759,9 @@ msgstr "Restante"
 msgid "Remember window positions"
 msgstr "Recordar posiciones de las ventanas"
 
-#: src/app/page.tsx:2634
-#: src/app/page.tsx:11928
-#: src/app/page.tsx:11930
+#: src/app/page.tsx:2638
+#: src/app/page.tsx:11932
+#: src/app/page.tsx:11934
 #: src/components/modals/TetrahedralRemeshConfirmModal.tsx:49
 #: src/components/ui/EditorContextMenu.tsx:121
 msgid "Remesh"
@@ -6759,15 +6777,15 @@ msgstr ""
 msgid "Remesh confirmation"
 msgstr ""
 
-#: src/features/scene/useSceneCollectionManager.ts:7269
+#: src/features/scene/useSceneCollectionManager.ts:7292
 msgid "Remesh failed: {message}"
 msgstr ""
 
-#: src/features/scene/useSceneCollectionManager.ts:7242
+#: src/features/scene/useSceneCollectionManager.ts:7265
 msgid "Remesh needs the desktop app."
 msgstr ""
 
-#: src/app/page.tsx:11931
+#: src/app/page.tsx:11935
 msgid "Remesh progress"
 msgstr ""
 
@@ -6970,8 +6988,8 @@ msgstr "Opciones de renderizado"
 msgid "Reopen {0}"
 msgstr "Reabrir {0}"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:383
-#: src/components/scene/MeshRepairConfirmModal.tsx:61
+#: src/components/organisms/modals/MeshRepairModals.tsx:384
+#: src/components/scene/MeshRepairConfirmModal.tsx:80
 #: src/components/ui/EditorContextMenu.tsx:116
 msgid "Repair"
 msgstr "Reparar"
@@ -6981,11 +6999,11 @@ msgctxt "Undo history entry"
 msgid "Repair {modelName}"
 msgstr "Reparar {modelName}"
 
-#: src/app/page.tsx:2633
+#: src/app/page.tsx:2637
 msgid "Repair Again"
 msgstr "Reparar de nuevo"
 
-#: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:227
 msgid "Repair Complete"
 msgstr "Reparación completada"
 
@@ -6997,19 +7015,19 @@ msgstr "Falló la reparación de {modelName}: {message}"
 msgid "Repair failed: {message}"
 msgstr "Falló la reparación: {message}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:357
+#: src/components/scene/MeshRepairReportModal.tsx:379
 msgid "Repair finished"
 msgstr "Reparación terminada"
 
-#: src/components/scene/MeshRepairReportModal.tsx:357
+#: src/components/scene/MeshRepairReportModal.tsx:379
 msgid "Repair incomplete"
 msgstr "Reparación incompleta"
 
-#: src/components/scene/MeshRepairReportModal.tsx:223
+#: src/components/scene/MeshRepairReportModal.tsx:227
 msgid "Repair Incomplete"
 msgstr "Reparación incompleta"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:274
+#: src/components/organisms/modals/MeshRepairModals.tsx:275
 msgid "Repair Mesh"
 msgstr "Reparar malla"
 
@@ -7021,17 +7039,21 @@ msgstr "Reparar la malla…"
 msgid "Repair Now"
 msgstr "Reparar ahora"
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:89
+msgid "Repair parts separately"
+msgstr ""
+
 #: src/components/organisms/modals/MeshRepairModals.tsx:97
 msgid "Repair progress"
 msgstr "Progreso de la reparación"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:39
+#: src/components/scene/MeshRepairConfirmModal.tsx:58
 msgid "Repair recommended before slicing"
 msgstr "Se recomienda reparar antes de laminar"
 
-#: src/components/scene/MeshRepairReportModal.tsx:436
-#: src/components/scene/MeshRepairReportModal.tsx:475
-#: src/components/scene/MeshRepairReportModal.tsx:632
+#: src/components/scene/MeshRepairReportModal.tsx:485
+#: src/components/scene/MeshRepairReportModal.tsx:524
+#: src/components/scene/MeshRepairReportModal.tsx:681
 msgid "Repair steps"
 msgstr "Pasos de reparación"
 
@@ -7043,16 +7065,16 @@ msgstr "Reparación detenida. Se han reparado {repaired} de {total} modelos; el 
 msgid "Repaired {modelName}."
 msgstr "{modelName} reparado."
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:274
-#: src/components/organisms/modals/MeshRepairModals.tsx:290
+#: src/components/organisms/modals/MeshRepairModals.tsx:275
+#: src/components/organisms/modals/MeshRepairModals.tsx:291
 msgid "Repairing Mesh"
 msgstr "Reparando la malla"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:382
+#: src/components/organisms/modals/MeshRepairModals.tsx:383
 msgid "Repairing…"
 msgstr "Reparando…"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:331
+#: src/components/organisms/modals/MeshRepairModals.tsx:332
 msgid "Repairs holes, broken surfaces, and other mesh problems."
 msgstr "Repara agujeros, superficies rotas y otros problemas de malla."
 
@@ -7120,7 +7142,7 @@ msgstr "Restablecer el vaciado"
 msgid "Reset Layout"
 msgstr "Restablecer disposición"
 
-#: src/app/page.tsx:9572
+#: src/app/page.tsx:9576
 #: src/components/controls/TransformControls.tsx:440
 msgid "Reset Rotation"
 msgstr "Restablecer rotación"
@@ -7129,7 +7151,7 @@ msgstr "Restablecer rotación"
 msgid "Reset saved window layout"
 msgstr "Restablecer la distribución guardada"
 
-#: src/app/page.tsx:9572
+#: src/app/page.tsx:9576
 #: src/components/controls/TransformControls.tsx:590
 msgid "Reset Scale"
 msgstr "Restablecer escala"
@@ -7152,8 +7174,8 @@ msgstr "Restablecer ventana"
 msgid "Resetting stream…"
 msgstr "Restableciendo la emisión…"
 
-#: src/components/scene/MeshRepairReportModal.tsx:503
-#: src/components/scene/MeshRepairReportModal.tsx:654
+#: src/components/scene/MeshRepairReportModal.tsx:552
+#: src/components/scene/MeshRepairReportModal.tsx:703
 msgid "Residual issues"
 msgstr "Problemas restantes"
 
@@ -7165,11 +7187,11 @@ msgstr "La resina está mezclada, hay suficiente para la impresión y está a te
 msgid "Resolution"
 msgstr "Resolución"
 
-#: src/components/scene/MeshRepairReportModal.tsx:156
+#: src/components/scene/MeshRepairReportModal.tsx:160
 msgid "Resolved {resolvedSelfIntersections, plural, one {# self-intersection} other {# self-intersections}}."
 msgstr "{resolvedSelfIntersections, plural, one {Se resolvió # autointersección} other {Se resolvieron # autointersecciones}}."
 
-#: src/app/page.tsx:11987
+#: src/app/page.tsx:11991
 msgid "Resolving the surface into a solid."
 msgstr ""
 
@@ -7207,8 +7229,8 @@ msgstr "Restaurar los valores de fábrica"
 msgid "Restore Factory Defaults?"
 msgstr "¿Restaurar los valores de fábrica?"
 
-#: src/app/page.tsx:5041
-#: src/app/page.tsx:5052
+#: src/app/page.tsx:5045
+#: src/app/page.tsx:5056
 msgid "Restore Failed"
 msgstr "Error al restaurar"
 
@@ -7533,7 +7555,7 @@ msgstr "Escanea el modelo para detectar islas sin soporte"
 msgid "Scanning for Supports…"
 msgstr "Buscando soportes…"
 
-#: src/app/page.tsx:12061
+#: src/app/page.tsx:12065
 msgid "Scanning islands & minima…"
 msgstr "Buscando islas y mínimos…"
 
@@ -7583,7 +7605,7 @@ msgstr "Decisión de vaciado al importar la escena"
 msgid "Scene import placement decision"
 msgstr "Colocación de la escena importada"
 
-#: src/app/page.tsx:5120
+#: src/app/page.tsx:5124
 msgid "Scene is too large to save"
 msgstr "La escena es demasiado grande para guardarla"
 
@@ -7672,7 +7694,7 @@ msgstr "Elige una clave de LocalStorage a la izquierda para ver su valor."
 msgid "Select a matching material during import instead."
 msgstr "Elige un material equivalente al importar."
 
-#: src/app/page.tsx:5592
+#: src/app/page.tsx:5596
 msgid "Select a matching material profile before upload."
 msgstr "Selecciona un perfil de material que encaje antes de subir."
 
@@ -7814,13 +7836,13 @@ msgstr "Modo de selección: volumen completo (de izquierda a derecha)"
 msgid "Selection Preview"
 msgstr "Vista previa de la selección"
 
-#: src/components/scene/MeshRepairReportModal.tsx:133
+#: src/components/scene/MeshRepairReportModal.tsx:137
 msgctxt "Mesh repair summary; self-intersections"
 msgid "self-int {intersectionsBefore} → {intersectionsAfter}"
 msgstr "autointersecciones {intersectionsBefore} → {intersectionsAfter}"
 
-#: src/components/scene/MeshRepairReportModal.tsx:687
-#: src/components/scene/MeshRepairReportModal.tsx:728
+#: src/components/scene/MeshRepairReportModal.tsx:736
+#: src/components/scene/MeshRepairReportModal.tsx:777
 msgctxt "Mesh analysis row"
 msgid "Self-intersections"
 msgstr "Autointersecciones"
@@ -7837,7 +7859,7 @@ msgstr "No se ha podido enviar: {reason}"
 msgid "Send sliced files to UVTools for analysis"
 msgstr "Envía los archivos laminados a UVTools para analizarlos"
 
-#: src/app/page.tsx:4475
+#: src/app/page.tsx:4479
 msgid "Send to Printer"
 msgstr "Enviar a la impresora"
 
@@ -8022,7 +8044,7 @@ msgstr "Mostrar los archivos de impresión del almacenamiento local"
 msgid "Show print files from USB storage"
 msgstr "Mostrar los archivos de impresión del almacenamiento USB"
 
-#: src/app/page.tsx:2640
+#: src/app/page.tsx:2644
 msgid "Show Report"
 msgstr "Mostrar informe"
 
@@ -8051,9 +8073,9 @@ msgstr "Muestra los consejos «No se puede colocar el soporte» y «Aviso de est
 msgid "Shows the Voxels, Minima, Coincident, and Overhangs layer toggles."
 msgstr "Muestra los interruptores de capa Vóxeles, Mínimos, Coincidentes y Voladizos."
 
-#: src/app/page.tsx:2635
-#: src/app/page.tsx:11986
-#: src/app/page.tsx:11988
+#: src/app/page.tsx:2639
+#: src/app/page.tsx:11990
+#: src/app/page.tsx:11992
 #: src/components/modals/ShrinkWrapConfirmModal.tsx:49
 #: src/components/ui/EditorContextMenu.tsx:122
 msgid "Shrink-Wrap"
@@ -8068,15 +8090,15 @@ msgstr ""
 msgid "Shrink-Wrap confirmation"
 msgstr ""
 
-#: src/features/scene/useSceneCollectionManager.ts:7323
+#: src/features/scene/useSceneCollectionManager.ts:7346
 msgid "Shrink-Wrap failed: {message}"
 msgstr ""
 
-#: src/features/scene/useSceneCollectionManager.ts:7296
+#: src/features/scene/useSceneCollectionManager.ts:7319
 msgid "Shrink-Wrap needs the desktop app."
 msgstr ""
 
-#: src/app/page.tsx:11989
+#: src/app/page.tsx:11993
 msgid "Shrink-Wrap progress"
 msgstr ""
 
@@ -8088,8 +8110,8 @@ msgstr ""
 msgid "Shrink-Wrapped {inputTriangles} → {outputTriangles} triangles in {elapsed}."
 msgstr ""
 
-#: src/components/scene/MeshRepairReportModal.tsx:688
-#: src/components/scene/MeshRepairReportModal.tsx:729
+#: src/components/scene/MeshRepairReportModal.tsx:737
+#: src/components/scene/MeshRepairReportModal.tsx:778
 msgctxt "Mesh analysis row"
 msgid "Signed volume"
 msgstr "Volumen con signo"
@@ -8170,7 +8192,7 @@ msgstr "Capas laminadas"
 msgid "Slicing"
 msgstr "Laminado"
 
-#: src/app/page.tsx:12049
+#: src/app/page.tsx:12053
 msgid "Slicing and analysis in progress..."
 msgstr "Laminado y análisis en curso..."
 
@@ -8268,16 +8290,16 @@ msgstr "Sólida"
 msgid "Solid Areas"
 msgstr "Zonas macizas"
 
-#: src/app/page.tsx:8555
-#: src/app/page.tsx:8575
+#: src/app/page.tsx:8559
+#: src/app/page.tsx:8579
 msgid "Some models have unapplied hole punches"
 msgstr "Algunos modelos tienen agujeros sin aplicar"
 
-#: src/app/page.tsx:8554
+#: src/app/page.tsx:8558
 msgid "Some models have unapplied hole punches and hollowing"
 msgstr "Algunos modelos tienen agujeros y vaciado sin aplicar"
 
-#: src/app/page.tsx:8555
+#: src/app/page.tsx:8559
 msgid "Some models have unapplied hollowing"
 msgstr "Algunos modelos tienen vaciado sin aplicar"
 
@@ -8379,8 +8401,8 @@ msgstr "Iniciar la placa n.º {plateId}"
 msgid "Start Print"
 msgstr "Iniciar la impresión"
 
-#: src/app/page.tsx:5930
-#: src/app/page.tsx:5936
+#: src/app/page.tsx:5934
+#: src/app/page.tsx:5940
 msgid "Start print failed"
 msgstr "No se ha podido iniciar la impresión"
 
@@ -8409,11 +8431,11 @@ msgstr "Empezar a usar DragonFruit"
 msgid "Starting"
 msgstr "Empezando"
 
-#: src/app/page.tsx:4628
+#: src/app/page.tsx:4632
 msgid "Starting print"
 msgstr "Iniciando la impresión"
 
-#: src/app/page.tsx:5908
+#: src/app/page.tsx:5912
 #: src/components/organisms/modals/PrintingModals.tsx:1113
 msgid "Starting print…"
 msgstr "Iniciando la impresión…"
@@ -8450,7 +8472,7 @@ msgstr "Malla STL (.stl)"
 msgid "STL size:"
 msgstr "Tamaño del STL:"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:371
+#: src/components/organisms/modals/MeshRepairModals.tsx:372
 #: src/components/scene/SurfacingProgressModal.tsx:203
 msgid "Stop"
 msgstr "Detener"
@@ -8460,7 +8482,7 @@ msgstr "Detener"
 msgid "Stopping at the end of this step…"
 msgstr "Deteniendo al final de este paso…"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:370
+#: src/components/organisms/modals/MeshRepairModals.tsx:371
 #: src/components/organisms/modals/PrintingModals.tsx:2013
 #: src/components/scene/SurfacingProgressModal.tsx:202
 msgid "Stopping…"
@@ -8533,20 +8555,20 @@ msgstr "El soporte chocaría con la geometría del modelo."
 msgid "Supported: {extensions}"
 msgstr "Compatibles: {extensions}"
 
-#: src/app/page.tsx:2619
+#: src/app/page.tsx:2623
 #: src/components/ui/EditorContextMenu.tsx:129
 msgid "Supports"
 msgstr "Soportes"
 
-#: src/app/page.tsx:8557
+#: src/app/page.tsx:8561
 msgid "Supports are generated against the mesh as it stands. Hole punches are only baked in later, so a support generated now can land inside a hole that does not exist yet."
 msgstr "Los soportes se generan sobre la malla tal como está. Los agujeros no se integran hasta más tarde, así que un soporte generado ahora puede acabar dentro de un agujero que todavía no existe."
 
-#: src/app/page.tsx:8560
+#: src/app/page.tsx:8564
 msgid "Supports are generated against the mesh as it stands. Holes and hollowing are only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet."
 msgstr "Los soportes se generan sobre la malla tal como está. Los agujeros y el vaciado no se integran hasta más tarde, así que un soporte generado ahora puede acabar dentro de un agujero o de una cavidad que todavía no existe."
 
-#: src/app/page.tsx:8559
+#: src/app/page.tsx:8563
 msgid "Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet."
 msgstr "Los soportes se generan sobre la malla tal como está. El vaciado no se integra hasta más tarde, así que un soporte generado ahora puede acabar dentro de una cavidad que todavía no existe."
 
@@ -8566,7 +8588,7 @@ msgstr "Sospechosamente vacío aquí dentro."
 msgid "Swap which cut half receives the tenon and which receives the mortise."
 msgstr "Intercambia qué mitad del corte lleva la espiga y cuál la mortaja."
 
-#: src/app/page.tsx:12072
+#: src/app/page.tsx:12076
 msgid "Sweeping orientations…"
 msgstr "Probando orientaciones…"
 
@@ -8635,7 +8657,7 @@ msgstr "Impresora de destino"
 msgid "Target Printer"
 msgstr "Impresora de destino"
 
-#: src/components/scene/MeshRepairReportModal.tsx:418
+#: src/components/scene/MeshRepairReportModal.tsx:467
 msgid "Technical details"
 msgstr "Detalles técnicos"
 
@@ -8687,16 +8709,16 @@ msgstr "Ancho de la espiga en milímetros"
 msgid "Tension"
 msgstr "Tensión"
 
-#: src/app/page.tsx:5054
+#: src/app/page.tsx:5058
 msgid "The autosave recovery file could not be found."
 msgstr "No se encuentra el archivo de recuperación."
 
-#: src/app/page.tsx:5042
-#: src/app/page.tsx:5055
+#: src/app/page.tsx:5046
+#: src/app/page.tsx:5059
 msgid "The autosaved recovery file is corrupted or unreadable."
 msgstr "El archivo de recuperación está dañado o no se puede leer."
 
-#: src/app/page.tsx:1267
+#: src/app/page.tsx:1271
 msgid "The background recovery save failed repeatedly."
 msgstr "El guardado de recuperación en segundo plano ha fallado varias veces seguidas."
 
@@ -8736,7 +8758,7 @@ msgstr "El hueco tallado en la otra mitad."
 msgid "The inputs and factors the last run sized the supports with"
 msgstr "Los datos y factores con que la última ejecución dimensionó los soportes"
 
-#: src/app/page.tsx:12142
+#: src/app/page.tsx:12146
 msgid "The models on this plate are deleted with it."
 msgstr "Los modelos de esta placa se eliminan con ella."
 
@@ -8802,8 +8824,8 @@ msgstr "la impresora para la que se creó esta escena"
 msgid "The rebuilt surface will replace this model in your current scene. A model that cannot be resolved is left untouched, and you can undo this afterwards."
 msgstr ""
 
-#: src/app/page.tsx:11940
-#: src/app/page.tsx:11998
+#: src/app/page.tsx:11944
+#: src/app/page.tsx:12002
 #: src/components/modals/TetrahedralRemeshConfirmModal.tsx:67
 msgid "The rebuilt surface will replace this model in your current scene. Large models take longer, and some models cannot be rebuilt at all and are left untouched. You can undo this afterwards."
 msgstr ""
@@ -8812,11 +8834,11 @@ msgstr ""
 msgid "The red-striped areas in the viewport mark the parts that failed validation."
 msgstr "Las zonas con rayas rojas en la vista marcan las partes que no han superado la validación."
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:347
+#: src/components/organisms/modals/MeshRepairModals.tsx:348
 msgid "The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward."
 msgstr ""
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:346
+#: src/components/organisms/modals/MeshRepairModals.tsx:347
 msgid "The repaired results will replace these models in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward."
 msgstr ""
 
@@ -8828,7 +8850,7 @@ msgstr "La resina está lista. ¿Y tú?"
 msgid "The saved run policy the settings below are. Selecting one applies it immediately; the rest of the dialog stays staged until you save."
 msgstr "La política de ejecución guardada que corresponde a los ajustes de abajo. Al elegir uno se aplica en el acto; el resto de la ventana queda pendiente hasta que guardes."
 
-#: src/app/page.tsx:5043
+#: src/app/page.tsx:5047
 msgid "The scene importer rejected or could not parse the autosave data."
 msgstr "El importador de escenas rechazó los datos del guardado automático o no pudo interpretarlos."
 
@@ -8912,6 +8934,10 @@ msgstr "No se puede deshacer."
 msgid "This feature is still under development."
 msgstr "Esta función aún está en desarrollo."
 
+#: src/components/scene/MeshRepairConfirmModal.tsx:28
+msgid "This file holds {shells} separate shells, which usually means several objects on one plate. Repaired whole it gets a single verdict for all of them; repaired part by part each object is reported on its own, and the ones that are fine stay fine."
+msgstr ""
+
 #: src/components/modals/ObsoleteVoxlVersionModal.tsx:63
 msgid "This file is a VOXL V1 binary container."
 msgstr "Este archivo es un contenedor binario VOXL V1."
@@ -8948,7 +8974,7 @@ msgstr "Esta malla no es un sólido válido"
 msgid "This model already has supports. How would you like to proceed?"
 msgstr "Este modelo ya tiene soportes. ¿Cómo quieres continuar?"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:40
+#: src/components/scene/MeshRepairConfirmModal.tsx:59
 msgid "This model has severe mesh issues and is likely to need heavy repair."
 msgstr "Este modelo tiene problemas graves de malla y probablemente necesite una reparación a fondo."
 
@@ -9038,7 +9064,7 @@ msgstr "Rango de Ø de la punta"
 msgid "To recover it, open the scene in an older version of DragonFruit and save it again — the re-saved scene will open here."
 msgstr "Para recuperarla, abre la escena con una versión anterior de DragonFruit y vuelve a guardarla: la escena guardada de nuevo se abrirá aquí."
 
-#: src/app/page.tsx:2608
+#: src/app/page.tsx:2612
 msgid "Toggle curve"
 msgstr "Alternar curva"
 
@@ -9112,12 +9138,12 @@ msgctxt "Undo history entry"
 msgid "Transform {modelName}"
 msgstr "Transformar {modelName}"
 
-#: src/components/scene/MeshRepairConfirmModal.tsx:77
+#: src/components/scene/MeshRepairConfirmModal.tsx:106
 msgid "Triangles"
 msgstr "Triángulos"
 
-#: src/components/scene/MeshRepairReportModal.tsx:677
-#: src/components/scene/MeshRepairReportModal.tsx:718
+#: src/components/scene/MeshRepairReportModal.tsx:726
+#: src/components/scene/MeshRepairReportModal.tsx:767
 msgctxt "Mesh analysis row"
 msgid "Triangles"
 msgstr "Triángulos"
@@ -9146,11 +9172,11 @@ msgstr ""
 msgid "UI & Theme"
 msgstr "Interfaz y tema"
 
-#: src/app/page.tsx:8562
+#: src/app/page.tsx:8566
 msgid "Unapplied Changes"
 msgstr "Cambios sin aplicar"
 
-#: src/app/page.tsx:8574
+#: src/app/page.tsx:8578
 msgid "Unapplied Holes"
 msgstr "Agujeros sin aplicar"
 
@@ -9159,11 +9185,11 @@ msgstr "Agujeros sin aplicar"
 msgid "Unavailable"
 msgstr "No disponible"
 
-#: src/app/page.tsx:12096
+#: src/app/page.tsx:12100
 msgid "Undo brings the models back"
 msgstr "Deshacer devuelve los modelos"
 
-#: src/app/page.tsx:2639
+#: src/app/page.tsx:2643
 msgid "Undo Repairs"
 msgstr "Deshacer reparaciones"
 
@@ -9199,8 +9225,8 @@ msgstr "Desconocida"
 msgid "Unknown brand"
 msgstr "Marca desconocida"
 
-#: src/app/page.tsx:5811
-#: src/app/page.tsx:5935
+#: src/app/page.tsx:5815
+#: src/app/page.tsx:5939
 msgid "Unknown error"
 msgstr "Error desconocido"
 
@@ -9232,7 +9258,7 @@ msgstr "Desvincular X e Y"
 msgid "Unlock build plate"
 msgstr "Desbloquear la placa de impresión"
 
-#: src/app/page.tsx:12165
+#: src/app/page.tsx:12169
 msgid "Unlock it to add or move models."
 msgstr "Desbloquéala para añadir o mover modelos."
 
@@ -9266,7 +9292,7 @@ msgstr "Cambios de escena sin guardar"
 msgid "Unsaved Scene Found"
 msgstr "Hay una escena sin guardar"
 
-#: src/app/page.tsx:11226
+#: src/app/page.tsx:11230
 msgid "Unsupported file format"
 msgstr "Formato de fichero no compatible"
 
@@ -9334,23 +9360,23 @@ msgstr "Actualizaciones"
 msgid "Updating"
 msgstr "Actualizando"
 
-#: src/app/page.tsx:1943
+#: src/app/page.tsx:1947
 msgid "Updating model geometry."
 msgstr "Actualizando la geometría del modelo."
 
-#: src/app/page.tsx:1902
+#: src/app/page.tsx:1906
 msgid "Updating the hollowed mesh and preserving your hole punches afterward."
 msgstr "Actualizando la malla vaciada y conservando después tus agujeros."
 
-#: src/app/page.tsx:1934
+#: src/app/page.tsx:1938
 msgid "Updating the hollowing preview with your solid areas."
 msgstr "Actualizando la vista previa del vaciado con tus zonas macizas."
 
-#: src/app/page.tsx:5815
+#: src/app/page.tsx:5819
 msgid "Upload canceled"
 msgstr "Subida cancelada"
 
-#: src/app/page.tsx:5814
+#: src/app/page.tsx:5818
 msgid "Upload canceled. You can retry when ready."
 msgstr "Subida cancelada. Puedes reintentarlo cuando quieras."
 
@@ -9367,9 +9393,9 @@ msgstr "Subida completa. {printer} está procesando los metadatos del archivo…
 msgid "Upload complete. Device is still processing metadata after waiting."
 msgstr "Subida completa. La impresora sigue procesando los metadatos después de esperar."
 
-#: src/app/page.tsx:4630
-#: src/app/page.tsx:5708
-#: src/app/page.tsx:5818
+#: src/app/page.tsx:4634
+#: src/app/page.tsx:5712
+#: src/app/page.tsx:5822
 msgid "Upload failed"
 msgstr "Falló la subida"
 
@@ -9387,15 +9413,15 @@ msgstr "Subir a {printer}"
 msgid "Upload to Selected Printer"
 msgstr "Subir a la impresora seleccionada"
 
-#: src/app/page.tsx:5631
+#: src/app/page.tsx:5635
 msgid "Uploading Print Job to Printer…"
 msgstr "Subiendo el trabajo de impresión a la impresora…"
 
-#: src/app/page.tsx:5630
+#: src/app/page.tsx:5634
 msgid "Uploading Print Job…"
 msgstr "Subiendo el trabajo de impresión…"
 
-#: src/app/page.tsx:4625
+#: src/app/page.tsx:4629
 msgid "Uploading to printer"
 msgstr "Subiendo a la impresora"
 
@@ -9485,8 +9511,8 @@ msgstr "Colores por vértice"
 msgid "Vertical"
 msgstr "Vertical"
 
-#: src/components/scene/MeshRepairReportModal.tsx:678
-#: src/components/scene/MeshRepairReportModal.tsx:719
+#: src/components/scene/MeshRepairReportModal.tsx:727
+#: src/components/scene/MeshRepairReportModal.tsx:768
 msgctxt "Mesh analysis row"
 msgid "Vertices"
 msgstr "Vértices"
@@ -9624,13 +9650,13 @@ msgstr "Grosor del muro"
 msgid "Warm"
 msgstr "Cálido"
 
-#: src/components/scene/MeshRepairReportModal.tsx:136
+#: src/components/scene/MeshRepairReportModal.tsx:140
 msgctxt "Mesh repair summary"
 msgid "watertight"
 msgstr "estanca"
 
-#: src/components/scene/MeshRepairReportModal.tsx:689
-#: src/components/scene/MeshRepairReportModal.tsx:730
+#: src/components/scene/MeshRepairReportModal.tsx:738
+#: src/components/scene/MeshRepairReportModal.tsx:779
 msgctxt "Mesh analysis row"
 msgid "Watertight"
 msgstr "Estanca"
@@ -9689,7 +9715,7 @@ msgstr "¿Qué imprimimos hoy?"
 msgid "What counts as a support-needing surface, and how tightly neighbouring detections merge"
 msgstr "Qué cuenta como superficie que necesita soporte y cuánto se fusionan las detecciones vecinas"
 
-#: src/components/scene/MeshRepairReportModal.tsx:388
+#: src/components/scene/MeshRepairReportModal.tsx:410
 msgid "What DragonFruit repaired"
 msgstr "Qué ha reparado DragonFruit"
 
@@ -9706,7 +9732,7 @@ msgstr "Dónde caen los contactos y cuánto se abren los elementos"
 msgid "Why so empty?"
 msgstr "¿Por qué tan vacío?"
 
-#: src/components/scene/MeshRepairReportModal.tsx:128
+#: src/components/scene/MeshRepairReportModal.tsx:132
 msgctxt "Mesh repair summary"
 msgid "winding {windingBefore} → {windingAfter}"
 msgstr "orientación {windingBefore} → {windingAfter}"
@@ -9751,7 +9777,7 @@ msgstr "Escribe estos ajustes en los ajustes de autosoportes"
 msgid "Write these settings, and overwrite the selected preset with them"
 msgstr "Escribe estos ajustes y sobrescribe con ellos el preajuste seleccionado"
 
-#: src/app/page.tsx:12082
+#: src/app/page.tsx:12086
 msgid "Writing mesh geometry and support data to file…"
 msgstr "Escribiendo la geometría de la malla y los datos de soportes en el archivo…"
 
@@ -9780,8 +9806,8 @@ msgstr "Y máx."
 msgid "Y Min"
 msgstr "Y mín."
 
-#: src/components/scene/MeshRepairReportModal.tsx:689
-#: src/components/scene/MeshRepairReportModal.tsx:730
+#: src/components/scene/MeshRepairReportModal.tsx:738
+#: src/components/scene/MeshRepairReportModal.tsx:779
 msgid "yes"
 msgstr "sí"
 
