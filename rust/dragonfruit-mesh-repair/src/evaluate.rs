@@ -11,6 +11,8 @@
 //! verdict here is the reference engine's five classes and nothing else; self-intersections are a
 //! number to report, not a defect to declare.
 
+use std::cell::RefCell;
+
 use crate::core::halfedge::Topology;
 use crate::core::mesh::IndexedMesh;
 use crate::shells::noise_shells;
@@ -88,8 +90,32 @@ impl MeshDefects {
     }
 }
 
-/// Evaluates the five classes on a mesh.
+/// The five classes, for a mesh.
+///
+/// A pure function of the mesh, and the pipeline asks it the same question about the same mesh
+/// several times: a guarded pass weighs the mesh it made against the one it started from, the next
+/// pass's "before" is that same mesh, and the report's post verdict usually describes a mesh that
+/// never moved. Measured on `poussin.stl`, 13 of the run's 21 halfedge builds came from here, for
+/// 1041 ms of 2008. The verdict is a handful of integers, so it is worth remembering; see
+/// [`crate::memo`] for what a hit is keyed on.
 pub fn evaluate(mesh: &IndexedMesh) -> MeshDefects {
+    let key = crate::memo::mesh_key(mesh);
+    if let Some(verdict) = EVALUATIONS.with(|memo| memo.borrow().get(&key)) {
+        return verdict;
+    }
+    let verdict = evaluate_uncached(mesh);
+    EVALUATIONS.with(|memo| memo.borrow_mut().put(key, verdict));
+    verdict
+}
+
+thread_local! {
+    /// The verdicts this thread has already produced, against the meshes they were about.
+    static EVALUATIONS: RefCell<crate::memo::Memo<MeshDefects>> =
+        const { RefCell::new(crate::memo::Memo::new()) };
+}
+
+/// [`evaluate`] without the memo: the work itself, for the first time a mesh is seen.
+fn evaluate_uncached(mesh: &IndexedMesh) -> MeshDefects {
     if mesh.triangles.is_empty() {
         return MeshDefects::default();
     }

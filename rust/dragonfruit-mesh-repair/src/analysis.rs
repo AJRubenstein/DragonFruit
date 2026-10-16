@@ -44,7 +44,30 @@ pub struct AnalysisTimings {
     pub total_ms: f64,
 }
 
+/// The verdict on a mesh: the five classes, the counts behind them, and the timings they cost.
+///
+/// A pure function of the mesh, and the pipeline asks it twice over a mesh that has not moved: the
+/// verdict before the first pass and the one the report ends with are the same question about the
+/// same mesh whenever the repair changed nothing, which is most files. The post verdict on a clean
+/// mesh is 100 to 280 ms of rebuilding a topology the pre verdict already had; see [`crate::memo`].
 pub fn analyze(mesh: &IndexedMesh) -> MeshAnalysis {
+    let key = crate::memo::mesh_key(mesh);
+    if let Some(verdict) = ANALYSES.with(|memo| memo.borrow().get(&key)) {
+        return verdict;
+    }
+    let verdict = analyze_uncached(mesh);
+    ANALYSES.with(|memo| memo.borrow_mut().put(key, verdict.clone()));
+    verdict
+}
+
+thread_local! {
+    /// The verdicts this thread has already produced, against the meshes they were about.
+    static ANALYSES: std::cell::RefCell<crate::memo::Memo<MeshAnalysis>> =
+        const { std::cell::RefCell::new(crate::memo::Memo::new()) };
+}
+
+/// [`analyze`] without the memo: the work itself, for the first time a mesh is seen.
+fn analyze_uncached(mesh: &IndexedMesh) -> MeshAnalysis {
     let t_start = std::time::Instant::now();
 
     let bbox = mesh.bbox();

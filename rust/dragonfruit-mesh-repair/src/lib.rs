@@ -22,6 +22,7 @@ pub mod repair;
 pub mod solid_remesh;
 pub mod report;
 pub mod shells;
+mod memo;
 pub(crate) mod smoothing;
 pub mod shrink_wrap;
 pub mod stl_budget;

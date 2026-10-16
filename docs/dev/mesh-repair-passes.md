@@ -46,6 +46,21 @@ gate re-arms the moment a stage changes anything, so the later calls to the same
 run, and one of them carries the cut. Measured on `poussin.stl`, 170,790 triangles that
 arrive watertight and consistent: 762 ms to flip nothing.
 
+The verdicts themselves are remembered too. `evaluate` and `analyze` are pure functions of a
+mesh, and the pipeline asks them the same question about the same mesh repeatedly: every
+guarded pass weighs the mesh it just made against the one it started from, the next pass's
+"before" is that same mesh, and a repair that changes nothing leaves the report's post verdict
+describing the mesh the pre verdict already described. Both remember their last few verdicts
+against a key over the whole mesh (positions bit for bit, indices, both buffer lengths, hashed
+twice in one pass), so a hit is only ever a verdict for exactly this mesh. What is cached is
+the verdict, a handful of integers, never the topology it was built from.
+
+Instrumenting the structure builders is why this exists: on `poussin.stl` a run was 21
+halfedge builds, 934 ms of 2008, and 13 of those builds came from `evaluate` alone. The
+consequence worth knowing is in the report: `timings_ms` is the cost of the computation that
+produced the verdict, so a cached verdict carries the earlier call's numbers, because that is
+what it cost and it was not paid again.
+
 `tests/smoke.rs` pins this list in `the_pipeline_runs_the_stage_order_it_says_it_does`.
 If a change to the order is deliberate, that test is where you say so.
 
