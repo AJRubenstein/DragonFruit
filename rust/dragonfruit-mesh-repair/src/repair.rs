@@ -585,6 +585,19 @@ fn repair_passes(
         let health = crate::evaluate::evaluate(&before);
         let volume_before = before.signed_volume();
         let stats = crate::arrangement::corefine_self_intersections(&mut mesh);
+        // Close what the refinement opened, *before* judging it.
+        //
+        // The refinement's triangles do not always tile the faces they replace — the CDT loses a region when
+        // a face's chords end in its interior — so it hands back a surface with holes in it: measured on the
+        // reported model, refining 13,048 faces opened 2,335 boundary loops. Judged at that moment it is
+        // always refused, which is why the crossings pass has never once landed. The holes are the pass's own
+        // damage, and this pipeline's answer to damage is to repair it and judge the pair — the same thing
+        // that made the weld land.
+        let opened = if stats.refined_faces > 0 {
+            crate::holes::holes_all(&mut mesh, usize::MAX)
+        } else {
+            0
+        };
         let volume_moved = (mesh.signed_volume() - volume_before).abs()
             > volume_before.abs().max(1e-9) * 0.01;
         let refused =

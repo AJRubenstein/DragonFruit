@@ -678,8 +678,11 @@ fn zip_loop_sides(pts: &[[f64; 3]], lp: &[u32], topo: Option<&Topology>) -> Opti
         let taken = |a: u32, b: u32| -> bool {
             topo.map_or(false, |t| closed_edge(t, edge_key(a, b)))
         };
-        let can_a = !taken(lp[side_a[p]], lp[side_b[q]]);
-        let can_b = !taken(lp[side_a[p]], lp[side_b[q + 1]]);
+        // Both sides can run out at different times, and the side that is ahead is not asked about its rung:
+        // reading `side_b[q + 1]` past the end is a panic, and it is reachable — a loop whose sides differ in
+        // length by one hits it as soon as one of them is exhausted.
+        let can_a = p + 1 < na && !taken(lp[side_a[p]], lp[side_b[q]]);
+        let can_b = q + 1 < nb && !taken(lp[side_a[p]], lp[side_b[q + 1]]);
         let advance_a = match (can_a, can_b) {
             (true, false) => true,
             (false, true) => false,

@@ -300,10 +300,14 @@ that is already edge-manifold *and* consistently oriented, so it refuses exactly
 wrap is for: measured, it refuses the V3 Cones (0 non-manifold edges, watertight, 4
 inconsistent winding edges), corbu (1,364 non-manifold) and `Untitled2.stl` (1,389 winding),
 and accepts only meshes the earlier passes have already cleaned. A wrap therefore has to come
-from our own `corefine_self_intersections`, which is guarded off because it produces a far
-worse mesh, or from a different boolean engine.
+from our own `corefine_self_intersections`, which is guarded off because it produces a worse mesh, or from
+a different boolean engine. That pass has since been through its own defects — a chord that lay outside the
+face it belonged to, a fan that put a zero-area triangle under every point, a zipper that welded a face's
+own rim to itself — and on corbu it now leaves a defect total of 10,372 once its own holes are closed, where
+it left 27,147. It is still refused there: the four classes it is judged on are 2,188 / 1,850 / 2,259 /
+3,823 against the 29 / 2,157 / 1,428 / 1,460 of the mesh it would replace.
 
-The clamp on that pass's edge-crossing parameter is what made it produce a far worse mesh. Where
+The clamp on that pass's edge-crossing parameter was the first of its defects. Where
 an edge crosses a plane was computed without clamping the parameter to the edge, and `same_sign`
 lets a near-coplanar triangle through — three signed distances of order 1e-9 are not all above its
 1e-7 epsilon — so the ratio could be enormous. Measured on 3DBenchy, 80 of 15,813 new vertices
@@ -313,14 +317,34 @@ area and +0.06% volume with no point off the box. The crossing counts fall too �
 benchy, 29,383 to 24,653 on the cones — because the extrapolated points had been inventing
 intersections that were never there.
 
-A face whose chords all start and end on its own boundary is now triangulated directly: the
-boundary ring is split along each chord and each piece fanned, which is exact because splitting a
-convex ring along a chord leaves both pieces convex. That is precisely the case the CDT gets wrong
-— with extra points sitting collinear on the boundary it returns a triangulation missing a whole
-region, 25% of one face on a two-triangle fixture and 0.29% of 3DBenchy's surface area. Rejecting
-those triangulations instead, which is the obvious guard, rejects 8,123 of 14,751 of them — 55% —
-so the split is the fix and distrust is not. What remains of the loss is the faces with a mix of
-boundary and interior chords, which still go to the CDT: 0.17% of benchy's area, down from 0.29%.
+A face whose chords all start and end on its own boundary is triangulated directly, without the CDT:
+the boundary ring is split along each chord and each piece triangulated by ear clipping, cutting the
+largest empty ear. Splitting a convex ring along a chord leaves both pieces convex, so this is exact,
+and it is precisely the case the CDT gets wrong — with extra points sitting collinear on the boundary
+it returns a triangulation missing a whole region, 25% of one face on a two-triangle fixture and
+0.29% of 3DBenchy's surface area. Rejecting those triangulations instead, which is the obvious guard,
+rejects 8,123 of 14,751 of them — 55% — so the split is the fix and distrust is not.
+
+Two things about that ring path are load-bearing. The ear has to be *empty* — no other vertex inside
+it — because a point the on-edge tolerance accepted can still sit slightly off the edge, which makes
+the ring polygon not quite convex, and cutting the corner first then covers those points' slivers
+twice. And the ear has to be the *largest* one, because a fan emits a zero-area triangle for every
+point collinear with its apex, and a zero-area triangle has no normal for the winding pass to compare.
+
+A chord is also clipped to the face before it is used. A chord comes from overlapping the two
+triangles' intervals along the planes' intersection line, projected onto one axis; that overlap is
+necessary and not sufficient, and on a 407k-triangle refinement **8,066 of the 15,307 chords the
+faces carried lay entirely outside the face they were recorded on**. The CDT triangulates the convex
+*hull* of the points it is handed, so an endpoint outside the face drags surface out with it: the
+per-face coverage check read a median of 1.16 times the face's own area and a maximum of 744. Clipped,
+the same refinement covers each face to the digit, and the pass' own zipper closes only the regions
+that are genuinely missing — it used to take the face's own rim for a hole and weld it to itself,
+putting a second copy of every triangle behind the first.
+
+What remains of the loss is the faces with a chord whose endpoint is *strictly inside* the face: they
+still go to the CDT, and it does not represent them — 62 of the 269 faces that reach it on the
+measured file come back short, 7.4e-5 of that file's surface area. The textbook answer is constrained
+insertion: walk from one chord endpoint to the other and flip the crossed edges.
 
 Two things the clamp had to be careful about, and both were found by the tests rather than by
 reading the code:

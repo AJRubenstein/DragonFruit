@@ -387,6 +387,297 @@ passes last ran, so it was not provably a repeat. The tests that remain are the 
   exactly what the reference's own script has no stage for either, so matching it means reporting the
   defect rather than removing it.
 
+## The three open areas, after tonight
+
+**The subdivision route was tried and does not reach the case.** A half-edge walk of the planar graph the
+chords make, with the outgoing edges sorted by angle at each vertex and each face ear-clipped, is written and
+the walk is verified — it finds the faces of a test graph and traverses the cut edge both ways. It cannot
+triangulate an interior chord all the same, and the reason is geometric, not a bug: a chord with both
+endpoints inside the face does not divide it. The face stays simply connected and the chord is a **slit**, so
+the walk's own face for it is a cycle that visits one vertex twice, which is not a simple polygon to ear-clip.
+Forcing the chord in needs the textbook constrained-edge insertion — walk from one endpoint to the other and
+flip the crossed edges — not a face decomposition. That is the piece to build.
+
+**The refinement's gap, counted by reason.** Of the 10,558 faces that carry an intersection and come back
+unrefined, measured with the reason each one gives:
+
+| reason | faces |
+|---|---|
+| the CDT returned an error, and no chord of the face ends on its ring | **10,258** |
+| the ring path failed its coverage check | 1,017 |
+| the CDT returned an error and the ring fallback also failed | 172 |
+| the CDT returned nothing | 36 |
+| two points coincident in 2d | 2 |
+
+So the pass is not failing in many ways. It fails in one: a chord whose endpoints are both inside the face —
+the shape the other triangle makes when it punches through the middle rather than clipping an edge. The
+partner face on the other side of that intersection *is* refined, because its own chord does end on its own
+ring, which is why the pair stays crossed: one side is split and the other is not. `cdt` returns an error for
+that input rather than panicking, and 79% of the ring-fallback path's work is unreachable because a chord with
+an interior endpoint is not a boundary chord.
+
+**What that leaves to build.** A constrained triangulation of the face, not a fallback: points (three corners,
+points on the edges, interior points) plus a set of non-crossing chords, needing a triangulation that covers
+the face exactly, makes every chord an edge, and has no zero-area triangle. The shape is a planar subdivision
+of a triangle — the chords partition it into polygons — so the work is to walk that subdivision's faces and
+ear-clip each, taking the largest ear so a flat one is never chosen while a real one exists. Two checks are
+already in place and make it verifiable: the per-face coverage check (the output's area against the face's) and
+the arrangement fixture whose guarantee is that corefinement fully resolves crossings.
+
+**The crossings — the refusal is the last thing wrong with the refinement, and the zipper was the thing
+before it.** With the shared-end triangles dropped (the fix in `f8432064`) and the refinement forced past the
+judgement, the pipeline finishes it — the same refinement that earlier ended at 924 components and 17,722
+winding edges now ends at:
+
+| | input | default repair | refinement forced through |
+|---|---|---|---|
+| winding edges | 53 | 0 | **0** |
+| non-manifold edges | 1,429 | 0 | **9** |
+| non-manifold vertices | 1,462 | 0 | **15** |
+| boundary loops | 16 | 0 | **0** |
+| connected components | 8 | 5 | **2** |
+| self-intersection triangles | 16,899 | 18,060 | 20,037 |
+
+Two components is the reference's number, against the default repair's five. The zip's shared-end triangles
+were the whole difference: they are zero-area and name one vertex twice, so every edge they touched had no
+normal to compare winding against, and the winding pass detonated on them — 17,722 against 0.
+
+**It is still not a win, and the reason is the crossings.** Forced through, the refinement ends with *more*
+intersecting triangles than it started with (20,037 against the input's 16,899 and the default repair's
+18,060), and the classes are 9 and 15 rather than zero, so the default repair is still the better mesh. The
+refinement resolves crossing *pairs* — 16,901 to 15,322 through the pass itself — and the rest of the
+pipeline then adds more intersecting triangles in the same tangle. That is the gap to close, and it is now the
+only one: everything else the refinement does, the pipeline finishes.
+
+The ear-clip triangulation written for the same purpose is not shipped either: with the zip's flat triangles
+already gone it changes nothing (nme 10,630 against 10,699) so there is no measured benefit to justify it.
+
+**The crossings — the T-junction was tried, measured, and is not the fix.** The theory was that a refined face
+splits its own edges while the face across that edge keeps them whole, leaving one long half-edge against two
+short ones. The propagation was built (every new vertex that lands on a face's edge is given to the face on the
+other side, with its edge id so the split is registered exactly) and it does do what it says: the components
+right after the refinement stay at **15–17** instead of the hundreds, and the boundary loops drop from 704 to
+133 when the ring is closed with the zipper rather than fanned.
+
+It does not survive the pipeline. Forced through, the refinement *with* the propagation ends at **1,610
+components and 52,860 winding edges**; the same refinement *without* it ends at 924 components and 17,722
+winding edges. So the propagation trades a local improvement for a worse final mesh, because the ring fan it
+needs emits a zero-area triangle for every point on the two edges meeting the apex — half the output on a face
+split once per edge — and a zero-area triangle has no normal, so the winding pass detonates on it. Both runs
+are worse than the input and neither is shipped.
+
+What the experiment establishes is the shape of the real requirement: **the T-junction repair has to
+triangulate the ring without degenerates.** The zipper does (it cut the loops 704 → 133 on the same faces)
+and its rungs then need the guard the hole-filling copy already has — a rung that is already an edge of the
+mesh folds the strip and leaves an edge with three faces.
+
+**The refinement cannot be let through as it stands.** Forced past the judgement with no propagation at all it
+takes the connected components **8 → 924** and the winding edges 53 → 17,722, and the crossings *up* to 23,242
+from 16,899. The refusal is correct; the judgement is not the thing standing in the way.
+
+**Two fixes came out of it and stay.** The zipper in the crossings path no longer emits the shared end of the
+two sides paired with itself — a face naming one vertex twice counts its zero-length edge twice, which reads
+as a non-manifold edge (worth 11,000 of them in one measurement). And the hole-filling zipper read
+`side_b[q + 1]` without checking `q + 1 < nb`: a reachable index-out-of-bounds panic on the default path,
+found because the forced run dug out a loop whose sides differ in length.
+
+**The crossings — the dropped region is now repaired, and the pass still does not land.** What the CDT drops
+shows up in its output as a boundary loop, exactly like a hole in a mesh, so the same zipper that closes a
+break-through closes it: the loop's two sides are welded to each other, which covers the missing region and
+introduces no vertex the face did not already have. That is in, and the arrangement tests — including the
+fixture whose guarantee is *"corefinement should fully resolve crossings"* — all pass with it, because the
+repair keeps the chords the CDT did get right.
+
+It does not make the pass land. The refinement still leaves non-manifold edges, pinched vertices and winding
+edges that the five-class judgement counts and the crossings it resolves are not among them, so the total
+still rises and the pass is still refused. What is left after the region is covered is the **T-junction**: a
+refined face splits its own edges and its neighbour does not, and 10,558 faces are not refined at all.
+
+**The crossings — the triangulation itself is broken, and that is the whole chain.** Measured per face, the
+CDT's output covers **0.008%** of the area of a four-point face — one triangle where three are needed — and
+2.9%, 7.0%, 19.3%, 74.4%, 96.7% on others. It is not losing "a region": for these inputs it returns a
+triangulation that does not represent the face at all. Everything downstream follows from that — the 2,335
+boundary loops, the 2,718 non-manifold edges, the 3,952 pinched vertices, the 2,725 winding edges — and the
+pass cannot land, because the five classes it is judged on are exactly what the lost surface turns into.
+
+The refinement *does* do its job: crossings 16,901 → 15,322 on the reported model. That is invisible to the
+judgement, which counts only the five classes, and the reference's own verdict does not count crossings either
+— it *repairs* them in a loop that is judged on defects.
+
+So the fix is to triangulate the face ourselves. The structure is known and small: a triangle carrying points
+on its three edges, interior points, and non-crossing chords between them — a planar subdivision of a triangle,
+which wants ear clipping over each region of the subdivision. The ring path already handles the case where
+every chord lies on the ring, exactly, and it takes those faces; what is needed is the same treatment for the
+interior case. The bar: 100% coverage, the fixture's crossing guarantee intact, and a defect total that beats
+the 27,147 the holes-closed refinement reaches today.
+
+**The crossings — the pass's own damage is now repaired before it is judged.** The refinement's holes are
+closed as part of the pass, and *then* it is judged, which is the pattern that made the weld land. Measured on
+corbu, on the refined mesh:
+
+| | judged immediately | holes closed first |
+| --- | --- | --- |
+| boundary loops opened | 2,335 | **0** |
+| non-manifold edges | 2,676 | 2,718 |
+| pinched vertices | 3,878 | 3,952 |
+| winding edges | 2,724 | 2,725 |
+| defect total | 39,251 | **27,147** |
+
+The pass is still refused — the total has to *drop* below the input's 5,083 — and what is left is not the
+holes: it is the refinement's own sub-triangles and the T-junctions they leave with their neighbours, which is
+the CDT's lost region again. Closing the holes is a prerequisite rather than the fix, and it is kept for that:
+without it the pass is judged on a mesh it has visibly broken.
+
+**The crossings — the cause, found.** The refinement's triangles do not tile the faces they replace. Measured
+on corbu, refining 13,048 faces opened **2,335 boundary loops**: the surface is *lost* where the CDT's
+triangulation misses a region, and the non-manifold edges, pinched vertices and winding that follow are all
+downstream of that hole. The plan already knew the CDT does this — the ring path exists because of it, with
+"25% of one face on a two-triangle fixture, and 8,123 of 14,751 faces on 3DBenchy" — but the ring path only
+applies when every chord lies on the ring, so a face with an interior point still goes to the CDT.
+
+A coverage check was added to the CDT path — sum the sub-triangles' areas, and if they do not cover the parent
+the refinement is refused and the parent kept — and it is a large improvement on the mesh: refined faces
+13,048 → 10,718, holes 2,335 → **1,838**, winding 2,724 → **1,108**, defect total 39,251 → **24,325**. It is
+**not kept**: it breaks a test that encodes a real guarantee, `corefine_shares_new_vertices_across_adjacent_faces`
+— *"corefinement should fully resolve crossings"* — because on that fixture the refinement loses a region
+*and* the ring path does not apply, so refusing the refinement leaves the crossing in place. Trading a
+documented guarantee for mesh integrity is not a trade this branch makes.
+
+So the fix is not to refuse the CDT's output but to make it cover: either a triangulation that handles a face
+with interior points exactly (the ring path generalised), or the missing region added afterwards. That is the
+next step here, and the numbers above are what it has to beat.
+
+**The crossings.** The refinement still explodes the winding and is still refused: 29 same-direction edges
+become 2,688, of which 2,051 are between a refined face and an untouched neighbour and none carries a new
+vertex. Every emitter in the refinement forces its sub-triangles to the face's own orientation — the 2D basis
+is built from that face's normal, so the positive 2D orientation *is* the parent's — which means the reversal
+is not in the emission and the next step is to compare, for one of those 2,051 edges, the *parent* face's
+direction against the neighbour's, both taken from the pre-refinement triangles.
+
+The T-junction healing this plan recorded earlier is **reverted**: it improves two classes (non-manifold
+edges 1,428 → 608, pinched vertices 1,460 → 1,197) and drives the third through the roof (winding 2,688 →
+3,205), for a net loss — the defect total 22,444 → 36,734. Its fans are the reason, the same fans the zipper
+was written to remove.
+
+**The crossings — the chords were not in the face.** Measured per face inside `refine_face_with_segments`, on
+the 407k-triangle refinement of a real file: **8,066 of the 15,307 chords the faces carried lay entirely
+outside the face they were recorded on**, and of the rest most had at least one endpoint outside it. A chord
+is found by overlapping the two triangles' intervals along the planes' intersection line, projected onto one
+axis; that overlap is a necessary condition and not a sufficient one — with a vertex nearly on the other plane
+the interval is computed from the wrong edges. It matters because the CDT triangulates the **convex hull** of
+the points it is given, so an endpoint outside the face drags surface out with it: the refinement's own
+coverage check, the one added and then removed above, read a median of **1.16** times the face's own area and
+a maximum of **744**.
+
+The chord is clipped to the face before it is used (`clip_segment_to_face`): the part outside is dropped, and
+an endpoint outside lands exactly on the face's boundary, which is where an intersection that leaves a face
+through an edge belongs. Per face, because the same chord is a different segment on each side of the pair.
+
+Three more things came out of the same measurement:
+
+- **A corner is a ring point.** Only points carrying an edge id counted as being on the ring, so a chord that
+  ends *at* a corner was treated as an interior chord and handed to the CDT as a constraint duplicating a
+  boundary edge — which the CDT answers with nothing at all. On the measured file that is most of the chords a
+  face carries.
+- **A chord between two ring points that are next to each other is a ring edge** — what a chord becomes when
+  the other triangle's plane runs along the face's own edge. It has nothing to split, and a constraint that
+  duplicates a boundary edge is exactly what makes the CDT return an empty triangulation. It is dropped, and
+  the points it ended on are kept: the ring is still built with them, which is what the face across that edge
+  needs in order to be split at the same place.
+- **The ring path takes a face with no interior chord left — chords dropped, or none at all.** It used to
+  require a non-empty chord list, so a face carrying only ring points went to the CDT with nothing to
+  triangulate. But those points are the whole reason to refine such a face: the neighbour across its edge was
+  split there, and matching it is what this face owes.
+
+**The crossings — the zipper was welding a face to itself, and the fan put a flat triangle under every point.**
+Two more defects came out of reading the ring path against what it is for.
+
+The zipper that closes what the CDT drops took *every* loop of edges with a face on one side only, and every
+face has one: its own rim — the edges it shares with neighbours whose triangles are not in its own output. So
+it welded the rim to itself and emitted a **second copy of every triangle**; the coverage check read 2.000
+where the triangulation itself read 1.000. It now walks the boundary as *directed* edges, which is what tells
+the rim (counter-clockwise, the direction every emitter forces) from a dropped region (clockwise), and closes
+only the latter.
+
+The ring was triangulated by fanning each piece from its first vertex. A fan is only a triangulation when no
+two of the piece's points are collinear *with the apex*, and a chord that ends mid-edge — the common case,
+since an intersection line enters and leaves a face through its edges — leaves two points sharing an edge with
+a corner. The fan emitted a zero-area triangle for each of them, and a zero-area triangle has no normal: the
+winding pass compares face normals, and measured in the pipeline a fan's flat triangles took the refinement
+from 2 connected components to 924. The pieces are ear-clipped now, cutting the largest *empty* ear: empty so
+that the slivers the on-edge tolerance creates are left for last, where they collapse into a remainder with no
+area instead of being covered twice — measured on one face, the corner ear plus the slivers behind it came to
+1.6e-8 more than the polygon's own area. The coverage check compares against the *ring polygon* now rather
+than the three corners, for the same reason: the ring bulges past the corner triangle by about the tolerance
+that put its points on it — 1.9e-6 relative on one face, which was enough to refuse the face under the old
+comparison while the triangulation matched the ring polygon to the digit.
+
+**The crossings — what that measures now.** On a 226k-triangle file entering with 583 crossing triangles and
+258 inconsistent edges and nothing else:
+
+| | before this work | now |
+|---|---|---|
+| crossing triangles | 583 → **804** | 583 → **535** |
+| surface area | +5.70e-3 | **+6.23e-5** |
+| non-manifold edges | 1,422 | **32** |
+| pinched vertices | 1,678 | **56** |
+| inconsistent edges | 1,368 | **303** |
+| bad edges | 2,156 | **1,648** |
+| boundary loops | 47 | 307 |
+| defect total | 5,214 | **2,336** |
+
+The refinement no longer invents surface and no longer adds crossings, and it took the non-manifold edges from
+1,422 to 32 — but it now leaves 307 boundary loops where it left 47. Those are T-junctions: a point the clip
+snapped *onto* a face's edge is a vertex of that face and not of the face on the other side of the edge, so the
+edge's two sides no longer match. It is the propagation this plan names below, and the reason it was reverted
+before — the ring fan's zero-area triangles — is fixed.
+
+**The crossings — through the pipeline on the reported model.** `--resolve-self-intersections` on corbu,
+against the committed build:
+
+| | before | now |
+|---|---|---|
+| pairs | 20,279 | 17,987 |
+| faces refined | 13,048 | 8,851 |
+| faces skipped | 10,558 | 7,389 |
+| triangles added | 41,093 | 38,545 |
+| defect total, once the pass' own holes are closed | 27,147 | **10,372** |
+
+That refined mesh reads, after its holes are closed: inconsistent 2,188 (was 2,725), non-manifold edges 1,850
+(was 2,718), pinched vertices 2,259 (was 3,952). It is **still refused** — all four classes it is judged on are
+above the mesh it replaced (29 / 2,157 / 1,428 / 1,460) — and corbu's verdict is unchanged, `fully_repaired`
+with 0/0/0/0, five components and 18,060 crossings, because a refused pass reverts.
+
+**The crossings — what is left, and it is two things.** Both are named by the measurements above.
+
+1. **The propagation.** A new vertex that lands on a face's edge has to be given to the face on the other side
+   of that edge, so both sides still match. The 307 loops are what its absence costs. The earlier attempt
+   improved the classes it was aimed at and then lost on the winding, because it needed the ring fan and the
+   fan emitted a flat triangle under every point (2 components → 1,610). The ring is ear-clipped now, so that
+   reason is gone and the piece is worth redoing.
+2. **A constrained triangulation of a face that has an interior chord.** Of the 269 faces on the measured file
+   that go to the CDT, **62 still come back short** — 7.4e-5 of the mesh's area, with the worst covering
+   nothing at all — because the CDT does not represent a face whose chord has an endpoint in its interior. The
+   textbook answer is the constrained insertion the subdivision experiment arrived at: walk from one endpoint
+   to the other and flip the edges it crosses. It is bounded, and the per-face coverage check is already there
+   to verify it.
+
+**The winding cycle.** `Untitled2` is the one file of 128 the repair does not fix, and it is a no-op on it:
+1,389 inconsistent winding edges before and after. Measured, it is **inside-out** — signed volume -26,062 —
+and it also carries 1,389 *local* disagreements. The retessellation written for exactly this refuses, and the
+probe says why: deleting the conflicted faces opens 6,629 boundary edges, the fill closes 1,703 of them, the
+parts go 76 → 133, and the volume flips sign. Two candidates were tried and neither changed the outcome, so neither is in: a pinch
+split before the refill (a pinched rim is not a simple cycle, so the loop walk never covers its edges) and a
+volume test on the *magnitude* when the sign flips (a sign flip is an orientation correction, not a change of
+shape). Both are principled and both left the refusal exactly where it was — the parts, and the 4,926
+boundary edges the fill does not reach — and the uncovered edges are not pinches: 4,926 of the 6,629 survive
+the split, so whatever leaves them is a different shape of rim than `split_pinched_vertices` handles.
+
+**The union.** Unchanged: corbu is 5 components against the reference's 2 and 98.733 of volume against its
+97.928. Two overlapping operands still come back as four shells, so `manifold_csg` fragments geometry that
+touches and is coplanar, and the reference's own answer to that is the refine-both-sides-then-join it carries
+in its tool set.
+
 ## The corpus, after the zipper
 
 The Downloads folder holds 171 STL files. 128 of them are 20 MB or under and were run end to end; the 43
@@ -615,12 +906,18 @@ started with — and it is the same shape as the reference's own refine-both-sid
    boundary-loop pairs, and refines both sides first so the loops match in edge length. Nothing here
    merges a shell into the shell that contains it. See *Why their boolean joins cleanly* in the evidence
    file for the two operators that do it.
-2. The absolute stitch ladder: replace the derived weld tolerance with the reference's absolute one, so
+2. **The crossings pass, which is two pieces and both are measured.** The propagation (a new vertex on a
+   face's edge goes to the face on the other side of it, closing the 307 loops the clip opens) and a
+   constrained triangulation of a face with an interior chord (62 of 269 CDT faces come back short, 7.4e-5
+   of a file's area). Until both are in, the pass stays refused: it is judged on four classes and all four
+   are still above the mesh it replaces, on corbu at 2,188 / 1,850 / 2,259 / 3,823 against 29 / 2,157 /
+   1,428 / 1,460. See *The crossings — what is left, and it is two things* above.
+3. The absolute stitch ladder: replace the derived weld tolerance with the reference's absolute one, so
    loading a file one way or another cannot move it.
-3. The ordered script: one instance of each pass, in the target order, instead of rounds.
-4. The degenerate criterion, topological rather than by area — and do not move it after the fills; that
+4. The ordered script: one instance of each pass, in the target order, instead of rounds.
+5. The degenerate criterion, topological rather than by area — and do not move it after the fills; that
    is measured out.
-5. `Gusano_de_Dune_70%.stl`, and a last-resort rebuild for a mesh no local pass can settle.
+6. `Gusano_de_Dune_70%.stl`, and a last-resort rebuild for a mesh no local pass can settle.
 
 ## Where the evidence lives
 
