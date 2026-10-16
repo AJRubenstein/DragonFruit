@@ -281,6 +281,58 @@ impl OrientationGate {
     }
 }
 
+/// Components the orientation pass would not leave alone: at least four faces, and a signed volume
+/// that is not decisively positive.
+///
+/// The pass turns such a component over when its volume is negative, and votes on it when the
+/// volume is too small to decide (a fragment that encloses nothing). Both cases are this test, so
+/// the count is exactly the set it can act on: `repair_orientation` skips components under four
+/// faces, because below that the volume says where the triangle sits relative to the origin rather
+/// than which way it faces.
+///
+/// The arithmetic is the pass's, in the pass's order, so the two agree bit for bit.
+fn components_not_outward(mesh: &IndexedMesh) -> usize {
+    let n = mesh.triangles.len();
+    if n == 0 {
+        return 0;
+    }
+    let components = triangle_components(mesh);
+    let n_components = components.iter().max().copied().unwrap_or(0) as usize + 1;
+    let mut faces = vec![0usize; n_components];
+    let mut volume = vec![0.0f64; n_components];
+    for (fi, &component) in components.iter().enumerate() {
+        let c = component as usize;
+        faces[c] += 1;
+        let t = mesh.triangles[fi];
+        let a = mesh.positions[t[0] as usize];
+        let b = mesh.positions[t[1] as usize];
+        let d = mesh.positions[t[2] as usize];
+        volume[c] += (a.x as f64) * ((b.y as f64) * (d.z as f64) - (b.z as f64) * (d.y as f64))
+            - (a.y as f64) * ((b.x as f64) * (d.z as f64) - (b.z as f64) * (d.x as f64))
+            + (a.z as f64) * ((b.x as f64) * (d.y as f64) - (b.y as f64) * (d.x as f64));
+    }
+    (0..n_components)
+        .filter(|&c| faces[c] >= 4 && volume[c] / 6.0 <= 1e-6)
+        .count()
+}
+
+/// Whether the orientation pass has anything to do on a mesh that nothing has touched yet.
+///
+/// Three things make it act, and both of them are read here. `unify_winding` flips faces to settle
+/// edges whose two faces disagree, and an edge that disagrees is the only thing `solve_winding_cut`
+/// can cut, so with none of those the consistency half is a no-op twice over: the patch vote in
+/// `unify_winding_once` finds nothing on either side of a patch that already agrees, the parity
+/// walk in `winding_sides` builds its graph from those same edges and assigns every face side zero,
+/// and the cut returns before it looks at anything. The per-component half is
+/// [`components_not_outward`].
+///
+/// So a mesh that arrives consistent, with every component's own volume decisively positive, is one
+/// the pass would leave exactly as it found it. Measured on `poussin.stl` (170,790 triangles,
+/// watertight, one component): 762 ms to flip nothing.
+fn orientation_settled(mesh: &IndexedMesh, pre: &crate::analysis::MeshAnalysis) -> bool {
+    pre.inconsistent_winding_edges == 0 && components_not_outward(mesh) == 0
+}
+
 /// How many vertices share a loader weld cell with another index.
 ///
 /// A separation two surfaces keep between them is a *distinct index at the same position*, and every
@@ -848,6 +900,9 @@ fn repair_passes(
     let options = &resolved;
 
     let pre = analyze(&mesh);
+    // Asked before `pre` moves into the report: the first orientation call is only worth making
+    // when the verdict says the mesh needs it (see [`orientation_settled`]).
+    let first_orientation_needed = !orientation_settled(&mesh, &pre);
     let mut report = MeshHealthReport::new(pre);
     if options.assume_support_geometry == Some(true) {
         report.likely_support_geometry = true;
@@ -856,9 +911,14 @@ fn repair_passes(
     // The pipeline is a fixed order, and the repetition in it is the design: each
     // stage disturbs what the one before it settled, so orientation, stitch, holes
     // and double faces each come round more than once. What is *not* repeated is an orientation pass
-    // over a mesh nothing has touched since the last one — see [`OrientationGate`]. It starts at one
-    // rather than zero so the first call always runs.
-    let mut orientation_gate = OrientationGate { changed_since: 1 };
+    // over a mesh nothing has touched since the last one — see [`OrientationGate`]. The first call
+    // is part of that: it only runs when the verdict the pass above just took says the mesh needs
+    // it, because on a mesh that arrives settled it is 762 ms to flip nothing (see
+    // [`orientation_settled`]). A stage that changes anything re-arms the gate, so a later call
+    // still runs, and it is the same call that carries the cut.
+    let mut orientation_gate = OrientationGate {
+        changed_since: usize::from(first_orientation_needed),
+    };
     let _ = &mut orientation_gate;
     //
     // Records a stage and its cost, so the report reads as the pipeline ran rather

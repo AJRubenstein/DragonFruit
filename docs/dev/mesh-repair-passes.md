@@ -38,6 +38,14 @@ the union's position is before the split's, because the split is what makes each
 constructible and a union after it has nothing left to merge. Ordered the other way, the
 same file keeps about 200 more parts.
 
+A stage can also be skipped rather than made conditional on an option. The verdict the
+pipeline takes before the first pass is what decides it: `orientation_settled` says the
+first `orient_components` has nothing to do when no edge disagrees and every component's own
+signed volume is decisively positive, which is the whole of what that pass can act on. The
+gate re-arms the moment a stage changes anything, so the later calls to the same pass still
+run, and one of them carries the cut. Measured on `poussin.stl`, 170,790 triangles that
+arrive watertight and consistent: 762 ms to flip nothing.
+
 `tests/smoke.rs` pins this list in `the_pipeline_runs_the_stage_order_it_says_it_does`.
 If a change to the order is deliberate, that test is where you say so.
 
