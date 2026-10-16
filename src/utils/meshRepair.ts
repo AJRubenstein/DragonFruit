@@ -95,6 +95,21 @@ export interface MeshRepairOptions {
   keepLargestNComponents?: number | null;
   repairOrientation?: boolean;
   resolveSelfIntersections?: boolean;
+  /**
+   * Cut the edges no winding assignment can satisfy, as a last resort after every other pass.
+   *
+   * Off by default: it settles the winding class with geometry — the region is one face from each
+   * unsatisfiable edge, and the vertices it shares with the rest of the surface are duplicated.
+   * Kept only when it helps. Measured on `Gusano_de_Dune_70%.stl`: winding 1,374 -> 0, non-manifold
+   * edges 196 -> 97, pinched vertices 338 -> 188.
+   */
+  cutUnsatisfiableEdges?: boolean;
+  /**
+   * Let the repair fall back to the surface-to-solid rebuild when the local pipeline cannot settle
+   * the mesh. On by default, and judged: kept only when it is fully repaired or strictly better.
+   * The surface moves when it runs, and the report says so.
+   */
+  allowRebuild?: boolean;
   assumeSupportGeometry?: boolean;
 }
 

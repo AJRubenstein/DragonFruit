@@ -87,6 +87,10 @@ enum Command {
         /// of a dense model; zero leaves it alone.
         #[arg(long, default_value_t = 0.001)]
         tolerance: f32,
+        /// Taubin smoothing passes over the resolved surface, each a pair of runs. The step is derived
+        /// from the mesh's own median edge. Zero leaves the raw resolve.
+        #[arg(long, default_value_t = 2)]
+        smooth_iterations: usize,
         #[arg(long)]
         pretty: bool,
     },
@@ -146,6 +150,23 @@ enum Command {
         repair_orientation: bool,
         #[arg(long, default_value_t = false)]
         resolve_self_intersections: bool,
+        /// Cut the edges no winding assignment can satisfy, where that is the only move left.
+        ///
+        /// **On by default**, because it is judged: kept only when the defect total drops. Measured
+        /// on `Gusano_de_Dune_70%.stl`: winding 1,374 -> 0, non-manifold edges 196 -> 97, pinched
+        /// vertices 338 -> 188. `--cut-unsatisfiable-edges=false` reports the residue instead of
+        /// touching geometry.
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        cut_unsatisfiable_edges: bool,
+        /// Use the automatic route: the local pipeline, and behind it the surface-to-solid rebuild
+        /// when the local one cannot settle the mesh.
+        ///
+        /// The rebuild is judged — kept only when it is fully repaired or strictly better — and it
+        /// moves the surface, so the report says so. Measured on `Gusano_de_Dune_70%.stl`: the local
+        /// pipeline leaves 97 non-manifold edges and 188 pinched vertices; the rebuild comes out
+        /// `fully_repaired` (0/0/0/0) with its volume 37,293 -> 44,909.
+        #[arg(long, default_value_t = false)]
+        auto: bool,
         /// Print each stage to stderr as it begins. A run that does not finish then says where
         /// it stopped, which the final report cannot.
         #[arg(long, default_value_t = false)]
@@ -260,10 +281,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             println!("{s}");
         }
-        Command::SolidRemesh { input, out_stl, tolerance, pretty } => {
+        Command::SolidRemesh { input, out_stl, tolerance, smooth_iterations, pretty } => {
             let mesh = load_mesh(&input, raw)?;
             let options = dragonfruit_mesh_repair::solid_remesh::SolidRemeshOptions {
                 tolerance,
+                smooth_iterations,
                 ..dragonfruit_mesh_repair::solid_remesh::SolidRemeshOptions::default()
             };
             let outcome = dragonfruit_mesh_repair::solid_remesh::solid_remesh(&mesh, &options);
@@ -365,6 +387,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             keep_largest_n,
             repair_orientation,
             resolve_self_intersections,
+            cut_unsatisfiable_edges,
+            auto,
             progress,
         } => {
             let options = RepairOptions {
@@ -373,18 +397,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 keep_largest_n_components: keep_largest_n,
                 repair_orientation,
                 resolve_self_intersections,
+                cut_unsatisfiable_edges,
+                allow_rebuild: auto,
                 assume_support_geometry: None,
             };
+            let uses_auto = auto;
             let outcome = if progress {
                 let mesh = load_mesh(&input, raw)?;
-                repair_with_progress(
-                    mesh,
-                    &options,
-                    Some(&mut |name: &str, _stage: usize| {
-                        eprintln!("[stage] {name}");
-                        true
-                    }),
-                )
+                let sink = |name: &str, _stage: usize| {
+                    eprintln!("[stage] {name}");
+                    true
+                };
+                if uses_auto {
+                    dragonfruit_mesh_repair::repair_auto_with_progress(mesh, &options, Some(&mut { sink }))
+                } else {
+                    repair_with_progress(mesh, &options, Some(&mut { sink }))
+                }
+            } else if uses_auto {
+                dragonfruit_mesh_repair::repair_auto(load_mesh(&input, raw)?, &options)
             } else {
                 repair_path(&input, &options)?
             };

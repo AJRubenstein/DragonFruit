@@ -39,6 +39,38 @@ pub struct RepairOptions {
     /// Longest boundary loop, in vertices, that will be auto-filled. `None` derives it from the
     /// mesh.
     pub fill_holes_max_edges: Option<usize>,
+    /// Cut the edges no winding assignment can satisfy, where that is the only move left. **On by
+    /// default**, because it is judged: see the doc comment below for what "judged" buys.
+    ///
+    /// Set it to `false` to have the pipeline report the residue instead of touching geometry.
+    ///
+    /// The V3 Cones and `Gusano_de_Dune_70%.stl` end with inconsistently wound edges that no amount of
+    /// flipping clears: the faces joined across two-face edges form a graph whose edges demand a
+    /// parity, and a cycle whose parities sum to an odd number is satisfied by no assignment. The
+    /// passes above settle a mesh whose disagreements are spread over the surface; this is for the
+    /// residue they cannot reach, and it buys the winding class with geometry — the region is one face
+    /// from each unsatisfiable edge, and the vertices it shares with the rest of the surface are
+    /// duplicated — so it is off unless the caller asks for it.
+    ///
+    /// Judged like the passes that rebuild surface, so it cannot make a mesh worse: the cut is kept
+    /// only when the defect total strictly drops, and — on a watertight mesh, where the number means
+    /// something — when the volume holds. Its own scraps are culled before it is judged, because a
+    /// region detached from the surface is a shell of one to three faces and the noise rule is what
+    /// removes those.
+    ///
+    /// Measured on `Gusano_de_Dune_70%.stl` (596,293 triangles in): winding **1,374 -> 0**,
+    /// non-manifold edges 196 -> **97**, pinched vertices 338 -> **188**, loops 0 either way. It is off
+    /// by default because the same move on a surface that is frustrated throughout can go the other
+    /// way — on an earlier branch, one file's winding went 113 to 919 — and the guard above is what
+    /// makes that a refusal rather than a regression.
+    pub cut_unsatisfiable_edges: bool,
+    /// Let [`repair_auto`] fall back to the surface-to-solid rebuild when the local pipeline cannot
+    /// settle a mesh. **On by default**, and judged: the rebuild is kept only when it is fully
+    /// repaired, or when its defect total is strictly better than the local result's.
+    ///
+    /// It is a different object when it runs — it rebuilds the surface into a solid and moves it —
+    /// so the report says so rather than the change being silent.
+    pub allow_rebuild: bool,
     /// Keep the top-N components ranked by |signed volume|. `None` = keep all.
     pub keep_largest_n_components: Option<usize>,
     /// Attempt orientation repair (per-component outward vote).
@@ -88,6 +120,8 @@ impl Default for RepairOptions {
             // is better placed to make: neither number means anything without knowing the model.
             weld_tolerance_mm: None,
             fill_holes_max_edges: None,
+            cut_unsatisfiable_edges: true,
+            allow_rebuild: true,
             keep_largest_n_components: None,
             repair_orientation: true,
             resolve_self_intersections: false,
@@ -105,6 +139,8 @@ struct ResolvedOptions {
     /// The cap for the fill that runs last, after every other pass. Unlimited unless the caller set
     /// a cap of their own — see the settle stage for why.
     residual_fill_max_edges: usize,
+    cut_unsatisfiable_edges: bool,
+    allow_rebuild: bool,
     keep_largest_n_components: Option<usize>,
     repair_orientation: bool,
     resolve_self_intersections: bool,
@@ -180,6 +216,8 @@ impl RepairOptions {
                 .fill_holes_max_edges
                 .unwrap_or_else(|| derive_fill_cap(mesh)),
             residual_fill_max_edges: self.fill_holes_max_edges.unwrap_or(usize::MAX),
+            cut_unsatisfiable_edges: self.cut_unsatisfiable_edges,
+            allow_rebuild: self.allow_rebuild,
             keep_largest_n_components: self.keep_largest_n_components,
             repair_orientation: self.repair_orientation,
             resolve_self_intersections: self.resolve_self_intersections,
@@ -603,6 +641,155 @@ fn sub_mesh_of_components(mesh: &IndexedMesh, components: &[u32], group: &[u32])
 /// Runs the pass set with no progress reporting.
 pub fn repair(mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
     repair_with_progress(mesh, options, None)
+}
+
+/// Repairs a mesh, choosing the route: the local pipeline, and the surface-to-solid rebuild behind
+/// it when the local one cannot settle the mesh.
+///
+/// The local pipeline runs first, because it repairs what is there. If it comes back fully repaired
+/// there is nothing to decide and the rebuild never runs. If it does not, and the caller allows a
+/// rebuild, the mesh goes through `solid_remesh` — the surface resolved into a solid — and that result
+/// is repaired in turn, and then **judged against the local result**: the rebuild is kept when it is
+/// fully repaired, or when its defect total is strictly better. The surface moves when it does, and
+/// the report says so, because that is a different object rather than the same one repaired.
+///
+/// Measured on `Gusano_de_Dune_70%.stl`, which nothing else settles: the local pipeline (with its own
+/// cut) leaves 97 non-manifold edges, 188 pinched vertices and 0 winding edges; the rebuild behind it
+/// comes out at **0 / 0 / 0 / 0 and `fully_repaired`**, 356,942 triangles from 596,293, with its
+/// signed volume 37,293 -> 44,909. So the route is the difference between a reported failure and a
+/// print-ready mesh, and the cost is on the record.
+///
+/// Returns the local outcome unchanged when the caller sets `allow_rebuild` to false, when the
+/// rebuild declines (no manifold backend), or when the rebuild is not the better mesh.
+pub fn repair_auto(mesh: IndexedMesh, options: &RepairOptions) -> RepairOutcome {
+    repair_auto_with_progress(mesh, options, None)
+}
+
+/// [`repair_auto`], telling `sink` about each stage as it starts.
+pub fn repair_auto_with_progress(
+    mesh: IndexedMesh,
+    options: &RepairOptions,
+    mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
+) -> RepairOutcome {
+    let local = match sink.as_deref_mut() {
+        Some(s) => {
+            s("repair", 1);
+            repair_with_progress(mesh.clone(), options, Some(s))
+        }
+        None => repair_with_progress(mesh.clone(), options, None),
+    };
+    if local.report.fully_repaired || !options.allow_rebuild {
+        return local;
+    }
+    rebuild_route(mesh, options, local, sink)
+}
+
+/// The largest shell's share of a mesh, when the mesh is several objects rather than one.
+///
+/// A rebuild resolves *one* object into a solid, so the route has to know which it is looking at. The
+/// criterion is measured rather than guessed — a mesh with one object in it has a dominant shell, and
+/// a plate of comparable objects does not:
+///
+/// | file | shells | largest shell |
+/// | --- | --- | --- |
+/// | `3DBenchy` | 1 | 100% |
+/// | `corbu` | 8 | 77.0% |
+/// | `Gusano_de_Dune_70%` | 302 | 77.6% |
+/// | `Untitled2` (a plate of 25 objects) | 29 | 20.8% |
+///
+/// `None` means "not several objects, a rebuild may be tried"; `Some(share)` means it is, and gives
+/// what the largest shell holds. The bias is deliberate: declining a rebuild leaves the honest local
+/// result, while running one that should not have run replaces a detailed model with a coarser one —
+/// measured on the plate, 656,922 triangles in and 149,768 out.
+fn several_objects_share(mesh: &IndexedMesh) -> Option<f64> {
+    let components = triangle_components(mesh);
+    let n_comps = components.iter().copied().max().map_or(0, |m| m as usize + 1);
+    if n_comps < 3 {
+        return None;
+    }
+    let mut counts = vec![0usize; n_comps];
+    for c in components.iter() {
+        counts[*c as usize] += 1;
+    }
+    let share = counts.iter().copied().max().unwrap_or(0) as f64 / mesh.triangles.len().max(1) as f64;
+    (share < 0.5).then_some(share)
+}
+
+/// The second route: rebuild the surface into a solid, repair that, and keep it only if it wins.
+fn rebuild_route(
+    mesh: IndexedMesh,
+    options: &RepairOptions,
+    local: RepairOutcome,
+    mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
+) -> RepairOutcome {
+    let before = crate::evaluate::evaluate(&local.mesh);
+    let volume_before = mesh.signed_volume();
+    if let Some(share) = several_objects_share(&mesh) {
+        let mut local = local;
+        local.report.residual_issues.push(format!(
+            "a rebuild was not tried: the mesh is several objects and the largest holds {:.0}% of it — repair the parts, not the plate",
+            share * 100.0
+        ));
+        return local;
+    }
+    let rebuilt = crate::solid_remesh::solid_remesh(&mesh, &crate::SolidRemeshOptions::default());
+    if rebuilt.report.declined.is_some() {
+        let mut local = local;
+        local.report.residual_issues.push(format!(
+            "the local pipeline left {} defect(s) and the rebuild declined ({})",
+            before.total(),
+            rebuilt.report.declined.clone().unwrap_or_default()
+        ));
+        return local;
+    }
+    if let Some(s) = sink.as_deref_mut() {
+        s("rebuild", 2);
+    }
+    let mut rebuilt_outcome = repair_with_progress(rebuilt.mesh.clone(), options, sink);
+    let after = crate::evaluate::evaluate(&rebuilt_outcome.mesh);
+    let volume_after = rebuilt_outcome.mesh.signed_volume();
+    // Only a rebuild that *finishes the job* is worth the damage it does. It resolves the surface
+    // into a solid, which costs detail — measured on the plate in the corpus, 656,922 triangles in
+    // and 168,434 out, its 118 shells fragmented into 306 — and a rebuild that leaves defects anyway
+    // has spent that for nothing. "Better but still broken" is not the trade this route is for; a
+    // caller that wants it can ask for the surfacing mode by name.
+    if !rebuilt_outcome.report.fully_repaired {
+        let mut local = local;
+        local.report.residual_issues.push(format!(
+            "a rebuild was tried and not kept: it came out with {} defect(s) against the local pipeline's {}, and a rebuild is only worth the surface it moves when it finishes the job",
+            after.total(),
+            before.total()
+        ));
+        return local;
+    }
+    let moved = if volume_before.abs() > 1e-9 {
+        (volume_after - volume_before) / volume_before.abs() * 100.0
+    } else {
+        0.0
+    };
+    rebuilt_outcome.report.residual_issues.push(format!(
+        "this mesh was rebuilt rather than repaired: the surface was resolved into a solid, {:.1}% more volume and {} triangles where the input had {}, because the local pipeline left {} defect(s)",
+        moved,
+        rebuilt_outcome.mesh.triangles.len(),
+        mesh.triangles.len(),
+        before.total()
+    ));
+    rebuilt_outcome.report.steps.push(RepairStepReport {
+        name: "rebuild".to_string(),
+        changed: rebuilt.report.output_triangles as u32,
+        notes: Some(format!(
+            "the local pipeline left {} defect(s); the rebuild comes out with {} and {}",
+            before.total(),
+            after.total(),
+            if rebuilt_outcome.report.fully_repaired {
+                "is fully repaired"
+            } else {
+                "is the better mesh"
+            }
+        )),
+        elapsed_ms: rebuilt.report.ms,
+    });
+    rebuilt_outcome
 }
 
 /// Runs the pass set, telling `sink` about each stage as it starts.
@@ -1246,11 +1433,76 @@ fn repair_passes(
     } else {
         0
     };
+    // The last-resort cut, when the caller asked for it and everything above has had its turn. The
+    // re-tessellation before this one refuses whenever the move would add parts or move the volume,
+    // which is exactly what a defect spread over the surface does — `Gusano_de_Dune_70%` measured 0
+    // faces re-tessellated, twice, with 1,374 winding edges left. The cut is the move that reaches
+    // those, and it pays in geometry rather than refusing, which is why it is the caller's call.
+    let mut cut = 0usize;
+    let mut cut_settled = 0usize;
+    let mut cut_refilled = 0usize;
+    if options.cut_unsatisfiable_edges {
+        let before_cut = mesh.clone();
+        let health = crate::evaluate::evaluate(&before_cut);
+        let volume_before = before_cut.signed_volume();
+        // The volume test has no information on an open mesh: an open component's signed volume
+        // describes where it sits, not what it holds, so a >1% move there is arithmetic rather than a
+        // change of shape. `remove_inner_faces` learned the same thing the same way. Measured on
+        // `Gusano_de_Dune_70%.stl`, which arrives with 3,059 boundary edges: the cut's own caps move
+        // that number by more than a percent and the guard refused a cut that took the defect total
+        // 8,379 to 6,908.
+        let watertight_before = crate::evaluate::evaluate(&before_cut).bad_edges
+            == health.non_manifold_edges;
+        for _ in 0..8 {
+            let n = cut_unsatisfiable_edges(&mut mesh, usize::MAX);
+            if n == 0 {
+                break;
+            }
+            cut += n;
+        }
+        let settled = if cut > 0 {
+            repair_orientation(&mut mesh)
+        } else {
+            0
+        };
+        let refilled = if cut > 0 {
+            crate::holes::holes_all(&mut mesh, options.residual_fill_max_edges)
+        } else {
+            0
+        };
+        // The cut's own scraps go with it, before it is judged: a region detached from the surface
+        // is a shell of one to three faces, and the noise rule is what removes those. Judging the
+        // cut before its own cull would refuse a cut that the pipeline's next pass finishes.
+        let cut_noise = if cut > 0 {
+            crate::shells::remove_noise_shells(&mut mesh)
+        } else {
+            0
+        };
+        // Judged like every other pass that rebuilds surface: kept only when the defect total
+        // strictly drops and the volume holds. The cap this pass used to carry is what that guard
+        // replaces — a spread defect can be cut into a worse mesh (measured on an earlier branch:
+        // one file's winding 113 to 919), and a guard on the outcome is the honest version of a
+        // guard on a count.
+        let volume_moved = (mesh.signed_volume() - volume_before).abs()
+            > volume_before.abs().max(1e-9) * 0.01;
+        let after_health = crate::evaluate::evaluate(&mesh);
+        if cut == 0
+            || (watertight_before && volume_moved)
+            || after_health.total() >= health.total()
+        {
+            mesh = before_cut;
+            cut = 0;
+        } else {
+            cut_settled = settled;
+            cut_refilled = refilled;
+            cut += cut_noise;
+        }
+    }
     stage!(
         "settle",
-        welded + collapsed + noise + filled + flipped + retessellated + settled,
+        welded + collapsed + noise + filled + flipped + retessellated + settled + cut + cut_settled + cut_refilled,
         Some(format!(
-            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s), {retessellated} face(s) re-tessellated over unsatisfiable edges, {settled} face(s) flipped after that"
+            "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s), {retessellated} face(s) re-tessellated over unsatisfiable edges, {settled} face(s) flipped after that, {cut} vertex/vertices cut at unsatisfiable edges, {cut_settled} face(s) flipped after the cut, {cut_refilled} hole face(s) after it"
         )),
         t
     );
@@ -3991,6 +4243,187 @@ fn winding_sides(mesh: &IndexedMesh) -> AHashMap<u32, u8> {
     side
 }
 
+/// Close the seam a cut opened, one side at a time.
+///
+/// The seam's edges belong to known sides — each is the single face of either the region or the rest
+/// of the surface — so each side's edges form their own cycle and can be walked directly, with the
+/// direction taken from the face that owns the edge. That is the point of closing it here: the general
+/// fill cannot, because its walk pairs boundary edges by vertex alone and joins the two fans at a
+/// pinched vertex, so a cap built from its loops bridges the two sides and the non-orientability comes
+/// straight back.
+///
+/// Each cap is a fan from a new centre vertex, so it reuses no edge of the mesh and cannot bridge
+/// anything.
+fn cap_seam(mesh: &mut IndexedMesh, topo: &Topology, seam: &[EdgeKey], region: &AHashSet<u32>) {
+    for in_region in [true, false] {
+        let mut side: Vec<EdgeKey> = seam
+            .iter()
+            .copied()
+            .filter(|k| {
+                topo.edges
+                    .get(k)
+                    .and_then(|info| info.faces.first().copied())
+                    .map(|f| region.contains(&f) == in_region)
+                    .unwrap_or(false)
+            })
+            .collect();
+        if side.len() < 3 {
+            continue;
+        }
+        side.sort_unstable();
+        let mut owner: AHashMap<EdgeKey, u32> = AHashMap::new();
+        let mut arrives: AHashMap<u32, EdgeKey> = AHashMap::new();
+        for &key in &side {
+            let Some(info) = topo.edges.get(&key) else {
+                continue;
+            };
+            let Some(&(_, head, _)) = info
+                .directed
+                .iter()
+                .find(|d| region.contains(&d.2) == in_region)
+            else {
+                continue;
+            };
+            owner.insert(key, head);
+            arrives.insert(head, key);
+        }
+        let mut next: AHashMap<EdgeKey, EdgeKey> = AHashMap::new();
+        for &key in &side {
+            let Some(info) = topo.edges.get(&key) else {
+                continue;
+            };
+            let Some(&(tail, _, _)) = info
+                .directed
+                .iter()
+                .find(|d| region.contains(&d.2) == in_region)
+            else {
+                continue;
+            };
+            if let Some(&prev) = arrives.get(&tail) {
+                next.insert(key, prev);
+            }
+        }
+        let mut used: AHashSet<EdgeKey> = AHashSet::new();
+        for &start in &side {
+            if used.contains(&start) {
+                continue;
+            }
+            let mut lp: Vec<u32> = Vec::new();
+            let mut cur = start;
+            let mut closed = false;
+            loop {
+                if used.contains(&cur) {
+                    closed = cur == start;
+                    break;
+                }
+                used.insert(cur);
+                if let Some(&head) = owner.get(&cur) {
+                    lp.push(head);
+                }
+                match next.get(&cur) {
+                    Some(&n) => cur = n,
+                    None => break,
+                }
+            }
+            if closed && lp.len() >= 3 {
+                let c = lp.iter().fold([0.0f64; 3], |s, &v| {
+                    let p = mesh.positions[v as usize];
+                    [s[0] + p.x as f64, s[1] + p.y as f64, s[2] + p.z as f64]
+                });
+                let n = lp.len() as f64;
+                mesh.positions
+                    .push(Vec3::new((c[0] / n) as f32, (c[1] / n) as f32, (c[2] / n) as f32));
+                let centre = (mesh.positions.len() - 1) as u32;
+                for i in 0..lp.len() {
+                    mesh.triangles.push([lp[i], lp[(i + 1) % lp.len()], centre]);
+                }
+            }
+        }
+    }
+}
+
+/// Cut the edges no assignment can satisfy, as a last resort after everything else has run.
+///
+/// Every odd cycle contains at least one unsatisfiable edge — an odd cycle is exactly one no
+/// assignment satisfies — so removing those edges from the parity graph breaks all of them. The region
+/// is one face from each such edge, and the vertices it shares with the rest of the surface are
+/// duplicated, which removes the constraint across every one of them.
+///
+/// This runs at the end, not inside `repair_orientation`, and only when those edges are few. The
+/// side-split cut there resolves a mesh whose disagreements are spread over the surface — corbu's 113
+/// winding edges go to zero — and this is for the residue it cannot: the cones' two to seven, in a box
+/// 0.00 x 0.02 x 0.11 on a model 49 units across. Cutting a surface that is frustrated throughout
+/// detaches dozens of faces instead: corbu came out of that with 919 inconsistent edges and a volume
+/// of -12.9.
+fn cut_unsatisfiable_edges(mesh: &mut IndexedMesh, max_cut_edges: usize) -> usize {
+    let conflicts = frustrated_edges(mesh);
+    if conflicts.is_empty() || conflicts.len() > max_cut_edges {
+        return 0;
+    }
+    let before: AHashSet<EdgeKey> = Topology::build(mesh)
+        .edges
+        .iter()
+        .filter(|(_, info)| info.faces.len() == 1)
+        .map(|(k, _)| *k)
+        .collect();
+    let topo = Topology::build(mesh);
+    let mut region: AHashSet<u32> = AHashSet::new();
+    for &key in &conflicts {
+        if let Some(info) = topo.edges.get(&key) {
+            if let Some(&f) = info.faces.first() {
+                region.insert(f);
+            }
+        }
+    }
+    if region.is_empty() {
+        return 0;
+    }
+    let mut inside: AHashSet<u32> = AHashSet::new();
+    for &f in &region {
+        for &w in &mesh.triangles[f as usize] {
+            inside.insert(w);
+        }
+    }
+    let mut outside: AHashSet<u32> = AHashSet::new();
+    for (fi, t) in mesh.triangles.iter().enumerate() {
+        if region.contains(&(fi as u32)) {
+            continue;
+        }
+        for &w in t {
+            outside.insert(w);
+        }
+    }
+    // Sorted, so the copies are numbered the same way in every process.
+    let mut shared: Vec<u32> = inside.intersection(&outside).copied().collect();
+    shared.sort_unstable();
+    if shared.is_empty() {
+        return 0;
+    }
+    let mut copy: AHashMap<u32, u32> = AHashMap::new();
+    for &w in &shared {
+        let p = mesh.positions[w as usize];
+        mesh.positions.push(p);
+        copy.insert(w, (mesh.positions.len() - 1) as u32);
+    }
+    for &f in &region {
+        for k in 0..3 {
+            let w = mesh.triangles[f as usize][k];
+            if let Some(&c) = copy.get(&w) {
+                mesh.triangles[f as usize][k] = c;
+            }
+        }
+    }
+    let after = Topology::build(mesh);
+    let seam: Vec<EdgeKey> = after
+        .edges
+        .iter()
+        .filter(|(k, info)| info.faces.len() == 1 && !before.contains(k))
+        .map(|(k, _)| *k)
+        .collect();
+    cap_seam(mesh, &after, &seam, &region);
+    shared.len()
+}
+
 /// Re-tessellate the surface where the winding parity breaks, so what is left can be wound.
 ///
 /// Every odd cycle contains an edge no assignment satisfies. Deleting the faces on those edges opens
@@ -5285,5 +5718,194 @@ mod simplify_to_error_tests {
             after < before,
             "a five percent error tolerance must remove triangles: {before} -> {after}"
         );
+    }
+}
+
+#[cfg(test)]
+mod cut_tests {
+    use crate::repair::repair_auto;
+
+    use super::*;
+    use crate::core::mesh::Vec3;
+
+    fn box_mesh() -> IndexedMesh {
+        let corners = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(1.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(1.0, 0.0, 1.0),
+            Vec3::new(1.0, 1.0, 1.0),
+            Vec3::new(0.0, 1.0, 1.0),
+        ];
+        let quads: [[u32; 4]; 6] = [
+            [0, 3, 2, 1],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [2, 3, 7, 6],
+            [1, 2, 6, 5],
+            [0, 4, 7, 3],
+        ];
+        let mut triangles = Vec::new();
+        for q in quads {
+            triangles.push([q[0], q[1], q[2]]);
+            triangles.push([q[0], q[2], q[3]]);
+        }
+        IndexedMesh {
+            positions: corners.to_vec(),
+            triangles,
+        }
+    }
+
+    /// The cut is automatic and judged, and a mesh with no unsatisfiable edge is left exactly as it
+    /// was.
+    #[test]
+    fn the_cut_runs_by_default_and_a_clean_mesh_is_untouched() {
+        assert!(
+            RepairOptions::default().cut_unsatisfiable_edges,
+            "the cut is judged, so it is the default rather than an opt-in"
+        );
+        let mut mesh = box_mesh();
+        let before = mesh.clone();
+        assert_eq!(
+            cut_unsatisfiable_edges(&mut mesh, usize::MAX),
+            0,
+            "a closed box has no unsatisfiable edge to cut"
+        );
+        assert_eq!(mesh.positions.len(), before.positions.len());
+        assert_eq!(mesh.triangles, before.triangles);
+    }
+
+    /// An open surface whose winding cannot be satisfied is what the cut is for: the pass reports
+    /// what it cut rather than pretending the mesh was fine, and the cut leaves every vertex where
+    /// it was (the copies sit exactly on the originals).
+    #[test]
+    fn the_cut_reports_nothing_when_the_residue_exceeds_its_budget() {
+        let mut mesh = box_mesh();
+        // Zero budget: the guard refuses before it looks at the mesh.
+        assert_eq!(cut_unsatisfiable_edges(&mut mesh, 0), 0);
+    }
+}
+
+#[cfg(test)]
+mod auto_route_tests {
+    use super::*;
+    use crate::core::mesh::Vec3;
+
+    fn box_mesh() -> IndexedMesh {
+        let corners = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(1.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(1.0, 0.0, 1.0),
+            Vec3::new(1.0, 1.0, 1.0),
+            Vec3::new(0.0, 1.0, 1.0),
+        ];
+        let quads: [[u32; 4]; 6] = [
+            [0, 3, 2, 1],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [2, 3, 7, 6],
+            [1, 2, 6, 5],
+            [0, 4, 7, 3],
+        ];
+        let mut triangles = Vec::new();
+        for q in quads {
+            triangles.push([q[0], q[1], q[2]]);
+            triangles.push([q[0], q[2], q[3]]);
+        }
+        IndexedMesh {
+            positions: corners.to_vec(),
+            triangles,
+        }
+    }
+
+    /// A mesh the local pipeline settles never reaches the rebuild, whatever the caller allows: the
+    /// route is decided on the verdict, not on a guess about the file.
+    #[test]
+    fn the_rebuild_is_not_tried_when_the_local_pipeline_settles_the_mesh() {
+        let outcome = repair_auto(box_mesh(), &RepairOptions::default());
+        assert!(
+            outcome.report.fully_repaired,
+            "a closed box needs no repair: {:?}",
+            outcome.report.residual_issues
+        );
+        assert!(
+            !outcome.report.steps.iter().any(|s| s.name == "rebuild"),
+            "and no rebuild is announced: {:?}",
+            outcome.report.steps.iter().map(|s| s.name.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    /// Several shells, none dominant, is a plate of objects — and a rebuild resolves one object, so
+    /// it stands down. One shell bigger than the rest is a model with loose shells around it, and the
+    /// rebuild may be tried. The numbers are the measured ones: `Gusano_de_Dune_70%` reads 77.6% on
+    /// its largest shell, the plate in the corpus 20.8%.
+    #[test]
+    fn several_objects_stop_the_rebuild_and_one_object_does_not() {
+        let one = box_mesh();
+        assert_eq!(several_objects_share(&one), None, "one box is one object");
+
+        // Three boxes of the same size standing apart: a plate, and no shell dominates it.
+        let mut plate = box_mesh();
+        for k in 1..3 {
+            let mut m = box_mesh();
+            for p in m.positions.iter_mut() {
+                *p = Vec3::new(p.x + 10.0 * k as f32, p.y, p.z);
+            }
+            let base = plate.positions.len() as u32;
+            for t in m.triangles.iter() {
+                plate.triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+            }
+            plate.positions.extend_from_slice(&m.positions);
+        }
+        let share = several_objects_share(&plate).expect("three equal parts are several objects");
+        assert!(
+            (share - 1.0 / 3.0).abs() < 1e-6,
+            "and the largest holds a third of it, got {share}"
+        );
+
+        // A model with scraps beside it: the model's twelve faces against two tetrahedra's four each
+        // is 60% of the mesh, so one shell dominates and the rebuild is allowed. The share is by
+        // faces, which is what the criterion reads — `Gusano_de_Dune_70%` is the real example.
+        let mut model = box_mesh();
+        for k in 1..3 {
+            let base = model.positions.len() as u32;
+            for corner in [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ] {
+                model.positions.push(Vec3::new(
+                    corner[0] + 10.0 * k as f32,
+                    corner[1],
+                    corner[2],
+                ));
+            }
+            for t in [[0u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] {
+                model.triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+            }
+        }
+        assert_eq!(
+            several_objects_share(&model),
+            None,
+            "the model dominates its scraps, so it is one object as far as the route is concerned"
+        );
+    }
+
+    /// `allow_rebuild = false` means exactly that: the local result is handed back, with the residue
+    /// reported rather than a route taken.
+    #[test]
+    fn a_caller_that_forbids_the_rebuild_gets_the_local_result() {
+        let options = RepairOptions {
+            allow_rebuild: false,
+            ..RepairOptions::default()
+        };
+        assert!(!options.allow_rebuild);
+        assert!(RepairOptions::default().allow_rebuild);
     }
 }

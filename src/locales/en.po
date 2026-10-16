@@ -2011,7 +2011,7 @@ msgstr "Close without applying the edits made in this dialog"
 msgid "Closed {closedHoles, plural, one {# open hole} other {# open holes}}."
 msgstr "Closed {closedHoles, plural, one {# open hole} other {# open holes}}."
 
-#: src/components/scene/repairProgressMessages.ts:23
+#: src/components/scene/repairProgressMessages.ts:27
 msgid "Closing gaps"
 msgstr "Closing gaps"
 
@@ -2023,7 +2023,7 @@ msgstr "Closing now leaves the auto-support settings as they are. Save in the di
 msgid "Closing open edges"
 msgstr "Closing open edges"
 
-#: src/components/scene/repairProgressMessages.ts:21
+#: src/components/scene/repairProgressMessages.ts:25
 msgid "Closing small holes"
 msgstr "Closing small holes"
 
@@ -2031,7 +2031,7 @@ msgstr "Closing small holes"
 msgid "Closing the new surface"
 msgstr "Closing the new surface"
 
-#: src/components/scene/repairProgressMessages.ts:24
+#: src/components/scene/repairProgressMessages.ts:28
 msgid "Closing the remaining gaps"
 msgstr "Closing the remaining gaps"
 
@@ -2877,7 +2877,7 @@ msgstr "Discard the edits made in this dialog and reload the selected preset"
 msgid "Discard unsaved LUT curve changes"
 msgstr "Discard unsaved LUT curve changes"
 
-#: src/components/scene/repairProgressMessages.ts:31
+#: src/components/scene/repairProgressMessages.ts:35
 msgid "Discarding scraps"
 msgstr "Discarding scraps"
 
@@ -4326,7 +4326,7 @@ msgstr "Job:"
 msgid "Join the Open Resin Alliance!"
 msgstr "Join the Open Resin Alliance!"
 
-#: src/components/scene/repairProgressMessages.ts:20
+#: src/components/scene/repairProgressMessages.ts:24
 msgid "Joining loose edges"
 msgstr "Joining loose edges"
 
@@ -4400,7 +4400,7 @@ msgstr "Keep the existing supports and place the new ones around them"
 msgid "Keep the preset"
 msgstr "Keep the preset"
 
-#: src/components/scene/repairProgressMessages.ts:29
+#: src/components/scene/repairProgressMessages.ts:33
 msgid "Keeping the largest pieces"
 msgstr "Keeping the largest pieces"
 
@@ -4977,7 +4977,7 @@ msgctxt "Undo history entry"
 msgid "Merge supports into {modelName}"
 msgstr "Merge supports into {modelName}"
 
-#: src/components/scene/repairProgressMessages.ts:28
+#: src/components/scene/repairProgressMessages.ts:32
 msgid "Merging overlapping parts"
 msgstr "Merging overlapping parts"
 
@@ -6254,7 +6254,7 @@ msgstr "Plugins"
 msgid "PNG compression and engine metadata"
 msgstr "PNG compression and engine metadata"
 
-#: src/components/scene/repairProgressMessages.ts:19
+#: src/components/scene/repairProgressMessages.ts:23
 msgid "Pointing faces the same way"
 msgstr "Pointing faces the same way"
 
@@ -6648,6 +6648,10 @@ msgstr "Rebuilding the model geometry with the latest hollowing settings."
 msgid "Rebuilding the surface"
 msgstr "Rebuilding the surface"
 
+#: src/components/scene/repairProgressMessages.ts:22
+msgid "Rebuilding the surface into a solid"
+msgstr "Rebuilding the surface into a solid"
+
 #: src/app/page.tsx:11933
 msgid "Rebuilding the surface."
 msgstr "Rebuilding the surface."
@@ -6905,15 +6909,15 @@ msgstr "Remove twig"
 msgid "Removed {count, plural, one {# brace} other {# braces}}."
 msgstr "Removed {count, plural, one {# brace} other {# braces}}."
 
-#: src/components/scene/repairProgressMessages.ts:22
+#: src/components/scene/repairProgressMessages.ts:26
 msgid "Removing doubled faces"
 msgstr "Removing doubled faces"
 
-#: src/components/scene/repairProgressMessages.ts:25
+#: src/components/scene/repairProgressMessages.ts:29
 msgid "Removing doubled faces again"
 msgstr "Removing doubled faces again"
 
-#: src/components/scene/repairProgressMessages.ts:30
+#: src/components/scene/repairProgressMessages.ts:34
 msgid "Removing faces inside the model"
 msgstr "Removing faces inside the model"
 
@@ -7064,6 +7068,10 @@ msgstr "Repair stopped. Repaired {repaired} of {total} models; the rest are unch
 #: src/features/scene/meshRepairMessages.ts:14
 msgid "Repaired {modelName}."
 msgstr "Repaired {modelName}."
+
+#: src/components/scene/repairProgressMessages.ts:21
+msgid "Repairing"
+msgstr "Repairing"
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:275
 #: src/components/organisms/modals/MeshRepairModals.tsx:291
@@ -7875,15 +7883,15 @@ msgstr "Separate"
 msgid "Separating model and support geometry…"
 msgstr "Separating model and support geometry…"
 
-#: src/components/scene/repairProgressMessages.ts:33
+#: src/components/scene/repairProgressMessages.ts:37
 msgid "Separating model and supports"
 msgstr "Separating model and supports"
 
-#: src/components/scene/repairProgressMessages.ts:26
+#: src/components/scene/repairProgressMessages.ts:30
 msgid "Separating surfaces that overlap"
 msgstr "Separating surfaces that overlap"
 
-#: src/components/scene/repairProgressMessages.ts:27
+#: src/components/scene/repairProgressMessages.ts:31
 msgid "Separating surfaces that share an edge"
 msgstr "Separating surfaces that share an edge"
 
@@ -8424,7 +8432,7 @@ msgstr "Start using DragonFruit"
 #. Remesh progress before the first phase reports in.
 #. Shrink-wrap progress before the first phase reports in.
 #: src/components/scene/remeshProgressMessages.ts:42
-#: src/components/scene/repairProgressMessages.ts:39
+#: src/components/scene/repairProgressMessages.ts:43
 #: src/components/scene/scanProgressMessages.ts:31
 #: src/components/scene/solidRemeshProgressMessages.ts:33
 #: src/components/scene/tetSurfaceProgressMessages.ts:33
@@ -9036,7 +9044,7 @@ msgstr "This will replace the preset with your current settings."
 msgid "This will reset <0>Detail</0>, <1>Structure</1>, and <2>Anchor</2> to their factory settings and unpin all user presets. Your user presets will <3>not</3> be deleted."
 msgstr "This will reset <0>Detail</0>, <1>Structure</1>, and <2>Anchor</2> to their factory settings and unpin all user presets. Your user presets will <3>not</3> be deleted."
 
-#: src/components/scene/repairProgressMessages.ts:32
+#: src/components/scene/repairProgressMessages.ts:36
 msgid "Tidying up"
 msgstr "Tidying up"
 

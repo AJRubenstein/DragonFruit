@@ -22,6 +22,7 @@ pub mod repair;
 pub mod solid_remesh;
 pub mod report;
 pub mod shells;
+pub(crate) mod smoothing;
 pub mod shrink_wrap;
 pub mod stl_budget;
 #[cfg(test)]
@@ -35,9 +36,9 @@ pub use crate::hollowing::{
     HollowSession, OpenFace,
 };
 pub use crate::repair::{
-    classify_support_split, decimate_sections_to_budget, repair, repair_separate_parts,
-    repair_with_progress, ClassificationOutcome, PartOutcome, PartsRepair, RepairOptions,
-    RepairOutcome, SectionDecimationOutcome,
+    classify_support_split, decimate_sections_to_budget, repair, repair_auto,
+    repair_auto_with_progress, repair_separate_parts, repair_with_progress, ClassificationOutcome,
+    PartOutcome, PartsRepair, RepairOptions, RepairOutcome, SectionDecimationOutcome,
 };
 pub use crate::report::MeshHealthReport;
 pub use crate::shrink_wrap::{

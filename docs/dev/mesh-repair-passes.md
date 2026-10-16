@@ -369,6 +369,95 @@ reading the code:
 
 The pass stays off until the mixed-chord case is handled the same way.
 
+## The winding that flipping cannot settle, and the cut that can
+
+The faces joined across a mesh's two-face edges form a graph whose edges demand a parity, and a cycle
+whose parities sum to an odd number is satisfied by *no* assignment of face orientations. A file can
+therefore end with inconsistently wound edges that no amount of flipping clears, and the report says
+exactly that: "its topology has cycles that demand an odd flip".
+
+Two of the corpus files are like that, and the pipeline's answer is layered:
+
+- `repair_orientation`'s side-split cut settles a mesh whose disagreements are spread over the
+  surface. It cannot separate the two faces of an edge that are already on the same side, which is
+  what a *localised* defect leaves.
+- `retessellate_unsatisfiable` drops the faces on the unsatisfiable edges and lets the fill close what
+  that opens. It is guarded on the outcome — a move that adds parts or moves the volume is refused —
+  which is right for a localised defect and refuses on a spread one.
+- `RepairOptions::cut_unsatisfiable_edges` (**on by default** — it is judged, see below;
+  `--cut-unsatisfiable-edges=false` on the CLI, `cutUnsatisfiableEdges` from the app) is the last
+  resort: one face per unsatisfiable edge is taken
+  as the region, the vertices it shares with the rest of the surface are duplicated exactly where they
+  were, and the seam each cut opens is capped one side at a time — the general fill cannot do that,
+  because its walk pairs boundary edges by vertex alone and joins two fans at a pinched vertex, which
+  bridges the sides and brings the non-orientability straight back.
+
+### The route is chosen, not asked for
+
+`repair_auto` is the repair the app runs, and it decides between two routes:
+
+- **The local pipeline.** It repairs what is there, so it goes first, and if it comes back
+  `fully_repaired` the second route never runs (no guess about the file is involved — the verdict
+  decides).
+- **The surface-to-solid rebuild**, behind it. When the local pipeline cannot settle a mesh and the
+  caller allows it (`allow_rebuild`, on by default), the mesh goes through `solid_remesh` and that
+  result is repaired in turn, then **judged**: kept only when it is `fully_repaired` or its defect
+  total is strictly better. It rebuilds the surface into a solid, so it moves the model, and the
+  report says so in as many words — "this mesh was rebuilt rather than repaired: ... 20.6% more volume
+  and 356044 triangles where the input had 596293" — because that is a different object rather than
+  the same one repaired.
+
+A rebuild resolves *one* object, so the route has to know which it is looking at, and the criterion
+is measured rather than guessed — a mesh with one object in it has a dominant shell, a plate of
+comparable objects does not:
+
+| file | shells | largest shell |
+| --- | --- | --- |
+| `3DBenchy` | 1 | 100% |
+| `corbu` | 8 | 77.0% |
+| `Gusano_de_Dune_70%` | 302 | 77.6% |
+| `Untitled2` (a plate of 25 objects) | 29 | 20.8% |
+
+So "several shells, none of them dominant" stands the route down with the numbers in the note
+("the mesh is several objects and the largest holds 28% of it — repair the parts, not the plate"),
+and the bias is deliberate: declining a rebuild leaves the honest local result, while running one that
+should not have run replaces a detailed model with a coarser one — the plate's own rebuild measured
+656,922 triangles in and 149,768 out, its shells fragmented from 118 to 306.
+
+**And a rebuild is only kept when it finishes the job.** It costs detail, so "better but still
+broken" is not the trade this route is for; when it does not come out `fully_repaired` the local
+result is handed back with a note saying the rebuild was tried and what it came to. A caller that
+wants the surfacing for its own sake has the mode by name.
+
+Measured on `Gusano_de_Dune_70%.stl`, the one file in the corpus nothing else settles:
+
+| route | non-manifold | pinched | loops | winding | triangles | verdict |
+|---|---|---|---|---|---|---|
+| input | 3,513 | 3,164 | 66 | 1,897 | 596,293 | — |
+| local, with the cut | 97 | 188 | 0 | 0 | 595,802 | not repaired |
+| **rebuild, repaired** | **0** | **0** | **0** | **0** | 356,044 | **fully repaired** |
+
+And the five files the corpus sweep watches are unchanged by the new defaults — 3DBenchy, poussin,
+COOKIE_b4, Harbinger and corbu all come out `fully_repaired` 0/0/0/0, with the cut firing on none of
+them (it is judged, and on corbu there is no unsatisfiable edge to cut at all).
+
+The cut is judged like the passes that rebuild surface: its own scraps are culled first (a region
+detached from the surface is a shell of one to three faces, and the noise rule is what removes those),
+then it is kept only when the defect total strictly drops, and — on a watertight mesh, where the
+number means something — when the volume holds. Measured on `Gusano_de_Dune_70%.stl`, which arrives
+with 596,293 triangles, 3,513 non-manifold edges and 1,897 winding edges:
+
+| | default | with the cut |
+|---|---|---|
+| inconsistent winding edges | 1,374 | **0** |
+| non-manifold edges | 196 | **97** |
+| pinched vertices | 338 | **188** |
+| boundary loops | 0 | 0 |
+
+It stays off by default because the same move on a surface frustrated *throughout* can go the other
+way: on an earlier branch it took one file's winding from 113 to 919. The guard above is what makes
+that a refusal instead of a regression, and the option is how a caller says they want the trade.
+
 ## Repairing a plate: the parts flow
 
 A print plate is not one model, and a repair of the whole file gives one verdict for all of its
@@ -420,6 +509,29 @@ The flow is wired into the import path, at the point where a heavy repair is alr
 The report fields a caller reads are `MeshHealthReport::parts` (`MeshPartReport` in Rust,
 `MeshRepairPartSummary` in TS): `index`, `triangles_before`, `triangles_after`, `fully_repaired` and
 the part's own `residual_issues`.
+
+### The rebuild's own look: what "rough" measured as
+
+A rebuilt surface reads as rougher than the model it replaced, and on `Gusano_de_Dune_70%.stl` that is
+measurable — the mean dihedral angle across its interior edges, and how much of it is sharp:
+
+| | triangles | mean dihedral | edges over 30° | triangle size | signed volume |
+| --- | --- | --- | --- | --- | --- |
+| the input | 596,293 | 9.4° | 7.4% | 0.344 mm | 37,293 |
+| rebuild at simplify 0.001 | 356,072 | 13.2° | 13.3% | 0.446 mm | 44,909 (+20.4%) |
+| **rebuild at simplify 0.0002, Taubin x2** | 603,772 | ~11.0° | ~9.8% | 0.325 mm | 45,094 (+20.9%) |
+
+Two of the three causes are the *simplify* before the boolean: collapsing the surface folds it, the
+boolean then resolves a folded one, and the result comes back coarser than the input (0.446 mm faces
+where the input had 0.344 mm) with nearly twice the sharp edges. So the simplify default is `0.0002`
+now, which buys back the input's own density and most of its smoothness for 1.7x the triangles and
+about five seconds on that model. A light Taubin pass (`smooth_iterations`, default 2, step derived
+from the mesh's own median edge) takes the last of the stair-steps off, and shares its implementation
+with the hollow's cavity surface, which needed the same thing for the same reason.
+
+The third cause is not roughness and does not move: the resolve fills the model's own shells, so its
+signed volume comes out about 20% above the input's at every simplify setting. That is the resolve
+doing what it is for, and the report says the surface moved.
 
 ## Two things that are not what they look like
 

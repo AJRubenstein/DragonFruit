@@ -2011,7 +2011,7 @@ msgstr "Cierra sin aplicar los cambios hechos en esta ventana"
 msgid "Closed {closedHoles, plural, one {# open hole} other {# open holes}}."
 msgstr "{closedHoles, plural, one {Se cerró # agujero abierto} other {Se cerraron # agujeros abiertos}}."
 
-#: src/components/scene/repairProgressMessages.ts:23
+#: src/components/scene/repairProgressMessages.ts:27
 msgid "Closing gaps"
 msgstr "Cerrando huecos"
 
@@ -2023,7 +2023,7 @@ msgstr "Si cierras ahora, los ajustes de autosoportes se quedan como están. «G
 msgid "Closing open edges"
 msgstr ""
 
-#: src/components/scene/repairProgressMessages.ts:21
+#: src/components/scene/repairProgressMessages.ts:25
 msgid "Closing small holes"
 msgstr "Cerrando agujeros pequeños"
 
@@ -2031,7 +2031,7 @@ msgstr "Cerrando agujeros pequeños"
 msgid "Closing the new surface"
 msgstr ""
 
-#: src/components/scene/repairProgressMessages.ts:24
+#: src/components/scene/repairProgressMessages.ts:28
 msgid "Closing the remaining gaps"
 msgstr "Cerrando los huecos restantes"
 
@@ -2877,7 +2877,7 @@ msgstr "Descarta los cambios hechos en esta ventana y recarga el preajuste selec
 msgid "Discard unsaved LUT curve changes"
 msgstr "Descartar los cambios sin guardar de la curva LUT"
 
-#: src/components/scene/repairProgressMessages.ts:31
+#: src/components/scene/repairProgressMessages.ts:35
 msgid "Discarding scraps"
 msgstr "Descartando restos"
 
@@ -4326,7 +4326,7 @@ msgstr "Trabajo:"
 msgid "Join the Open Resin Alliance!"
 msgstr "¡Únete a la Open Resin Alliance!"
 
-#: src/components/scene/repairProgressMessages.ts:20
+#: src/components/scene/repairProgressMessages.ts:24
 msgid "Joining loose edges"
 msgstr "Uniendo aristas sueltas"
 
@@ -4400,7 +4400,7 @@ msgstr "Conserva los soportes existentes y coloca los nuevos alrededor"
 msgid "Keep the preset"
 msgstr "Conservar el preajuste"
 
-#: src/components/scene/repairProgressMessages.ts:29
+#: src/components/scene/repairProgressMessages.ts:33
 msgid "Keeping the largest pieces"
 msgstr "Conservando las piezas más grandes"
 
@@ -4977,7 +4977,7 @@ msgctxt "Undo history entry"
 msgid "Merge supports into {modelName}"
 msgstr "Unir los soportes a {modelName}"
 
-#: src/components/scene/repairProgressMessages.ts:28
+#: src/components/scene/repairProgressMessages.ts:32
 msgid "Merging overlapping parts"
 msgstr "Fusionando piezas superpuestas"
 
@@ -6254,7 +6254,7 @@ msgstr "Complementos"
 msgid "PNG compression and engine metadata"
 msgstr "Compresión PNG y metadatos del motor"
 
-#: src/components/scene/repairProgressMessages.ts:19
+#: src/components/scene/repairProgressMessages.ts:23
 msgid "Pointing faces the same way"
 msgstr "Orientando las caras en el mismo sentido"
 
@@ -6648,6 +6648,10 @@ msgstr "Reconstruyendo la geometría del modelo con los últimos ajustes de vaci
 msgid "Rebuilding the surface"
 msgstr ""
 
+#: src/components/scene/repairProgressMessages.ts:22
+msgid "Rebuilding the surface into a solid"
+msgstr ""
+
 #: src/app/page.tsx:11933
 msgid "Rebuilding the surface."
 msgstr ""
@@ -6905,15 +6909,15 @@ msgstr "Quitar ramita"
 msgid "Removed {count, plural, one {# brace} other {# braces}}."
 msgstr "{count, plural, one {Se ha quitado # riostra} other {Se han quitado # riostras}}."
 
-#: src/components/scene/repairProgressMessages.ts:22
+#: src/components/scene/repairProgressMessages.ts:26
 msgid "Removing doubled faces"
 msgstr "Eliminando caras duplicadas"
 
-#: src/components/scene/repairProgressMessages.ts:25
+#: src/components/scene/repairProgressMessages.ts:29
 msgid "Removing doubled faces again"
 msgstr "Eliminando caras duplicadas de nuevo"
 
-#: src/components/scene/repairProgressMessages.ts:30
+#: src/components/scene/repairProgressMessages.ts:34
 msgid "Removing faces inside the model"
 msgstr "Eliminando las caras interiores del modelo"
 
@@ -7064,6 +7068,10 @@ msgstr "Reparación detenida. Se han reparado {repaired} de {total} modelos; el 
 #: src/features/scene/meshRepairMessages.ts:14
 msgid "Repaired {modelName}."
 msgstr "{modelName} reparado."
+
+#: src/components/scene/repairProgressMessages.ts:21
+msgid "Repairing"
+msgstr ""
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:275
 #: src/components/organisms/modals/MeshRepairModals.tsx:291
@@ -7875,15 +7883,15 @@ msgstr "Separados"
 msgid "Separating model and support geometry…"
 msgstr "Separando la geometría del modelo y la de los soportes…"
 
-#: src/components/scene/repairProgressMessages.ts:33
+#: src/components/scene/repairProgressMessages.ts:37
 msgid "Separating model and supports"
 msgstr "Separando el modelo de los soportes"
 
-#: src/components/scene/repairProgressMessages.ts:26
+#: src/components/scene/repairProgressMessages.ts:30
 msgid "Separating surfaces that overlap"
 msgstr "Separando superficies que se superponen"
 
-#: src/components/scene/repairProgressMessages.ts:27
+#: src/components/scene/repairProgressMessages.ts:31
 msgid "Separating surfaces that share an edge"
 msgstr "Separando superficies que comparten una arista"
 
@@ -8424,7 +8432,7 @@ msgstr "Empezar a usar DragonFruit"
 #. Remesh progress before the first phase reports in.
 #. Shrink-wrap progress before the first phase reports in.
 #: src/components/scene/remeshProgressMessages.ts:42
-#: src/components/scene/repairProgressMessages.ts:39
+#: src/components/scene/repairProgressMessages.ts:43
 #: src/components/scene/scanProgressMessages.ts:31
 #: src/components/scene/solidRemeshProgressMessages.ts:33
 #: src/components/scene/tetSurfaceProgressMessages.ts:33
@@ -9036,7 +9044,7 @@ msgstr "Esto sustituirá el preajuste por tus ajustes actuales."
 msgid "This will reset <0>Detail</0>, <1>Structure</1>, and <2>Anchor</2> to their factory settings and unpin all user presets. Your user presets will <3>not</3> be deleted."
 msgstr "Esto restablecerá <0>Detalle</0>, <1>Estructura</1> y <2>Anclaje</2> a sus valores de fábrica y desanclará todos los preajustes del usuario. Tus preajustes <3>no</3> se eliminarán."
 
-#: src/components/scene/repairProgressMessages.ts:32
+#: src/components/scene/repairProgressMessages.ts:36
 msgid "Tidying up"
 msgstr "Dando los últimos retoques"
 

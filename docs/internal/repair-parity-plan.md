@@ -400,6 +400,24 @@ passes last ran, so it was not provably a repeat. The tests that remain are the 
   still leaves 3,510 non-manifold edges, so the defect is *inside* one large shell rather than between
   the parts, which rules out a part-level answer.
 
+  **Closed since, on this branch, but only when asked for.** The winding residue is the class a
+  *cut* reaches: the faces joined across two-face edges demand a parity, and an odd cycle is satisfied
+  by no assignment, so no amount of flipping clears them. The repair-2.0 branch had that cut
+  (`3ffb3deb` and the campaign around it) and the rebuild of this branch replaced it with a
+  re-tessellation that refuses a spread defect — measured, 0 faces re-tessellated twice on this file.
+  With the cut restored behind `--cut-unsatisfiable-edges` and judged (kept only when the defect total
+  drops), Gusano comes out **winding 1,374 -> 0, non-manifold edges 196 -> 97, pinched vertices
+  338 -> 188**, where the default leaves 1,374 / 196 / 338. It is not a clean file either way — it
+  arrives with 3,513 non-manifold edges inside 302 shells — but the class the report named is settled.
+
+  **And it is settled automatically since.** `repair_auto` runs the local pipeline first and, when it
+  cannot settle the mesh, the surface-to-solid rebuild behind it, judged: measured on this file the
+  rebuild comes out **`fully_repaired`, 0/0/0/0, 603,772 triangles from 596,293**, with the report
+  saying the surface moved (37,293 -> 45,094 of signed volume, +20.9%). The app's repair runs that
+  route, and the rebuild's own simplify default is 0.0002 rather than 0.001 because the coarser
+  setting came back with 13.3% of its edges over 30° against the input's 7.4% — see *The rebuild's own
+  look* in the passes doc. The local pipeline stays the answer where it works, which is every other file measured.
+
   The local pipeline is not the right instrument for it, and the rebuild mode now is. The surface to
   solid path separates the shared edges and rebuilds it into a solid: watertight, 0 non-manifold
   edges, 0 pinches, 0 loops, 307,258 triangles from 596,293. It costs a 20% volume rise, 532 shells

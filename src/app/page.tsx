@@ -2635,8 +2635,6 @@ export default function Home() {
             ...item,
             children: [
               { id: 'repair' as const, label: repaired ? msg`Repair Again` : msg`Auto-Repair`, icon: Wrench },
-              { id: 'remesh' as const, label: msg`Remesh`, icon: Pyramid },
-              { id: 'shrinkwrap' as const, label: msg`Shrink-Wrap`, icon: RefreshCw },
               // The second group only exists once there is a repair to undo or report on.
               ...(repaired
                 ? [
@@ -2676,7 +2674,7 @@ export default function Home() {
 
     return [
       ...(!hasTargetModel ? (['delete'] as const) : []),
-      ...(!scene.activeModelId ? (['cut', 'copy', 'repair', 'remesh', 'shrinkwrap'] as const) : []),
+      ...(!scene.activeModelId ? (['cut', 'copy', 'repair'] as const) : []),
       ...(!hasTargetModel ? (['mark-as-support-geometry', 'mark-as-model-geometry'] as const) : []),
       ...(!canLink ? (['link-models'] as const) : []),
       ...(!canUnlink ? (['unlink-models'] as const) : []),
@@ -6709,24 +6707,6 @@ export default function Home() {
           closeEditorContextMenu();
           setAutoStartRepair(false);
           setManualRepairModelIds(targetIds);
-          return;
-        }
-        break;
-      }
-      case 'remesh': {
-        const targetId = scene.activeModelId;
-        if (targetId) {
-          closeEditorContextMenu();
-          setTetSurfaceConfirmModelId(targetId);
-          return;
-        }
-        break;
-      }
-      case 'shrinkwrap': {
-        const targetId = scene.activeModelId;
-        if (targetId) {
-          closeEditorContextMenu();
-          setShrinkWrapConfirmModelId(targetId);
           return;
         }
         break;

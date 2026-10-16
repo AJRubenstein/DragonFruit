@@ -32,9 +32,31 @@ pub struct SolidRemeshOptions {
     pub fill_holes_max_edges: usize,
     /// Drop scrap shells after the rebuild, which is the reference's own last step.
     pub remove_noise_shells: bool,
+    /// Taubin smoothing passes over the resolved surface, each a pair of runs.
+    ///
+    /// The resolve is a boolean of a lattice-ish input, and it carries the stair-steps of whatever the
+    /// boolean built: measured on `Gusano_de_Dune_70%.stl`, its rebuild had 13.3% of its edges over 30°
+    /// where the input had 7.4%, and 7.2% over 60° against 3.7% — what reads as "a little rough". The
+    /// step is derived from the mesh's own median edge, so this scales with the model rather than with a
+    /// constant, and zero leaves the raw resolve.
+    pub smooth_iterations: usize,
     /// Simplify before resolving, on [`crate::repair::simplify_to_error`]'s scale: 0.001 removes
     /// about a quarter of a dense model, 0.005 removes most of it, and 0.05 leaves 190 triangles of
     /// 170,790. Zero leaves the surface alone.
+    ///
+    /// **0.0002, not 0.001**, because collapsing the surface *folds* it and the boolean then resolves
+    /// a folded surface — which is what reads as "rough" in the result. Measured on
+    /// `Gusano_de_Dune_70%.stl`, over the resolved surface:
+    ///
+    /// | simplify | triangles out | mean dihedral | edges over 30° | triangle size |
+    /// | --- | --- | --- | --- | --- |
+    /// | the input | 596,293 | 9.4° | 7.4% | 0.344 mm |
+    /// | 0.001 | 356,072 | 13.2° | 13.3% | 0.446 mm |
+    /// | **0.0002** | 603,782 | **11.0°** | **9.8%** | 0.325 mm |
+    /// | 0 | 621,582 | 10.7° | 9.5% | 0.320 mm |
+    ///
+    /// The volume the resolve adds is unchanged by this (it is the resolve filling the model's own
+    /// shells, not the simplify), and the cost is 1.7x the triangles and about 5 s on that model.
     ///
     /// This is the step that makes a shrink-wrap look rebuilt rather than merely resolved: a boolean
     /// of a clean solid with itself is idempotent, so without it the surface comes back exactly as it
@@ -48,7 +70,8 @@ impl Default for SolidRemeshOptions {
         Self {
             fill_holes_max_edges: usize::MAX,
             remove_noise_shells: true,
-            tolerance: 0.001,
+            smooth_iterations: 2,
+            tolerance: 0.0002,
         }
     }
 }
@@ -202,6 +225,18 @@ pub fn solid_remesh_with_progress(
     // with 0 non-manifold edges, 0 pinches and 0 loops, and 114 inconsistent edges.
     let _ = crate::repair::unify_winding(&mut prepared);
 
+    // 4b. Take the stair-steps off the surface the boolean built.
+    if options.smooth_iterations > 0 && !prepared.triangles.is_empty() {
+        let edge_scale = median_edge_length(&prepared);
+        crate::smoothing::taubin_smooth(
+            &mut prepared,
+            options.smooth_iterations,
+            edge_scale,
+            edge_scale * 0.5,
+        );
+        let _ = crate::repair::unify_winding(&mut prepared);
+    }
+
     // 5. Drop what the rebuild left behind.
     if !phases.phase("shells") {
         return unchanged(None, true);
@@ -226,6 +261,23 @@ pub fn solid_remesh_with_progress(
             cancelled: false,
         },
     }
+}
+
+/// The middle edge length of a mesh, which is the scale its own features are at.
+fn median_edge_length(mesh: &IndexedMesh) -> f32 {
+    let mut lengths: Vec<f32> = Vec::with_capacity(mesh.triangles.len() * 3 / 2);
+    for t in mesh.triangles.iter() {
+        for k in 0..3 {
+            let a = mesh.positions[t[k] as usize];
+            let b = mesh.positions[t[(k + 1) % 3] as usize];
+            lengths.push(a.sub(b).length());
+        }
+    }
+    if lengths.is_empty() {
+        return 1.0;
+    }
+    lengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    lengths[lengths.len() / 2].max(1e-6)
 }
 
 /// Separate the surfaces that share an edge, until the boolean has something it can build from.

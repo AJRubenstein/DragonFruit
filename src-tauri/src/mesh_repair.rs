@@ -29,8 +29,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
-    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_separate_parts,
-    repair_with_progress,
+    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_auto_with_progress,
+    repair_separate_parts, repair_with_progress,
     shrink_wrap_with_progress, solid_remesh_with_progress, tet_surface_with_progress, HolePunchOptions,
     HollowOptions, HollowSession, IndexedMesh, RepairOptions, ShrinkWrapOptions, SolidRemeshOptions,
     TetWrapOptions,
@@ -200,6 +200,8 @@ struct RepairOptionsDto {
     keep_largest_n_components: Option<usize>,
     repair_orientation: Option<bool>,
     resolve_self_intersections: Option<bool>,
+    cut_unsatisfiable_edges: Option<bool>,
+    allow_rebuild: Option<bool>,
     #[serde(alias = "assume_support_geometry")]
     assume_support_geometry: Option<bool>,
 }
@@ -222,6 +224,10 @@ impl From<RepairOptionsDto> for RepairOptions {
             resolve_self_intersections: dto
                 .resolve_self_intersections
                 .unwrap_or(defaults.resolve_self_intersections),
+            cut_unsatisfiable_edges: dto
+                .cut_unsatisfiable_edges
+                .unwrap_or(defaults.cut_unsatisfiable_edges),
+            allow_rebuild: dto.allow_rebuild.unwrap_or(defaults.allow_rebuild),
             assume_support_geometry: dto
                 .assume_support_geometry
                 .or(defaults.assume_support_geometry),
@@ -497,7 +503,7 @@ pub async fn mesh_repair_from_path(
     let (mesh, mut report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::load_mesh_from_path(&path).map_err(|e| e.to_string())?;
         let mut sink = progress_sink("mesh-repair-progress", token, cancel, app);
-        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
+        let outcome = repair_auto_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
@@ -629,7 +635,7 @@ pub async fn mesh_repair_staged(
     let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
         let mut sink = progress_sink("mesh-repair-progress", token, cancel, app);
-        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
+        let outcome = repair_auto_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
