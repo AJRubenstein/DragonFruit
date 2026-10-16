@@ -213,6 +213,17 @@ broke through, making the two one component, and the scan reports only fragments
 1.016 million. Separating that case needs a per-face test, distinguishing air that is enclosed
 (cavity) from air that is unbounded (outside), rather than a component test.
 
+### The resolve works at the model's own scale
+
+Manifold's default tolerance is an absolute 1.2e-5 whatever the model is, and on a presupported plate
+whose median edge is 0.46 mm that asks it to keep geometry two millionths of an edge apart. What came
+back was the crossing soup re-triangulated at a scale nothing in the model shared: on
+`Gusano_de_Dune_70%.stl`, shard shells ringing every pocket in the underside, 302 shells going in and
+960 coming out. The tolerance is now a fraction of the mesh's own median edge (see
+`resolve_tolerance`), which is the scale the rest of the engine works at. Measured over that file's
+underside: 1.2e-5 and 1e-5 both star every pocket, 1e-4 and coarser are clean, and 1e-4 keeps the most
+detail at 499,168 triangles against the 603,772 the default produced.
+
 ## The third mode: surface to solid
 
 This mode is neither a resampler nor a decomposition. It closes what is open, resolves the mesh into

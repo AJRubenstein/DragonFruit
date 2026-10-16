@@ -367,6 +367,32 @@ fn separate_shared_edges_for_boolean(mesh: &mut IndexedMesh) -> usize {
     split_total
 }
 
+/// The precision the resolve is allowed to work at, as a distance in model units.
+///
+/// Manifold's own default is an absolute 1.2e-5 whatever the model is, which on a mesh whose median
+/// edge is 0.46 mm asks it to keep geometry two millionths of an edge apart. What it does with that
+/// is triangulate the crossing soup at a scale nothing in the model shares, and on
+/// `Gusano_de_Dune_70%.stl` that came out as a star of shard shells ringing every pocket in the
+/// underside. Measured over that file's underside, sweeping this tolerance:
+///
+/// | tolerance | triangles out | the underside |
+/// | --- | --- | --- |
+/// | 1.2e-5 (Manifold's default) | 603,772 | shards around all seven pockets |
+/// | 1e-5 | 603,772 | the same |
+/// | **1e-4** | **499,168** | **clean, faint rims** |
+/// | 1e-3 | 488,086 | clean |
+/// | 9.2e-3 | 466,322 | clean |
+///
+/// So the resolve is asked for a fraction of the mesh's own median edge, which is the scale the rest
+/// of this engine works at (see [`crate::repair`]'s weld tolerance for the same reasoning). The
+/// fraction is the finest one that measured clean, and 1e-4 is where it was found.
+const RESOLVE_TOLERANCE_OF_MEDIAN_EDGE: f64 = 0.0002;
+
+fn resolve_tolerance(mesh: &IndexedMesh) -> f64 {
+    let median = median_edge_length(mesh) as f64;
+    (median * RESOLVE_TOLERANCE_OF_MEDIAN_EDGE).max(1e-9)
+}
+
 /// Build a manifold from the mesh and read it back: the boolean, in one call.
 #[cfg(feature = "manifold")]
 fn manifold_round_trip(mesh: &IndexedMesh) -> Result<IndexedMesh, String> {
@@ -397,6 +423,7 @@ fn manifold_round_trip(mesh: &IndexedMesh) -> Result<IndexedMesh, String> {
     if solid.is_empty() || solid.num_tri() == 0 {
         return Err("the surface resolved to nothing".to_string());
     }
+    let solid = solid.set_tolerance(resolve_tolerance(mesh));
     let (out_positions, stride, out_indices) = solid.to_mesh_f32();
     if out_positions.is_empty() || out_indices.len() < 12 {
         return Err("the rebuilt surface came back empty".to_string());
