@@ -45,6 +45,12 @@ pub struct MeshHealthReport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<MeshPartReport>,
     pub fully_repaired: bool,
+    /// Set when the mesh the caller is handed came from the rebuild route rather than from the local
+    /// pipeline: the surface was resolved into a solid, which is a different object rather than the
+    /// same one repaired. A report that does not say so is describing the wrong mesh, which is why
+    /// this is a field and not a line in `residual_issues`.
+    #[serde(default)]
+    pub rebuilt: bool,
     /// True when the caller asked the repair to stop and it stopped at a stage
     /// boundary. The mesh is then partly repaired, and `fully_repaired` describes
     /// what is actually in it rather than what the run intended.
@@ -90,6 +96,7 @@ impl MeshHealthReport {
             residual_issues: Vec::new(),
             parts: Vec::new(),
             fully_repaired: false,
+            rebuilt: false,
             cancelled: false,
             total_ms: 0.0,
         }

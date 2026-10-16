@@ -879,6 +879,10 @@ fn rebuild_route(
     } else {
         0.0
     };
+    rebuilt_outcome.report.rebuilt = true;
+    // The report's before is the mesh the caller handed in, not the one the rebuild produced: an
+    // after-verdict on its own says nothing, and the note below already compares the two.
+    rebuilt_outcome.report.pre = local.report.pre;
     rebuilt_outcome.report.residual_issues.push(format!(
         "this mesh was rebuilt rather than repaired: the surface was resolved into a solid, {:.1}% more volume and {} triangles where the input had {}, because the local pipeline left {} defect(s)",
         moved,
