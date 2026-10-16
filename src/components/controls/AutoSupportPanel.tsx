@@ -475,7 +475,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
 
       <StructuredDialogModal
         open={showForestReport}
-        ariaLabel={_(msg`Forest report`)}
+        ariaLabel={_(msg`Forest Report`)}
         title={_(msg`Forest Report`)}
         subtitle={_(msg`Every placed support with its size and fan-out groups`)}
         iconTone="neutral"
@@ -635,7 +635,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
 
       <StructuredDialogModal
         open={showReplaceDialog}
-        ariaLabel={_(msg`Existing supports detected`)}
+        ariaLabel={_(msg`Existing Supports Detected`)}
         title={_(msg`Existing Supports Detected`)}
         subtitle={_(msg`This model already has supports. How would you like to proceed?`)}
         iconTone="neutral"

@@ -313,8 +313,8 @@ export function MeshRepairModals({
                 <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                   <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                     {isMultiple
-                      ? _(msg({ message: 'Models', context: 'Mesh repair dialog field' }))
-                      : _(msg({ message: 'Model', context: 'Mesh repair dialog field' }))}
+                      ? _(msg({ message: 'Models', context: 'Dialog field' }))
+                      : _(msg({ message: 'Model', context: 'Dialog field' }))}
                   </div>
                   <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-strong)' }} title={repairModelNames}>
                     {repairModelNames}

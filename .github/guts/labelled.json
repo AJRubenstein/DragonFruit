@@ -125,9 +125,9 @@
     "split": "train",
     "areas": [
       "platform",
-      "printing"
+      "printer connection"
     ],
-    "note": "Packaging problem in the camera relay: platform, and printing for whoever filters by the camera."
+    "note": "Packaging problem in the camera relay: platform, and printer connection for whoever filters by the camera."
   },
   "641": {
     "title": "[BUG] P1Max screen needs mirroring",
@@ -300,64 +300,82 @@
     "title": "[BUG] Context-menu copy only applies to the last selected object",
     "split": "train",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "577": {
     "title": "[BUG] Context-menu cut only applies to the last selected object",
     "split": "train",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "576": {
     "title": "[BUG] Context-menu delete only applies to the last selected object",
     "split": "holdout",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "575": {
     "title": "[BUG] Mirror/flip only applies to the last selected object",
     "split": "train",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "574": {
     "title": "[BUG] Panel move to position/center only applies to the last selected object",
     "split": "train",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "573": {
     "title": "[BUG] Panel reset rotation/scale only applies to the last selected object",
     "split": "holdout",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "572": {
     "title": "[BUG] Panel scale only applies to the last selected object",
     "split": "train",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "571": {
     "title": "[BUG] Panel rotate only applies to the last selected object",
     "split": "train",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "569": {
     "title": "[BUG] Actions on a multi-object selection only apply to a single object",
     "split": "train",
     "areas": [
-      "scene tools"
-    ]
+      "scene tools",
+      "ui"
+    ],
+    "note": "The action belongs to scene tools; only part of the multi-model selection getting it is ui."
   },
   "554": {
     "title": "[BUG] Right-clicking objects occasionally brings up a navigation selection instead of the normal functions",

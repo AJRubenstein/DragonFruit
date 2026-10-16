@@ -978,7 +978,7 @@ export function PrintingModals({
                   </div>
                 </div>
                 <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                  <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Target Printer</Trans></div>
+                  <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Target printer</Trans></div>
                   <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-strong)' }} title={printingTargetDevice?.displayName || printingTargetDevice?.hostName || printingTargetDevice?.ipAddress || _(msg`Pending`)}>
                     {printingTargetDevice?.displayName || printingTargetDevice?.hostName || printingTargetDevice?.ipAddress || _(msg`Pending`)}
                   </div>

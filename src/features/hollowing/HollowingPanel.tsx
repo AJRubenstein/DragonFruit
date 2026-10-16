@@ -179,7 +179,7 @@ export function HollowingPanel({
               max={10}
               step={0.1}
               unit="mm"
-              ariaLabel={_(msg`Voxel size`)}
+              ariaLabel={_(msg`Voxel Size`)}
               disabled={isApplying}
               className="mt-1"
             />
@@ -363,7 +363,7 @@ export function HollowingPanel({
                     onClick={onApply}
                     disabled={isApplying || isPreviewing || !canApply}
                   >
-                    {isApplying ? _(msg`Applying...`) : isPreviewing ? (
+                    {isApplying ? _(msg`Applying…`) : isPreviewing ? (
                       <span className="inline-flex items-center justify-center gap-1.5">
                         <Spinner size="xs" />
                         <span><Trans>Updating</Trans></span>

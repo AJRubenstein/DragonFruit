@@ -253,7 +253,7 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
         }}
         role="dialog"
         aria-modal="true"
-        aria-label={_(msg`Mesh repair report`)}
+        aria-label={_(msg`Mesh Repair Report`)}
       >
         <div className={headerClassName} style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="flex min-w-0 items-center gap-3">
@@ -376,7 +376,7 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                {report.fully_repaired ? <Trans>Repair finished</Trans> : <Trans>Repair incomplete</Trans>}
+                {report.fully_repaired ? <Trans>Repair Complete</Trans> : <Trans>Repair Incomplete</Trans>}
               </div>
               <span
                 className="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums"

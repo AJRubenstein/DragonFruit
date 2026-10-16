@@ -1,6 +1,6 @@
 # Auto-support research roadmap
 
-Status: plan (2026-09-08). Sources: three deep-dives (ResinPapers, GeometryPapers, PrusaIslands — transcripts in agent history) plus the earlier four-track sweep. The slicer-side reverse-engineering pass is deferred until the papers are digested.
+Status: plan (2026-09-08). Sources: three deep-dives (ResinPapers, GeometryPapers, PrusaIslands — transcripts in agent history) plus the earlier four-track sweep, which looked at behaviour across several third-party slicers. One of those is explicitly deferred until the papers are digested.
 
 ## Where we stand
 

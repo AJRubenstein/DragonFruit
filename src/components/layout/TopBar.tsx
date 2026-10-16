@@ -733,6 +733,7 @@ export function TopBar({
         >
           <img
             src="/dragonfruit_assets/branding/simple_icon.svg"
+            // i18n-ignore: product name
             alt="DragonFruit"
             className="h-7 w-7 object-contain"
             draggable={false}
@@ -838,6 +839,7 @@ export function TopBar({
           onSelect={handleAppMenuSelect}
           onClose={closeAppMenu}
           dismissIgnoreRef={appMenuButtonRef}
+          // i18n-ignore: product name
           title="DragonFruit"
           ariaLabel={_(msg({ message: 'DragonFruit app menu', comment: '"DragonFruit" is the product name and should stay untranslated/unchanged.' }))}
         />

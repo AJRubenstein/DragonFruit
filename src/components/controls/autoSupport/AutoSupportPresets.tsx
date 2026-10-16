@@ -450,7 +450,7 @@ export function AutoSupportPresetSelector({ draft, setDraft }: AutoSupportPreset
 
       <StructuredDialogModal
         open={nameDialog != null}
-        ariaLabel={nameDialog?.mode === 'create' ? _(msg`Create preset`) : _(msg`Rename preset`)}
+        ariaLabel={nameDialog?.mode === 'create' ? _(msg`Create preset`) : _(msg`Rename Preset`)}
         title={nameDialog?.mode === 'create' ? _(msg`New Preset`) : _(msg`Rename Preset`)}
         subtitle={nameDialog?.mode === 'create'
           ? _(msg`The current settings are saved under this name, and it becomes the selected preset.`)
@@ -676,7 +676,7 @@ export function AutoSupportSettingsFooterActions({
                 background: 'color-mix(in srgb, var(--danger), var(--surface-1) 88%)',
                 color: 'var(--danger)',
               }}
-              title={_(msg`Delete the preset`)}
+              title={_(msg`Delete preset`)}
             >
               {_(msg`Delete`)}
             </Button>
