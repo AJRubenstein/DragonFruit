@@ -64,6 +64,12 @@ pub struct SolidRemeshReport {
     pub shells_after: usize,
     /// Boundary loops closed before the boolean ran.
     pub holes_filled: usize,
+    /// Vertices the separation split to make the surface manifold enough for the boolean.
+    ///
+    /// Non-zero means the input shared edges between surfaces, which no local pass here resolves and
+    /// which a boolean cannot accept: without this step the rebuild declines on exactly the files
+    /// that need it most, and says `NotManifold`.
+    pub non_manifold_resolved: usize,
     /// Set when the boolean refused the input. The mesh is then the input unchanged, and this is
     /// the reason: a mesh that is not a solid cannot be resolved into one.
     pub declined: Option<String>,
@@ -95,6 +101,7 @@ pub fn solid_remesh_with_progress(
     let started = std::time::Instant::now();
     let mut phases = PhaseSink::new(sink);
 
+    let resolved = std::cell::Cell::new(0usize);
     let unchanged = |declined: Option<String>, cancelled: bool| SolidRemeshOutcome {
         mesh: mesh.clone(),
         report: SolidRemeshReport {
@@ -103,6 +110,7 @@ pub fn solid_remesh_with_progress(
             shells_before: 0,
             shells_after: 0,
             holes_filled: 0,
+            non_manifold_resolved: resolved.get(),
             declined,
             ms: started.elapsed().as_secs_f64() * 1000.0,
             cancelled,
@@ -146,15 +154,39 @@ pub fn solid_remesh_with_progress(
 
     // 4. Resolve it into a solid. Building the manifold is the boolean: it is where coincident,
     //    self-intersecting and non-manifold geometry is reconciled and the surface is retriangulated.
+    //
+    //    The boolean is tried on the surface as prepared, and only when it refuses because the
+    //    surface is not a solid is it prepared harder and tried again. That order matters for cost:
+    //    separating shared edges is seconds on a large mesh and buys nothing on a file the boolean
+    //    would have accepted, and a mesh with thousands of non-manifold edges is the case this whole
+    //    mode exists for, so refusing it outright is worse than the work.
     if !phases.phase("solid") {
         return unchanged(None, true);
     }
     #[cfg(feature = "manifold")]
     {
-        let outcome = manifold_round_trip(&prepared);
-        match outcome {
+        let mut attempt = manifold_round_trip(&prepared);
+        if let Err(reason) = &attempt {
+            eprintln!("[dragonfruit-mesh-repair] solid: the first attempt declined ({reason}); separating shared edges and retrying");
+            let split = separate_shared_edges_for_boolean(&mut prepared);
+            resolved.set(split);
+            if split > 0 {
+                attempt = manifold_round_trip(&prepared);
+            }
+        }
+        match attempt {
             Ok(rebuilt) => prepared = rebuilt,
-            Err(reason) => return unchanged(Some(reason), false),
+            Err(reason) => {
+                let reason = if resolved.get() > 0 {
+                    format!(
+                        "{reason} (after separating {} shared-edge vertices; the separation stalled with non-manifold edges left, which the boolean will not take)",
+                        resolved.get()
+                    )
+                } else {
+                    reason
+                };
+                return unchanged(Some(reason), false);
+            }
         }
     }
     #[cfg(not(feature = "manifold"))]
@@ -164,6 +196,11 @@ pub fn solid_remesh_with_progress(
             false,
         );
     }
+
+    // The boolean re-triangulates, and what it produces can disagree with itself about winding along
+    // the seams it created. Measured on the 596,293-triangle supported model: the rebuild came out
+    // with 0 non-manifold edges, 0 pinches and 0 loops, and 114 inconsistent edges.
+    let _ = crate::repair::unify_winding(&mut prepared);
 
     // 5. Drop what the rebuild left behind.
     if !phases.phase("shells") {
@@ -183,11 +220,99 @@ pub fn solid_remesh_with_progress(
             shells_before,
             shells_after,
             holes_filled,
+            non_manifold_resolved: resolved.get(),
             declined: None,
             ms: started.elapsed().as_secs_f64() * 1000.0,
             cancelled: false,
         },
     }
+}
+
+/// Separate the surfaces that share an edge, until the boolean has something it can build from.
+///
+/// The boolean's input must be a solid, and a manifold is built from a surface where every edge
+/// carries two faces. A mesh that arrives with thousands of non-manifold edges is the mesh that most
+/// needs rebuilding, so refusing it is refusing the case this mode exists for.
+///
+/// This is the one place the non-manifold split runs **unconditionally**. In the repair pipeline it
+/// is kept only when it leaves the mesh better by the five classes, because pulling two surfaces
+/// apart costs parts and moves the volume, and a repair that does that has not repaired anything.
+/// Here it does not have to be the repair: it only has to make the mesh manifold enough for the
+/// boolean, and the boolean is what judges the result.
+///
+/// Rounds, because separating one junction exposes rims that meet at pinches of their own. A round is
+/// kept only when it reduces the count, and the mesh is left as it was found when one does not.
+fn separate_shared_edges_for_boolean(mesh: &mut IndexedMesh) -> usize {
+    const MAX_ROUNDS: usize = 6;
+    let mut split_total = 0usize;
+    // The same offset the repair pipeline's split uses, from the same derived tolerance. A smaller
+    // one leaves the separated surfaces close enough to merge back, which is what made an earlier
+    // attempt at this report 8,024 vertices split and the mesh still not manifold.
+    let epsilon = crate::repair::derive_weld_epsilon(mesh);
+    for _ in 0..MAX_ROUNDS {
+        let before = crate::evaluate::evaluate(mesh);
+        if before.non_manifold_edges == 0 {
+            break;
+        }
+        let mut candidate = mesh.clone();
+        let offset = 4.0 * (epsilon * candidate.bbox().diag()).max(1e-7);
+        crate::topology_passes::remove_coincident_faces(&mut candidate);
+        let split = crate::topology_passes::split_non_manifold_edges(&mut candidate, offset);
+        if split == 0 {
+            break;
+        }
+        // The rims a separation exposes are artifacts of the separation, not openings somebody
+        // designed, so they are filled whatever their length.
+        crate::topology_passes::split_pinched_vertices(&mut candidate);
+        crate::holes::holes_all(&mut candidate, usize::MAX);
+        let _ = crate::repair::unify_winding(&mut candidate);
+        let after = crate::evaluate::evaluate(&candidate);
+        eprintln!(
+            "[dragonfruit-mesh-repair] separation: non-manifold {} -> {}, pinches {} -> {}, loops {} -> {}, split {split}",
+            before.non_manifold_edges, after.non_manifold_edges,
+            before.non_manifold_vertices, after.non_manifold_vertices,
+            before.holes, after.holes,
+        );
+        if after.non_manifold_edges >= before.non_manifold_edges {
+            break;
+        }
+        *mesh = candidate;
+        split_total += split;
+    }
+
+    // The last resort, for the junctions the separation cannot take apart: measured on the supported
+    // model, it stalls at 94 non-manifold edges, because the edges left are ones where more than two
+    // surfaces meet through a single vertex and no offset separates them. They are cut out and the
+    // openings filled.
+    //
+    // A repair would never keep this: it changes the mesh by more than the class it fixes. Here the
+    // boolean is the judge of what comes out, and the alternative is refusing the file at all.
+    for _ in 0..3 {
+        let before = crate::evaluate::evaluate(mesh);
+        if before.non_manifold_edges == 0 {
+            break;
+        }
+        let mut candidate = mesh.clone();
+        if crate::topology_passes::excise_tangles(&mut candidate) == 0 {
+            break;
+        }
+        crate::topology_passes::split_pinched_vertices(&mut candidate);
+        crate::holes::holes_all(&mut candidate, usize::MAX);
+        let _ = crate::repair::unify_winding(&mut candidate);
+        let after = crate::evaluate::evaluate(&candidate);
+        eprintln!(
+            "[dragonfruit-mesh-repair] separation: excising the rest, non-manifold {} -> {}, loops {} -> {}",
+            before.non_manifold_edges, after.non_manifold_edges, before.holes, after.holes,
+        );
+        if after.non_manifold_edges >= before.non_manifold_edges {
+            break;
+        }
+        *mesh = candidate;
+        if after.non_manifold_edges == 0 {
+            break;
+        }
+    }
+    split_total
 }
 
 /// Build a manifold from the mesh and read it back: the boolean, in one call.

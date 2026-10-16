@@ -286,6 +286,13 @@ export interface SolidRemeshReport {
   shells_after: number;
   /** Boundary loops closed before the boolean ran. */
   holes_filled: number;
+  /**
+   * Vertices the preparation split to make the surface manifold enough for the boolean.
+   *
+   * Non-zero means the input shared edges between surfaces. A boolean will not take a mesh like that,
+   * so without this step the rebuild declines on exactly the files that need it most.
+   */
+  non_manifold_resolved: number;
   /** Set when the boolean refused the input; the mesh is then the input unchanged. */
   declined: string | null;
   ms: number;

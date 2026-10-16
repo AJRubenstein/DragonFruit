@@ -115,10 +115,10 @@ enum Command {
         out_report: Option<PathBuf>,
         #[arg(long)]
         pretty: bool,
-        /// Weld tolerance, relative to the bbox diagonal. Omitted, the engine derives it from the
-        /// mesh's own shortest edge.
+        /// Weld tolerance, absolute and in model units (millimetres). Omitted, the stitch runs the
+        /// engine's ladder of absolute tolerances instead of one.
         #[arg(long)]
-        weld_epsilon: Option<f32>,
+        weld_tolerance_mm: Option<f32>,
         /// Longest boundary loop that will be auto-filled, in vertices. Omitted, the engine
         /// derives it from the model's size and its own edge lengths.
         #[arg(long)]
@@ -292,7 +292,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             out_positions,
             out_report,
             pretty,
-            weld_epsilon,
+            weld_tolerance_mm,
             fill_holes_max_edges,
             keep_largest_n,
             repair_orientation,
@@ -300,7 +300,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             progress,
         } => {
             let options = RepairOptions {
-                weld_epsilon,
+                weld_tolerance_mm,
                 fill_holes_max_edges,
                 keep_largest_n_components: keep_largest_n,
                 repair_orientation,

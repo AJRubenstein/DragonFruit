@@ -1741,7 +1741,7 @@ dependencies = [
 
 [[package]]
 name = "dragonfruit-mesh-core"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "ahash 0.8.12",
  "bytemuck",
@@ -1752,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "dragonfruit-mesh-repair"
-version = "0.7.0"
+version = "0.9.0"
 dependencies = [
  "ahash 0.8.12",
  "bytemuck",

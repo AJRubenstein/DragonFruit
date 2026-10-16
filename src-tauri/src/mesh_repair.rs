@@ -194,7 +194,7 @@ fn reset_hollow_preview_derived_state() -> Result<(), String> {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct RepairOptionsDto {
-    weld_epsilon: Option<f32>,
+    weld_tolerance_mm: Option<f32>,
     fill_holes_max_edges: Option<usize>,
     keep_largest_n_components: Option<usize>,
     repair_orientation: Option<bool>,
@@ -210,7 +210,7 @@ impl From<RepairOptionsDto> for RepairOptions {
             // Passed through as they arrive, `None` and all: the engine derives a tolerance the
             // caller did not name. The frontend is not better placed to pick these than the crate
             // is — it has no mesh in hand when it builds them.
-            weld_epsilon: dto.weld_epsilon,
+            weld_tolerance_mm: dto.weld_tolerance_mm,
             fill_holes_max_edges: dto.fill_holes_max_edges,
             keep_largest_n_components: dto
                 .keep_largest_n_components
@@ -2698,7 +2698,7 @@ mod tests {
 
     #[test]
     fn repair_and_punch_options_parsing_reject_malformed_json() {
-        assert!(parse_options(r#"{"weldEpsilon": "tiny"}"#).is_err());
+        assert!(parse_options(r#"{"weldToleranceMm": "tiny"}"#).is_err());
         assert!(parse_hole_punch_options(r#"{"punches": {}}"#).is_err());
     }
 

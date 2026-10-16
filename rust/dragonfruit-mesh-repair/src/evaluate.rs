@@ -47,18 +47,34 @@ impl MeshDefects {
             || self.noise_shells > 0
     }
 
-    /// Did this mesh come out worse than `before` on any class?
+    /// Did this mesh come out worse than `before` on a class that is damage?
     ///
     /// A total is the wrong test. A pass that closes five holes and opens four
     /// non-manifold edges has improved the sum and left the mesh worse, and damage is a
     /// class going up whatever the other classes did.
+    ///
+    /// Four classes are damage: an edge whose faces disagree, an edge that does not carry exactly two
+    /// faces, an edge carrying more, and the vertices those edges pass through. A rise in any of them
+    /// is something the pass did to the object.
+    ///
+    /// Two are not, and refusing on them is how a guard blocks the passes it exists to protect:
+    ///
+    /// - **holes** is a *count of loops*, not of boundary edges, and `bad_edges` already counts those
+    ///   (an edge with one face is a bad edge). Removing a face can open one edge and split one loop
+    ///   into two, so the count rises while the boundary gets shorter and every other class improves.
+    ///   Measured on a model with a cavity: the cull that removes repeated-vertex faces took
+    ///   inconsistent edges from 113 to 18 and non-manifold from 1,364 to 1,363, and was refused
+    ///   because the loop count went from 14 to 17. The same geometry re-decomposed into more loops is
+    ///   not a worse mesh.
+    /// - **noise_shells** is the scrap the pipeline deletes on purpose, one stage later. Capping a
+    ///   small hole *makes* a shell that small, so this counts the p删ass's own work as damage: the
+    ///   fill that closed all 14 of that model's holes and took its bad edges from 2,186 to 2,129 was
+    ///   refused because the noise-shell count went from 3 to 8.
     pub fn worse_than(&self, before: &Self) -> bool {
         self.inconsistent_edges > before.inconsistent_edges
             || self.bad_edges > before.bad_edges
-            || self.holes > before.holes
             || self.non_manifold_edges > before.non_manifold_edges
             || self.non_manifold_vertices > before.non_manifold_vertices
-            || self.noise_shells > before.noise_shells
     }
 
     /// Every defect, added up, for comparing a mesh with itself across a pass.

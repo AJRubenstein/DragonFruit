@@ -78,7 +78,7 @@ export interface MeshHealthReport {
 }
 
 export interface MeshRepairOptions {
-  weldEpsilon?: number;
+  weldToleranceMm?: number;
   fillHolesMaxEdges?: number;
   keepLargestNComponents?: number | null;
   repairOrientation?: boolean;

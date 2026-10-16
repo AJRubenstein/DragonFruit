@@ -236,7 +236,7 @@ drop the shells small enough to be scrap
 | `solid_remesh(mesh, options)` | the entry point, in `dragonfruit_mesh_repair::solid_remesh` |
 | `solid_remesh_with_progress(mesh, options, sink)` | the same run, announcing each phase |
 | `SolidRemeshOptions` | `fill_holes_max_edges`, `remove_noise_shells`, `tolerance` |
-| `SolidRemeshReport` | input and output triangle counts, shells before and after, holes filled, `declined`, `ms`, `cancelled` |
+| `SolidRemeshReport` | input and output triangle counts, shells before and after, holes filled, `non_manifold_resolved`, `declined`, `ms`, `cancelled` |
 | `mesh_solid_remesh_staged(options_json, progress_token)` | the Tauri command. Rebuilds the staged mesh and returns the report |
 | `solidRemeshStagedMesh(invoke, options, token)` | the bridge call, in `src/utils/tauriMeshBridge.ts` |
 | `solidRemeshFromGeometry(geometry, options, sink)` | the frontend entry, in `src/utils/meshShrinkwrap.ts` |
@@ -293,6 +293,29 @@ model's own facets, so it defaults to leaving them alone.
   reason. A caller that asked about a model must still have that model afterwards.
 - **`fill_holes_max_edges` counts down, not up.** The pass reads zero as "no loop qualifies", not as
   "no cap", so filling every loop is `usize::MAX` and that is the default.
+- **The boolean is tried first, and the harder preparation is a retry.** A boolean will only take a
+  surface where every edge carries two faces, and a mesh with thousands of non-manifold edges is the
+  mesh this mode most needs. So the run attempts the boolean on the prepared surface, and only when it
+  refuses does it separate the shared edges and retry. On a file the boolean accepts, the separation is
+  never run and the cost is nothing: `non_manifold_resolved` stays zero.
+
+  Measured on a 596,293-triangle supported model that the mode used to decline outright:
+
+  | step | non-manifold edges |
+  | --- | --- |
+  | as prepared | 3,288 |
+  | after one separation round | 144 |
+  | after two | 94 (the split stalls; the edges left are ones where more than two surfaces meet through a single vertex) |
+  | after excising the remainder | 0 |
+  | the rebuilt surface | 0, watertight, 0 loops |
+
+  8,020 vertices were split and 808 loops closed. The result is 307,258 triangles from 596,293, and it
+  is a *different object*: the separation and the rebuild move the surface, the volume rises about 20%
+  and the shell count rises. That is what a last-resort rebuild costs, and it is why this is a mode a
+  caller names rather than a stage of `repair()`.
+- **The excise rung is the last one, and it is not a repair.** It runs only when the separation
+  stalls, and only here, because the boolean is what judges the result. In `repair()` the same
+  function is kept behind the five-class acceptance test, which this mode does not have.
 
 ### Constraints
 

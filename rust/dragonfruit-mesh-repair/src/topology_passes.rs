@@ -40,59 +40,6 @@ pub fn stitch_tolerance(mesh: &IndexedMesh) -> f32 {
 }
 
 /// Boundary loops ordered opposite to their bordering face edges, split at repeated vertices.
-pub fn directed_hole_loops(topo: &Topology) -> Vec<Vec<u32>> {
-    let mut out: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
-    for info in topo.edges.values() {
-        if info.faces.len() == 1 {
-            let (u, v, _) = info.directed[0];
-            out.entry(v).or_default().push(u);
-        }
-    }
-    for next in out.values_mut() {
-        next.sort_unstable_by(|a, b| b.cmp(a));
-    }
-    let starts: Vec<u32> = out.keys().copied().collect();
-    let mut loops = Vec::new();
-    for start in starts {
-        while let Some(first) = out.get_mut(&start).and_then(|l| l.pop()) {
-            let mut path = vec![start];
-            let mut cur = first;
-            let mut closed = false;
-            loop {
-                if cur == start {
-                    closed = true;
-                    break;
-                }
-                path.push(cur);
-                match out.get_mut(&cur).and_then(|l| l.pop()) {
-                    Some(n) => cur = n,
-                    None => break,
-                }
-            }
-            // A path that dead-ends can still pass through closed loops on the
-            // way, so those are kept and only the unclosed remainder is dropped.
-            let mut stack: Vec<u32> = Vec::with_capacity(path.len());
-            let mut pos: AHashMap<u32, usize> = AHashMap::with_capacity(path.len());
-            for v in path {
-                if let Some(&i) = pos.get(&v) {
-                    let sub_loop = stack.split_off(i);
-                    for w in &sub_loop {
-                        pos.remove(w);
-                    }
-                    if sub_loop.len() >= 3 {
-                        loops.push(sub_loop);
-                    }
-                }
-                pos.insert(v, stack.len());
-                stack.push(v);
-            }
-            if closed && stack.len() >= 3 {
-                loops.push(stack);
-            }
-        }
-    }
-    loops
-}
 
 /// Propagates winding across two-face edges; per patch the smaller-area side is flipped.
 pub fn unify_winding(mesh: &mut IndexedMesh) -> usize {
@@ -471,51 +418,303 @@ fn ear_clip_preserving_order(pts: &[[f64; 3]]) -> Vec<[usize; 3]> {
     tris
 }
 
-/// Patches are wound from the hole's half-edge order, not from surface normals.
-pub fn fill_holes_oriented(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
-    let topo = Topology::build(mesh);
-    let loops = directed_hole_loops(&topo);
+/// The normal of the face on each edge of `boundary`, in the order the loop traverses it.
+///
+/// A boundary edge has exactly one face, so this is the surface the loop is a hole *in* rather than an
+/// average over a neighbourhood that might belong to a different surface.
+fn loop_edge_normals(mesh: &IndexedMesh, topo: &Topology, boundary: &[u32]) -> Vec<Vec3> {
+    let n = boundary.len();
+    (0..n)
+        .map(|i| {
+            let key = edge_key(boundary[i], boundary[(i + 1) % n]);
+            match topo
+                .edges
+                .get(&key)
+                .and_then(|info| info.directed.first().map(|&(_, _, f)| f))
+            {
+                Some(f) => unit_vec(mesh.tri_normal(f)),
+                None => Vec3::ZERO,
+            }
+        })
+        .collect()
+}
+
+fn unit_vec(v: Vec3) -> Vec3 {
+    let len = v.length();
+    if len > 1e-12 {
+        v.scale(1.0 / len)
+    } else {
+        Vec3::ZERO
+    }
+}
+
+fn mean(pts: &[Vec3]) -> Vec3 {
+    if pts.is_empty() {
+        return Vec3::ZERO;
+    }
+    pts.iter()
+        .fold(Vec3::ZERO, |acc, p| acc.add(*p))
+        .scale(1.0 / pts.len() as f32)
+}
+
+/// The area a closed loop encloses, as the magnitude of its vector area.
+///
+/// This is what says whether a ring is closing the hole. A perimeter does not: a hole that is a band
+/// closes across its width first, which leaves its two long sides as long as they ever were.
+fn loop_area(pts: &[Vec3]) -> f32 {
+    let n = pts.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let sum = (0..n).fold(Vec3::ZERO, |acc, i| {
+        acc.add(pts[i].cross(pts[(i + 1) % n]))
+    });
+    sum.length() * 0.5
+}
+
+fn face_normal(mesh: &IndexedMesh, t: [u32; 3]) -> Vec3 {
+    let a = mesh.positions[t[0] as usize];
+    let b = mesh.positions[t[1] as usize];
+    let c = mesh.positions[t[2] as usize];
+    b.sub(a).cross(c.sub(a))
+}
+
+/// Cap a loop with a flat triangulation of its own vertices.
+///
+/// `topo` is the mesh the loop came from, when it came from one: a diagonal that is already an edge of
+/// the mesh cannot be used, because the patch would then fold the surface onto itself. A loop the patch
+/// itself made has no such edges and passes `None`.
+fn flat_cap(mesh: &mut IndexedMesh, topo: Option<&Topology>, lp: &[u32]) -> usize {
+    let n = lp.len();
+    if n < 3 {
+        return 0;
+    }
+    let pts: Vec<[f64; 3]> = lp.iter().map(|&v| d3(mesh.positions[v as usize])).collect();
     let diag = mesh.bbox().diag().max(1e-6) as f64;
     let sliver = 1e-12 * diag * diag;
     let penalty = 1e6 * diag * diag;
-    let mut added = 0usize;
-    for lp in loops.into_iter().filter(|l| l.len() >= 3 && l.len() <= max_edges) {
-        let pts: Vec<[f64; 3]> = lp.iter().map(|&v| d3(mesh.positions[v as usize])).collect();
-        let tris = if lp.len() <= MIN_AREA_DP_MAX_LOOP {
-            let n = lp.len();
-            let mut taken = vec![false; n * n];
-            for i in 0..n {
-                for j in i + 2..n {
-                    taken[i * n + j] = !(i == 0 && j == n - 1) && closed_edge(&topo, edge_key(lp[i], lp[j]));
-                }
-            }
-            match min_area_triangulation(&pts, &taken, sliver, penalty) {
-                Some(t) => t,
-                None => {
-                    // Every triangulation reuses an edge the mesh already has;
-                    // a fan from a new centre vertex reuses none.
-                    let n = lp.len();
-                    let c = pts.iter().fold([0.0; 3], |s, p| [s[0] + p[0], s[1] + p[1], s[2] + p[2]]);
-                    mesh.positions.push(Vec3::new(
-                        (c[0] / n as f64) as f32,
-                        (c[1] / n as f64) as f32,
-                        (c[2] / n as f64) as f32,
-                    ));
-                    let centre = (mesh.positions.len() - 1) as u32;
-                    for i in 0..n {
-                        mesh.triangles.push([lp[i], lp[(i + 1) % n], centre]);
-                        added += 1;
+
+    let plan = if n <= MIN_AREA_DP_MAX_LOOP {
+        let taken = match topo {
+            Some(topo) => {
+                let mut taken = vec![false; n * n];
+                for i in 0..n {
+                    for j in i + 2..n {
+                        taken[i * n + j] =
+                            !(i == 0 && j == n - 1) && closed_edge(topo, edge_key(lp[i], lp[j]));
                     }
-                    continue;
                 }
+                taken
             }
-        } else {
-            ear_clip_preserving_order(&pts)
+            None => vec![false; n * n],
         };
+        min_area_triangulation(&pts, &taken, sliver, penalty)
+    } else {
+        None
+    };
+    if let Some(tris) = plan {
+        let added = tris.len();
         for [i, j, k] in tris {
             mesh.triangles.push([lp[i], lp[j], lp[k]]);
-            added += 1;
         }
+        return added;
+    }
+
+    // Every triangulation would reuse an edge the mesh already has, or the loop is too long to try: a
+    // fan from a new centre vertex reuses none.
+    let centre_pt = mean(&pts.iter().map(|p| Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32)).collect::<Vec<_>>());
+    mesh.positions.push(centre_pt);
+    let centre = (mesh.positions.len() - 1) as u32;
+    for i in 0..n {
+        mesh.triangles.push([lp[i], lp[(i + 1) % n], centre]);
+    }
+    n
+}
+
+/// Loops at or above this many edges get the tangent-continuing patch instead of a flat cap.
+///
+/// A flat cap is right for a small hole in a surface that is locally flat, which is what the trivial
+/// pass deals in. A break-through is neither small nor flat.
+const PATCH_MIN_LOOP: usize = 7;
+
+/// How far in each ring of the patch sits, as a fraction of the local loop edge length.
+///
+/// Too small and a ring is too close to the one before it for its tangent planes to matter; too large
+/// and a ring turns faster than the surface beneath it does. Six tenths of an edge insets a loop in a
+/// handful of rings: a twenty-edge loop is under the flat-cap threshold in three.
+const PATCH_INSET_FRACTION: f32 = 0.6;
+
+/// The largest a ring's inset may be, as a share of the narrowest edge on the loop it comes from.
+///
+/// Without a bound, a ring from a hole that is a band crosses the band's own far side in a single pass
+/// and every face after it is nonsense.
+const PATCH_MAX_INSET_SHARE: f32 = 0.4;
+
+/// A ring has to shrink the loop by this share of its perimeter to be worth keeping.
+///
+/// A hole that is a band closes across its width in a ring or two and then has nothing left to give;
+/// carrying on folds the ring over itself.
+const PATCH_MIN_SHRINK: f32 = 0.95;
+
+/// How many rings the patch may grow before it caps whatever is left.
+const PATCH_MAX_RINGS: usize = 12;
+
+/// Fill one loop with a patch that leaves the rim along the surface it belongs to.
+///
+/// A flat triangulation of the loop's own vertices is what this engine did, and it is right when the
+/// rim lies in the surface around it. Where the rim is a break-through — a sheet meeting a wall, or a
+/// cavity that broke through the outer wall — the surrounding surface is not flat there, and the flat
+/// patch is a visible sheet spanning the opening, which is the first thing an eye finds in a repair.
+/// Measured against a reference repair of a model with an internal cavity that breaks through its outer
+/// wall, the reference's patch continues that surface and ours was a flat.
+///
+/// The patch is grown in rings. Each ring's vertices sit **in the plane of the surface at the ring
+/// before it**, a fraction of the local edge length inward, so every ring leaves the one it came from
+/// tangentially; each ring's own surface then becomes the plane the next ring follows, which is the
+/// discrete form of continuing the surface. When the loop is small enough for a flat cap to be right,
+/// it is capped. On a cylinder this walks the patch around the wall ring by ring and converges on the
+/// wall; on a flat wall every plane is that wall's, so the patch is flat — a generalisation of the flat
+/// cap, not a replacement for it.
+///
+/// The rim's own vertices are never moved and no rim edge is split. That is the mistake an earlier
+/// attempt at this made: it subdivided the patch in place, so it split the rim edges the model shares
+/// and left a T-junction on every one of them.
+fn fill_loop_with_patch(mesh: &mut IndexedMesh, topo: &Topology, lp: &[u32]) -> usize {
+    let mut boundary: Vec<u32> = lp.to_vec();
+    let mut edge_normal = loop_edge_normals(mesh, topo, &boundary);
+    let mut added = 0usize;
+
+    for _ in 0..PATCH_MAX_RINGS {
+        let n = boundary.len();
+        if n < PATCH_MIN_LOOP {
+            break;
+        }
+        let rim: Vec<Vec3> = boundary.iter().map(|&v| mesh.positions[v as usize]).collect();
+        let centroid = mean(&rim);
+        // The narrowest edge on the loop. An inset larger than a fraction of it turns the ring inside
+        // out: a hole that is a band closes across its width first, and a ring that crossed its own
+        // opposite side makes every face after it nonsense. Measured on a band spanning half a
+        // cylinder's circumference, an unbounded inset of up to 2.4 units across a band 1.0 unit wide
+        // collapsed the ring in one pass and the cap then spanned the whole hole.
+        let narrowest = (0..n)
+            .map(|i| {
+                rim[i]
+                    .sub(rim[(i + 1) % n])
+                    .length()
+                    .min(rim[i].sub(rim[(i + n - 1) % n]).length())
+            })
+            .fold(f32::INFINITY, f32::min)
+            .max(1e-9);
+        let area_before = loop_area(&rim);
+
+        let mut ring: Vec<Vec3> = Vec::with_capacity(n);
+        let mut inset = 0.0f32;
+        // Every vertex's inset direction first, then **one** sign for all of them.
+        //
+        // The direction into the hole is perpendicular to the rim and in the surface at it, and the
+        // cross product of those two gives it up to a sign. Taking that sign per vertex was the bug an
+        // earlier attempt had: at a corner of the loop the loop's centre is nearly perpendicular to the
+        // inset, so the test is a coin toss there, and one vertex landing the other way puts a sliver
+        // across the whole hole. The loop is wound one way round, so the sign is one property of the
+        // loop and is decided once, from which way the centre lies on average.
+        let mut inward: Vec<Vec3> = Vec::with_capacity(n);
+        let mut toward_centre = 0.0f32;
+        for i in 0..n {
+            let p = rim[i];
+            let normal = unit_vec(edge_normal[i].add(edge_normal[(i + n - 1) % n]));
+            let along = unit_vec(rim[(i + 1) % n].sub(rim[(i + n - 1) % n]));
+            let direction = unit_vec(normal.cross(along));
+            toward_centre += direction.dot(centroid.sub(p));
+            inward.push(direction);
+        }
+        let flip = toward_centre < 0.0;
+
+        for i in 0..n {
+            let p = rim[i];
+            let local = rim[i]
+                .sub(rim[(i + n - 1) % n])
+                .length()
+                .min(rim[i].sub(rim[(i + 1) % n]).length())
+                .max(1e-9);
+            let direction = inward[i];
+            if direction.length() <= 0.5 {
+                // No surface here to continue, so this vertex stays where it is.
+                ring.push(p);
+                continue;
+            }
+            let direction = if flip { direction.scale(-1.0) } else { direction };
+            let step = (PATCH_INSET_FRACTION * local).min(PATCH_MAX_INSET_SHARE * narrowest);
+            inset += step;
+            ring.push(p.add(direction.scale(step)));
+        }
+        if inset <= 0.0 {
+            // Nothing moved anywhere, so there is no surface here to continue: cap it flat.
+            break;
+        }
+        // The ring has to have proved it is closing the hole *before* it is kept. The loop has to be
+        // closing, and area is the measure that sees it: a perimeter does not, because a hole that is a
+        // band closes across its width first and leaves its two long sides as long as they ever were.
+        // Measured on a band spanning half a cylinder's circumference, one more ring after the loop's
+        // area reached zero inverted it, and having committed that ring the cap over it spanned the
+        // hole at a third of the wall's radius.
+        //
+        // An open end is the case this rejects: the loop at the end of an open tube has the tube's side
+        // as its surface, the direction into the hole there is along the tube, and a ring placed on it
+        // walks off the end of the model with the loop's area unchanged.
+        if loop_area(&ring) > area_before * PATCH_MIN_SHRINK {
+            break;
+        }
+
+        let base = mesh.positions.len() as u32;
+        for p in &ring {
+            mesh.positions.push(*p);
+        }
+        for i in 0..n {
+            let j = (i + 1) % n;
+            // The two faces between one rim edge and the ring edge inside it.
+            mesh.triangles.push([boundary[i], boundary[j], base + j as u32]);
+            mesh.triangles.push([boundary[i], base + j as u32, base + i as u32]);
+            added += 2;
+        }
+
+        let mut next_normal = Vec::with_capacity(n);
+        for i in 0..n {
+            let j = (i + 1) % n;
+            next_normal.push(unit_vec(face_normal(
+                mesh,
+                [boundary[i], base + j as u32, base + i as u32],
+            )));
+        }
+        boundary = (0..n).map(|i| base + i as u32).collect();
+        edge_normal = next_normal;
+    }
+
+    added + flat_cap(mesh, None, &boundary)
+}
+
+pub fn fill_holes_oriented(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
+    let topo = Topology::build(mesh);
+    // Reversed: `boundary_loops` walks *with* the faces' winding, and the fill wants the cycle the other
+    // way round so that the triangles it adds face outwards. The walk it replaced produced the reversed
+    // order, which is why this is a reversal rather than a preference.
+    let loops: Vec<Vec<u32>> = topo
+        .boundary_loops()
+        .into_iter()
+        .map(|l| l.into_iter().rev().collect())
+        .collect();
+    let mut added = 0usize;
+    for lp in loops
+        .into_iter()
+        .filter(|l| l.len() >= 3 && l.len() <= max_edges)
+    {
+        // A hole big enough to be a break-through gets a patch that follows the surface. A small one
+        // gets the flat cap, which is what a flat cap is for: a hole of a few edges in a surface that
+        // is locally flat is capped correctly by triangulating it.
+        added += if lp.len() >= PATCH_MIN_LOOP {
+            fill_loop_with_patch(mesh, &topo, &lp)
+        } else {
+            flat_cap(mesh, Some(&topo), &lp)
+        };
     }
     added
 }

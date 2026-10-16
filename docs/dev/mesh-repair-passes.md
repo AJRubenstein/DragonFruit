@@ -22,6 +22,7 @@ double_faces_after_split
 remove_inner_faces
 noise_shells
 settle
+repair_rounds
 prune_and_classify
 ```
 
@@ -39,6 +40,26 @@ same file keeps about 200 more parts.
 
 `tests/smoke.rs` pins this list in `the_pipeline_runs_the_stage_order_it_says_it_does`.
 If a change to the order is deliberate, that test is where you say so.
+
+## `repair_rounds`, and why the list above is not the whole story
+
+`repair_rounds` runs last and is a loop, not a pass. It evaluates the mesh, picks a defect class that is
+actually non-zero, runs the one pass that class needs, re-evaluates, and repeats — up to
+`MAX_REPAIR_ATTEMPTS` passes, stopping as soon as no class can improve the defect total. A pass is kept
+only when the *whole* total strictly drops, so a round can trade one class for another only when the sum
+improves, and the loop cannot wander.
+
+This exists because one ordered pass per stage leaves a residue: a pass that half-solves something gets
+no second turn. The classes disturb each other, so a round can expose one the round before it created.
+The order it tries them in is `DEFECT_CLASSES` — non-manifold edges, winding, boundary, pinched
+vertices, noise shells — and the reason for that order is in its doc comment.
+
+Measured: on the worst file in the corpus it takes non-manifold edges from 3,515 to 107 and pinched
+vertices from 3,164 to 209, where the ordered passes alone left 2,001 and 1,816; and on the reported
+1.02M-triangle model it takes them from 1,364 and 1,390 to 17 and 32.
+
+It costs about a third of a run on the files that need it, and nothing on the files that do not, because
+a mesh with no defects left breaks out of the loop before its first attempt.
 
 ### The repetition is the design
 
@@ -79,7 +100,7 @@ the report says what is left and not just that something is.
 
 | option | what it does |
 | --- | --- |
-| `weld_epsilon` | vertex weld tolerance, relative to the bbox diagonal |
+| `weld_tolerance_mm` | vertex weld tolerance, absolute and in model units. Unset runs the default ladder |
 | `fill_holes_max_edges` | the longest border loop `holes_all` will close |
 | `keep_largest_n_components` | keep the top N components by absolute volume, or all |
 | `repair_orientation` | whether the orientation passes run |

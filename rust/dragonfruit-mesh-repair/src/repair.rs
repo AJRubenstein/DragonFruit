@@ -26,8 +26,14 @@ use crate::report::{MeshHealthReport, RepairStepReport};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepairOptions {
-    /// Relative to the bbox diagonal. `None` derives it from the mesh.
-    pub weld_epsilon: Option<f32>,
+    /// Weld tolerance, **absolute and in model units** (millimetres for every model this app loads).
+    /// `None` runs [`DEFAULT_WELD_TOLERANCES_MM`] as a ladder.
+    ///
+    /// This was a fraction of the bbox diagonal for a while. That made the weld a property of how the
+    /// mesh was loaded rather than of the geometry: the loader refines coarse faces, refinement
+    /// shortens the shortest edge, the derived tolerance followed it down, and no caller could ask for
+    /// a distance. A stitch is a distance.
+    pub weld_tolerance_mm: Option<f32>,
     /// Longest boundary loop, in vertices, that will be auto-filled. `None` derives it from the
     /// mesh.
     pub fill_holes_max_edges: Option<usize>,
@@ -46,12 +52,39 @@ pub struct RepairOptions {
     pub assume_support_geometry: Option<bool>,
 }
 
+/// The absolute weld tolerance the stitch runs, in model units, when the caller names none.
+///
+/// Unset, the engine derives one: the mesh's own shortest edge, as a fraction of its bbox diagonal,
+/// which is what this pipeline has always done. That is a *fraction*, so it moves with the mesh —
+/// and the mesh moves with how it was loaded, because the loader refines coarse faces before the
+/// repair sees them (`docs/dev/mesh-wire-formats.md`) and refinement shortens the shortest edge. The
+/// coupling is real and it is why this option exists: a caller with a mesh that needs a stitch at a
+/// known distance can now name one, in the unit a distance is measured in.
+///
+/// **A fixed absolute default was measured and rejected.** The reference's own script stitches at
+/// 0.010 mm, so 0.010 mm was made the default here, and a four-rung ladder of absolute tolerances
+/// (0.002 to 0.010) was tried as well, because a quantising weld can miss a pair at one step that it
+/// catches at the next. Over the thirteen-file corpus:
+///
+/// | default | engine time | defect classes and verdicts changed |
+/// | --- | --- | --- |
+/// | derived (this) | baseline | — |
+/// | 0.010 mm | +10% to +25% | none |
+/// | ladder, 0.002 to 0.010 mm | +30% to +67% | none |
+///
+/// Neither welded anything on any file but one, where the ladder welded 4 vertices. The reason is
+/// upstream of here: every mesh reaches the repair already welded, because the *loader* welds the
+/// soup it reads, so what the stitch has left to do is normally nothing, and a coarser rung is
+/// refused by its own guard when it finds something to merge. Paying a weld and two topology builds
+/// per run to attempt a tolerance that has never once been the difference is not a design.
+pub const DEFAULT_WELD_TOLERANCE_MM: Option<f32> = None;
+
 impl Default for RepairOptions {
     fn default() -> Self {
         Self {
             // Both left to the mesh. A caller that sets one is overriding a decision the engine
             // is better placed to make: neither number means anything without knowing the model.
-            weld_epsilon: None,
+            weld_tolerance_mm: None,
             fill_holes_max_edges: None,
             keep_largest_n_components: None,
             repair_orientation: true,
@@ -64,7 +97,8 @@ impl Default for RepairOptions {
 /// The options the pipeline actually runs with: whatever the caller set, and a value derived from
 /// the mesh for each tolerance they left alone.
 struct ResolvedOptions {
-    weld_epsilon: f32,
+    /// The weld step the stitch runs, in model units. The caller's absolute tolerance, or the default.
+    weld_step: f32,
     fill_holes_max_edges: usize,
     /// The cap for the fill that runs last, after every other pass. Unlimited unless the caller set
     /// a cap of their own — see the settle stage for why.
@@ -81,7 +115,7 @@ struct ResolvedOptions {
 /// finest edge the mesh already carries are the same vertex, and anything coarser welds detail that
 /// was put there on purpose. Bounded at both ends so a degenerate input can neither collapse the
 /// model nor leave the weld doing nothing.
-fn derive_weld_epsilon(mesh: &IndexedMesh) -> f32 {
+pub(crate) fn derive_weld_epsilon(mesh: &IndexedMesh) -> f32 {
     let diag = mesh.bbox().diag().max(1e-6);
     let mut shortest = f32::INFINITY;
     for t in &mesh.triangles {
@@ -130,9 +164,16 @@ fn derive_fill_cap(mesh: &IndexedMesh) -> usize {
 impl RepairOptions {
     fn resolved(&self, mesh: &IndexedMesh) -> ResolvedOptions {
         ResolvedOptions {
-            weld_epsilon: self
-                .weld_epsilon
-                .unwrap_or_else(|| derive_weld_epsilon(mesh)),
+            // One internal unit, an absolute step, so the two paths cannot disagree about what a
+            // tolerance means. The derived default is the mesh's own shortest edge over its diagonal,
+            // scaled back up by the diagonal to the distance it represents.
+            weld_step: {
+                let diag = mesh.bbox().diag().max(1e-6);
+                self.weld_tolerance_mm
+                    .or(DEFAULT_WELD_TOLERANCE_MM)
+                    .map(|tolerance| tolerance.max(1e-7))
+                    .unwrap_or_else(|| (derive_weld_epsilon(mesh) * diag).max(1e-7))
+            },
             fill_holes_max_edges: self
                 .fill_holes_max_edges
                 .unwrap_or_else(|| derive_fill_cap(mesh)),
@@ -142,6 +183,141 @@ impl RepairOptions {
             resolve_self_intersections: self.resolve_self_intersections,
             assume_support_geometry: self.assume_support_geometry,
         }
+    }
+}
+
+impl ResolvedOptions {
+    /// How far the non-manifold split moves the surfaces it separates.
+    ///
+    /// Four weld steps, so it exceeds the step of every weld this pipeline will apply afterwards. The
+    /// displacement is what stops a re-read merging the separated surfaces back, and a weld whose step
+    /// were larger than the displacement would find them again.
+    fn split_offset(&self) -> f32 {
+        (4.0 * self.weld_step).max(1e-7)
+    }
+}
+
+/// Runs the orientation pass only when something has changed the mesh since the last one.
+///
+/// Every pass in this pipeline is deterministic, and that was checked rather than assumed: three files
+/// repair to bit-identical output across repeated runs. So an orientation pass handed a mesh it has
+/// already been handed does nothing, and skipping it is free. Running it is not free — it is one of the
+/// two largest costs in the pipeline, and the pipeline reaches for it four times, because orientation,
+/// stitch, holes and double faces each disturb what the one before settled.
+///
+/// The count it gates on is exact: every stage reports what it changed, a refused pass reports zero
+/// because it reverted, and [`OrientationGate::note`] is called from the same `stage!` that records
+/// that number, so a new pass cannot forget to declare itself.
+struct OrientationGate {
+    changed_since: usize,
+}
+
+impl OrientationGate {
+    fn note(&mut self, changed: usize) {
+        self.changed_since = self.changed_since.saturating_add(changed);
+    }
+
+    /// Orient the mesh, and mark it as newly oriented: the next call is skipped until a stage changes
+    /// something again.
+    fn orient(&mut self, mesh: &mut IndexedMesh) -> usize {
+        if self.changed_since == 0 {
+            return 0;
+        }
+        let flipped = repair_orientation(mesh);
+        self.changed_since = 0;
+        flipped
+    }
+}
+
+/// Passes the defect loop may run, across all its classes.
+///
+/// The reference's tracker takes an iteration cap too. The classes disturb each other, so a round can
+/// expose one the round before it created; six is enough for the files measured here, and each attempt
+/// costs a clone and two evaluations, so it is a bound worth having.
+const MAX_REPAIR_ATTEMPTS: usize = 6;
+
+/// The defect classes a round may work on, in the order it tries them.
+///
+/// Not the order the verdict prints them in. Non-manifold edges come first because resolving them is
+/// what the reference's union does and what this engine's split can do, and because they are the class
+/// with the most in it on a damaged file. A winding disagreement is next: the orientation pass has to
+/// settle which side of a loop is solid before a fill can. Then a boundary, because filling one adds
+/// geometry. Pinches and shells last.
+#[derive(Clone, Copy, PartialEq)]
+enum DefectClass {
+    NonManifoldEdges,
+    Winding,
+    Boundary,
+    PinchedVertices,
+    NoiseShells,
+}
+
+const DEFECT_CLASSES: [DefectClass; 5] = [
+    DefectClass::NonManifoldEdges,
+    DefectClass::Winding,
+    DefectClass::Boundary,
+    DefectClass::PinchedVertices,
+    DefectClass::NoiseShells,
+];
+
+impl DefectClass {
+    fn name(self) -> &'static str {
+        match self {
+            DefectClass::NonManifoldEdges => "non-manifold edges",
+            DefectClass::Winding => "winding",
+            DefectClass::Boundary => "boundary",
+            DefectClass::PinchedVertices => "pinched vertices",
+            DefectClass::NoiseShells => "noise shells",
+        }
+    }
+
+    fn present(self, d: &crate::evaluate::MeshDefects) -> bool {
+        match self {
+            DefectClass::NonManifoldEdges => d.non_manifold_edges > 0,
+            DefectClass::Winding => d.inconsistent_edges > 0,
+            DefectClass::Boundary => d.bad_edges > 0,
+            DefectClass::PinchedVertices => d.non_manifold_vertices > 0,
+            DefectClass::NoiseShells => d.noise_shells > 0,
+        }
+    }
+}
+
+/// Run the pass a class needs, and report what it changed.
+///
+/// One pass, not the whole pipeline: that is the difference from the rounds this engine used to run,
+/// which re-ran everything and cost 40% of a run doing it.
+///
+/// The separating branches close the rims they expose before returning, because a rim is a boundary edge
+/// and the loop judges the whole defect total. Separating a shared edge and stopping there trades 1,363
+/// non-manifold edges for 177 boundary ones, which measures as worse.
+fn repair_one_defect_class(
+    mesh: &mut IndexedMesh,
+    class: DefectClass,
+    options: &ResolvedOptions,
+) -> usize {
+    match class {
+        DefectClass::NonManifoldEdges => {
+            let walls = crate::topology_passes::remove_coincident_faces(mesh);
+            let split = crate::topology_passes::split_non_manifold_edges(mesh, options.split_offset());
+            let filled = crate::holes::holes_all(mesh, usize::MAX);
+            crate::topology_passes::split_pinched_vertices(mesh);
+            let refilled = crate::holes::holes_all(mesh, usize::MAX);
+            let _ = unify_winding(mesh);
+            walls + split + filled + refilled
+        }
+        DefectClass::Winding => {
+            let mut changed = unify_winding(mesh);
+            if changed == 0 {
+                changed = repair_orientation(mesh);
+            }
+            changed + crate::holes::holes_all(mesh, usize::MAX)
+        }
+        DefectClass::Boundary => crate::holes::holes_all(mesh, usize::MAX),
+        DefectClass::PinchedVertices => {
+            crate::topology_passes::split_pinched_vertices(mesh)
+                + crate::holes::holes_all(mesh, usize::MAX)
+        }
+        DefectClass::NoiseShells => crate::shells::remove_noise_shells(mesh),
     }
 }
 
@@ -188,7 +364,11 @@ pub fn repair_with_progress(
 
     // The pipeline is a fixed order, and the repetition in it is the design: each
     // stage disturbs what the one before it settled, so orientation, stitch, holes
-    // and double faces each come round more than once.
+    // and double faces each come round more than once. What is *not* repeated is an orientation pass
+    // over a mesh nothing has touched since the last one — see [`OrientationGate`]. It starts at one
+    // rather than zero so the first call always runs.
+    let mut orientation_gate = OrientationGate { changed_since: 1 };
+    let _ = &mut orientation_gate;
     //
     // Records a stage and its cost, so the report reads as the pipeline ran rather
     // than as a list of things that were considered.
@@ -209,20 +389,23 @@ pub fn repair_with_progress(
     }
 
     macro_rules! stage {
-        ($name:expr, $changed:expr, $notes:expr, $started:expr) => {
+        ($name:expr, $changed:expr, $notes:expr, $started:expr) => {{
+            // Every stage declares what it changed, and the gate that decides whether the next
+            // orientation pass is worth running is fed from here, so a new stage cannot forget to.
+            orientation_gate.note($changed as usize);
             report.steps.push(RepairStepReport {
                 name: $name.into(),
                 changed: $changed as u32,
                 notes: $notes,
                 elapsed_ms: $started.elapsed().as_secs_f64() * 1000.0,
             });
-        };
+        }};
     }
 
     // 1. Orientation.
     begin!("orient_components");
     let t = std::time::Instant::now();
-    let flipped = repair_orientation(&mut mesh);
+    let flipped = orientation_gate.orient(&mut mesh);
     stage!("orient_components", flipped, None, t);
 
     // 2. Stitch: a vertex weld, then collapse whatever the weld created.
@@ -239,19 +422,17 @@ pub fn repair_with_progress(
     // the point: the strict pass joins what agrees on winding, and the loose one, later, joins the
     // rest. Doing it the other way round lets the loose weld reach vertices the strict pass would
     // have kept apart.
-    let (stitched_oriented, refused_oriented) = stitch_vertices_oriented(&mut mesh, options.weld_epsilon);
-    let (welded, collapsed, refused_loose) = stitch_vertices(&mut mesh, options.weld_epsilon);
-    let (welded, collapsed, refused) = (welded + stitched_oriented, collapsed, refused_loose || refused_oriented);
+    let (stitched_oriented, refused_oriented) = stitch_vertices_oriented(&mut mesh, options.weld_step);
+    let (welded, _collapsed, refused_loose) = stitch_vertices(&mut mesh, options.weld_step);
+    let (welded, refused) = (welded + stitched_oriented, refused_loose || refused_oriented);
     stage!(
         "stitch",
-        welded + collapsed,
+        welded,
         Some(if refused {
             "refused: the weld would have left a non-manifold junction this pipeline cannot resolve"
                 .to_string()
         } else {
-            format!(
-                "{welded} vertex/vertices welded, {collapsed} degenerate or duplicate face(s) collapsed"
-            )
+            format!("{welded} vertex/vertices welded at {} mm", options.weld_step)
         }),
         t
     );
@@ -272,23 +453,16 @@ pub fn repair_with_progress(
     // 4. Double faces.
     begin!("double_faces");
     let t = std::time::Instant::now();
-    let (doubles, refused) = cull_faces(&mut mesh);
-    stage!(
-        "double_faces",
-        doubles,
-        refused.then(
-            || "refused: removing the duplicate faces would have opened the mesh".to_string()
-        ),
-        t
-    );
+    let (doubles, note) = cull_faces(&mut mesh);
+    stage!("double_faces", doubles, note, t);
 
     // 5. Orientation, trivial holes, stitch: each of the three disturbed what the
     //    others settled, so they come round again.
     begin!("orient_holes_stitch");
     let t = std::time::Instant::now();
-    let flipped = repair_orientation(&mut mesh);
+    let flipped = orientation_gate.orient(&mut mesh);
     let (trivial, refused_trivial) = fill_holes_guarded(&mut mesh, 0, true);
-    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
+    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_step);
     let round_after_first_cull = flipped + trivial + welded + collapsed;
     stage!(
         "orient_holes_stitch",
@@ -303,9 +477,9 @@ pub fn repair_with_progress(
     // 6. Orientation, every hole the caller's cap allows, stitch.
     begin!("orient_holes_all_stitch");
     let t = std::time::Instant::now();
-    let flipped = repair_orientation(&mut mesh);
+    let flipped = orientation_gate.orient(&mut mesh);
     let (filled, refused_fill) = fill_holes_guarded(&mut mesh, options.fill_holes_max_edges, false);
-    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
+    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_step);
     let round_after_first_cull = round_after_first_cull + flipped + filled + welded + collapsed;
     stage!(
         "orient_holes_all_stitch",
@@ -378,15 +552,8 @@ pub fn repair_with_progress(
     if split_refined || round_after_first_cull > 0 {
         begin!("double_faces_after_split");
         let t = std::time::Instant::now();
-        let (doubles, refused) = cull_faces(&mut mesh);
-        stage!(
-            "double_faces_after_split",
-            doubles,
-            refused.then(
-                || "refused: removing the duplicate faces would have opened the mesh".to_string()
-            ),
-            t
-        );
+        let (doubles, note) = cull_faces(&mut mesh);
+        stage!("double_faces_after_split", doubles, note, t);
     }
 
     // 9. Remove the faces that are inside. This is the stage that resolves
@@ -544,7 +711,7 @@ pub fn repair_with_progress(
         begin!("split_non_manifold_edges");
         let t = std::time::Instant::now();
         let mut candidate = mesh.clone();
-        let offset = 4.0 * (options.weld_epsilon * candidate.bbox().diag()).max(1e-7);
+        let offset = options.split_offset();
         let walls = crate::topology_passes::remove_coincident_faces(&mut candidate);
         let split = walls + crate::topology_passes::split_non_manifold_edges(&mut candidate, offset);
         crate::topology_passes::remove_open_fragments(&mut candidate, 16);
@@ -556,7 +723,7 @@ pub fn repair_with_progress(
         let rim_cap = usize::MAX;
         let mut filled = crate::holes::holes_all(&mut candidate, rim_cap);
         let _ = unify_winding(&mut candidate);
-        let (collapsed, _) = cull_faces(&mut candidate);
+        let (collapsed, _note) = cull_faces(&mut candidate);
         let _ = collapsed;
         filled += crate::holes::holes_all(&mut candidate, rim_cap);
 
@@ -598,11 +765,19 @@ pub fn repair_with_progress(
         // closes shows up as an inconsistent edge: on the corbu model the pass dropped boundary
         // edges 822 to 538 while winding went 113 to 267, which is trading one class for another
         // and calling it a repair.
-        // Loops, not boundary edges. Tried the edge count too and reverted it: the corbu split
-        // resolves non-manifold edges 1364 to 0 and takes the loops 30 to 6, and the edges rise
-        // because six long rims replace thirty short ones. Loops are the class the verdict is made
-        // of, and six beats thirty; refusing the pass over the edges would have kept 1364
-        // non-manifold edges to avoid a boundary that is smaller by the measure that matters.
+        // Bad edges, not loops. The class that counts loops is a decomposition of the boundary, not a
+        // measure of it: separating two surfaces that shared an edge gives each one a rim, so one loop
+        // can become several while the boundary gets *shorter*, and refusing that keeps 1,363
+        // non-manifold edges to avoid eight short loops. `bad_edges` is the count of edges that do not
+        // carry exactly two faces — boundary and non-manifold together — which is the class the
+        // reference's bad-edge evaluator reports and the one that measures what the pass did. Measured
+        // on the reported file: non-manifold 1,363 to 0 and bad edges 1,366 to 24, refused because the
+        // loop count went from 1 to 8.
+        //
+        // The edge count alone was tried before this and reverted, and the reason is in the numbers
+        // above rather than in the class: that attempt left the model with 13 components instead of 8,
+        // 1,332 boundary edges instead of 822 and 19.61% more volume. Those are the tests below, and
+        // they are what refuse a split that pulls the object apart rather than resolving it.
         // The defect classes are not enough, which is what I got wrong here. The corbu split
         // resolved non-manifold edges 1364 to 0 and was accepted on that, and the model it left
         // had 13 components instead of 8, 1,332 boundary edges instead of 822, and 19.61% more
@@ -660,7 +835,7 @@ pub fn repair_with_progress(
         let allowed_parts =
             structure_before.connected_components + (structure_before.connected_components / 20).max(8);
         let accepted = after.non_manifold_edges < before_split.non_manifold_edges
-            && after.holes <= before_split.holes
+            && after.bad_edges < before_split.bad_edges
             && after.inconsistent_edges <= before_split.inconsistent_edges
             && structure_after.connected_components <= allowed_parts
             && !volume_moved;
@@ -668,9 +843,13 @@ pub fn repair_with_progress(
             "split_non_manifold_edges",
             if accepted { split + filled } else { 0 },
             Some(format!(
-                "vertices split {split}, holes filled {filled}, non-manifold {} -> {}, loops {} -> {}, parts {} -> {} (allowed {allowed_parts}), volume {:+.2}%",
+                "vertices split {split}, holes filled {filled}, non-manifold {} -> {}, bad edges {} -> {}, winding {} -> {}, loops {} -> {}, parts {} -> {} (allowed {allowed_parts}), volume {:+.2}%",
                 before_split.non_manifold_edges,
                 after.non_manifold_edges,
+                before_split.bad_edges,
+                after.bad_edges,
+                before_split.inconsistent_edges,
+                after.inconsistent_edges,
                 before_split.holes,
                 after.holes,
                 structure_before.connected_components,
@@ -713,13 +892,13 @@ pub fn repair_with_progress(
     //     them.
     begin!("settle");
     let t = std::time::Instant::now();
-    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_epsilon);
+    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_step);
     let noise = crate::shells::remove_noise_shells(&mut mesh);
     // Orientation before the fill, not after. The cut lives in `repair_orientation`, and a cut whose
     // seam nothing closes leaves the model with boundary edges: through the app's path, which runs
     // the union and so re-welds the mesh, the V3 Cones came out with 8 boundary edges, 2 loops and 1
     // winding edge for exactly that reason.
-    let flipped = repair_orientation(&mut mesh);
+    let flipped = orientation_gate.orient(&mut mesh);
     // The settle fill closes whatever every other pass left open, and the derived cap is not applied
     // to it. The cap's job is to stop the earlier fills closing openings that are not holes, while
     // the mesh still carries the structure that distinguishes them. By this stage the mesh has been
@@ -748,6 +927,73 @@ pub fn repair_with_progress(
         welded + collapsed + noise + filled + flipped + retessellated + settled,
         Some(format!(
             "{welded} vertex/vertices welded, {collapsed} face(s) collapsed, {noise} noise face(s), {flipped} face(s) flipped, {filled} hole face(s), {retessellated} face(s) re-tessellated over unsatisfiable edges, {settled} face(s) flipped after that"
+        )),
+        t
+    );
+
+    // 11b. Rounds on what is left, one defect class at a time, until nothing improves.
+    //
+    // The reference's repair is a defect-driven loop: it lists the mesh's defects, repairs a class,
+    // recomputes, and repeats until none are left or it hits an iteration cap. This pipeline was one
+    // ordered pass per stage, and that is why a residue survives — a pass that half-solves something
+    // gets no second turn. Measured on the reported file, its winding never settles at 177 and 18,639
+    // faces still cross, where the reference's own loop leaves 0 and 9,892.
+    //
+    // A round targets the class that is actually non-zero rather than re-running everything, and it is
+    // kept only when the defect total *strictly drops*. So this cannot wander: it improves the mesh or
+    // it stops. That is also what keeps it affordable. The fixed-point rounds this pipeline used to run
+    // cost 40% of a run re-running passes over classes that were already zero; every round here is over
+    // a class that is not.
+    begin!("repair_rounds");
+    let t = std::time::Instant::now();
+    let mut rounds = 0usize;
+    let mut repaired = 0usize;
+    let mut notes = Vec::new();
+    let mut best = crate::evaluate::evaluate(&mesh).total();
+    let first_total = best;
+    // Attempts rather than rounds: a class that cannot improve the mesh costs an attempt, and the loop
+    // has to be able to try the next one rather than stop on it. The reference's tracker walks its
+    // classes the same way.
+    for _ in 0..MAX_REPAIR_ATTEMPTS {
+        if best == 0 {
+            break;
+        }
+        let before = crate::evaluate::evaluate(&mesh);
+        let mut progressed = false;
+        for class in DEFECT_CLASSES {
+            if !class.present(&before) {
+                continue;
+            }
+            let mut candidate = mesh.clone();
+            let did = repair_one_defect_class(&mut candidate, class, options);
+            if did == 0 {
+                continue;
+            }
+            let after = crate::evaluate::evaluate(&candidate).total();
+            if after < best {
+                best = after;
+                mesh = candidate;
+                rounds += 1;
+                repaired += did;
+                notes.push(format!("{}", class.name()));
+                progressed = true;
+                break;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    stage!(
+        "repair_rounds",
+        repaired,
+        Some(format!(
+            "{rounds} round(s), defects {first_total} -> {best}{}",
+            if notes.is_empty() {
+                String::new()
+            } else {
+                format!("; worked on {}", notes.join(", "))
+            }
         )),
         t
     );
@@ -1439,13 +1685,38 @@ fn judge(mesh: &mut IndexedMesh, before: IndexedMesh, changed: usize) -> (usize,
 /// Collinear faces with distinct indices are not free: 3DBenchy's 11 of them open 29 edges and 9
 /// holes when removed. They stay behind a guard.
 ///
-/// Judging them together is the bug this split fixes. The guard on the second class refused and
-/// took the first class's removal down with it, so benchy kept every degenerate face and every
-/// winding edge it started with.
-fn cull_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
+/// Both face classes, and which half refused if either did.
+///
+/// **The order was tried the other way and measured out.** The reference removes double triangles at
+/// step 3 of its script and degenerates at step 9, *after* it closes all the holes, so the repeated
+/// vertex faces were moved out of here into a stage of their own after the fills. It changes no
+/// outcome, and it costs up to twice the engine time: a 292,470-triangle model went 4.9s to 10.0s and
+/// an 815,474-triangle one 15.1s to 28.8s. The reason is the one this function's own notes give for
+/// 3DBenchy: a face that names the same vertex twice contributes both `(a, b)` and `(b, a)`, so an
+/// edge with one real face *looks* paired, and that manufactured pairing is what the winding count
+/// sees. Leaving those faces in place therefore keeps `repair_orientation` flipping the same faces on
+/// every call — on the woven model it flipped 2,160 faces three times in one run — where removing them
+/// first lets the orientation and the holes settle and be skipped.
+///
+/// On the reported file the two orders produce a **byte-identical** mesh (same sha256, same size), so
+/// this is not a quality difference either way. It is only the clock.
+fn cull_faces(mesh: &mut IndexedMesh) -> (usize, Option<String>) {
     let (repeated, repeated_refused) = cull_repeated_vertex_faces(mesh);
-    let (removed, refused) = cull_duplicate_and_zero_area_faces(mesh);
-    (repeated + removed, repeated_refused || refused)
+    let (duplicates, duplicates_refused) = cull_duplicate_and_zero_area_faces(mesh);
+    let note = match (repeated_refused, duplicates_refused) {
+        (false, false) => None,
+        (true, false) => Some(
+            "the repeated-vertex removal was refused: it would have opened the mesh".to_string(),
+        ),
+        (false, true) => Some(format!(
+            "{repeated} repeated-vertex face(s) removed; the duplicate and collinear removal was \
+             refused, because it would have opened the mesh"
+        )),
+        (true, true) => {
+            Some("both removals were refused: each would have opened the mesh".to_string())
+        }
+    };
+    (repeated + duplicates, note)
 }
 
 /// Faces that name the same vertex twice. Guarded on their own so a file where one of them masks
@@ -1458,7 +1729,7 @@ fn cull_repeated_vertex_faces(mesh: &mut IndexedMesh) -> (usize, bool) {
     judge(mesh, before, count - mesh.triangles.len())
 }
 
-/// Duplicate faces and collinear faces, refused when either would leave the mesh worse.
+/// Double and collinear faces, refused when either would leave the mesh worse.
 ///
 /// The same reasoning as the weld, because the cull does its own damage: removing a face can
 /// take the last face off an edge and open the mesh, and a mesh with a boundary is a
@@ -1554,7 +1825,7 @@ fn stitch_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, usize, bool)
     // is a separate later step. Which is also where ours is - `cull_faces` runs on its own at the
     // double-faces stage.
     //
-    // `collapsed` stays in the signature and is always zero so the stage's report keeps its shape.
+    // `collapsed` stays in the signature and is always zero so the stages' reports keep their shape.
     let (welded, refused) = judge(mesh, before, welded);
     (welded, 0, refused)
 }
@@ -1590,14 +1861,15 @@ fn vertex_normals(mesh: &IndexedMesh) -> Vec<Vec3> {
 /// weld across a break-through sheet joins two surfaces facing opposite ways, and that is not a
 /// repair.
 ///
-/// Vertices within `epsilon` of each other are clustered by the direction their surface faces, and
-/// only same-facing vertices merge. `epsilon` is relative to the bbox diagonal, as everywhere else.
-fn weld_vertices_oriented(mesh: &mut IndexedMesh, epsilon: f32) -> usize {
+/// Vertices within `step` of each other are clustered by the direction their surface faces, and only
+/// same-facing vertices merge. `step` is an absolute distance in model units.
+fn weld_vertices_oriented(mesh: &mut IndexedMesh, step: f32) -> usize {
     if mesh.triangles.is_empty() {
         return 0;
     }
-    let diag = mesh.bbox().diag().max(1e-6);
-    let step = (epsilon * diag).max(1e-7);
+    // An absolute distance in model units. It used to be a fraction of the bbox diagonal, which made
+    // it a property of how the mesh was loaded rather than of the geometry.
+    let step = step.max(1e-7);
     let inv_step = 1.0 / step;
 
     let normals = vertex_normals(mesh);
@@ -1664,10 +1936,8 @@ fn weld_vertices_oriented(mesh: &mut IndexedMesh, epsilon: f32) -> usize {
     merged
 }
 
-fn weld_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> usize {
-    let bbox = mesh.bbox();
-    let diag = bbox.diag().max(1e-6);
-    let step = (epsilon * diag).max(1e-7);
+fn weld_vertices(mesh: &mut IndexedMesh, step: f32) -> usize {
+    let step = step.max(1e-7);
     let inv_step = 1.0 / step;
 
     let mut map: AHashMap<(i32, i32, i32), u32> = AHashMap::with_capacity(mesh.positions.len());
@@ -2176,7 +2446,9 @@ fn classify_and_reorder_model_support_triangles(
 /// a solid with an internal cavity has an inward-facing cavity wall, and turning everything
 /// outward turns the cavity inside out. Measured on a mesh with one: the volume moved 17%
 /// under a per-component outward vote.
-fn unify_winding(mesh: &mut IndexedMesh) -> usize {
+/// `pub(crate)` for the surface-to-solid prep, which needs a consistently wound surface before the
+/// boolean and cannot be the judge of it: the boolean is.
+pub(crate) fn unify_winding(mesh: &mut IndexedMesh) -> usize {
     let n = mesh.triangles.len();
     if n == 0 {
         return 0;

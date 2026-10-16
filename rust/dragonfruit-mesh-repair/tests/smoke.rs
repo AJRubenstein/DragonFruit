@@ -1,6 +1,7 @@
 //! Smoke tests for the repair pipeline on synthetic fixtures.
 
 use dragonfruit_mesh_repair::core::mesh::{IndexedMesh, Vec3};
+use dragonfruit_mesh_repair::evaluate::evaluate;
 use dragonfruit_mesh_repair::{analyze, repair, repair_with_progress, RepairOptions};
 
 /// Build a unit cube with outward-facing winding.
@@ -165,6 +166,7 @@ fn the_pipeline_runs_the_stage_order_it_says_it_does() {
             "remove_inner_faces",
             "noise_shells",
             "settle",
+            "repair_rounds",
             "prune_and_classify",
         ]
     );
@@ -211,6 +213,114 @@ fn the_second_double_face_pass_sits_between_the_rounds_and_the_inside() {
     assert!(
         names.contains(&"split_self_intersections"),
         "the split was asked for, so its stage has to be reported: {names:?}"
+    );
+}
+
+/// A patch has to leave the rim along the surface it belongs to, not cut across it.
+///
+/// This is the acceptance test for the tangent-continuing patch, and it pins the property that
+/// distinguishes it from a flat cap: a hole punched out of a *curved* wall. The wall is a closed
+/// cylinder, so the hole is the mesh's only boundary and nothing the patch adds can be an end cap; the
+/// hole spans half the circumference, so a flat patch has to pass near the axis while the wall it is
+/// closing is out at the radius. Both kinds of patch are watertight and both are wound consistently and
+/// both are manifold, so the geometry is the only thing that separates them, which is why the
+/// assertion is a radius.
+#[test]
+fn a_hole_in_a_curved_wall_is_patched_tangent_to_it() {
+    const SEGMENTS: usize = 16;
+    const ROWS: usize = 5;
+    const RADIUS: f32 = 10.0;
+    const HEIGHT: f32 = 4.0;
+    // The block of quads to remove: half the circumference, two rows tall.
+    const HOLE_FROM: usize = 4;
+    const HOLE_TO: usize = 12;
+
+    let mut positions = Vec::new();
+    for row in 0..ROWS {
+        for segment in 0..SEGMENTS {
+            let theta = std::f32::consts::TAU * segment as f32 / SEGMENTS as f32;
+            positions.push(Vec3::new(
+                RADIUS * theta.cos(),
+                RADIUS * theta.sin(),
+                row as f32 * HEIGHT / (ROWS - 1) as f32,
+            ));
+        }
+    }
+    // A centre vertex for each end, so the cylinder is a closed solid and its side is the only place a
+    // hole can be.
+    positions.push(Vec3::new(0.0, 0.0, 0.0));
+    positions.push(Vec3::new(0.0, 0.0, HEIGHT));
+    let (bottom, top) = ((ROWS * SEGMENTS) as u32, (ROWS * SEGMENTS + 1) as u32);
+
+    let index = |row: usize, segment: usize| (row * SEGMENTS + segment % SEGMENTS) as u32;
+    let mut triangles = Vec::new();
+    for row in 0..ROWS - 1 {
+        for segment in 0..SEGMENTS {
+            if (HOLE_FROM..HOLE_TO).contains(&segment) && row == 1 {
+                continue;
+            }
+            let (a, b) = (index(row, segment), index(row, segment + 1));
+            let (c, d) = (index(row + 1, segment), index(row + 1, segment + 1));
+            triangles.push([a, b, d]);
+            triangles.push([a, d, c]);
+        }
+    }
+    for segment in 0..SEGMENTS {
+        let (a, b) = (index(0, segment), index(0, segment + 1));
+        triangles.push([bottom, b, a]);
+        let (c, d) = (index(ROWS - 1, segment), index(ROWS - 1, segment + 1));
+        triangles.push([top, c, d]);
+    }
+    let mut mesh = IndexedMesh { positions, triangles };
+
+    let before = evaluate(&mesh);
+    assert_eq!(before.holes, 1, "the removed block must leave exactly one loop");
+
+    let before_triangles = mesh.triangles.len();
+    let added = dragonfruit_mesh_repair::holes::holes_all(&mut mesh, usize::MAX);
+    assert!(added > 0, "the hole must be filled");
+
+    let after = evaluate(&mesh);
+    assert_eq!(after.holes, 0, "the patch must close it");
+    assert_eq!(
+        after.inconsistent_edges, 0,
+        "the patch must be wound with the wall"
+    );
+    assert_eq!(
+        after.non_manifold_edges, 0,
+        "the patch must not pinch an edge"
+    );
+
+    // The surface, not just the vertices: a patch can put every vertex on the wall and still span the
+    // hole between them, which is what a flat cap over a curved rim does. Sampling each face — its
+    // three corners and its three edge midpoints — measures the surface.
+    let radius = |v: u32| {
+        let p = mesh.positions[v as usize];
+        (p.x * p.x + p.y * p.y).sqrt()
+    };
+    let mid = |a: u32, b: u32| {
+        let p = mesh.positions[a as usize];
+        let q = mesh.positions[b as usize];
+        let c = p.add(q).scale(0.5);
+        (c.x * c.x + c.y * c.y).sqrt()
+    };
+    let mut innermost = f32::INFINITY;
+    for t in &mesh.triangles[before_triangles..] {
+        for sample in [
+            radius(t[0]),
+            radius(t[1]),
+            radius(t[2]),
+            mid(t[0], t[1]),
+            mid(t[1], t[2]),
+            mid(t[2], t[0]),
+        ] {
+            innermost = innermost.min(sample);
+        }
+    }
+    assert!(
+        innermost > RADIUS * 0.9,
+        "the patch must follow the wall, not span it: the innermost point of the added surface is at \
+         radius {innermost:.2} against a wall at {RADIUS:.1} whose chord passes near the axis"
     );
 }
 
@@ -360,6 +470,9 @@ fn a_shared_edge_is_separated() {
         .iter()
         .map(|step| step.name.as_str())
         .collect();
+    for step in &outcome.report.steps {
+        eprintln!("[stages] {:<26} changed={:<6} {}", step.name, step.changed, step.notes.clone().unwrap_or_default());
+    }
     let union_at = names
         .iter()
         .position(|name| *name == "union_overlapping_parts")

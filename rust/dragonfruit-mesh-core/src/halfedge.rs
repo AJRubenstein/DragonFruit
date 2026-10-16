@@ -2,7 +2,7 @@
 //! loops, non-manifold edge classification, and per-vertex face rings.
 
 use crate::mesh::IndexedMesh;
-use ahash::{AHashMap, RandomState};
+use ahash::{AHashMap, AHashSet, RandomState};
 
 /// Fixed seeds, rather than `RandomState`'s per-process ones.
 ///
@@ -47,6 +47,10 @@ pub struct Topology {
     pub edges: AHashMap<EdgeKey, EdgeInfo>,
     /// One-ring faces per vertex.
     pub vertex_faces: Vec<smallvec::SmallVec<[u32; 8]>>,
+    /// The mesh's triangles, in order. Kept so a walk can rotate around a vertex: the face a walk
+    /// arrives in says which edge it came along, and the face's own vertices say which edge leaves the
+    /// vertex next.
+    pub faces: Vec<[u32; 3]>,
 }
 
 impl Topology {
@@ -72,7 +76,11 @@ impl Topology {
                 entry.directed.push((u, v, fi));
             }
         }
-        Self { edges, vertex_faces }
+        Self {
+            edges,
+            vertex_faces,
+            faces: mesh.triangles.clone(),
+        }
     }
 
     /// Sorted, so two runs over the same mesh give the same list.
@@ -140,77 +148,108 @@ impl Topology {
             .count()
     }
 
-    /// Walk boundary edges into closed loops. Returns loops as sequences of
-    /// vertex indices.
+    /// Walk boundary edges into closed loops, each an ordered cycle of vertices.
     ///
-    /// Sorted throughout. Hash iteration order varies per process, and both the vertex a
-    /// loop starts from and the neighbour chosen at a junction change which loop is walked,
-    /// so the same mesh gave different loops on different runs. That is a difference a
-    /// caller cannot see and cannot work around. From the same pull request as the
-    /// overlapping-parts port, where it was found the same way.
+    /// The walk is by **rotation**: from the face it arrived in, around the shared vertex, to the next
+    /// face that carries a boundary edge. That is what makes the *order* right, and the order is the
+    /// whole point of this function — a loop is fed to a triangulation, which can only fill a cycle.
+    ///
+    /// Choosing the next neighbour by index instead is what this used to do ("prefer a neighbour that
+    /// isn't the previous vertex", over sorted neighbours). It is correct only while every vertex the
+    /// boundary meets, it meets once. A pinch — two openings sharing a vertex — has more than one
+    /// boundary edge leaving that vertex, and an index does not know which one continues the lobe it is
+    /// walking. Measured on a model whose cavity breaks through its outer wall, three of its rims came
+    /// back as 180, 218 and 704 points around a hole one millimetre across, doubling back on themselves:
+    /// a loop no triangulation can fill, which renders as a fanned gap, and a loop whose own area and
+    /// tangent directions are meaningless, which renders as the flat sheet the fill was supposed to
+    /// avoid. The count was wrong too, because the walk merged and split lobes as it went.
+    ///
+    /// Sorted throughout, so two runs over the same mesh give the same loops: hash iteration order
+    /// varies per process, and both the vertex a loop starts from and the choice at a junction would
+    /// otherwise differ between runs.
     pub fn boundary_loops(&self) -> Vec<Vec<u32>> {
-        let mut edges: Vec<EdgeKey> = self
+        let mut boundary: Vec<(u32, u32, u32)> = self
             .edges
-            .iter()
-            .filter(|(_, info)| info.faces.len() == 1)
-            .map(|(k, _)| *k)
+            .values()
+            .filter(|info| info.faces.len() == 1)
+            .filter_map(|info| info.directed.first().copied())
             .collect();
-        edges.sort_unstable();
-        let mut adj: AHashMap<u32, smallvec::SmallVec<[u32; 4]>> = AHashMap::new();
-        for (a, b) in edges {
-            adj.entry(a).or_default().push(b);
-            adj.entry(b).or_default().push(a);
-        }
-        for neighbours in adj.values_mut() {
-            neighbours.sort_unstable();
-        }
-        let mut starts: Vec<u32> = adj.keys().copied().collect();
-        starts.sort_unstable();
+        boundary.sort_unstable();
 
+        let mut used: AHashSet<(u32, u32)> = AHashSet::new();
         let mut loops = Vec::new();
-        for start in starts {
-            while adj.get(&start).map(|v| !v.is_empty()).unwrap_or(false) {
-                let mut loop_verts = vec![start];
-                let mut current = start;
-                let mut prev: Option<u32> = None;
+        for &(start_from, start_to, start_face) in &boundary {
+            if used.contains(&(start_from, start_to)) {
+                continue;
+            }
+            let mut path = vec![start_from];
+            let (mut from, mut to, mut face) = (start_from, start_to, start_face);
+            loop {
+                if !used.insert((from, to)) {
+                    break;
+                }
+                path.push(to);
+
+                // Rotate around `to`, starting from the face the walk arrived in, until a face carries
+                // a boundary edge leaving `to`.
+                let mut g = face;
+                let mut next = None;
+                // Bounded, and the bound is not a formality: an edge whose two faces traverse it the
+                // *same* way — inconsistent winding, which damaged meshes have — sends the rotation
+                // back to the face it came from, and it would alternate between those two for ever.
+                // One turn of the vertex's own fan is all a rotation can need.
+                let mut rotations = 0usize;
                 loop {
-                    let next = {
-                        let neighbours = adj.get_mut(&current);
-                        if neighbours.is_none() {
-                            break;
-                        }
-                        let neighbours = neighbours.unwrap();
-                        // Prefer a neighbour that isn't the previous vertex.
-                        let pick_idx = neighbours
-                            .iter()
-                            .position(|&n| Some(n) != prev)
-                            .or_else(|| if neighbours.is_empty() { None } else { Some(0) });
-                        match pick_idx {
-                            Some(i) => neighbours.remove(i),
-                            None => break,
-                        }
-                    };
-                    // Remove reverse edge.
-                    if let Some(back) = adj.get_mut(&next) {
-                        if let Some(pos) = back.iter().position(|&n| n == current) {
-                            back.remove(pos);
-                        }
-                    }
-                    if adj.get(&current).map(|v| v.is_empty()).unwrap_or(true) {
-                        adj.remove(&current);
-                    }
-                    if next == start {
+                    rotations += 1;
+                    if rotations > self.vertex_faces[to as usize].len() + 1 {
                         break;
                     }
-                    loop_verts.push(next);
-                    prev = Some(current);
-                    current = next;
+                    let [x, y, z] = self.faces[g as usize];
+                    let out = if x == to {
+                        y
+                    } else if y == to {
+                        z
+                    } else if z == to {
+                        x
+                    } else {
+                        break;
+                    };
+                    match self.edges.get(&edge_key(to, out)) {
+                        Some(info) if info.faces.len() == 1 => {
+                            next = Some((to, out, g));
+                            break;
+                        }
+                        Some(info) => match info.faces.iter().copied().find(|&h| h != g) {
+                            Some(h) => g = h,
+                            None => break,
+                        },
+                        None => break,
+                    }
                 }
-                if adj.get(&start).map(|v| v.is_empty()).unwrap_or(true) {
-                    adj.remove(&start);
+
+                match next {
+                    Some((nf, nt, ng)) if !used.contains(&(nf, nt)) => {
+                        from = nf;
+                        to = nt;
+                        face = ng;
+                    }
+                    _ => break,
                 }
-                if loop_verts.len() >= 3 {
-                    loops.push(loop_verts);
+            }
+            // A cycle has to have closed. The walk stops either by returning to where it started or by
+            // running into a path it has already used, and only the first of those is a hole.
+            //
+            // The second is a boundary that is not a closed curve at all: the fixture of an edge
+            // carrying three faces has a boundary of exactly two edges, a path from one end of that
+            // edge to the other, because a non-manifold edge is where the boundary passes through
+            // itself. Filling a path invents a face — and the face it invents here is a copy of the
+            // one already there, which the cull then removes along with the original, quietly deleting
+            // the stray sheet the repair was supposed to separate. Reporting it as a loop is also
+            // wrong on its own terms: one of the five classes counts *loops*, and a path is not one.
+            if path.len() > 1 && path[0] == *path.last().unwrap() {
+                path.pop();
+                if path.len() >= 3 {
+                    loops.push(path);
                 }
             }
         }
