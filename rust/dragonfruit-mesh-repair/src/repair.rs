@@ -333,6 +333,60 @@ fn orientation_settled(mesh: &IndexedMesh, pre: &crate::analysis::MeshAnalysis) 
     pre.inconsistent_winding_edges == 0 && components_not_outward(mesh) == 0
 }
 
+/// Whether the weld has anything to join: a weld cell holding two vertices.
+///
+/// Both welds cluster by rounded cell and merge only inside a cell, so a mesh whose cells are all
+/// singletons has nothing for either of them to do: the loose one returns before it touches the mesh,
+/// and the oriented one, which also clusters by the direction the surface faces, finds no two
+/// vertices to compare. The key is built the same way in all three places, so they agree.
+fn nothing_to_weld(mesh: &IndexedMesh, step: f32) -> bool {
+    let step = step.max(1e-7);
+    let inv_step = 1.0 / step;
+    let mut seen: AHashMap<(i32, i32, i32), u32> = AHashMap::with_capacity(mesh.positions.len());
+    for p in &mesh.positions {
+        let key = (
+            (p.x * inv_step).round() as i32,
+            (p.y * inv_step).round() as i32,
+            (p.z * inv_step).round() as i32,
+        );
+        if seen.insert(key, 0).is_some() {
+            return false;
+        }
+    }
+    true
+}
+
+/// A pass that was tried and refused, remembered against the mesh it was refused on.
+///
+/// The weld is deterministic: the same mesh at the same tolerance welds the same vertices, and the
+/// same guard refuses the same junction. The pipeline reaches for it four times — the stitch stage,
+/// both combined rounds and the settle — and when the first one is refused, the repeats are the same
+/// work answering a question that has already been answered. This is [`OrientationGate`] with a
+/// rejection instead of a no-op: the repeat is skipped, and it runs again the moment any stage
+/// changes something, because that is the only thing that can change the answer.
+struct RefusalGate {
+    refused: bool,
+    changed_since: usize,
+}
+
+impl RefusalGate {
+    fn note(&mut self, changed: usize) {
+        self.changed_since = self.changed_since.saturating_add(changed);
+    }
+
+    /// Never tried, not refused, or the mesh has moved since.
+    fn should_run(&self) -> bool {
+        !self.refused || self.changed_since > 0
+    }
+
+    /// Record this run's answer. The `stage!` that follows records what it changed, so a run that
+    /// did change something re-arms the gate on the spot.
+    fn record(&mut self, refused: bool) {
+        self.refused = refused;
+        self.changed_since = 0;
+    }
+}
+
 /// How many vertices share a loader weld cell with another index.
 ///
 /// A separation two surfaces keep between them is a *distinct index at the same position*, and every
@@ -920,6 +974,10 @@ fn repair_passes(
         changed_since: usize::from(first_orientation_needed),
     };
     let _ = &mut orientation_gate;
+    let mut stitch_gate = RefusalGate {
+        refused: false,
+        changed_since: 0,
+    };
     //
     // Records a stage and its cost, so the report reads as the pipeline ran rather
     // than as a list of things that were considered.
@@ -943,7 +1001,9 @@ fn repair_passes(
         ($name:expr, $changed:expr, $notes:expr, $started:expr) => {{
             // Every stage declares what it changed, and the gate that decides whether the next
             // orientation pass is worth running is fed from here, so a new stage cannot forget to.
+            // The weld's gate reads the same number, for the same reason.
             orientation_gate.note($changed as usize);
+            stitch_gate.note($changed as usize);
             report.steps.push(RepairStepReport {
                 name: $name.into(),
                 changed: $changed as u32,
@@ -973,9 +1033,16 @@ fn repair_passes(
     // the point: the strict pass joins what agrees on winding, and the loose one, later, joins the
     // rest. Doing it the other way round lets the loose weld reach vertices the strict pass would
     // have kept apart.
-    let (stitched_oriented, refused_oriented) = stitch_vertices_oriented(&mut mesh, options.weld_step);
-    let (welded, _collapsed, refused_loose) = stitch_vertices(&mut mesh, options.weld_step);
+    let (stitched_oriented, refused_oriented, welded, refused_loose) = if stitch_gate.should_run() {
+        let (stitched_oriented, refused_oriented) =
+            stitch_vertices_oriented(&mut mesh, options.weld_step);
+        let (welded, _collapsed, refused_loose) = stitch_vertices(&mut mesh, options.weld_step);
+        (stitched_oriented, refused_oriented, welded, refused_loose)
+    } else {
+        (0, false, 0, false)
+    };
     let (welded, refused) = (welded + stitched_oriented, refused_loose || refused_oriented);
+    stitch_gate.record(refused);
     stage!(
         "stitch",
         welded,
@@ -1013,7 +1080,12 @@ fn repair_passes(
     let t = std::time::Instant::now();
     let flipped = orientation_gate.orient(&mut mesh);
     let (trivial, refused_trivial) = fill_holes_guarded(&mut mesh, 0, true);
-    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_step);
+    let (welded, collapsed, refused_stitch) = if stitch_gate.should_run() {
+        stitch_vertices(&mut mesh, options.weld_step)
+    } else {
+        (0, 0, false)
+    };
+    stitch_gate.record(refused_stitch);
     let round_after_first_cull = flipped + trivial + welded + collapsed;
     stage!(
         "orient_holes_stitch",
@@ -1030,7 +1102,12 @@ fn repair_passes(
     let t = std::time::Instant::now();
     let flipped = orientation_gate.orient(&mut mesh);
     let (filled, refused_fill) = fill_holes_guarded(&mut mesh, options.fill_holes_max_edges, false);
-    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_step);
+    let (welded, collapsed, refused_stitch) = if stitch_gate.should_run() {
+        stitch_vertices(&mut mesh, options.weld_step)
+    } else {
+        (0, 0, false)
+    };
+    stitch_gate.record(refused_stitch);
     let round_after_first_cull = round_after_first_cull + flipped + filled + welded + collapsed;
     stage!(
         "orient_holes_all_stitch",
@@ -1463,7 +1540,12 @@ fn repair_passes(
     //     them.
     begin!("settle");
     let t = std::time::Instant::now();
-    let (welded, collapsed, _) = stitch_vertices(&mut mesh, options.weld_step);
+    let (welded, collapsed, refused_stitch) = if stitch_gate.should_run() {
+        stitch_vertices(&mut mesh, options.weld_step)
+    } else {
+        (0, 0, false)
+    };
+    stitch_gate.record(refused_stitch);
     let noise = crate::shells::remove_noise_shells(&mut mesh);
     // Orientation before the fill, not after. The cut lives in `repair_orientation`, and a cut whose
     // seam nothing closes leaves the model with boundary edges: through the app's path, which runs
@@ -2526,12 +2608,21 @@ fn fill_holes_guarded(mesh: &mut IndexedMesh, max_edges: usize, trivial_only: bo
 /// of them forgetting to check is how a mesh came out of a repair with more non-manifold
 /// edges than it went in with.
 fn stitch_vertices_oriented(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, bool) {
+    // Nothing to weld is the common case on a mesh that came in clean, and it is free to ask: this
+    // spending a clone and two evaluations to weigh a mesh against itself is what the stitch stage
+    // was doing on `poussin.stl` for 393 ms.
+    if nothing_to_weld(mesh, epsilon) {
+        return (0, false);
+    }
     let before = mesh.clone();
     let welded = weld_vertices_oriented(mesh, epsilon);
     judge(mesh, before, welded)
 }
 
 fn stitch_vertices(mesh: &mut IndexedMesh, epsilon: f32) -> (usize, usize, bool) {
+    if nothing_to_weld(mesh, epsilon) {
+        return (0, 0, false);
+    }
     let before = mesh.clone();
     let welded = weld_vertices(mesh, epsilon);
     // No face culling here, and that is a deliberate departure from what this pass used to do.
