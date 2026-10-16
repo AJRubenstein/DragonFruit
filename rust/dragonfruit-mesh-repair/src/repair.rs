@@ -1041,7 +1041,10 @@ fn repair_passes(
     } else {
         (0, false, 0, false)
     };
-    let (welded, refused) = (welded + stitched_oriented, refused_loose || refused_oriented);
+    let (welded, refused) = (
+        welded + stitched_oriented,
+        refused_loose || refused_oriented,
+    );
     stitch_gate.record(refused);
     stage!(
         "stitch",
