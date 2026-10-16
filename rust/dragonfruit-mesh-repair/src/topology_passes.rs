@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, VecDeque};
 
 use ahash::{AHashMap, AHashSet};
 
+use crate::core::bvh::Bvh;
 use crate::core::halfedge::{edge_key, Topology};
-use crate::core::mesh::{IndexedMesh, Vec3};
+use crate::core::mesh::{Aabb, IndexedMesh, Vec3};
 
 const MIN_AREA_DP_MAX_LOOP: usize = 1024;
 
@@ -938,8 +939,67 @@ pub fn fill_holes_oriented(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
     added
 }
 
+/// The component pairs whose surfaces actually cross, by triangle, rather than whose boxes overlap.
+///
+/// This is the test the union's operand rule needed. It used to be "the bounding boxes overlap",
+/// with the note that a shared box may still be a disjoint pair, so the rule was conservative in the
+/// safe direction. It is not: a plate of parts laid out side by side — which is what a print plate
+/// is, and what `Untitled2.stl` in the corpus is, 25 parts of them — shares one bounding box across
+/// most of its pairs (measured on that file: 266 of 406), and `Manifold::batch_union` answers a set
+/// of separate solids with the union of them, which is one part where the user had dozens. The stage
+/// would then be *kept*, because its acceptance test is a falling part count.
+///
+/// A pair is an operand here when a triangle of one crosses a triangle of the other. Components that
+/// meet only at a vertex are left out: that is a pinch, and `split_pinched_vertices` owns it.
+/// Components that merely nest are left out too — their surfaces do not cross, and a union of a
+/// solid with a cavity would fill the cavity.
+///
+/// The walk is the one `arrangement::collect_face_segments` does, with the pair recorded instead of
+/// the segment: every triangle asks the BVH for its neighbours and tests the ones it has not already
+/// answered for.
+pub fn crossing_component_pairs(mesh: &IndexedMesh, components: &[u32]) -> AHashSet<(u32, u32)> {
+    let n = mesh.triangles.len();
+    let mut pairs: AHashSet<(u32, u32)> = AHashSet::new();
+    if n < 2 {
+        return pairs;
+    }
+    let bvh = Bvh::build(mesh);
+    for fi in 0..n as u32 {
+        let tri_a = mesh.tri_positions(fi);
+        let mut bb = Aabb::empty();
+        bb.expand(tri_a[0]);
+        bb.expand(tri_a[1]);
+        bb.expand(tri_a[2]);
+        let ca = components[fi as usize];
+        let va = mesh.triangles[fi as usize];
+        let mut candidates: Vec<u32> = Vec::new();
+        bvh.query_aabb(mesh, &bb, |other| candidates.push(other));
+        for fj in candidates {
+            if fj <= fi {
+                continue;
+            }
+            let cb = components[fj as usize];
+            if cb == ca {
+                continue;
+            }
+            let key = (ca.min(cb), ca.max(cb));
+            if pairs.contains(&key) {
+                continue;
+            }
+            let vb = mesh.triangles[fj as usize];
+            if va.iter().any(|v| vb.contains(v)) {
+                continue; // they meet at a vertex: a pinch, not a crossing
+            }
+            if crate::arrangement::tri_tri_segment(tri_a, mesh.tri_positions(fj)).is_some() {
+                pairs.insert(key);
+            }
+        }
+    }
+    pairs
+}
+
 #[cfg(feature = "manifold")]
-pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Option<(usize, usize)> {
+pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Option<(usize, usize, usize)> {
     use manifold_csg::Manifold;
 
     let n_comps = components.iter().copied().max().map_or(0, |m| m as usize + 1);
@@ -953,9 +1013,9 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
     // edges 2,157 -> 5,567 and is refused. So each component is welded at the loader's own cell first —
     // component by component, so nothing outside the union's input is re-indexed.
     let weld_cell = (crate::io::DEFAULT_MERGE_EPSILON * mesh.bbox().diag().max(1e-6)).max(1e-7);
-    let mut solids = Vec::new();
+    let mut solids: Vec<(u32, Manifold)> = Vec::new();
     let mut kept: Vec<[u32; 3]> = Vec::new();
-    for tris in by_comp {
+    for (ci, tris) in by_comp.into_iter().enumerate() {
         let mut remap: AHashMap<(i32, i32, i32), u32> = AHashMap::new();
         let mut vp: Vec<f32> = Vec::new();
         let mut idx: Vec<u32> = Vec::with_capacity(tris.len() * 3);
@@ -976,54 +1036,55 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
             }
         }
         match Manifold::from_mesh_f32(&vp, 3, &idx) {
-            Ok(m) if !m.is_empty() && m.num_tri() > 0 => solids.push(m),
+            Ok(m) if !m.is_empty() && m.num_tri() > 0 => solids.push((ci as u32, m)),
             _ => kept.extend_from_slice(&tris),
         }
     }
     if solids.len() < 2 {
-        return None;
+        // Nothing to union, and the count of separate solids is still worth reporting: it is one or
+        // none at this point.
+        return Some((0, 0, solids.len()));
     }
-    // Only operands that actually overlap go to the boolean.
+    // Only operands that actually cross each other go to the boolean.
     //
     // A boolean is for overlapping operands; feeding it a set of disjoint solids asks it to return them
     // unchanged, and it answers with *more* shells than it was given — measured on the reported model, 7
     // solids in and 12 shells out, which is why the union there is refused: the part count is one of the
-    // classes it is judged on, and it can only be kept when it drops. Overlap is decided on the bounding
-    // boxes, which is cheap and conservative in the safe direction: a pair that shares a box may still be
-    // disjoint, and the boolean answers that with the two of them back.
-    let bounds: Vec<(Vec3, Vec3)> = solids
-        .iter()
-        .map(|m| {
-            let (vp, np, _) = m.to_mesh_f32();
-            let mut lo = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
-            let mut hi = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
-            for c in vp.chunks_exact(np) {
-                lo = Vec3::new(lo.x.min(c[0]), lo.y.min(c[1]), lo.z.min(c[2]));
-                hi = Vec3::new(hi.x.max(c[0]), hi.y.max(c[1]), hi.z.max(c[2]));
-            }
-            (lo, hi)
-        })
-        .collect();
-    let overlaps = |a: usize, b: usize| -> bool {
-        let (alo, ahi) = bounds[a];
-        let (blo, bhi) = bounds[b];
-        alo.x <= bhi.x && blo.x <= ahi.x && alo.y <= bhi.y && blo.y <= ahi.y && alo.z <= bhi.z && blo.z <= ahi.z
-    };
+    // classes it is judged on, and it can only be kept when it drops.
+    //
+    // The rule used to be "the bounding boxes overlap", on the reasoning that a shared box may still be
+    // a disjoint pair, so the rule erred in the safe direction. It does not: on a plate of separate
+    // parts the boxes of most pairs overlap (266 of 406 on the reported plate), so that rule hands the
+    // boolean *everything* and the pass merges the user's parts into one — and is kept for it, because
+    // the acceptance test is a falling part count. What decides an operand now is surface contact:
+    // `crossing_component_pairs` below.
+    let crossing = crossing_component_pairs(mesh, components);
+    // How many distinct solids are in some crossing pair, and how many are in none: the latter are
+    // the separate parts of a plate, and saying so is the point of the rule.
+    let mut meeting: AHashSet<u32> = AHashSet::new();
+    for (a, b) in crossing.iter() {
+        meeting.insert(*a);
+        meeting.insert(*b);
+    }
+    let solid_ids: AHashSet<u32> = solids.iter().map(|(ci, _)| *ci).collect();
+    let separate = solid_ids.iter().filter(|ci| !meeting.contains(ci)).count();
     let touching: Vec<usize> = (0..solids.len())
-        .filter(|&i| (0..solids.len()).any(|j| j != i && overlaps(i, j)))
+        .filter(|&i| meeting.contains(&solids[i].0))
         .collect();
     if touching.len() < 2 {
-        return None;
+        // Several solids, none of them meeting: a plate of parts, and the boolean has no operands.
+        // This is the answer the caller needs — the old rule would have unioned every one of them.
+        return Some((0, 0, separate));
     }
     let operand_index: AHashMap<usize, usize> =
         touching.iter().enumerate().map(|(k, &i)| (i, k)).collect();
     let unioned = touching.len();
-    let operands: Vec<Manifold> = touching.iter().map(|&i| solids[i].clone()).collect();
+    let operands: Vec<Manifold> = touching.iter().map(|&i| solids[i].1.clone()).collect();
     let m = Manifold::batch_union(&operands);
     if m.is_empty() || m.num_tri() < 4 {
         return None;
     }
-    for (i, m) in solids.iter().enumerate() {
+    for (i, (_, m)) in solids.iter().enumerate() {
         if !operand_index.contains_key(&i) {
             let (vp, np, ti) = m.to_mesh_f32();
             let base = mesh.positions.len() as u32;
@@ -1044,7 +1105,7 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
     triangles.extend(ti.chunks_exact(3).map(|c| [c[0] + base, c[1] + base, c[2] + base]));
     mesh.positions = positions;
     mesh.triangles = triangles;
-    Some((unioned, kept_tris))
+    Some((unioned, kept_tris, separate))
 }
 
 /// Split vertices whose incident triangles form more than one fan.
@@ -1480,4 +1541,171 @@ pub fn flip_degenerate_caps(mesh: &mut IndexedMesh, area_eps: f32, max_rounds: u
         flips += round;
     }
     flips
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::mesh::IndexedMesh;
+
+    fn v(x: f32, y: f32, z: f32) -> Vec3 {
+        Vec3::new(x, y, z)
+    }
+
+    /// A closed box as twelve triangles, from `lo` to `hi`.
+    fn box_mesh(lo: Vec3, hi: Vec3) -> (Vec<Vec3>, Vec<[u32; 3]>) {
+        let p = [
+            v(lo.x, lo.y, lo.z),
+            v(hi.x, lo.y, lo.z),
+            v(hi.x, hi.y, lo.z),
+            v(lo.x, hi.y, lo.z),
+            v(lo.x, lo.y, hi.z),
+            v(hi.x, lo.y, hi.z),
+            v(hi.x, hi.y, hi.z),
+            v(lo.x, hi.y, hi.z),
+        ];
+        let quads: [[usize; 4]; 6] = [
+            [0, 3, 2, 1],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [2, 3, 7, 6],
+            [1, 2, 6, 5],
+            [0, 4, 7, 3],
+        ];
+        let mut tris = Vec::new();
+        for q in quads {
+            tris.push([q[0] as u32, q[1] as u32, q[2] as u32]);
+            tris.push([q[0] as u32, q[2] as u32, q[3] as u32]);
+        }
+        (p.to_vec(), tris)
+    }
+
+    /// Two solids at opposite corners of each other's bounding boxes are two parts, not one object.
+    ///
+    /// This is the plate: parts laid out side by side share one bounding box across most of their
+    /// pairs, and a union that took "the boxes overlap" as its operand rule handed every one of them
+    /// to the boolean, which answers a set of separate solids with the union of them. Two
+    /// axis-aligned boxes cannot stand in for it — boxes that share a box on all three axes do
+    /// intersect — so the fixture is two tetrahedra occupying opposite corners.
+    #[test]
+    fn solids_that_only_share_a_bounding_box_are_separate() {
+        let near = [
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 2.0],
+        ];
+        let far = [
+            [3.0, 3.0, 3.0],
+            [1.0, 3.0, 3.0],
+            [3.0, 1.0, 3.0],
+            [3.0, 3.0, 1.0],
+        ];
+        let mut positions: Vec<Vec3> = Vec::new();
+        let mut triangles: Vec<[u32; 3]> = Vec::new();
+        for tet in [near, far] {
+            let base = positions.len() as u32;
+            positions.extend(tet.iter().map(|p| v(p[0], p[1], p[2])));
+            for t in [
+                [0u32, 2, 1],
+                [0, 1, 3],
+                [0, 3, 2],
+                [1, 2, 3],
+            ] {
+                triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+            }
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let components = crate::repair::triangle_components(&mesh);
+        assert_eq!(components.iter().copied().max().unwrap_or(0) + 1, 2);
+        let crossing = crossing_component_pairs(&mesh, &components);
+        assert!(
+            crossing.is_empty(),
+            "sharing a bounding box is not meeting: {crossing:?}"
+        );
+    }
+
+    /// The union's own answer on that fixture: nothing to union, and two separate solids reported.
+    #[cfg(feature = "manifold")]
+    #[test]
+    fn the_union_leaves_separate_solids_alone() {
+        let near = [
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 2.0],
+        ];
+        let far = [
+            [3.0, 3.0, 3.0],
+            [1.0, 3.0, 3.0],
+            [3.0, 1.0, 3.0],
+            [3.0, 3.0, 1.0],
+        ];
+        let mut positions: Vec<Vec3> = Vec::new();
+        let mut triangles: Vec<[u32; 3]> = Vec::new();
+        for tet in [near, far] {
+            let base = positions.len() as u32;
+            positions.extend(tet.iter().map(|p| v(p[0], p[1], p[2])));
+            for t in [[0u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] {
+                triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+            }
+        }
+        let mut mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let before = mesh.triangles.clone();
+        let components = crate::repair::triangle_components(&mesh);
+        let outcome = union_closed_components(&mut mesh, &components);
+        assert_eq!(
+            outcome,
+            Some((0, 0, 2)),
+            "two solids that share a bounding box and meet nowhere are two parts"
+        );
+        assert_eq!(mesh.triangles, before, "and nothing is rewritten to say so");
+    }
+
+    /// Two boxes that penetrate each other are one object, and are left in the operand set.
+    #[test]
+    fn boxes_that_penetrate_are_one_object() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(2.0, 2.0, 2.0));
+        let (more_positions, more_triangles) = box_mesh(v(1.0, 1.0, 1.0), v(3.0, 3.0, 3.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let components = crate::repair::triangle_components(&mesh);
+        let crossing = crossing_component_pairs(&mesh, &components);
+        assert_eq!(crossing.len(), 1, "the two boxes cross: {crossing:?}");
+    }
+
+    /// A shell inside another one, touching nothing, is not a crossing either: a union of a solid
+    /// with a solid inside it fills the void, and that is a different object, not a merged one.
+    #[test]
+    fn a_nested_shell_is_not_a_crossing() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(4.0, 4.0, 4.0));
+        let (more_positions, more_triangles) = box_mesh(v(1.0, 1.0, 1.0), v(2.0, 2.0, 2.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let components = crate::repair::triangle_components(&mesh);
+        assert!(
+            crossing_component_pairs(&mesh, &components).is_empty(),
+            "a shell inside another does not cross it"
+        );
+    }
 }

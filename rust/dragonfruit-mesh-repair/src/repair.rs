@@ -713,7 +713,7 @@ fn repair_passes(
         begin!("union_overlapping_parts");
         let t = std::time::Instant::now();
         let before_union = crate::evaluate::evaluate(&mesh);
-        let (unioned, candidate) = union_groups(&mesh, options);
+        let (unioned, candidate, separate) = union_groups(&mesh, options);
 
         let after_union = crate::evaluate::evaluate(&candidate);
         // Accepted on what a union is for: it merges solids. The test used to demand that bad
@@ -757,7 +757,7 @@ fn repair_passes(
             "union_overlapping_parts",
             if accepted { unioned } else { 0 },
             Some(format!(
-                "solids unioned {unioned}, parts {} -> {}, bad edges {} -> {}, loops {} -> {}, triangles {} -> {}, degenerate {} -> {}",
+                "solids unioned {unioned}, parts {} -> {}, bad edges {} -> {}, loops {} -> {}, triangles {} -> {}, degenerate {} -> {}{}",
                 structure_before_union.connected_components,
                 structure_after_union.connected_components,
                 before_union.bad_edges,
@@ -767,7 +767,14 @@ fn repair_passes(
                 structure_before_union.triangle_count,
                 structure_after_union.triangle_count,
                 structure_before_union.degenerate_triangles,
-                structure_after_union.degenerate_triangles
+                structure_after_union.degenerate_triangles,
+                if separate > 0 {
+                    format!(
+                        ", {separate} solid(s) left separate: they are closed, they share a bounding box with another solid, and no triangle of one crosses a triangle of the other, so they are parts of a plate rather than pieces of one object"
+                    )
+                } else {
+                    String::new()
+                }
             )),
             t
         );
@@ -2802,7 +2809,7 @@ fn nesting_depth_is_odd(
 /// It cannot construct a component that is not already manifold, and keeps those verbatim. That is
 /// why the split has to run before it: the split is what makes each surface constructible.
 #[cfg(feature = "manifold")]
-fn union_groups(mesh: &IndexedMesh, options: &ResolvedOptions) -> (usize, IndexedMesh) {
+fn union_groups(mesh: &IndexedMesh, options: &ResolvedOptions) -> (usize, IndexedMesh, usize) {
     let mut candidate = mesh.clone();
     let classification = classify_and_reorder_model_support_triangles(
         &mut candidate,
@@ -2818,6 +2825,7 @@ fn union_groups(mesh: &IndexedMesh, options: &ResolvedOptions) -> (usize, Indexe
     ];
     let mut recombined: Vec<[u32; 3]> = Vec::with_capacity(candidate.triangles.len());
     let mut unioned = 0usize;
+    let mut separate = 0usize;
     for group in groups {
         if group.is_empty() {
             continue;
@@ -2828,8 +2836,15 @@ fn union_groups(mesh: &IndexedMesh, options: &ResolvedOptions) -> (usize, Indexe
         };
         let components = triangle_components(&part);
         match crate::topology_passes::union_closed_components(&mut part, &components) {
-            Some((count, _)) => {
+            Some((count, _, apart)) => {
                 unioned += count;
+                separate += apart;
+                if count == 0 {
+                    // Nothing was unioned, so nothing about this group's mesh changed: recombining a
+                    // rebuilt copy of it would only be a place for the surfaces to differ.
+                    recombined.extend_from_slice(&group);
+                    continue;
+                }
                 if part.positions.len() > candidate.positions.len() {
                     let tail: Vec<Vec3> = part.positions[candidate.positions.len()..].to_vec();
                     candidate.positions.extend_from_slice(&tail);
@@ -2846,7 +2861,7 @@ fn union_groups(mesh: &IndexedMesh, options: &ResolvedOptions) -> (usize, Indexe
     // it belongs: it merges duplicate faces into existence early enough for the double-face stage to count
     // them as duplicates and cull them, which on that model cost 11,148 faces and took its parts from 43 to
     // 239. The pipeline's last act is that same weld, one stage later, after every pass has had its say.
-    (unioned, candidate)
+    (unioned, candidate, separate)
 }
 
 /// Whether a two-face edge is a winding disagreement: both faces traverse it the same way.

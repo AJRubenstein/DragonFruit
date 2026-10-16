@@ -344,6 +344,29 @@ passes last ran, so it was not provably a repeat. The tests that remain are the 
 
 ## Open questions
 
+- **A plate of parts, and the pass that would have merged it.** `Untitled2.stl` is not one model: it is
+  a print plate of **25 parts** (the slicer's own count; 29 closed shells by the engine's, the extra
+  ones being shells inside shells — two of them are the inner and outer surface of the same object,
+  +2,358,243 and −4,836,120 of signed volume at the same centre). Every shell is closed: 0 boundary
+  edges and 0 non-manifold edges across all 29, so the file's problem is not shape at all.
+
+  Two things follow from it being a plate. The first is that the *verdict* on it was read wrong: "the
+  surface is inside-out, signed volume −26,062" is a sum over 25 parts of which **11 of the 25 larger
+  ones are individually inverted**, and a total is not a property of any part. The second is that the
+  union would have merged it: `union_overlapping_parts` picked operands by *bounding box* overlap, and
+  a plate shares one box across most of its pairs (266 of 406), so every part went to the boolean at
+  once — and the stage would have been *kept*, because what it is accepted on is a falling part count.
+  Operands are decided on surface contact now (`crossing_component_pairs`: a triangle of one crossing a
+  triangle of the other), and the stage note says how many solids it left separate.
+
+  What the repair does *not* fix on this file is the same 1,389 edges it did not fix before: they are
+  same-direction edges inside 13 of the parts, 39 to 361 each, on closed shells with no boundary and no
+  non-manifold edges. `orient_components` flips 0 faces and the rounds report `defects 1389 -> 1389`,
+  so it is the class the plan already recorded for this file — a component whose cycles demand an odd
+  flip, which is what a doubled or self-crossing surface leaves behind. Those parts carry **45,214
+  self-intersecting triangles** between them, which is the same work as the crossings pass above and
+  the reason this file is the one of 128 that does not come out `fully_repaired`.
+
 - **The hole patch.** The reference does not fan a loop flat: it solves a patch in a mesh of its own,
   with the rim edges marked and a solver behind it. What that solver does differently is *not yet
   identified* — the interval-DP criterion is the same recurrence as ours (minimise area, penalise

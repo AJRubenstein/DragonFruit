@@ -274,6 +274,17 @@ So it also carries a size budget: triangles within 10% of the count it started w
 degenerate faces within 0.1% of the triangle count or 64, whichever is larger. COOKIE_b4's
 union — the one that makes that file read as repaired — adds 4.3% and 126, and stays.
 
+**Its operands are decided on contact, not on bounding boxes.** The rule used to be "the boxes
+overlap", chosen because a shared box may still be a disjoint pair, and so it erred in the safe
+direction — it did not. A print plate of separate parts shares one bounding box across most of its
+pairs (measured on `Untitled2.stl`, 25 parts: 266 of 406 pairs), so that rule handed the boolean
+every part at once. `Manifold::batch_union` answers a set of separate solids with the union of them,
+so the pass would have merged the user's parts into one object *and been kept for it*, because what
+it is accepted on is a falling part count. What decides an operand now is `crossing_component_pairs`:
+a triangle of one solid crossing a triangle of the other. Solids that meet only at a vertex (a pinch,
+which `split_pinched_vertices` owns) and solids that merely nest (a union with a cavity fills the
+cavity) are not operands. The stage note says how many solids it left separate and why.
+
 `split_non_manifold_edges` has the same shape of problem and a worse one. It judges itself
 on the volume not moving, and it was comparing the volume of a mesh that *arrived* with
 boundary edges to one whose rims it had just filled. Those are different measurements —
