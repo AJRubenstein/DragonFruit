@@ -117,6 +117,7 @@ function makeReport(overrides?: {
     model_triangle_count: null,
     residual_issues: [],
     fully_repaired: false,
+    rebuilt: false,
     cancelled: false,
     total_ms: 0,
   };

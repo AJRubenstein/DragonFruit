@@ -75,6 +75,10 @@ export interface MeshHealthReport {
    *  Empty for a single-object mesh, which is most of them. */
   parts?: MeshRepairPartSummary[];
   fully_repaired: boolean;
+  /** True when the mesh in `post` came from the rebuild route rather than from the local pipeline:
+   *  the surface was resolved into a solid, which is a different object rather than the same one
+   *  repaired, so the before/after numbers describe two meshes rather than one mesh twice. */
+  rebuilt: boolean;
   /** True when the run stopped at a stage boundary because the caller asked. */
   cancelled: boolean;
   total_ms: number;
@@ -163,6 +167,7 @@ interface RawMeshHealthReport extends UnknownRecord {
   model_is_manifold?: unknown;
   model_manifold_status?: unknown;
   residual_issues?: unknown;
+  rebuilt?: unknown;
   fully_repaired?: unknown;
   cancelled?: unknown;
   total_ms?: unknown;
@@ -244,6 +249,7 @@ function normalizeMeshHealthReport(input: unknown): MeshHealthReport {
       : null,
     model_is_manifold: typeof raw.model_is_manifold === 'boolean' ? raw.model_is_manifold : null,
     model_manifold_status: typeof raw.model_manifold_status === 'string' ? raw.model_manifold_status : null,
+    rebuilt: asBoolean(raw.rebuilt),
     residual_issues: asStringArray(raw.residual_issues),
     parts: Array.isArray(raw.parts)
       ? raw.parts.map((entry) => {
