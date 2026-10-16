@@ -2404,6 +2404,13 @@ fn cull_interior_components(mesh: &mut IndexedMesh) -> (usize, usize) {
     }
 
     let comps = triangle_components(mesh);
+    // One component cannot be inside another. The test below asks, per face, how many times a ray
+    // from it crosses *other* components, and with one component that filter admits nothing, so every
+    // flag is false by construction. What is skipped is the BVH build and a ray cast for every face:
+    // measured on a 436k-triangle mesh, 450 ms of this stage, all of it to find nothing.
+    if comps.iter().all(|&component| component == 0) {
+        return (0, 0);
+    }
     let interior = compute_interior_face_flags_against_other_components(mesh, &comps);
     let n_comps = comps.iter().copied().max().unwrap_or(0) as usize + 1;
 
