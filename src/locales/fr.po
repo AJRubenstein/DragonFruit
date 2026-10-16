@@ -7192,7 +7192,7 @@ msgstr ""
 msgid "Reopen {0}"
 msgstr "Rouvrir {0}"
 
-#: src/components/organisms/modals/MeshRepairModals.tsx:384
+#: src/components/organisms/modals/MeshRepairModals.tsx:383
 #: src/components/scene/MeshRepairConfirmModal.tsx:80
 #: src/components/ui/EditorContextMenu.tsx:116
 msgid "Repair"
@@ -7270,10 +7270,6 @@ msgstr ""
 #: src/components/organisms/modals/MeshRepairModals.tsx:275
 #: src/components/organisms/modals/MeshRepairModals.tsx:291
 msgid "Repairing Mesh"
-msgstr ""
-
-#: src/components/organisms/modals/MeshRepairModals.tsx:383
-msgid "Repairing…"
 msgstr ""
 
 #: src/components/organisms/modals/MeshRepairModals.tsx:332
