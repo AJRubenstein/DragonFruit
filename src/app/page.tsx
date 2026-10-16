@@ -76,7 +76,7 @@ import { resolveEntirePlateExportBaseName } from '@/features/export/logic/export
 import { SlicingPanel, type SliceIntent } from '@/features/slicing/components/SlicingPanel';
 import { joinSliceOutputPath } from '@/features/slicing/plateSliceNaming';
 import { PrintingPanel } from '@/features/printing/components/PrintingPanel';
-import { usePrintingPreviewManager, type PrintingPreviewManagerDeps } from '@/features/printing/usePrintingPreviewManager';
+import { usePrintingPreviewManager } from '@/features/printing/usePrintingPreviewManager';
 import { useEditorToasts, useTrailingMount } from '@/features/notifications/useEditorToasts';
 import { plateNumberPlaceholder } from '@/features/scene/plates/plateMessages';
 import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
@@ -1371,9 +1371,6 @@ export default function Home() {
     point: null,
   });
 
-  const printingPreviewDepsRef = React.useRef<PrintingPreviewManagerDeps>({
-    printingPreviewTargetResolution: null,
-  });
   const activeSliceProfileFingerprint = sliceProfileFingerprint(activePrinterProfile?.id, activeMaterialProfile?.id);
   const slicedPlatesView = useSlicedPlates({
     activePlateId: scene.activePlateId,
@@ -1444,12 +1441,13 @@ export default function Home() {
     printingPreviewVisualTransform,
     printingPreviewCursor,
     usePrintingSettledHiResCanvas,
+    printingPreviewTargetResolution,
   } = usePrintingPreviewManager({
     scene,
     activePrinterProfile,
     printingPreviewTotalLayers,
     layerPreviewUrlAt,
-    deps: printingPreviewDepsRef,
+    printingArtifact,
   });
 
   const defaultHolePunchState = React.useMemo<HolePunchPanelState>(() => ({
@@ -2630,33 +2628,6 @@ export default function Home() {
     displayedLayer: printingDisplayedLayer,
     isPrinting: scene.mode === 'printing',
   });
-
-  const printingPreviewTargetResolution = React.useMemo(() => {
-    const printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
-    const printerHeight = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionY ?? 0));
-    const pixelSizeX = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.x ?? 1));
-    const pixelSizeY = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.y ?? 1));
-    const hasPrintableArtifact = (printingArtifact?.outputName ?? '').trim().length > 0;
-
-    if (!hasPrintableArtifact || printerWidth <= 0 || printerHeight <= 0) {
-      return null;
-    }
-
-    return {
-      widthPx: printerWidth,
-      heightPx: printerHeight,
-      viewportWidth: printerWidth * pixelSizeX,
-      viewportHeight: printerHeight * pixelSizeY,
-    };
-  }, [
-    activePrinterProfile?.display?.resolutionX,
-    activePrinterProfile?.display?.resolutionY,
-    activePrinterProfile?.pixelSize?.x,
-    activePrinterProfile?.pixelSize?.y,
-    printingArtifact?.outputName,
-  ]);
-
-  printingPreviewDepsRef.current.printingPreviewTargetResolution = printingPreviewTargetResolution;
 
   const hasPrintingWorkspaceData = printingPreviewTotalLayers > 0 && printingArtifact !== null;
 
