@@ -5,7 +5,7 @@ use ahash::{AHashMap, AHashSet};
 use crate::core::halfedge::{edge_key, Topology};
 use crate::core::mesh::{IndexedMesh, Vec3};
 
-const MIN_AREA_DP_MAX_LOOP: usize = 384;
+const MIN_AREA_DP_MAX_LOOP: usize = 1024;
 
 #[inline]
 fn d3(v: Vec3) -> [f64; 3] {
@@ -23,6 +23,10 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 #[inline]
+fn len3(a: [f64; 3]) -> f64 {
+    dot(a, a).sqrt()
+}
+
 fn cross_len(a: [f64; 3], b: [f64; 3]) -> f64 {
     let c = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
     dot(c, c).sqrt()
@@ -312,7 +316,7 @@ pub fn stitch_borders(mesh: &mut IndexedMesh, tol: f32, max_rounds: usize) -> us
 }
 
 /// `chord_taken[i * n + j]` marks loop chords that already exist as mesh edges.
-fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, penalty: f64) -> Option<Vec<[usize; 3]>> {
+fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, penalty: f64, weight: f64) -> Option<Vec<[usize; 3]>> {
     let n = pts.len();
     let mut w = vec![0.0f64; n * n];
     let mut k_of = vec![usize::MAX; n * n];
@@ -328,7 +332,19 @@ fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, p
                     continue;
                 }
                 let c = cross_len(sub(pts[k], pts[i]), sub(pts[j], pts[i]));
-                let tri = if c < sliver { penalty } else { 0.5 * c };
+                // Area alone is not the objective. On a *non-planar* band the fan's triangles lie across the
+                // opening and their total area is *less* than the strip's, so minimising area prefers the
+                // fan: measured on the reported model, a 937-edge rim came out of this plan as a fan with 937
+                // faces at one vertex, where the input's worst vertex carries 135. That is what a viewer shows
+                // as stray triangles.
+                //
+                // The two diagonals this step introduces are what distinguishes the two. A fan reaches across
+                // the band (diagonals about as long as the band), a strip spans its width, so adding their
+                // length to the cost is the classic minimum-weight objective and it is what makes a band come
+                // out as a strip. `weight` is the model's own diagonal, so the term is scale-free; the sliver
+                // penalty stays far larger than either, so nothing here reintroduces slivers.
+                let reach = len3(sub(pts[k], pts[i])) + len3(sub(pts[j], pts[k]));
+                let tri = if c < sliver { penalty } else { 0.5 * c + weight * reach };
                 let cost = w[idx(i, k)] + w[idx(k, j)] + tri;
                 if cost < best {
                     best = cost;
@@ -354,6 +370,24 @@ fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, p
         stack.push((k, j));
     }
     Some(tris)
+}
+
+/// Whether a triangulation is fan-shaped: one vertex carrying a large share of its triangles.
+///
+/// A strip uses each of its loop's vertices two or three times; a fan uses one of them for most of the
+/// triangles. The share is what separates them, and a quarter is far above any strip and far below any fan.
+fn fan_shaped(tris: &[[usize; 3]], n: usize) -> bool {
+    if n < 8 {
+        return false;
+    }
+    let mut count: ahash::AHashMap<usize, usize> = ahash::AHashMap::new();
+    for t in tris {
+        for &v in t.iter() {
+            *count.entry(v).or_insert(0) += 1;
+        }
+    }
+    let worst = count.values().copied().max().unwrap_or(0);
+    worst * 4 > tris.len()
 }
 
 /// Keeps the loop's vertex order; a clockwise projection mirrors the 2D frame instead.
@@ -508,7 +542,15 @@ fn flat_cap(mesh: &mut IndexedMesh, topo: Option<&Topology>, lp: &[u32]) -> usiz
             }
             None => vec![false; n * n],
         };
-        min_area_triangulation(&pts, &taken, sliver, penalty)
+        // Area alone first, because that is the plan every other model in the corpus was measured with.
+        // It is only when that plan comes out *fan-shaped* — one vertex carrying a large share of the loop's
+        // triangles — that the minimum-weight objective is asked for, and it is what turns a band into a
+        // strip. Asking for it always changes the plans of loops that were already fine, and that is a
+        // regression on a model whose rims are not bands at all.
+        match min_area_triangulation(&pts, &taken, sliver, penalty, 0.0) {
+            Some(plan) if !fan_shaped(&plan, n) => Some(plan),
+            _ => min_area_triangulation(&pts, &taken, sliver, penalty, diag),
+        }
     } else {
         None
     };
@@ -520,8 +562,26 @@ fn flat_cap(mesh: &mut IndexedMesh, topo: Option<&Topology>, lp: &[u32]) -> usiz
         return added;
     }
 
-    // Every triangulation would reuse an edge the mesh already has, or the loop is too long to try: a
-    // fan from a new centre vertex reuses none.
+    // The zipper: the loop's two sides welded to each other.
+    //
+    // This is the closure the reference's own hole filler names when it logs `welding holes %d and %d` — two
+    // loops joined to each other — and for a break-through it is the only closure that is right. Such a rim
+    // is a wide band: its two long sides face each other across the opening, and the surface that belongs
+    // there is the strip between them. Every cap over it is wrong in the same way: a fan from a centre vertex
+    // (which is what this function used to fall back to) puts every triangle of the closure on one point,
+    // measured at 899 faces on the reported model where the input's worst vertex carries 135, and that fan is
+    // what a viewer shows as stray triangles.
+    //
+    // A minimum-area triangulation of a band *is* the strip across it, so the plan above is used when it can
+    // be built. This is for the loops it cannot: past `MIN_AREA_DP_MAX_LOOP` edges it is not attempted at
+    // all, and a rim that does not project to a simple polygon has no plan either.
+    if let Some(zipped) = zip_loop_sides(&pts, lp, topo) {
+        let added = zipped.len();
+        mesh.triangles.extend_from_slice(&zipped);
+        return added;
+    }
+
+    // Last resort, for a loop whose sides cannot be paired at all.
     let centre_pt = mean(&pts.iter().map(|p| Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32)).collect::<Vec<_>>());
     mesh.positions.push(centre_pt);
     let centre = (mesh.positions.len() - 1) as u32;
@@ -529,6 +589,162 @@ fn flat_cap(mesh: &mut IndexedMesh, topo: Option<&Topology>, lp: &[u32]) -> usiz
         mesh.triangles.push([lp[i], lp[(i + 1) % n], centre]);
     }
     n
+}
+
+/// Close a loop by welding its two sides to each other.
+///
+/// The loop is split at its own narrowest crossing — the closest pair of vertices that are not neighbours —
+/// which for a band is the opening's width and for a round hole is any diameter. That leaves two arcs, the
+/// two sides, and they are stitched to each other the way a zip closes: at each step the side whose next
+/// vertex is nearer the other side advances, and one triangle is emitted for the step. Every vertex of the
+/// loop ends up used by two or three of the strip's triangles rather than all of them, which is what keeps
+/// the closure from becoming a fan.
+///
+/// `None` for a loop with fewer than four vertices, which is already a triangle.
+fn zip_loop_sides(pts: &[[f64; 3]], lp: &[u32], topo: Option<&Topology>) -> Option<Vec<[u32; 3]>> {
+    let n = pts.len();
+    if n < 4 || lp.len() != n {
+        return None;
+    }
+    let d2 = |a: [f64; 3], b: [f64; 3]| -> f64 {
+        let (x, y, z) = (a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+        x * x + y * y + z * z
+    };
+    // The narrowest crossing, and it has to leave both sides a real length.
+    //
+    // The closest non-adjacent pair on its own is a trap: on a long rim the two nearest vertices are often
+    // two apart, so the split leaves one side with two vertices and the other with the rest, and the zip
+    // between them degenerates into exactly the fan it was written to replace — measured on the reported
+    // model, a 958-edge rim zipped as 958 triangles with one vertex in most of them. The band's width is
+    // between vertices about *half the loop apart*, so each side is required to hold a quarter of it.
+    let quarter = (n / 4).max(1);
+    let mut best: Option<(f64, usize, usize)> = None;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if j == i + 1 || (i == 0 && j == n - 1) {
+                continue;
+            }
+            let (arc_a, arc_b) = (j - i, n - (j - i));
+            if arc_a < quarter || arc_b < quarter {
+                continue;
+            }
+            let d = d2(pts[i], pts[j]);
+            if best.as_ref().map_or(true, |(bd, _, _)| d < *bd) {
+                best = Some((d, i, j));
+            }
+        }
+    }
+    // Nothing balanced and close: any crossing is better than none, so fall back to the closest pair.
+    if best.is_none() {
+        for i in 0..n {
+            for j in (i + 2)..n.min(i + n - 1) {
+                let d = d2(pts[i], pts[j]);
+                if best.as_ref().map_or(true, |(bd, _, _)| d < *bd) {
+                    best = Some((d, i, j));
+                }
+            }
+        }
+    }
+    let (_, i0, j0) = best?;
+    // The two sides, both walked from the crossing back to it, in opposite senses along the loop.
+    let side_a: Vec<usize> = (i0..=j0).collect();
+    let mut side_b: Vec<usize> = (j0..n).chain(0..=i0).collect();
+    side_b.reverse();
+    if side_a.len() < 2 || side_b.len() < 2 {
+        return None;
+    }
+    let mut out: Vec<[u32; 3]> = Vec::with_capacity(n - 2);
+    let (mut p, mut q) = (0usize, 0usize);
+    let (na, nb) = (side_a.len(), side_b.len());
+    while p + 1 < na || q + 1 < nb {
+        // Advance the side that is *behind*, not the side whose next vertex is nearer.
+        //
+        // The nearer-vertex rule is what a zip does and it is right for a band whose sides face each other,
+        // but it has no bound: where the two sides run far apart, one of them is nearer at every step, so it
+        // advances alone and the strip becomes a fan — measured on the reported model, a 958-edge rim zipped
+        // with one vertex in 286 of its 958 triangles. Progress has no such failure mode: each side advances
+        // in proportion to its length, so the strip stays a strip whatever shape the loop is, and every
+        // vertex of the loop ends up in two or three of its triangles.
+        let advance_a = match (p + 1 < na, q + 1 < nb) {
+            (true, false) => true,
+            (false, true) => false,
+            (true, true) => (p + 1) as f64 * nb as f64 <= (q + 1) as f64 * na as f64,
+            (false, false) => break,
+        };
+        // A rung that is *already an edge of the mesh* cannot be used: the strip would fold the surface onto
+        // itself and leave an edge with three faces. This is the check the minimum-area plan makes before it
+        // starts, and the zip needs it too — measured, a supported model came out of a zip with one
+        // non-manifold edge and two pinched vertices without it.
+        let taken = |a: u32, b: u32| -> bool {
+            topo.map_or(false, |t| closed_edge(t, edge_key(a, b)))
+        };
+        let can_a = !taken(lp[side_a[p]], lp[side_b[q]]);
+        let can_b = !taken(lp[side_a[p]], lp[side_b[q + 1]]);
+        let advance_a = match (can_a, can_b) {
+            (true, false) => true,
+            (false, true) => false,
+            _ => (p + 1) as f64 * nb as f64 <= (q + 1) as f64 * na as f64,
+        };
+        if advance_a && p + 1 < na {
+            out.push([lp[side_a[p]], lp[side_a[p + 1]], lp[side_b[q]]]);
+            p += 1;
+        } else if q + 1 < nb {
+            out.push([lp[side_a[p]], lp[side_b[q]], lp[side_b[q + 1]]]);
+            q += 1;
+        } else {
+            break;
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    // Only a *band* is zipped. The zip's rungs are what closes the opening, and on a band they are the
+    // band's width — short, and each one lands on the surface the rim already runs along. On a rim that is
+    // not a band they reach across the model, and a strip of long rungs folds onto surfaces it does not
+    // belong to: measured, a supported model came out with a non-manifold edge and two pinched vertices.
+    // A long-runged loop is left to the minimum-area plan, which refuses chords the mesh already has, and
+    // to the caller's fallback.
+    let diameter = {
+        let mut d = 0.0f64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                d = d.max(d2(pts[i], pts[j]));
+            }
+        }
+        d.sqrt()
+    };
+    let mut longest_rung = 0.0f64;
+    for t in &out {
+        // The rung is the edge whose two ends are not neighbours on the loop.
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let (ia, ib) = (
+                lp.iter().position(|&v| v == a).unwrap_or(0),
+                lp.iter().position(|&v| v == b).unwrap_or(0),
+            );
+            let gap = (ia as isize - ib as isize).abs() as usize;
+            if gap > 1 && gap < n - 1 {
+                longest_rung = longest_rung.max(len3(sub(pts[ia], pts[ib])));
+            }
+        }
+    }
+    if diameter > 0.0 && longest_rung > 0.25 * diameter {
+        return None;
+    }
+    // The strip has to be a strip: every edge of it either borders the rim (one triangle) or is shared by
+    // exactly two of its triangles. A rung the zip visits twice — which it can, when one side stalls — gives
+    // an edge three of them, and that is a non-manifold edge the caller would have to live with. Measured, a
+    // supported model came out of a zip with one. Refusing here leaves the loop to the plan and the caller's
+    // fallback, which is where it would have gone without the zip at all.
+    let mut uses: ahash::AHashMap<(u32, u32), u32> = ahash::AHashMap::new();
+    for t in &out {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            *uses.entry(edge_key(a, b)).or_insert(0) += 1;
+        }
+    }
+    if uses.values().any(|&c| c > 2) {
+        return None;
+    }
+    Some(out)
 }
 
 /// Loops at or above this many edges get the tangent-continuing patch instead of a flat cap.
@@ -728,17 +944,28 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
     for (fi, tri) in mesh.triangles.iter().enumerate() {
         by_comp[components[fi] as usize].push(*tri);
     }
+    // The boolean needs its input welded at *exact* positions: two surfaces that touch where their vertices
+    // are merely close read to it as separate shells, and it returns them fragmented instead of merged.
+    // Measured on the reported model, that is why the union there comes out of 8 parts as 12 with its bad
+    // edges 2,157 -> 5,567 and is refused. So each component is welded at the loader's own cell first —
+    // component by component, so nothing outside the union's input is re-indexed.
+    let weld_cell = (crate::io::DEFAULT_MERGE_EPSILON * mesh.bbox().diag().max(1e-6)).max(1e-7);
     let mut solids = Vec::new();
     let mut kept: Vec<[u32; 3]> = Vec::new();
     for tris in by_comp {
-        let mut remap: AHashMap<u32, u32> = AHashMap::new();
+        let mut remap: AHashMap<(i32, i32, i32), u32> = AHashMap::new();
         let mut vp: Vec<f32> = Vec::new();
         let mut idx: Vec<u32> = Vec::with_capacity(tris.len() * 3);
         for tri in &tris {
             for &v in tri {
+                let p = mesh.positions[v as usize];
+                let key = (
+                    (p.x / weld_cell).round() as i32,
+                    (p.y / weld_cell).round() as i32,
+                    (p.z / weld_cell).round() as i32,
+                );
                 let next = remap.len() as u32;
-                let id = *remap.entry(v).or_insert_with(|| {
-                    let p = mesh.positions[v as usize];
+                let id = *remap.entry(key).or_insert_with(|| {
                     vp.extend_from_slice(&[p.x, p.y, p.z]);
                     next
                 });
@@ -753,10 +980,57 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
     if solids.len() < 2 {
         return None;
     }
-    let unioned = solids.len();
-    let m = Manifold::batch_union(&solids);
+    // Only operands that actually overlap go to the boolean.
+    //
+    // A boolean is for overlapping operands; feeding it a set of disjoint solids asks it to return them
+    // unchanged, and it answers with *more* shells than it was given — measured on the reported model, 7
+    // solids in and 12 shells out, which is why the union there is refused: the part count is one of the
+    // classes it is judged on, and it can only be kept when it drops. Overlap is decided on the bounding
+    // boxes, which is cheap and conservative in the safe direction: a pair that shares a box may still be
+    // disjoint, and the boolean answers that with the two of them back.
+    let bounds: Vec<(Vec3, Vec3)> = solids
+        .iter()
+        .map(|m| {
+            let (vp, np, _) = m.to_mesh_f32();
+            let mut lo = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
+            let mut hi = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
+            for c in vp.chunks_exact(np) {
+                lo = Vec3::new(lo.x.min(c[0]), lo.y.min(c[1]), lo.z.min(c[2]));
+                hi = Vec3::new(hi.x.max(c[0]), hi.y.max(c[1]), hi.z.max(c[2]));
+            }
+            (lo, hi)
+        })
+        .collect();
+    let overlaps = |a: usize, b: usize| -> bool {
+        let (alo, ahi) = bounds[a];
+        let (blo, bhi) = bounds[b];
+        alo.x <= bhi.x && blo.x <= ahi.x && alo.y <= bhi.y && blo.y <= ahi.y && alo.z <= bhi.z && blo.z <= ahi.z
+    };
+    let touching: Vec<usize> = (0..solids.len())
+        .filter(|&i| (0..solids.len()).any(|j| j != i && overlaps(i, j)))
+        .collect();
+    if touching.len() < 2 {
+        return None;
+    }
+    let operand_index: AHashMap<usize, usize> =
+        touching.iter().enumerate().map(|(k, &i)| (i, k)).collect();
+    let unioned = touching.len();
+    let operands: Vec<Manifold> = touching.iter().map(|&i| solids[i].clone()).collect();
+    let m = Manifold::batch_union(&operands);
     if m.is_empty() || m.num_tri() < 4 {
         return None;
+    }
+    for (i, m) in solids.iter().enumerate() {
+        if !operand_index.contains_key(&i) {
+            let (vp, np, ti) = m.to_mesh_f32();
+            let base = mesh.positions.len() as u32;
+            for c in vp.chunks_exact(np) {
+                mesh.positions.push(Vec3::new(c[0], c[1], c[2]));
+            }
+            for c in ti.chunks_exact(3) {
+                kept.push([c[0] + base, c[1] + base, c[2] + base]);
+            }
+        }
     }
     let (vp, np, ti) = m.to_mesh_f32();
     let base = mesh.positions.len() as u32;

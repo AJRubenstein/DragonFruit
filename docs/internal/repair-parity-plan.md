@@ -387,6 +387,224 @@ passes last ran, so it was not provably a repeat. The tests that remain are the 
   exactly what the reference's own script has no stage for either, so matching it means reporting the
   defect rather than removing it.
 
+## The corpus, after the zipper
+
+The Downloads folder holds 171 STL files. 128 of them are 20 MB or under and were run end to end; the 43
+larger ones were skipped for time (the largest is 2 GB).
+
+**128 ran, 0 failed, 127 came out `fully_repaired`.** The one that did not is Untitled2: 1,389 inconsistent
+winding edges before the repair and **1,389 after** — the repair is a no-op on it, and that is the winding
+*cycle* the loop cannot settle, the same class as `Gusano_de_Dune_70%` in the open questions.
+
+**No fan was created on any of them.** The worst vertex's valence, which is what a fan is:
+
+| file | input | ours |
+| --- | --- | --- |
+| corbu | 135 | **135** (the reference's own output is 136) |
+| STL_ST_BaseDesign_Supported | 275 | 275 |
+| C3D-RERF-Scene | 206 | 206 |
+| A4Tv2_4015_Ducts [alternate] | 180 | 180 |
+| Untitled2 | 84 | 88 |
+
+Every high valence in the corpus is the input's, carried through, not made. Two files carry a valence of
+167 from their inputs and one (an ASCII STL the quick loader could not read) reports 355 — unmeasured against
+its input, and the one case still to check.
+
+Time is 2 s for a small part and about 60 s for a 20 MB one.
+
+## The stray triangles: closed, against the reference's own numbers
+
+The fan is gone. Measured the way it was found — the worst vertex's valence — against the reference's own
+output of the same file:
+
+| | triangles | worst vertex | vertices over valence 30 |
+| --- | --- | --- | --- |
+| input | 961,504 | 135 | 343 |
+| the reference | 1,076,192 | 136 | 735 |
+| this engine, before | 1,020,820 | **937** | 346 |
+| this engine, now | 1,020,850 | **135** | 345 |
+
+Two changes, both in the closure a hole gets, and both measured:
+
+- **The plan is asked for a minimum-*weight* triangulation when the minimum-area one comes out fan-shaped.**
+  Area alone is not the objective a band needs: on a *non-planar* rim the fan's triangles lie across the
+  opening and their total area is *less* than the strip's, so minimising area prefers the fan — a 937-edge
+  rim came out of this plan with 937 faces at one vertex. Adding the lengths of the diagonals each step
+  introduces is the classic minimum-weight objective, and it is what makes a band come out as a strip. It is
+  asked for only when the area-only plan is fan-shaped (one vertex in more than a quarter of the triangles),
+  because asking always changes plans that were already fine, and that is a regression on a model whose rims
+  are not bands.
+- **A rim with no plan is zipped, not fanned.** Past `MIN_AREA_DP_MAX_LOOP` edges no plan is attempted, and
+  the closure fell through to a fan from a new centre vertex — verbatim, *"a fan from a new centre vertex
+  reuses none"*. It is now a **zipper**: the loop is split at its narrowest crossing and its two sides are
+  welded to each other, one triangle per step, advancing the side that is *behind* rather than the one whose
+  next vertex is nearer. The nearer-vertex rule has no bound — where the two sides run far apart one advances
+  alone and the strip becomes the fan again (measured: one vertex in 286 of 958 triangles) — while progress
+  keeps every vertex of the loop in two or three triangles. This is the operation the reference's hole filler
+  logs when it closes a break-through (`welding holes %d and %d`), and the split has to leave both sides a
+  real length or the zip degenerates the same way.
+
+  The zip is refused unless it is a band (its rungs short against the loop's diameter), unless none of its
+  rungs is already an edge of the mesh, and unless its own triangles form a strip (no edge used three times).
+  Each refusal was added because a supported model came out of a zip with a non-manifold edge and two pinched
+  vertices without it.
+
+Corpus: all five files `fully_repaired`, 0/0/0/0 in memory and re-read from the file, no regression — corbu
+1,020,850 triangles, poussin and 3DBenchy unchanged, `COOKIE_b4` unchanged at 43 parts, Harbinger 3,071,482
+with 3,135 parts against 3,136.
+
+What is left on corbu is the union, not the closure: **5 components against the reference's 2** (outer surface
+and cavity), and 98.733 of volume against its 97.928.
+
+## The stray triangles are a fan, and it is one pass
+
+Traced by vertex valence, which is what a fan *is*: a normal mesh vertex has six faces, a fan's centre has
+as many as the loop has edges. The input's worst vertex carries **135** faces. The repair's carries **899**,
+at (317.4, −0.4, 7.8) — inside the region a render shows as stray triangles.
+
+Per stage, and then per step inside it:
+
+```
+[valence] orient_components 135   ...   [valence] settle 135 -> 899
+[settle]  stitch 135 | noise_shells 135 | holes_all 135 -> 899
+```
+
+So it is one step: **the second pass's residual hole fill**, `holes_all` with no cap, closing a large
+break-through loop. Everything before it is clean, and the input has no such vertex at all.
+
+The closure of a large loop is a fan, and the code says so. `flat_cap` skips its minimum-area plan above 384
+edges, and its last resort is verbatim *"a fan from a new centre vertex reuses none"* — one point with the
+whole opening fanned off it. Below 384 edges the plan runs, and a minimum-area triangulation of a long thin
+band is itself a fan, which is why the size of the fan moved when the threshold was moved.
+
+Two repairs were tried and neither is sufficient, both reverted:
+
+- **Ear clipping as the fallback.** It walks the rim instead of collapsing it to a point, and it does help —
+  the worst vertex went 899 to 806 — but a wide break-through's rim does not project to a simple polygon, so
+  the clip returns nothing for exactly the loops that matter and the fan runs anyway. Routing every loop
+  through it (threshold 384 to 0) moved the fan rather than removing it: 15 vertices over valence 100 where
+  there were 7.
+- **A plane for a folded rim.** Newell's normal of a folded rim cancels to zero and the clip bailed before
+  it started; deriving the plane from the loop's largest non-degenerate triple changed no output at all.
+
+**What is left is the operator itself.** A break-through's rim is a wide band, and no cap over it is right —
+not a fan, not a minimum-area plan, not an ear clip. It needs a **strip built along the rim**, which is the
+join the reference's tool set carries and this engine does not have. That is the piece to build, and the
+valence probe above is its acceptance test: the repaired mesh's worst vertex should be no worse than the
+input's 135.
+
+## How the reference closes a break-through: it joins the rims
+
+This is the missing operator, and it was in the tool list all along.
+
+The reference's repair is a defect loop with a tool set, and the set contains **a tool that joins two
+boundary loops to each other**, and one that welds cracks — its hole filler logs *welding holes %d and %d*
+when it does. A break-through — a sheet meeting a wall, which is exactly what corbu's cavity has — is closed
+by **joining the two rims to each other**, not by spanning one of them with a patch.
+
+This engine has only the spanning patch: `fill_loop_with_patch` for loops of seven edges or more, and a flat
+fan below that. So every break-through becomes a sheet, however tangent the patch is to the surface it came
+from — and on corbu that is 2,951 fills in the first pass plus 990 in the settle. Measured, the fill is not
+the problem: the patches *are* tangent (the curved-wall smoke test proves that). The problem is that they
+span a rim that should have been welded to the surface on the other side of the break.
+
+So the sheets go when a rim that runs alongside another surface is joined to it, and the tool to build is
+that join. Two candidates for finding the partner: the rim's own edges' nearest surface within the loader's
+weld cell, and the boundary loop whose vertices pair with this one — the reference logs the loops' edge
+min/max/avg/variance when it matches them, which is what its own pairing uses as the measure.
+
+## The flat sheets: what they are, and what removing them costs
+
+The sheets on corbu's right are the **fills**: the first pass separates 3,736 vertices at non-manifold
+junctions and then caps the rims that exposes — 2,951 hole faces — and the settle adds 990 more. 1,994
+faces of flat patch, inside a cavity.
+
+The reference has none because it never separates: it **unions** the overlapping parts (8 components in,
+**2** out — the outer surface and the cavity) and removes the contained faces, so there are no rims to cap.
+That is the whole of the difference, and it means the sheets cannot be tuned away: they go when the union
+works, and only then.
+
+**The union, and why ours does not.** Two things were wrong with it, both now fixed, neither sufficient:
+
+- It handed `manifold_csg` components whose vertices were merely *close* where the surfaces touch, and a
+  boolean needs them *exactly* shared. It answers that with fragmentation: measured on corbu, bad edges
+  2,157 → **5,567** and refused. Each component is now welded at the loader's own cell before the boolean,
+  component by component so nothing else is re-indexed. Bad edges now read 2,157 → 2,157.
+- It handed it *every* closed component, disjoint ones included. A boolean is for overlapping operands; the
+  disjoint ones came back as more shells than went in. Only components whose bounding boxes overlap are
+  operands now — on corbu that is 2 solids of 7.
+
+**What is left, measured, and it is not a tune.** Two *overlapping* solids still come back as four shells:
+the union reports 8 parts → 11 with 2 solids unioned, so it is still refused on the part count. The boolean
+fragments geometry that touches and is coplanar — which is precisely why the reference refines *both* sides
+before it joins and then pairs the boundary loops and merges them, rather than relying on a plain boolean.
+That join is the feature to build; nothing short of it removes the caps.
+
+No regression from either change: the corpus is unchanged, class for class, file for file — corbu 0/0/0/0,
+poussin 0/0/0/0, `COOKIE_b4` 0/0/0/0 with 43 parts and 7,648 crossings, 3DBenchy 0/0/0/0, Harbinger 0/0/0/0
+with 3,136 parts.
+
+## Measured since: three things that are not the flat sheets
+
+Each was run on corbu, against the committed build.
+
+**The absolute stitch ladder is destructive here, and the plan's earlier rejection stands.** Copied as
+plain position welds — the core's own ladder, 0.005/0.010/0.002/0.004 then 0.080 — it welds **nothing**
+(the stitch guard refuses it, which is what the earlier measurement found). Run unguarded: the 0.080 rung
+welds **453,332** vertices, the double-face cull then takes 901,864 faces, and corbu collapses from
+1,020,820 triangles to **114,860** with 167 non-manifold edges. The safe-looking 0.010 rung unguarded welds
+**132,766** vertices and leaves 79 non-manifold edges and 134 pinched vertices. The model is 13 mm with a
+million triangles, so its own edges are about 0.01 mm and a position weld at that reach eats the detail.
+The reference's step carries `Ignore Orientation: No` — it will not join vertices whose surfaces disagree —
+and that constraint is what makes 0.010 safe there. Our `weld_vertices` has no such constraint.
+
+**The hole-closing order is neutral on this file.** Closing holes only at the end, as the script does,
+gives byte-identical counters (0/0/0/0, 1,020,820 triangles, 18,561 crossings) — the same rims are filled,
+just later (34+178+37+1,745 becomes 212+1,745). So the flat sheets are not a question of *when* the fill
+runs; they are the fills themselves, 1,994 faces of them, plus the crossings below.
+
+**The crossings pass is refused, and the reason is one class.** `--resolve-self-intersections` finds 20,279
+pairs, refines 13,048 faces and adds 30,710 vertices, then judges the result worse and reverts it. Measured
+on the refined mesh *with* the junctions it creates repaired:
+
+| | before | refined |
+| --- | --- | --- |
+| non-manifold edges | 1,428 | **502** |
+| pinched vertices | 1,460 | **987** |
+| winding edges | 29 | **2,688** |
+| defect total | 5,083 | 22,444 |
+
+So the refinement is a large win on two classes and a catastrophe on the third, which is the only reason it
+is refused.
+
+**Where the winding goes, traced to the edge.** Classifying all 2,688 same-direction edges of the refined
+mesh by what produced their two faces:
+
+| edge | count |
+| --- | --- |
+| between a refined face and an untouched neighbour | **2,051** |
+| between two refined faces | 639 |
+| between two untouched faces | 33 (the pass's input has 29) |
+| inside one refined face | 1 |
+
+and **none of them has a new vertex on it** — every one joins two original vertices. The per-face sub-triangle
+orientation is not the fault: the 2D basis is right-handed (`v = n × u`, so `u × v = n`) and every
+sub-triangle is forced to the positive 2D orientation before it is emitted, which is why a normal test finds
+only 9 faces with a reversed sub-triangle.
+
+**It is a T-junction.** The refinement splits a face's edges at the intersection segments' endpoints and
+registers those endpoints as shared vertices — but only for faces it refines. 10,558 faces are *skipped*, and
+a skipped face keeps its whole edge while its refined neighbour has the split one. That is one side of the
+join refined and the other not, which is precisely what the reference's own refinement step exists to
+prevent — it refines the mesh so *both* sides' boundary loops match in edge length before anything is joined
+(the behaviour and the log lines are in the evidence file) — and it is why their joins come out clean instead
+of slivered.
+
+**The fix, therefore, is propagation, not a tolerance:** after corefining, every new vertex inserted on a
+shared edge has to be inserted into the neighbouring triangle as well, splitting it. That is a bounded piece
+of work with a clear acceptance test — the refined mesh must read 0 same-direction edges outside the ones it
+started with — and it is the same shape as the reference's own refine-both-sides step.
+
 ## Next steps
 
 0. **Closed: the round trip, and corbu and Harbinger with it.** The pipeline ends welded, the weld's damage
