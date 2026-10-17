@@ -34,11 +34,16 @@ pub struct SolidRemeshOptions {
     pub remove_noise_shells: bool,
     /// Taubin smoothing passes over the resolved surface, each a pair of runs.
     ///
-    /// The resolve is a boolean of a lattice-ish input, and it carries the stair-steps of whatever the
-    /// boolean built: measured on `Gusano_de_Dune_70%.stl`, its rebuild had 13.3% of its edges over 30°
-    /// where the input had 7.4%, and 7.2% over 60° against 3.7% — what reads as "a little rough". The
-    /// step is derived from the mesh's own median edge, so this scales with the model rather than with a
-    /// constant, and zero leaves the raw resolve.
+    /// **Zero by default, and the default is measured.** Smoothing moves the vertices of the resolve's
+    /// own triangulation, and where that triangulation is long and thin the movement drags the
+    /// neighbouring curvature inward: on `Gusano_de_Dune_70%.stl` it is the difference between a flat
+    /// bottom and one crossed by fold lines, and between pocket rims that read as circles and ones
+    /// ringed by starbursts. Rendered, not counted: the surface's median aspect over that bottom is
+    /// 4.60 with two passes and 4.78 without, so the numbers say it barely moves while the picture
+    /// says it is the whole artefact. It also costs two passes over the mesh, 18.6 s against 16.5 s.
+    ///
+    /// A caller that wants it can ask. The stair-steps this was written for belong to a lattice-ish
+    /// input, which is what [`crate::shrink_wrap`] produces, not to a resolve.
     pub smooth_iterations: usize,
     /// Simplify before resolving, on [`crate::repair::simplify_to_error`]'s scale: 0.001 removes
     /// about a quarter of a dense model, 0.005 removes most of it, and 0.05 leaves 190 triangles of
@@ -70,7 +75,7 @@ impl Default for SolidRemeshOptions {
         Self {
             fill_holes_max_edges: usize::MAX,
             remove_noise_shells: true,
-            smooth_iterations: 2,
+            smooth_iterations: 0,
             tolerance: 0.0002,
         }
     }

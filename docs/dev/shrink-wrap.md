@@ -213,6 +213,20 @@ broke through, making the two one component, and the scan reports only fragments
 1.016 million. Separating that case needs a per-face test, distinguishing air that is enclosed
 (cavity) from air that is unbounded (outside), rather than a component test.
 
+### Smoothing the resolve costs two passes and buys nothing measured
+
+Taubin smoothing moves the vertices of the resolve's own triangulation, and a rebuild that is only a
+resolve comes out of it with fold lines across flat regions and starbursts at the pocket rims that are
+not there without it. The numbers do not see it: that bottom's median aspect is 4.60 with two passes
+and 4.78 without. The render does. It also costs two passes over the mesh, 18.6 s against 16.5 s on
+`Gusano_de_Dune_70%.stl`, so the default is zero and a caller that wants it can ask.
+
+Two limits on that, both measured. It is not the whole artefact: the mesh the app shows goes through
+the repair pipeline after the rebuild, and repairing a clean, unsmoothed rebuild re-creates the folds
+with only 2,006 faces changed, so the repair's own passes are the larger source and are still to be
+tracked down, one stage at a time. And the stair-steps this was written for belong to a lattice-ish
+input, which is what [`crate::shrink_wrap`] produces, not to a resolve.
+
 ### The resolve works at the model's own scale
 
 Manifold's default tolerance is an absolute 1.2e-5 whatever the model is, and on a presupported plate
