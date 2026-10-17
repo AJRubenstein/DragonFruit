@@ -1,6 +1,7 @@
 import React from 'react';
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 import type { PrinterProfile } from '@/features/profiles/profileStore';
+import type { SliceExportArtifact } from '@/features/slicing/sliceExportOrchestrator';
 
 type SceneManager = ReturnType<typeof useSceneCollectionManager>;
 
@@ -11,33 +12,52 @@ type PreviewTargetResolution = {
   viewportHeight: number;
 } | null;
 
-/** Late/cross-cutting dependencies the preview manager reads at event/effect
- *  time via deps.current.*. `printingPreviewTargetResolution` is owned by Home
- *  (it derives from the active printer profile + slicing artifact) and is
- *  defined AFTER this hook's call site, so it is injected through the deps ref
- *  to break the ordering cycle. Read inside the hi-res settled-canvas effect. */
-export type PrintingPreviewManagerDeps = {
-  /** Read at effect time; not reactive. Owned by Home (profile + artifact). */
-  printingPreviewTargetResolution: PreviewTargetResolution;
-};
-
 export type UsePrintingPreviewManagerOptions = {
   scene: SceneManager;
   activePrinterProfile: PrinterProfile | null | undefined;
   /** Total sliced layers; owned by Home/slicing. */
   printingPreviewTotalLayers: number;
-  /** Per-layer preview PNG object URLs; owned by Home/slicing loader. */
-  printingLayerPreviewUrls: Array<string | null>;
-  deps: React.MutableRefObject<PrintingPreviewManagerDeps>;
+  /** The preview of a layer of the plate on screen, once read; owned by `useSlicedPlates`. */
+  layerPreviewUrlAt: (layerNumber: number) => string | null;
+  /** The slice of the plate on screen; owned by `useSlicedPlates`. */
+  printingArtifact: SliceExportArtifact | null;
 };
 
 export function usePrintingPreviewManager({
   scene,
   activePrinterProfile,
   printingPreviewTotalLayers,
-  printingLayerPreviewUrls,
-  deps,
+  layerPreviewUrlAt,
+  printingArtifact,
 }: UsePrintingPreviewManagerOptions) {
+  /** The printer's display, in pixels and in millimetres: what a layer image is drawn onto. */
+  const printingPreviewTargetResolution = React.useMemo<PreviewTargetResolution>(() => {
+    const printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
+    const printerHeight = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionY ?? 0));
+    const pixelSizeX = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.x ?? 1));
+    const pixelSizeY = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.y ?? 1));
+    const hasPrintableArtifact = (printingArtifact?.outputName ?? '').trim().length > 0;
+
+    if (!hasPrintableArtifact || printerWidth <= 0 || printerHeight <= 0) {
+      return null;
+    }
+
+    return {
+      widthPx: printerWidth,
+      heightPx: printerHeight,
+      viewportWidth: printerWidth * pixelSizeX,
+      viewportHeight: printerHeight * pixelSizeY,
+    };
+  }, [
+    activePrinterProfile?.display?.resolutionX,
+    activePrinterProfile?.display?.resolutionY,
+    activePrinterProfile?.pixelSize?.x,
+    activePrinterProfile?.pixelSize?.y,
+    printingArtifact?.outputName,
+  ]);
+  const targetViewportWidth = printingPreviewTargetResolution?.viewportWidth;
+  const targetViewportHeight = printingPreviewTargetResolution?.viewportHeight;
+
   // ---- moved: stateA ----
   const [printingSelectedLayer, setPrintingSelectedLayer] = React.useState(1);
   const [printingDisplayedLayer, setPrintingDisplayedLayer] = React.useState(1);
@@ -174,8 +194,8 @@ export function usePrintingPreviewManager({
   // ---- moved: selectedUrlPngLoaded ----
   const selectedPrintingLayerPreviewUrl = React.useMemo(() => {
     if (printingDisplayedLayer < 1) return null;
-    return printingLayerPreviewUrls[printingDisplayedLayer - 1] ?? null;
-  }, [printingLayerPreviewUrls, printingDisplayedLayer]);
+    return layerPreviewUrlAt(printingDisplayedLayer);
+  }, [layerPreviewUrlAt, printingDisplayedLayer]);
 
   const isPrintingPngLoaded = React.useMemo(() => {
     if (!selectedPrintingLayerPreviewUrl) return false;
@@ -569,8 +589,8 @@ export function usePrintingPreviewManager({
 
       const naturalWidth = Math.max(1, image.naturalWidth || 1);
       const naturalHeight = Math.max(1, image.naturalHeight || 1);
-      const logicalSourceWidth = Math.max(1, deps.current.printingPreviewTargetResolution?.viewportWidth ?? naturalWidth);
-      const logicalSourceHeight = Math.max(1, deps.current.printingPreviewTargetResolution?.viewportHeight ?? naturalHeight);
+      const logicalSourceWidth = Math.max(1, targetViewportWidth ?? naturalWidth);
+      const logicalSourceHeight = Math.max(1, targetViewportHeight ?? naturalHeight);
       const baseScale = Math.min(viewportWidth / logicalSourceWidth, viewportHeight / logicalSourceHeight);
       const drawWidth = logicalSourceWidth * baseScale;
       const drawHeight = logicalSourceHeight * baseScale;
@@ -597,14 +617,15 @@ export function usePrintingPreviewManager({
     printingPreviewMirrorScale.y,
     printingPreviewPan.x,
     printingPreviewPan.y,
-    deps.current.printingPreviewTargetResolution?.viewportHeight,
-    deps.current.printingPreviewTargetResolution?.viewportWidth,
+    targetViewportHeight,
+    targetViewportWidth,
     printingPreviewZoom,
     selectedPrintingLayerPreviewUrl,
     usePrintingSettledHiResCanvas,
   ]);
 
   return {
+    printingPreviewTargetResolution,
     printingSelectedLayer,
     setPrintingSelectedLayer,
     printingDisplayedLayer,
