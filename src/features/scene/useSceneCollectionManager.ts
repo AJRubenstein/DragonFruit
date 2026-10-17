@@ -6307,7 +6307,7 @@ export function useSceneCollectionManager(options?: {
         throw new Error('Not a VOXL file: the VOXL binary header is missing.');
       }
 
-      const parsed = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
+      const parsed = await parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
       const document: VoxlDocumentV1 = parsed.document;
       const resolvedMeshBytes: Map<string, Uint8Array> = parsed.meshBytes;
       const resolvedOriginalMeshBytes = parsed.originalMeshBytes;

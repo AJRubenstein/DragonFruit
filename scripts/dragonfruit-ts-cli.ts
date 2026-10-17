@@ -60,9 +60,9 @@ let LOADED_MESH_BYTES = new Map<string, Uint8Array>();
 // decimated"; the slice path prefers these over the decimated MESH bytes so it
 // slices the same geometry the GUI would.
 let LOADED_ORIG_BYTES = new Map<string, Uint8Array>();
-function loadVoxl(path: string): VoxlDocumentV1 {
+async function loadVoxl(path: string): Promise<VoxlDocumentV1> {
   const raw = readFileSync(path);
-  const result = parseVoxlAuto(raw);
+  const result = await parseVoxlAuto(raw);
   LOADED_MESH_BYTES = result.meshBytes;
   LOADED_ORIG_BYTES = result.originalMeshBytes ?? new Map();
   return result.document;
@@ -220,7 +220,7 @@ async function sceneAddModel(args: ReturnType<typeof parseArgs>): Promise<void> 
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene add-model <scene.voxl> --mesh <path>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const meshPath = requireFlag(args.flags, 'mesh');
   const name = optionalFlag(args.flags, 'name') ?? basename(meshPath, '.stl');
   const posStr = optionalFlag(args.flags, 'position');
@@ -260,7 +260,7 @@ async function sceneRemoveModel(args: ReturnType<typeof parseArgs>): Promise<voi
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene remove-model <scene.voxl> --id <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const id = requireFlag(args.flags, 'id');
 
   const before = doc.models.length;
@@ -286,11 +286,11 @@ async function sceneRemoveModel(args: ReturnType<typeof parseArgs>): Promise<voi
   }
 }
 
-function sceneListModels(args: ReturnType<typeof parseArgs>): void {
+async function sceneListModels(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene list-models <scene.voxl>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
 
   if (jsonOutput(args.flags)) {
     console.log(JSON.stringify({
@@ -317,7 +317,7 @@ async function sceneTransformModel(args: ReturnType<typeof parseArgs>): Promise<
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene transform-model <scene.voxl> --id <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const id = requireFlag(args.flags, 'id');
   const model = doc.models.find((m) => m.id === id);
   if (!model) throw new Error(`Model '${id}' not found`);
@@ -343,7 +343,7 @@ async function sceneDuplicate(args: ReturnType<typeof parseArgs>): Promise<void>
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene duplicate <scene.voxl> --id <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const id = requireFlag(args.flags, 'id');
   const count = parseInt(optionalFlag(args.flags, 'count') ?? '1', 10);
   const offsetStr = optionalFlag(args.flags, 'offset') ?? '20,0,0';
@@ -381,7 +381,7 @@ async function supportAddTrunk(args: ReturnType<typeof parseArgs>): Promise<void
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-trunk <scene.voxl> --model-id <id> --position x,y,z');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const modelId = requireFlag(args.flags, 'model-id');
   const posStr = requireFlag(args.flags, 'position');
   const pos = parseVec3(posStr);
@@ -427,7 +427,7 @@ async function supportAddBranch(args: ReturnType<typeof parseArgs>): Promise<voi
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-branch <scene.voxl> --model-id <id> --parent-knot-id <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const modelId = requireFlag(args.flags, 'model-id');
   const parentKnotId = requireFlag(args.flags, 'parent-knot-id');
   const diameter = parseFloat(optionalFlag(args.flags, 'diameter') ?? '1.0');
@@ -461,7 +461,7 @@ async function supportAddLeaf(args: ReturnType<typeof parseArgs>): Promise<void>
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-leaf <scene.voxl> --model-id <id> --parent-knot-id <id> --contact x,y,z --normal x,y,z');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const modelId = requireFlag(args.flags, 'model-id');
   const parentKnotId = requireFlag(args.flags, 'parent-knot-id');
   const contact = parseVec3(requireFlag(args.flags, 'contact'));
@@ -497,7 +497,7 @@ async function supportAddBrace(args: ReturnType<typeof parseArgs>): Promise<void
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-brace <scene.voxl> --model-id <id> --start-knot <id> --end-knot <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const modelId = requireFlag(args.flags, 'model-id');
   const startKnotId = requireFlag(args.flags, 'start-knot');
   const endKnotId = requireFlag(args.flags, 'end-knot');
@@ -526,7 +526,7 @@ async function supportAddKnot(args: ReturnType<typeof parseArgs>): Promise<void>
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-knot <scene.voxl> --parent-shaft-id <id> --position x,y,z');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const parentShaftId = requireFlag(args.flags, 'parent-shaft-id');
   const pos = parseVec3(requireFlag(args.flags, 'position'));
   const t = parseFloat(optionalFlag(args.flags, 't') ?? '0.5');
@@ -553,7 +553,7 @@ async function supportRemove(args: ReturnType<typeof parseArgs>): Promise<void> 
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support remove <scene.voxl> --id <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const id = requireFlag(args.flags, 'id');
   const s = doc.supports;
 
@@ -607,11 +607,11 @@ async function supportRemove(args: ReturnType<typeof parseArgs>): Promise<void> 
   }
 }
 
-function supportList(args: ReturnType<typeof parseArgs>): void {
+async function supportList(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support list <scene.voxl>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const s = doc.supports;
 
   if (jsonOutput(args.flags)) {
@@ -639,11 +639,11 @@ function supportList(args: ReturnType<typeof parseArgs>): void {
 // Scene load/save (raw VOXL dump)
 // ---------------------------------------------------------------------------
 
-function sceneLoad(args: ReturnType<typeof parseArgs>): void {
+async function sceneLoad(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene load <scene.voxl>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
 
   if (jsonOutput(args.flags)) {
     console.log(JSON.stringify(doc, null, 2));
@@ -665,7 +665,7 @@ async function supportUpdate(args: ReturnType<typeof parseArgs>): Promise<void> 
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support update <scene.voxl> --id <id> [--diameter N] [--position x,y,z] [--tip-diameter N]');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const id = requireFlag(args.flags, 'id');
   const s = doc.supports;
   let found = false;
@@ -748,7 +748,7 @@ async function sceneGroup(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene group <scene.voxl> --ids id1,id2 [--name "Group"]');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const idsStr = requireFlag(args.flags, 'ids');
   const modelIds = idsStr.split(',').map((s) => s.trim());
   const name = optionalFlag(args.flags, 'name') ?? 'Group';
@@ -770,7 +770,7 @@ async function sceneUngroup(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene ungroup <scene.voxl> --group-id <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const groupId = requireFlag(args.flags, 'group-id');
   const groups = getGroups(doc).filter((g) => g.id !== groupId);
   setGroups(doc, groups);
@@ -783,11 +783,11 @@ async function sceneUngroup(args: ReturnType<typeof parseArgs>): Promise<void> {
   }
 }
 
-function sceneListGroups(args: ReturnType<typeof parseArgs>): void {
+async function sceneListGroups(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene list-groups <scene.voxl>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const groups = getGroups(doc);
 
   if (jsonOutput(args.flags)) {
@@ -808,7 +808,7 @@ async function sceneCenterXY(args: ReturnType<typeof parseArgs>): Promise<void> 
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene center-xy <scene.voxl> --id <model-id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const id = requireFlag(args.flags, 'id');
   const model = doc.models.find((m) => m.id === id);
   if (!model) throw new Error(`Model '${id}' not found`);
@@ -839,7 +839,7 @@ async function supportStraightenSegment(args: ReturnType<typeof parseArgs>): Pro
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support straighten-segment <scene.voxl> --id <segment-id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const segId = requireFlag(args.flags, 'id');
   const s = doc.supports;
   let found = false;
@@ -885,7 +885,7 @@ async function supportAddTwig(args: ReturnType<typeof parseArgs>): Promise<void>
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-twig <scene.voxl> --model-id <id> --contact-a x,y,z --contact-b x,y,z');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const modelId = requireFlag(args.flags, 'model-id');
   const contactA = parseVec3(requireFlag(args.flags, 'contact-a'));
   const contactB = parseVec3(requireFlag(args.flags, 'contact-b'));
@@ -927,7 +927,7 @@ async function supportAddStick(args: ReturnType<typeof parseArgs>): Promise<void
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-stick <scene.voxl> --model-id <id> --contact-a x,y,z --contact-b x,y,z');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const modelId = requireFlag(args.flags, 'model-id');
   const contactA = parseVec3(requireFlag(args.flags, 'contact-a'));
   const contactB = parseVec3(requireFlag(args.flags, 'contact-b'));
@@ -968,7 +968,7 @@ async function supportAddKickstand(args: ReturnType<typeof parseArgs>): Promise<
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: support add-kickstand <scene.voxl> --model-id <id> --base x,y,z --host-knot-id <id> --host-segment-id <id>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const modelId = requireFlag(args.flags, 'model-id');
   const basePos = parseVec3(requireFlag(args.flags, 'base'));
   const hostKnotId = requireFlag(args.flags, 'host-knot-id');
@@ -1024,7 +1024,7 @@ async function scenePlace(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene place-on-platform <scene.voxl> --id <model-id> --mesh-dir <dir>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const id = requireFlag(args.flags, 'id');
   const meshDir = optionalFlag(args.flags, 'mesh-dir') ?? dirname(resolve(voxlPath));
   const model = doc.models.find((m) => m.id === id);
@@ -1059,11 +1059,11 @@ async function scenePlace(args: ReturnType<typeof parseArgs>): Promise<void> {
 // Scene export-stl — merge models + shell out to Rust mesh export-stl
 // ---------------------------------------------------------------------------
 
-function sceneExportStl(args: ReturnType<typeof parseArgs>): void {
+async function sceneExportStl(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene export-stl <scene.voxl> --o <output.stl> --mesh-dir <dir>');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const output = requireFlag(args.flags, 'o');
   const meshDir = optionalFlag(args.flags, 'mesh-dir') ?? dirname(resolve(voxlPath));
   const visibleModels = doc.models.filter((m) => m.visible);
@@ -1140,7 +1140,7 @@ async function sceneArrange(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) throw new Error('Usage: scene arrange <scene.voxl> [--spacing 2] [--build-width-mm 218] [--build-depth-mm 122] [--mesh-dir <dir>]');
 
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const meshDir = optionalFlag(args.flags, 'mesh-dir') ?? dirname(resolve(voxlPath));
   const spacing = parseFloat(optionalFlag(args.flags, 'spacing') ?? '2.0');
   const plateW = parseFloat(optionalFlag(args.flags, 'build-width-mm') ?? '218.0');
@@ -1433,7 +1433,7 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
     ditherBitDepth: optionalFlag(args.flags, 'dither-bit-depth'),
     ditherDeviceGamma: optionalFlag(args.flags, 'dither-device-gamma'),
   });
-  const doc = loadVoxl(voxlPath);
+  const doc = await loadVoxl(voxlPath);
   const visibleModels = doc.models.filter((m) => m.visible);
 
   if (visibleModels.length === 0) throw new Error('No visible models in scene');

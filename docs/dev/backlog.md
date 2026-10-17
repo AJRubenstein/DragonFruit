@@ -429,14 +429,27 @@ mount and there is no shared cache at that layer.
 
 **What remains, in value order:**
 
-- **The container parse is 4.6 s on a 303 MB, 15-model scene** (`parseVoxlBinaryV2`,
-  `scripts/dragonfruit-ts-cli.ts scene list-models` as the harness: 66 ms to read the
-  file, 4.6 s to parse it into a document plus 782 MB of mesh views). It is a
-  synchronous main-thread block *before* any model work starts, which is what makes
-  the first second of a big scene load feel dead. It is the clearest candidate for a
-  worker in the whole import: the input is one `ArrayBuffer` (transferable, and
-  handed straight back afterwards so the mesh views stay valid on the main thread),
-  the output is the document plus offsets, and nothing in it touches the DOM.
+- **The container parse was 4.6 s on a 303 MB, 15-model scene, and is now 1.2 s
+  (2.1 s in the dev webview).** (`parseVoxlBinaryV2`; measured through
+  `scripts/dragonfruit-ts-cli.ts scene list-models` and the app's own
+  `[voxl] inflated …` line: 66 ms to read the file, the rest to inflate the mesh
+  chunks — 13 of them, 677 MB, ~1.0 s in Node and 2.06 s in the webview.) The
+  chunks are independent zlib streams, so they now inflate four at a time with the
+  platform's `DecompressionStream` instead of one at a time on the main thread.
+  **Not `fflate`'s async pool, which is what this was first written with:** the
+  webview reports `crossOriginIsolated`, and `fflate` then waits for its workers
+  through `SharedArrayBuffer`/`Atomics`, blocking the main thread the pool was
+  supposed to free. That cost 2.8-10 s of stalls at scene open and, once, a content
+  process the watchdog had to declare dead — with blob workers accumulating (12 of
+  them). The native stream is off-thread for real, streams instead of cloning each
+  buffer back, and is faster besides (70 ms against 93 ms for 24 MB).
+  What is left: the inflate itself (~650 MB/s aggregate, four streams), and one
+  copy per chunk as the inflated bytes come back to the main thread — 677 MB of
+  it. Both disappear if the *native loader* inflates: a VOXL's mesh chunks sit at
+  known offsets in a file on disk, so `load_mesh_bytes` could take
+  `(path, offset, length)` and inflate where it already parses, with nothing
+  crossing into the JS heap at all. That is the next structural step if scene loads
+  are attacked again.
 - **The overlay build itself (~1.9 s per 500k-triangle model) is unavoidable
   main-thread work while the setting is on.** It is the only remaining
   multi-second op in the load path; a worker (the repo already runs workers for

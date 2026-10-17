@@ -74,7 +74,7 @@ test('an enabled setting bakes a base64 scene at the declared path', async () =>
   assert.deepEqual([...bytes.subarray(0, 4)], VOXL_V2_MAGIC);
 
   // Readable as a VOXL document, carrying the scene the job was sliced from.
-  const parsed = parseVoxlAuto(bytes);
+  const parsed = await parseVoxlAuto(bytes);
   assert.deepEqual(parsed.document.models.map((model) => model.id), ['m1', 'm2']);
   assert.deepEqual(parsed.document.models[0].transform.position, { x: 3, y: -4, z: 5 });
   assert.ok(Array.isArray(parsed.document.supports.roots));

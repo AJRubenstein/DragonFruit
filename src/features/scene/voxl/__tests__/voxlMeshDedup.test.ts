@@ -68,7 +68,7 @@ test('dedup: N identical meshes → 1 chunk, V3, all models resolve to the same 
   assert.equal(readVersion(bin), VOXL_V3, 'deduped file must be V3');
   assert.equal(countMeshChunks(bin), 1, '3 identical meshes must collapse to 1 chunk');
 
-  const { document, meshBytes: out } = parseVoxlBinaryV2(bin);
+  const { document, meshBytes: out } = await parseVoxlBinaryV2(bin);
   assert.equal(document.models.length, 3, 'all 3 models must survive');
   for (const id of ['m0', 'm1', 'm2']) {
     assert.deepEqual([...(out.get(id) ?? [])], [...MESH_A], `${id} resolves to the shared mesh`);
@@ -83,7 +83,7 @@ test('mixed: two unique meshes + one duplicate → 2 chunks, V3, correct mapping
   assert.equal(countMeshChunks(bin), 2);
   assert.equal(readVersion(bin), VOXL_V3);
 
-  const { meshBytes: out } = parseVoxlBinaryV2(bin);
+  const { meshBytes: out } = await parseVoxlBinaryV2(bin);
   assert.deepEqual([...out.get('a')!], [...MESH_A]);
   assert.deepEqual([...out.get('b')!], [...MESH_B]);
   assert.deepEqual([...out.get('a2')!], [...MESH_A], 'duplicate maps to owner A, not B');
@@ -104,7 +104,7 @@ test('missing SHA → never deduped (cannot prove identity), stays V2', async ()
   const bin = await serializeVoxlDocumentV2(input(['a', 'a2']), meshBytes);
   assert.equal(readVersion(bin), VOXL_V2);
   assert.equal(countMeshChunks(bin), 2, 'without hashes, identical meshes are NOT collapsed');
-  const { meshBytes: out } = parseVoxlBinaryV2(bin);
+  const { meshBytes: out } = await parseVoxlBinaryV2(bin);
   assert.deepEqual([...out.get('a')!], [...MESH_A]);
   assert.deepEqual([...out.get('a2')!], [...MESH_A]);
 });

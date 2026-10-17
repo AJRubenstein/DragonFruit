@@ -65,7 +65,7 @@ test('VOXL V2 binary round-trip persistence preserves isSupportGeometry and link
   ]);
 
   const binary = await serializeVoxlDocumentV2(input, meshBytes);
-  const parsedResult = parseVoxlBinaryV2(binary);
+  const parsedResult = await parseVoxlBinaryV2(binary);
 
   assert.equal(parsedResult.document.models.length, 2);
   const parsedM1 = parsedResult.document.models.find((m) => m.id === 'supp_mesh_1');
@@ -79,12 +79,12 @@ test('VOXL V2 binary round-trip persistence preserves isSupportGeometry and link
   assert.equal(parsedM2.isSupportGeometry, false);
   assert.equal(parsedM2.linkGroupId, 'link-grp-abc');
 
-  const autoResult = parseVoxlAuto(binary);
+  const autoResult = await parseVoxlAuto(binary);
   assert.equal(autoResult.document.models[0].isSupportGeometry, true);
   assert.equal(autoResult.document.models[0].linkGroupId, 'link-grp-abc');
 });
 
-test('toggleSupportDesignation action state toggling logic', () => {
+test('toggleSupportDesignation action state toggling logic', async () => {
   type SimpleModel = {
     id: string;
     isSupportGeometry?: boolean;

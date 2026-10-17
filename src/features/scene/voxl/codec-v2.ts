@@ -30,6 +30,8 @@
  */
 
 import { unzlibSync, zlib as zlibAsync } from 'fflate';
+import { runWithConcurrency } from '@/utils/runWithConcurrency';
+import { logToNativeFile } from '@/utils/nativeLog';
 import {
   VOXL_MAGIC,
   type BuildVoxlDocumentInput,
@@ -986,6 +988,9 @@ export async function serializeVoxlDocumentV2Streaming(
 
 // ─── V2 Binary Reader ─────────────────────────────────────────────────────────
 
+/** Mesh chunks inflated at once while parsing (see `parseVoxlBinaryV2`). */
+const BULK_INFLATE_CONCURRENCY = 4;
+
 class LazyOriginalMeshBytesMap extends Map<string, Uint8Array> {
   private chunks: Map<string, PrecompressedChunk>;
   
@@ -1025,13 +1030,52 @@ class LazyOriginalMeshBytesMap extends Map<string, Uint8Array> {
 }
 
 /**
+ * Inflate one chunk with the platform's own decompressor.
+ *
+ * `DecompressionStream`, not `fflate`'s async pool: the app's webview reports
+ * `crossOriginIsolated`, and `fflate` then waits for its workers through
+ * `SharedArrayBuffer`/`Atomics` — blocking the very main thread the pool was
+ * supposed to free. Measured at scene open, that showed up as 2.8-10 s stalls and
+ * a wedged content process. The native stream is genuinely off-thread, streams its
+ * output instead of cloning one large buffer back, and is the faster of the two
+ * besides (70 ms against 93 ms for 24 MB in Node).
+ */
+async function inflateChunk(entry: ChunkDirEntry, raw: Uint8Array): Promise<Uint8Array> {
+  const source = new ReadableStream<BufferSource>({
+    start(controller) {
+      // `BufferSource` insists on an `ArrayBuffer`-backed view, which TS's
+      // typed-array generics cannot see through a `subarray`; the bytes are the
+      // same either way.
+      controller.enqueue(raw as BufferSource);
+      controller.close();
+    },
+  });
+  const stream = source.pipeThrough<Uint8Array>(new DecompressionStream('deflate'));
+  const inflated = new Uint8Array(await new Response(stream).arrayBuffer());
+  if (inflated.byteLength !== entry.uncompressedSize) {
+    throw new Error(
+      `VOXL V2: chunk ${entry.type}[${entry.index}] size mismatch after decompression ` +
+      `(${inflated.byteLength} of ${entry.uncompressedSize} bytes).`,
+    );
+  }
+  return inflated;
+}
+
+/**
  * Parse a VOXL V2 binary container into a `ParsedVoxlResult`.
  *
  * The returned `document` uses V1 schema shape so the rest of the app can
  * consume it uniformly.  Mesh bytes for `embedded-chunk` models are provided
  * separately in `meshBytes` to avoid base64 round-trips.
+ *
+ * **The mesh chunks are inflated in parallel, off the main thread.** A referenced
+ * MESH chunk is a whole STL payload — 782 MB across a 15-model scene, compressed
+ * in the container — and inflating them one after another was 4.6 s of that
+ * scene's load, all of it before any model work started. They are independent
+ * zlib streams, so they all go to `fflate`'s pool at once and the loops below read
+ * the resolved bytes; anything not pre-listed still inflates synchronously.
  */
-export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
+export async function parseVoxlBinaryV2(data: Uint8Array): Promise<ParsedVoxlResult> {
   if (data.length < HEADER_SIZE) {
     throw new Error('Invalid VOXL V2 file: too small.');
   }
@@ -1080,7 +1124,13 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
 
   // ── Chunk reader helpers ──────────────────────────────────────────────
 
+  /** Chunk bytes inflated ahead of the loops, keyed `type:index`. */
+  const preinflated = new Map<string, Uint8Array>();
+  const chunkKey = (type: string, index: number) => `${type}:${index}`;
+
   function readChunk(entry: ChunkDirEntry): Uint8Array {
+    const ready = preinflated.get(chunkKey(entry.type, entry.index));
+    if (ready) return ready;
     const raw = data.subarray(entry.offset, entry.offset + entry.compressedSize);
 
     if (entry.compression === COMPRESSION_ZLIB) {
@@ -1115,6 +1165,35 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
   if (!supports) throw new Error('VOXL V2: missing SUPP chunk.');
 
   const extensions = readJsonChunk<Record<string, unknown>>(CHUNK_EXTD) ?? {};
+
+  // ── Inflate the bulk chunks, in parallel ──────────────────────────────
+  // The JSON above is small and stays synchronous. Everything below it is mesh
+  // data: one STL per MESH chunk, plus the V3.1 position snapshots. Scheduling
+  // them together is what turns a serial 4.6 s into the pool's throughput; ORIG
+  // chunks stay packed on purpose (they are decompressed on demand, if at all).
+  const bulkChunks = entries.filter(
+    (entry) => entry.compression === COMPRESSION_ZLIB
+      && (entry.type === CHUNK_MESH
+        || entry.type === CHUNK_HSRC
+        || entry.type === CHUNK_CAVT
+        || entry.type === CHUNK_PSRC),
+  );
+  if (bulkChunks.length > 0) {
+    const started = performance.now();
+    // Four at a time: the chunks are 20-48 MB compressed and up to 129 MB
+    // inflated, so a whole scene in flight at once peaks at most of a gigabyte
+    // for no extra throughput.
+    await runWithConcurrency(bulkChunks, BULK_INFLATE_CONCURRENCY, async (entry) => {
+      const raw = data.subarray(entry.offset, entry.offset + entry.compressedSize);
+      preinflated.set(chunkKey(entry.type, entry.index), await inflateChunk(entry, raw));
+    });
+    const bulkBytes = bulkChunks.reduce((sum, entry) => sum + entry.uncompressedSize, 0);
+    const timing =
+      `[voxl] inflated ${bulkChunks.length} bulk chunks (${(bulkBytes / 1_000_000).toFixed(0)} MB) ` +
+      `in ${(performance.now() - started).toFixed(0)}ms`;
+    console.log(timing);
+    void logToNativeFile('info', timing);
+  }
 
   // ── Resolve MESH chunks ───────────────────────────────────────────────
 

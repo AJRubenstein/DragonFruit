@@ -211,7 +211,7 @@ test('VOXL support roundtrip preserves imported leaf and brace normalization int
         supports,
     }, new Map());
 
-    const parsed = parseVoxlBinaryV2(binary).document;
+    const parsed = (await parseVoxlBinaryV2(binary)).document;
 
     resetStore();
     resetKickstandsInState();
