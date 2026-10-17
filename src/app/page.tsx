@@ -251,7 +251,7 @@ import { computeHighPrecisionArrangeResultWorker } from '@/features/scene/arrang
 import { plateCascadeOffsetMm } from '@/features/scene/plates/plateCascade';
 
 // Domain Features
-import { useSceneCollectionManager, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useNativeSpaceMouseLifecycle } from '@/components/scene/camera/useNativeSpaceMouseLifecycle';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
@@ -2718,8 +2718,6 @@ export default function Home() {
     const plateId = context?.plateId ?? scene.activePlateId;
     recordPrintingSlice(artifact, context);
     setShowPrintingResliceModal(false);
-    // Push a "Sliced Scene" marker to history so we can detect changes after this point
-    pushSceneSlicedMarker();
     setPrintingSendStatusText(null);
     setPrintingSendProgress(0);
     setPrintingSendStageText(null);
