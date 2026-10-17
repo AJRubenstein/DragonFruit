@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
     analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_auto_with_progress,
-    repair_separate_parts, repair_with_progress,
+    repair_separate_parts,
     shrink_wrap_with_progress, solid_remesh_with_progress, tet_surface_with_progress, HolePunchOptions,
     HollowOptions, HollowSession, IndexedMesh, RepairOptions, ShrinkWrapOptions, SolidRemeshOptions,
     TetWrapOptions,

@@ -140,9 +140,7 @@ struct ResolvedOptions {
     /// a cap of their own — see the settle stage for why.
     residual_fill_max_edges: usize,
     cut_unsatisfiable_edges: bool,
-    allow_rebuild: bool,
     keep_largest_n_components: Option<usize>,
-    repair_orientation: bool,
     resolve_self_intersections: bool,
     assume_support_geometry: Option<bool>,
 }
@@ -217,9 +215,7 @@ impl RepairOptions {
                 .unwrap_or_else(|| derive_fill_cap(mesh)),
             residual_fill_max_edges: self.fill_holes_max_edges.unwrap_or(usize::MAX),
             cut_unsatisfiable_edges: self.cut_unsatisfiable_edges,
-            allow_rebuild: self.allow_rebuild,
             keep_largest_n_components: self.keep_largest_n_components,
-            repair_orientation: self.repair_orientation,
             resolve_self_intersections: self.resolve_self_intersections,
             assume_support_geometry: self.assume_support_geometry,
         }
@@ -448,11 +444,6 @@ impl Envelope {
             max,
             slack: (crate::solid_remesh::median_edge_length(mesh) * 0.01).max(1e-6),
         }
-    }
-
-    /// Whether every vertex is still inside the box, give or take the slack.
-    fn holds(&self, mesh: &IndexedMesh) -> bool {
-        mesh.positions.iter().all(|p| self.contains(p, self.slack))
     }
 
     fn contains(&self, p: &Vec3, slack: f32) -> bool {
@@ -825,7 +816,7 @@ pub fn repair_separate_parts(
     // The parts do not meet, so nothing done to one of them can change the answer for another: they
     // are independent pipelines and they run at once.
     //
-    let mut parts: Vec<PartOutcome> = groups
+    let parts: Vec<PartOutcome> = groups
         .par_iter()
         .enumerate()
         .map(|(index, group)| {
@@ -1407,11 +1398,11 @@ fn repair_passes(
         // always refused, which is why the crossings pass has never once landed. The holes are the pass's own
         // damage, and this pipeline's answer to damage is to repair it and judge the pair — the same thing
         // that made the weld land.
-        let opened = if stats.refined_faces > 0 {
-            crate::holes::holes_all(&mut mesh, usize::MAX)
-        } else {
-            0
-        };
+        if stats.refined_faces > 0 {
+            // The count is the pass's own damage report, not a result: the loops are closed here and the
+            // verdict below is what decides whether the pass lands.
+            crate::holes::holes_all(&mut mesh, usize::MAX);
+        }
         let volume_moved = (mesh.signed_volume() - volume_before).abs()
             > volume_before.abs().max(1e-9) * 0.01;
         let refused =

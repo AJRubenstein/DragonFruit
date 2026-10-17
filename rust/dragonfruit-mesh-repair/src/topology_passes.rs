@@ -391,67 +391,6 @@ fn fan_shaped(tris: &[[usize; 3]], n: usize) -> bool {
     worst * 4 > tris.len()
 }
 
-/// Keeps the loop's vertex order; a clockwise projection mirrors the 2D frame instead.
-fn ear_clip_preserving_order(pts: &[[f64; 3]]) -> Vec<[usize; 3]> {
-    let n = pts.len();
-    let mut nrm = [0.0f64; 3];
-    for i in 0..n {
-        let (a, b) = (pts[i], pts[(i + 1) % n]);
-        nrm[0] += (a[1] - b[1]) * (a[2] + b[2]);
-        nrm[1] += (a[2] - b[2]) * (a[0] + b[0]);
-        nrm[2] += (a[0] - b[0]) * (a[1] + b[1]);
-    }
-    let up = if nrm[2].abs() < 0.9 * dot(nrm, nrm).sqrt() { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
-    let u = {
-        let c = [nrm[1] * up[2] - nrm[2] * up[1], nrm[2] * up[0] - nrm[0] * up[2], nrm[0] * up[1] - nrm[1] * up[0]];
-        let l = dot(c, c).sqrt().max(1e-30);
-        [c[0] / l, c[1] / l, c[2] / l]
-    };
-    let v = {
-        let c = [nrm[1] * u[2] - nrm[2] * u[1], nrm[2] * u[0] - nrm[0] * u[2], nrm[0] * u[1] - nrm[1] * u[0]];
-        let l = dot(c, c).sqrt().max(1e-30);
-        [c[0] / l, c[1] / l, c[2] / l]
-    };
-    let mut p2: Vec<(f64, f64)> = pts.iter().map(|p| (dot(*p, u), dot(*p, v))).collect();
-    let area: f64 = (0..n).map(|i| p2[i].0 * p2[(i + 1) % n].1 - p2[(i + 1) % n].0 * p2[i].1).sum();
-    if area < 0.0 {
-        for p in p2.iter_mut() {
-            p.0 = -p.0;
-        }
-    }
-    let convex = |a: (f64, f64), b: (f64, f64), c: (f64, f64)| (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0) > 0.0;
-    let inside = |p: (f64, f64), a: (f64, f64), b: (f64, f64), c: (f64, f64)| {
-        let s = |p: (f64, f64), a: (f64, f64), b: (f64, f64)| (p.0 - b.0) * (a.1 - b.1) - (a.0 - b.0) * (p.1 - b.1);
-        let (d1, d2, d3) = (s(p, a, b), s(p, b, c), s(p, c, a));
-        !((d1 < 0.0 || d2 < 0.0 || d3 < 0.0) && (d1 > 0.0 || d2 > 0.0 || d3 > 0.0))
-    };
-    let mut rem: Vec<usize> = (0..n).collect();
-    let mut tris = Vec::with_capacity(n - 2);
-    while rem.len() > 3 {
-        let m = rem.len();
-        let mut found = false;
-        for i in 0..m {
-            let (ia, ib, ic) = (rem[(i + m - 1) % m], rem[i], rem[(i + 1) % m]);
-            if !convex(p2[ia], p2[ib], p2[ic]) {
-                continue;
-            }
-            if rem.iter().any(|&j| j != ia && j != ib && j != ic && inside(p2[j], p2[ia], p2[ib], p2[ic])) {
-                continue;
-            }
-            tris.push([ia, ib, ic]);
-            rem.remove(i);
-            found = true;
-            break;
-        }
-        if !found {
-            break;
-        }
-    }
-    for i in 1..rem.len().saturating_sub(1) {
-        tris.push([rem[0], rem[i], rem[i + 1]]);
-    }
-    tris
-}
 
 /// The normal of the face on each edge of `boundary`, in the order the loop traverses it.
 ///
@@ -666,12 +605,11 @@ fn zip_loop_sides(pts: &[[f64; 3]], lp: &[u32], topo: Option<&Topology>) -> Opti
         // with one vertex in 286 of its 958 triangles. Progress has no such failure mode: each side advances
         // in proportion to its length, so the strip stays a strip whatever shape the loop is, and every
         // vertex of the loop ends up in two or three of its triangles.
-        let advance_a = match (p + 1 < na, q + 1 < nb) {
-            (true, false) => true,
-            (false, true) => false,
-            (true, true) => (p + 1) as f64 * nb as f64 <= (q + 1) as f64 * na as f64,
-            (false, false) => break,
-        };
+        // Both sides exhausted: the strip ends here. The rule that decides which side advances is applied
+        // below, where each side is asked about its rung first.
+        if !(p + 1 < na) && !(q + 1 < nb) {
+            break;
+        }
         // A rung that is *already an edge of the mesh* cannot be used: the strip would fold the surface onto
         // itself and leave an edge with three faces. This is the check the minimum-area plan makes before it
         // starts, and the zip needs it too — measured, a supported model came out of a zip with one
