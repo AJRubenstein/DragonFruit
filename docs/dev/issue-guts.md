@@ -111,7 +111,11 @@ Two jobs, so that no job holds both the API key and write access:
 - **Classify** has `issues: read` and the `TYPESAFE_API_KEY` secret, and outputs
   the chosen labels.
 - **Label** has `issues: write` and no secret. It creates any `guts:` label
-  that does not exist yet and adds the chosen ones.
+  that does not exist yet and adds the chosen ones. It also puts back the
+  `[BUG]` or `[FEAT]` prefix on a form issue whose reporter deleted it; being in
+  the same job, a failure to classify also leaves the title alone, which makes
+  it noticed. A manual run with `dry_run` off does both, so re-running an issue
+  whose first run failed catches up on everything.
 
 ### Why untrusted text is safe here
 
