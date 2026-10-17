@@ -908,6 +908,24 @@ pub fn repair_auto_with_progress(
     options: &RepairOptions,
     mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
 ) -> RepairOutcome {
+    // The cheap exit first, before the local pipeline has cost anything: a mesh arriving with a spread
+    // winding defect is one the local passes cannot settle, so the rebuild is tried on the strength of
+    // the input alone. Measured on the two files the local pipeline fails, `Gusano_de_Dune_70%` arrives
+    // with 1,897 inconsistent edges and the reported plate with 1,389, against at most 355 across the
+    // 130 files it does settle. The probe skips the self-intersection count, so it costs a fraction of a
+    // second, and what it saves is the whole local pipeline: two passes and, on this file, thirty
+    // seconds.
+    //
+    // Nothing is lost when the rebuild is not kept: it is kept only when it comes out fully repaired,
+    // which does not depend on the local pipeline having run, so in that case the pipeline runs in full
+    // below and decides as it always did.
+    if options.allow_rebuild && winding_beyond_the_local_pipeline(&mesh) {
+        let baseline = Baseline::Input(crate::analysis::analyze_lightweight(&mesh));
+        if let Ok(outcome) = try_rebuild(&mesh, options, &baseline, &mut sink) {
+            return outcome;
+        }
+    }
+
     // One pass of the local pipeline, then the decision, and the settle pass only if the local result
     // is what the caller gets.
     //
@@ -930,6 +948,27 @@ pub fn repair_auto_with_progress(
     }
     rebuild_route(mesh, options, first, weld_changed, sink)
 }
+
+/// Whether the mesh carries the one defect the local pipeline cannot settle.
+///
+/// The pipeline resolves non-manifold edges by splitting them, boundaries by filling, pinches by
+/// separating, and it cuts the winding edges no assignment satisfies. What it cannot do is spread a
+/// winding defect across a surface into a consistent orientation, and that is what these files carry.
+/// Measured over the corpus and the reference files: 1,389 and 1,897 inconsistent edges on the two
+/// files it fails, at most 355 on the 130 it repairs.
+///
+/// The threshold sits between them with a margin on both sides, and it is a measurement from two
+/// failures rather than a law: re-derive it when more files fail. A false positive does not produce a
+/// wrong mesh — the rebuild is still judged on its own verdict, and the local pipeline still runs in
+/// full if it is not kept — it only means a rebuild is preferred to a local repair that might have
+/// been good enough.
+fn winding_beyond_the_local_pipeline(mesh: &IndexedMesh) -> bool {
+    crate::analysis::analyze_lightweight(mesh).inconsistent_winding_edges > LOCAL_PIPELINE_WINDING_LIMIT
+}
+
+/// Above this many inconsistent winding edges, the local pipeline will not settle a mesh. See
+/// [`winding_beyond_the_local_pipeline`] for the measurement behind it.
+const LOCAL_PIPELINE_WINDING_LIMIT: usize = 1_000;
 
 /// The largest shell's share of a mesh, when the mesh is several objects rather than one.
 ///
@@ -963,55 +1002,87 @@ fn several_objects_share(mesh: &IndexedMesh) -> Option<f64> {
 }
 
 /// The second route: rebuild the surface into a solid, repair that, and keep it only if it wins.
-fn rebuild_route(
-    mesh: IndexedMesh,
+/// What a rebuild is judged against, and what its notes say it is.
+///
+/// The route takes the local pipeline's result when there is one, and the input's own verdict when the
+/// local pipeline was skipped, which is the early exit's case. Only the notes and the numbers differ:
+/// the decision, keep the rebuild when it comes out fully repaired, consults neither.
+enum Baseline {
+    Local(Box<RepairOutcome>),
+    Input(crate::analysis::MeshAnalysis),
+}
+
+impl Baseline {
+    fn defects(&self, input: &IndexedMesh) -> crate::evaluate::MeshDefects {
+        match self {
+            Baseline::Local(local) => crate::evaluate::evaluate(&local.mesh),
+            Baseline::Input(_) => crate::evaluate::evaluate(input),
+        }
+    }
+
+    /// How the note describes it. The local pipeline reduces the total before it is measured, the
+    /// input's is what it arrived with.
+    fn clause(&self, total: usize) -> String {
+        match self {
+            Baseline::Local(_) => format!("because the local pipeline left {total} defect(s)"),
+            Baseline::Input(_) => format!("because the input arrived with {total} defect(s)"),
+        }
+    }
+
+    fn pre(&self) -> crate::analysis::MeshAnalysis {
+        match self {
+            Baseline::Local(local) => local.report.pre.clone(),
+            Baseline::Input(pre) => pre.clone(),
+        }
+    }
+}
+
+/// The rebuild, tried and judged. `Ok` is the outcome to return; `Err` is the note saying why the
+/// rebuild was not kept.
+///
+/// The judgement is one line: a rebuild is kept when it comes out fully repaired. It resolves the
+/// surface into a solid, which costs detail — measured on the plate in the corpus, 656,922 triangles in
+/// and 168,434 out, its 118 shells fragmented into 306 — and a rebuild that leaves defects anyway has
+/// spent that for nothing. "Better but still broken" is not the trade this route is for; a caller that
+/// wants it can ask for the surfacing mode by name.
+fn try_rebuild<'a>(
+    mesh: &IndexedMesh,
     options: &RepairOptions,
-    local: RepairOutcome,
-    weld_changed: bool,
-    mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
-) -> RepairOutcome {
-    let before = crate::evaluate::evaluate(&local.mesh);
+    baseline: &Baseline,
+    sink: &mut Option<&'a mut dyn FnMut(&str, usize) -> bool>,
+) -> Result<RepairOutcome, String> {
+    let before = baseline.defects(mesh);
     let volume_before = mesh.signed_volume();
-    if let Some(share) = several_objects_share(&mesh) {
-        let note = format!(
+    if let Some(share) = several_objects_share(mesh) {
+        return Err(format!(
             "a rebuild was not tried: the mesh is several objects and the largest holds {:.0}% of it — repair the parts, not the plate",
             share * 100.0
-        );
-        let mut local = settle_after_the_weld(local, weld_changed, options);
-        local.report.residual_issues.push(note);
-        return local;
+        ));
     }
-    let rebuilt = crate::solid_remesh::solid_remesh(&mesh, &crate::SolidRemeshOptions::default());
+    let rebuilt = crate::solid_remesh::solid_remesh(mesh, &crate::SolidRemeshOptions::default());
     if rebuilt.report.declined.is_some() {
-        let note = format!(
+        return Err(format!(
             "the local pipeline left {} defect(s) and the rebuild declined ({})",
             before.total(),
             rebuilt.report.declined.clone().unwrap_or_default()
-        );
-        let mut local = settle_after_the_weld(local, weld_changed, options);
-        local.report.residual_issues.push(note);
-        return local;
+        ));
     }
     if let Some(s) = sink.as_deref_mut() {
         s("rebuild", 2);
     }
-    let mut rebuilt_outcome = repair_with_progress(rebuilt.mesh.clone(), options, sink);
+    // A reborrow with a fresh lifetime: the sink outlives this call and is used twice in it.
+    let reborrowed = sink
+        .as_mut()
+        .map(|s| &mut **s as &mut dyn FnMut(&str, usize) -> bool);
+    let mut rebuilt_outcome = repair_with_progress(rebuilt.mesh.clone(), options, reborrowed);
     let after = crate::evaluate::evaluate(&rebuilt_outcome.mesh);
     let volume_after = rebuilt_outcome.mesh.signed_volume();
-    // Only a rebuild that *finishes the job* is worth the damage it does. It resolves the surface
-    // into a solid, which costs detail — measured on the plate in the corpus, 656,922 triangles in
-    // and 168,434 out, its 118 shells fragmented into 306 — and a rebuild that leaves defects anyway
-    // has spent that for nothing. "Better but still broken" is not the trade this route is for; a
-    // caller that wants it can ask for the surfacing mode by name.
     if !rebuilt_outcome.report.fully_repaired {
-        let note = format!(
+        return Err(format!(
             "a rebuild was tried and not kept: it came out with {} defect(s) against the local pipeline's {}, and a rebuild is only worth the surface it moves when it finishes the job",
             after.total(),
             before.total()
-        );
-        let mut local = settle_after_the_weld(local, weld_changed, options);
-        local.report.residual_issues.push(note);
-        return local;
+        ));
     }
     let moved = if volume_before.abs() > 1e-9 {
         (volume_after - volume_before) / volume_before.abs() * 100.0
@@ -1021,19 +1092,19 @@ fn rebuild_route(
     rebuilt_outcome.report.rebuilt = true;
     // The report's before is the mesh the caller handed in, not the one the rebuild produced: an
     // after-verdict on its own says nothing, and the note below already compares the two.
-    rebuilt_outcome.report.pre = local.report.pre;
+    rebuilt_outcome.report.pre = baseline.pre();
     rebuilt_outcome.report.residual_issues.push(format!(
-        "this mesh was rebuilt rather than repaired: the surface was resolved into a solid, {:.1}% more volume and {} triangles where the input had {}, because the local pipeline left {} defect(s)",
+        "this mesh was rebuilt rather than repaired: the surface was resolved into a solid, {:.1}% more volume and {} triangles where the input had {}, {}",
         moved,
         rebuilt_outcome.mesh.triangles.len(),
         mesh.triangles.len(),
-        before.total()
+        baseline.clause(before.total())
     ));
     rebuilt_outcome.report.steps.push(RepairStepReport {
         name: "rebuild".to_string(),
         changed: rebuilt.report.output_triangles as u32,
         notes: Some(format!(
-            "the local pipeline left {} defect(s); the rebuild comes out with {} and {}",
+            "the input arrived with {} defect(s); the rebuild comes out with {} and {}",
             before.total(),
             after.total(),
             if rebuilt_outcome.report.fully_repaired {
@@ -1044,7 +1115,29 @@ fn rebuild_route(
         )),
         elapsed_ms: rebuilt.report.ms,
     });
-    rebuilt_outcome
+    Ok(rebuilt_outcome)
+}
+
+/// The rebuild behind the local pipeline, judged against it, with its note attached when it loses.
+fn rebuild_route(
+    mesh: IndexedMesh,
+    options: &RepairOptions,
+    local: RepairOutcome,
+    weld_changed: bool,
+    mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
+) -> RepairOutcome {
+    let baseline = Baseline::Local(Box::new(local));
+    match try_rebuild(&mesh, options, &baseline, &mut sink) {
+        Ok(outcome) => outcome,
+        Err(note) => {
+            let Baseline::Local(local) = baseline else {
+                unreachable!("the local outcome was just moved in")
+            };
+            let mut local = settle_after_the_weld(*local, weld_changed, options);
+            local.report.residual_issues.push(note);
+            local
+        }
+    }
 }
 
 /// Runs the pass set, telling `sink` about each stage as it starts.
