@@ -31,6 +31,7 @@ import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginC
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
 import { runWithConcurrency } from '@/utils/runWithConcurrency';
+import { logToNativeFile } from '@/utils/nativeLog';
 import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, bumpBakedOcclusionVersion, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
 import { computeProjectedFootprintSize } from '@/utils/modelFootprint';
 import { shelfPack, type ShelfItem } from '@/features/scene/arrange/shelfPack';
@@ -199,12 +200,20 @@ type PersistedMeshAppearance = {
 const AO_BAKE_CONCURRENCY = 2;
 
 /**
- * VOXL meshes built at once. Same reasoning as the bake concurrency: each build is
- * a native round trip with serial phases (parse, refine, classify) around a parallel
- * one (the bake), and both commands share one rayon pool, so two is where one
- * model's serial phase starts running during another's.
+ * VOXL meshes built at once.
+ *
+ * Was two, on the reasoning that each build is a native round trip whose serial
+ * phases want overlapping. Measured on the 13-model scene, two left both workers
+ * stalled: the native load is only 0.17-0.25 s (`[load_mesh_bytes] parsed, refined
+ * and encoded in …`) while the round trip a build waits on is 1.4-2.3 s, because
+ * the wire (65-81 MB a model at ~125 MB/s) and the *single main thread* that
+ * decodes, accelerates and computes planes for each model are shared resources. A
+ * build's own work is ~1.2 s of that, so the rest is one worker waiting for the
+ * other's turn. Four in flight keeps the wire busy and gives the main thread a
+ * queue to work through instead of handing it one model at a time. The cost is
+ * memory: each in-flight build holds its payload (52-81 MB here) and its geometry.
  */
-const VOXL_BUILD_CONCURRENCY = 2;
+const VOXL_BUILD_CONCURRENCY = 4;
 
 /**
  * How many beds a paste will add for the copies that do not fit the plate being worked
@@ -6307,7 +6316,10 @@ export function useSceneCollectionManager(options?: {
         throw new Error('Not a VOXL file: the VOXL binary header is missing.');
       }
 
+      const importStarted = performance.now();
+      let committedAt = 0;
       const parsed = await parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
+      const parsedAt = performance.now();
       const document: VoxlDocumentV1 = parsed.document;
       const resolvedMeshBytes: Map<string, Uint8Array> = parsed.meshBytes;
       const resolvedOriginalMeshBytes = parsed.originalMeshBytes;
@@ -6407,6 +6419,7 @@ export function useSceneCollectionManager(options?: {
         });
         await Promise.all(pendingOcclusionBakes);
       }
+      const builtAt = performance.now();
 
       for (let i = 0; i < document.models.length; i += 1) {
         const model = document.models[i];
@@ -6573,6 +6586,8 @@ export function useSceneCollectionManager(options?: {
         );
       }
 
+      const placedAt = performance.now();
+
       const sourceTransformsByModelId = new Map<string, ModelTransform>();
       for (const imported of importedModels) {
         sourceTransformsByModelId.set(imported.id, cloneTransform(imported.transform));
@@ -6668,6 +6683,7 @@ export function useSceneCollectionManager(options?: {
         }));
 
         setModels((prev) => [...prev, ...importedModels]);
+        committedAt = performance.now();
 
         const mappedActiveId = (document.scene.activeModelId && idMap.get(document.scene.activeModelId))
           || importedModels[0]?.id
@@ -6742,6 +6758,21 @@ export function useSceneCollectionManager(options?: {
       const skippedNoun = skippedModels === 1 ? 'model' : 'models';
       const supportsClause = importedSupportCount > 0 ? `, ${importedSupportCount} supports` : '';
       const skippedClause = skippedModels > 0 ? `, skipped ${skippedModels} ${skippedNoun}` : '';
+
+      // Where a scene load went, in the app's own log next to the native timings:
+      // parse, the per-model build pass (native load + prep, with the bakes in
+      // flight), in-order placement, and the commit that hands the models to
+      // React. The frame that follows the commit — every geometry's upload and
+      // BVH reaching the GPU — is *after* this line, which is why the total here
+      // is not the user's wait.
+      const phaseTiming =
+        `[voxl] load: parse ${(parsedAt - importStarted).toFixed(0)}ms, ` +
+        `build ${(builtAt - parsedAt).toFixed(0)}ms, ` +
+        `place ${(placedAt - builtAt).toFixed(0)}ms, ` +
+        `commit ${(committedAt - placedAt).toFixed(0)}ms, ` +
+        `total ${(committedAt - importStarted).toFixed(0)}ms`;
+      console.log(phaseTiming);
+      void logToNativeFile('info', phaseTiming);
 
       if (importedModelCount > 0) {
         if (!options?.suppressReport) {

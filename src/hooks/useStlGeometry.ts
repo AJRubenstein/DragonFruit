@@ -615,7 +615,9 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
     geometry.translate(-preCenter.x, -preBBox.min.y, -preCenter.z);
   }
   geometry.computeBoundingBox();
-  console.log(`[${new Date().toISOString()}] [processGeometry] Geometry Prep finished. Took ${(performance.now() - startPrep).toFixed(2)}ms`);
+  const prepMs = performance.now() - startPrep;
+  console.log(`[${new Date().toISOString()}] [processGeometry] Geometry Prep finished. Took ${prepMs.toFixed(2)}ms`);
+  void logToNativeFile('info', `[processGeometry] prep ${prepMs.toFixed(0)}ms`);
 
   // Yield before BVH (expensive synchronous tree build)
   await new Promise<void>(r => setTimeout(r, 0));
@@ -644,7 +646,9 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   console.log(`[${new Date().toISOString()}] [processGeometry] Starting BVH Construction`);
   const startBVH = performance.now();
   accelerateGeometry(geometry);
-  console.log(`[${new Date().toISOString()}] [processGeometry] BVH Construction finished. Took ${(performance.now() - startBVH).toFixed(2)}ms`);
+  const bvhMs = performance.now() - startBVH;
+  console.log(`[${new Date().toISOString()}] [processGeometry] BVH Construction finished. Took ${bvhMs.toFixed(2)}ms`);
+  void logToNativeFile('info', `[processGeometry] bvh ${bvhMs.toFixed(0)}ms`);
 
   const bbox = geometry.boundingBox ? geometry.boundingBox.clone() : new THREE.Box3();
   const center = bbox.getCenter(new THREE.Vector3());
@@ -667,7 +671,9 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
     console.log(`[${new Date().toISOString()}] [processGeometry] Computing Flattening Planes`);
     const startPlanes = performance.now();
     flatteningPlanes = computeFlatteningPlanes(geometry);
-    console.log(`[${new Date().toISOString()}] [processGeometry] Flattening Planes finished. Took ${(performance.now() - startPlanes).toFixed(2)}ms`);
+    const planesMs = performance.now() - startPlanes;
+  console.log(`[${new Date().toISOString()}] [processGeometry] Flattening Planes finished. Took ${planesMs.toFixed(2)}ms`);
+  void logToNativeFile('info', `[processGeometry] planes ${planesMs.toFixed(0)}ms`);
   }
 
   // Yield before the optional edge overlay build

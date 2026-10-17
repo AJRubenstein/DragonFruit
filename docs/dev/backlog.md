@@ -497,6 +497,33 @@ overwritten by an identical one, for ~34% of the whole load. And the AO bakes, w
 are the GPU's work, were awaited inside each model's prep, so they ran one model at
 a time while the main thread was idle waiting on them.
 
+### Third run: where a scene load goes now (19.4 s)
+
+The app logs one line per scene — `[voxl] load: parse …, build …, place …, commit …,
+total …` — beside the per-model lines, all of it in `dragonfruit.log`. With the parse
+parallel and four builds in flight, on the same 15-model scene:
+
+| phase | measure |
+| --- | --- |
+| container parse | 2.0 s (13 chunks / 677 MB, four streams) |
+| build pass | 17.3 s |
+| ..native load | 3.4 s total (258 ms a model) |
+| ..round trips | 49 s total (3.8 s a model) — the rest is wire + waiting |
+| ..main thread | 6.1 s (prep 203 ms, BVH 228 ms, planes 39 ms a model) |
+| ..AO bakes | 10.4 s total (800 ms a model), overlapped |
+| placement | 3 ms |
+| commit and state | 110 ms |
+
+So the build pass is a *three*-way contention: the wire, one main thread that must
+receive, decode, accelerate and measure every model, and the bakes' own CPU work
+(each bake welds its soup and builds a BVH on the shared rayon pool). Raising
+`VOXL_BUILD_CONCURRENCY` from 2 to 4 took the pass from 19.3 s to 17.1 s and is kept;
+the remaining levers, in the order the numbers put them, are the payload volume (fewer
+bytes a model — see the correction above), the main-thread work a model costs (the BVH
+at 228 ms is the largest single piece), and the bakes' contention. Everything after
+the `commit` line — fifteen geometries' upload, their BVHs and their AO attributes
+reaching the GPU — is in none of these numbers.
+
 ### Second run: 35 s -> 21 s, and what is left
 
 After the classification reuse and the parallel bakes, the same file loads in ~21 s
@@ -537,7 +564,16 @@ So the IPC is fast and its overhead is negligible, and the per-model 1.2-1.8 s i
 the import is the **native command**, not the transfer: the JS timer starts before
 `invoke`, so it encloses parse + refine + encode as well as the wire.
 
-That falsified the payload work this page previously pointed at. Shrinking the
+That said the payload did not matter — and **that reading was wrong**, because the
+comparison used the wrong metric. What a 13-model build pass pays is the *aggregate*
+volume over a shared channel, not what one model waits on. Measured with 13
+concurrent 70 MB reads through the same command, the channel does **189 MB/s**; during
+the import the effective rate is ~75 MB/s, because the wire and the single main thread
+(receive, decode, BVH, planes) take turns rather than overlapping. A smaller payload
+therefore cuts the transfer *and* the per-model receive, and the round-trip numbers
+below are not the way to judge it.
+
+Shrinking the
 payload looked attractive while the wire was assumed slow: the soup is 72 bytes a
 triangle (52-129 MB a model) and it deflates 2.7x at zlib level 1 on real geometry
 (not the 7x a half-zeroed buffer suggests). It was implemented and measured end to
