@@ -213,6 +213,23 @@ broke through, making the two one component, and the scan reports only fragments
 1.016 million. Separating that case needs a per-face test, distinguishing air that is enclosed
 (cavity) from air that is unbounded (outside), rather than a component test.
 
+### The refinement is for flat surface, not for strips
+
+The rebuild ends by putting the detail back at the density the loader would, and the loader's rule
+subdivides a face's longest edge. On a face that is already a strip that is the wrong move: its own
+aspect improves, but a band of them comes out *finer*, which is more lines in the same place rather
+than a better surface. Measured over `Gusano_de_Dune_70%`'s bottom band:
+
+| bottom band, walls and rims | faces | median aspect | over 20 | over 50 |
+| --- | --- | --- | --- | --- |
+| the input | 60,379 | 3.90 | 12.8 % | 1.7 % |
+| the rebuild, refining everything | 66,569 | 4.62 | 17.9 % | 6.2 % |
+| the rebuild, skipping strips | 48,958 | 2.75 | 5.7 % | 1.6 % |
+
+So the refinement skips an edge when every face touching it is already over `SPLIT_MAX_ASPECT`, and
+the result is better shaped than the input at the rims while carrying fewer triangles than either
+(525,666 against the input's 596,293 and the unguarded 627,458).
+
 ### The resolve works at the model's own scale
 
 Manifold's default tolerance is an absolute 1.2e-5 whatever the model is, and on a presupported plate
