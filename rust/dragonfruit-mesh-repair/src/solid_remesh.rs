@@ -160,6 +160,7 @@ pub fn solid_remesh_with_progress(
         return unchanged(None, true);
     }
     let mut prepared = mesh.clone();
+    let envelope = crate::repair::Envelope::of(&mesh);
     prepared.weld_by_position();
     crate::tet_wrap::snap_weld(&mut prepared);
     crate::repair::repair_orientation(&mut prepared);
@@ -242,6 +243,8 @@ pub fn solid_remesh_with_progress(
         let _ = crate::repair::unify_winding(&mut prepared);
     }
 
+    let _ = envelope.clamp(&mut prepared);
+
     // 5. Drop what the rebuild left behind.
     if !phases.phase("shells") {
         return unchanged(None, true);
@@ -281,7 +284,7 @@ pub fn solid_remesh_with_progress(
 }
 
 /// The middle edge length of a mesh, which is the scale its own features are at.
-fn median_edge_length(mesh: &IndexedMesh) -> f32 {
+pub(crate) fn median_edge_length(mesh: &IndexedMesh) -> f32 {
     let mut lengths: Vec<f32> = Vec::with_capacity(mesh.triangles.len() * 3 / 2);
     for t in mesh.triangles.iter() {
         for k in 0..3 {

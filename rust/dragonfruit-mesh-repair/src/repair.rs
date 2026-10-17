@@ -418,6 +418,123 @@ fn coincident_count(mesh: &IndexedMesh) -> usize {
     collisions
 }
 
+/// The box the mesh arrived in, and how far a pass may push outside it.
+///
+/// A repair may not invent geometry. A vertex outside the envelope the mesh came in with is geometry
+/// that was not there, and on a plate with a flat bottom it is a spike: measured on
+/// `Gusano_de_Dune_70%.stl`, the fill the non-manifold class runs put a vertex **0.198 mm below the
+/// bottom**, which is four layers at 0.05 mm. The slicer then prints that sliver alone on the first
+/// layers, because it is the lowest thing in the mesh and the model's own base does not start until
+/// 0.198 mm up.
+///
+/// The slack is a hundredth of the mesh's median edge, so a pass may still move a vertex by a
+/// hair — the fills and splits that keep a surface closed do — without being refused.
+pub(crate) struct Envelope {
+    min: Vec3,
+    max: Vec3,
+    slack: f32,
+}
+
+impl Envelope {
+    pub(crate) fn of(mesh: &IndexedMesh) -> Self {
+        let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+        let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+        for p in &mesh.positions {
+            min = min.min(*p);
+            max = max.max(*p);
+        }
+        Envelope {
+            min,
+            max,
+            slack: (crate::solid_remesh::median_edge_length(mesh) * 0.01).max(1e-6),
+        }
+    }
+
+    /// Whether every vertex is still inside the box, give or take the slack.
+    fn holds(&self, mesh: &IndexedMesh) -> bool {
+        mesh.positions.iter().all(|p| self.contains(p, self.slack))
+    }
+
+    fn contains(&self, p: &Vec3, slack: f32) -> bool {
+        p.x >= self.min.x - slack
+            && p.y >= self.min.y - slack
+            && p.z >= self.min.z - slack
+            && p.x <= self.max.x + slack
+            && p.y <= self.max.y + slack
+            && p.z <= self.max.z + slack
+    }
+
+    /// Pull vertices a pass pushed outside back to the box, and say how many moved.
+    ///
+    /// Refusing the whole pass is the blunt version, and it costs real repairs: the fill that invented
+    /// the 0.198 mm spike below `Gusano_de_Dune_70%`'s floor also resolved 1,895 non-manifold edges,
+    /// and refusing it left every one of them. Clamping keeps the work and removes the invention. What
+    /// it produces is still judged by the round's own defect total, so a clamp that broke the surface
+    /// is refused there rather than kept.
+    pub(crate) fn clamp(&self, mesh: &mut IndexedMesh) -> usize {
+        let mut moved = 0;
+        let mut inside = 0;
+        for p in mesh.positions.iter_mut() {
+            if self.contains(p, 0.0) {
+                inside += 1;
+                continue;
+            }
+            *p = Vec3::new(
+                p.x.clamp(self.min.x, self.max.x),
+                p.y.clamp(self.min.y, self.max.y),
+                p.z.clamp(self.min.z, self.max.z),
+            );
+            moved += 1;
+        }
+        let _ = inside;
+        moved
+    }
+}
+
+/// Pull the vertices a pass *added* back onto the surface the mesh arrived with.
+///
+/// A repair may not invent geometry, and inventing is not "leaving the bounding box": a fill can put
+/// a peak or a valley in the middle of a flat face and stay inside the box it came in with. What a
+/// pass may not do is move the surface. Measured on `Gusano_de_Dune_70%.stl`, the fill the
+/// non-manifold class runs put a vertex **0.198 mm below a bottom that is flat to 0.0000 mm**, which
+/// is four layers at 0.05 mm, and the slicer then prints that sliver alone on the first layers.
+///
+/// Only the vertices the pass *added* are checked, and that is the whole of the cost: the fills are
+/// what add geometry (the splits and the weld move or duplicate what is already there, and their
+/// offsets are deliberate), newly added vertices are appended, so this is a walk over the tail.
+/// A vertex within `slack` of the surface it arrived with is left alone; one outside it moves to the
+/// nearest point of that surface.
+fn project_added_onto_surface(
+    mesh: &mut IndexedMesh,
+    arrived: &IndexedMesh,
+    bvh: &Bvh,
+    slack: f32,
+) -> usize {
+    let from = arrived.positions.len();
+    if mesh.positions.len() <= from {
+        return 0;
+    }
+    let mut moved = 0;
+    for index in from..mesh.positions.len() {
+        let p = mesh.positions[index];
+        let Some((distance, face)) = bvh.nearest_triangle(arrived, p) else {
+            continue;
+        };
+        if distance <= slack {
+            continue;
+        }
+        let t = arrived.triangles[face as usize];
+        mesh.positions[index] = crate::core::bvh::closest_point_on_triangle(
+            p,
+            arrived.positions[t[0] as usize],
+            arrived.positions[t[1] as usize],
+            arrived.positions[t[2] as usize],
+        );
+        moved += 1;
+    }
+    moved
+}
+
 /// Passes the defect loop may run, across all its classes.
 ///
 /// The reference's tracker takes an iteration cap too. The classes disturb each other, so a round can
@@ -499,14 +616,22 @@ fn repair_one_defect_class(
             if changed == 0 {
                 changed = repair_orientation(mesh);
             }
-            changed + crate::holes::holes_all(mesh, usize::MAX)
+            let filled = crate::holes::holes_all(mesh, usize::MAX);
+            changed + filled
         }
-        DefectClass::Boundary => crate::holes::holes_all(mesh, usize::MAX),
+        DefectClass::Boundary => {
+            let filled = crate::holes::holes_all(mesh, usize::MAX);
+            filled
+        }
         DefectClass::PinchedVertices => {
-            crate::topology_passes::split_pinched_vertices(mesh)
-                + crate::holes::holes_all(mesh, usize::MAX)
+            let split = crate::topology_passes::split_pinched_vertices(mesh);
+            let filled = crate::holes::holes_all(mesh, usize::MAX);
+            split + filled
         }
-        DefectClass::NoiseShells => crate::shells::remove_noise_shells(mesh),
+        DefectClass::NoiseShells => {
+            let removed = crate::shells::remove_noise_shells(mesh);
+            removed
+        }
     }
 }
 
@@ -1741,22 +1866,41 @@ fn repair_passes(
         }
         let before = crate::evaluate::evaluate(&mesh);
         let mut progressed = false;
+        let mut surface_bvh: Option<Bvh> = None;
         for class in DEFECT_CLASSES {
             if !class.present(&before) {
                 continue;
             }
+            let envelope = Envelope::of(&mesh);
+            let surface = surface_bvh.get_or_insert_with(|| Bvh::build(&mesh));
             let mut candidate = mesh.clone();
             let did = repair_one_defect_class(&mut candidate, class, options);
             if did == 0 {
                 continue;
             }
+            // A fill that closes a hole by inventing a peak or a valley improves the defect total and
+            // ruins the print, and the five classes have no term for it. Keep the work, take the
+            // invention out, and let the total below judge the pair. The envelope is the cheap
+            // backstop for the one case the surface test cannot see, a surface that is itself on the
+            // box it arrived in.
+            let projected = project_added_onto_surface(&mut candidate, &mesh, surface, envelope.slack);
+            let clamped = envelope.clamp(&mut candidate);
             let after = crate::evaluate::evaluate(&candidate).total();
             if after < best {
                 best = after;
                 mesh = candidate;
                 rounds += 1;
                 repaired += did;
-                notes.push(format!("{}", class.name()));
+                notes.push(if projected > 0 || clamped > 0 {
+                    format!(
+                        "{} ({} vertex/vertices pulled back onto the surface, {} into the model)",
+                        class.name(),
+                        projected,
+                        clamped
+                    )
+                } else {
+                    format!("{}", class.name())
+                });
                 progressed = true;
                 break;
             }

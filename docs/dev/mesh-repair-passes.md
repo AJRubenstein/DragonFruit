@@ -70,6 +70,27 @@ below them already returns on the same test.
 `tests/smoke.rs` pins this list in `the_pipeline_runs_the_stage_order_it_says_it_does`.
 If a change to the order is deliberate, that test is where you say so.
 
+### A repair may not invent geometry
+
+Every pass is judged by the five classes, and the five classes have no term for geometry that was not
+there before. That gap is measurable and it was a print defect. On `Gusano_de_Dune_70%.stl`, whose
+bottom is flat to 0.0000 mm, the fill the non-manifold class runs put one vertex **0.198 mm below that
+bottom**: four layers at 0.05 mm, and because it was the lowest thing in the mesh the slicer printed
+it alone while the model's own base waited 0.198 mm up. The same fill through the rebuild route left
+one 0.096 mm down.
+
+So the rounds now hold every candidate to the surface it arrived with. `project_added_onto_surface`
+takes the vertices a pass *added* and pulls any that is more than a hundredth of a median edge from the
+surface back onto its nearest point, and `Envelope` is the cheap backstop for the one case that cannot
+see, a surface that is itself on the box the mesh came in with. Only added vertices are checked: the
+splits and the weld move what is already there, and their offsets are deliberate, whereas a fill is
+what adds geometry and it appends what it adds.
+
+Measured on that file, a repair that used to leave the first layer as 6 faces over 7.6 mm² now leaves
+it as the model's own base, 9,607 faces over 4,261 mm², with the five classes unchanged (98 non-manifold
+edges and 189 pinched vertices either way) and the run the same length. Across the 130-file corpus no
+repair leaves a mesh lower than it arrived and no verdict changes.
+
 ## `repair_rounds`, and why the list above is not the whole story
 
 `repair_rounds` runs last and is a loop, not a pass. It evaluates the mesh, picks a defect class that is
