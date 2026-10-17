@@ -4552,7 +4552,6 @@ msgid "Layer {layer} • {height} • Right-click a handle to type an exact valu
 msgstr "Layer {layer} • {height} • Right-click a handle to type an exact value • Double-click to turn the cross-section off"
 
 #: src/components/organisms/PrintingPreviewPane.tsx:58
-#: src/features/slicing/components/SlicingPanel.tsx:181
 msgid "Layer {layer} preview"
 msgstr "Layer {layer} preview"
 
@@ -6317,10 +6316,6 @@ msgstr "Plate name"
 msgid "Plate Ordering"
 msgstr "Plate Ordering"
 
-#: src/features/slicing/components/SlicingPanel.tsx:3121
-msgid "Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}"
-msgstr "Plate preview · Layer {previewSelectedLayer}/{previewTotalLayers}"
-
 #: src/components/settings/MultiPlateSettingsTab.tsx:49
 #: src/features/export/components/ExportPanel.tsx:99
 msgid "Plates"
@@ -6488,10 +6483,6 @@ msgstr "Press <0>{clearLabel}</0> to reset all, or <1>{doneLabel}</1> to apply."
 #: src/supports/Settings/AnatomyPreview/SupportAnatomyPreviewSlot.tsx:33
 msgid "Preview"
 msgstr "Preview"
-
-#: src/features/slicing/components/SlicingPanel.tsx:3140
-msgid "Preview for this layer is not available."
-msgstr "Preview for this layer is not available."
 
 #: src/components/settings/MeshSettingsTab.tsx:228
 msgid "Preview Model"
