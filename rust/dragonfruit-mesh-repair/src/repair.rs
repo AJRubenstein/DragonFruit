@@ -908,17 +908,27 @@ pub fn repair_auto_with_progress(
     options: &RepairOptions,
     mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
 ) -> RepairOutcome {
-    let local = match sink.as_deref_mut() {
+    // One pass of the local pipeline, then the decision, and the settle pass only if the local result
+    // is what the caller gets.
+    //
+    // The settle is the whole ordered pipeline a second time, and the weld that triggers it is a
+    // round-trip property of the mesh rather than a defect: measured on `Gusano_de_Dune_70%.stl` it is
+    // 14.7 s against the first pass's 15.3 s, and on the route where the rebuild is taken the local
+    // result is discarded whole. The rebuild is judged on its own verdict — it is kept when it is
+    // fully repaired, which does not depend on the local pipeline having settled — so deferring the
+    // settle until the route says the local result is the answer costs nothing and saves that pass on
+    // every file a rebuild settles.
+    let (first, weld_changed) = match sink.as_deref_mut() {
         Some(s) => {
             s("repair", 1);
-            repair_with_progress(mesh.clone(), options, Some(s))
+            repair_passes(mesh.clone(), options, Some(s))
         }
-        None => repair_with_progress(mesh.clone(), options, None),
+        None => repair_passes(mesh.clone(), options, None),
     };
-    if local.report.fully_repaired || !options.allow_rebuild {
-        return local;
+    if first.report.fully_repaired || !options.allow_rebuild {
+        return settle_after_the_weld(first, weld_changed, options);
     }
-    rebuild_route(mesh, options, local, sink)
+    rebuild_route(mesh, options, first, weld_changed, sink)
 }
 
 /// The largest shell's share of a mesh, when the mesh is several objects rather than one.
@@ -957,26 +967,29 @@ fn rebuild_route(
     mesh: IndexedMesh,
     options: &RepairOptions,
     local: RepairOutcome,
+    weld_changed: bool,
     mut sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
 ) -> RepairOutcome {
     let before = crate::evaluate::evaluate(&local.mesh);
     let volume_before = mesh.signed_volume();
     if let Some(share) = several_objects_share(&mesh) {
-        let mut local = local;
-        local.report.residual_issues.push(format!(
+        let note = format!(
             "a rebuild was not tried: the mesh is several objects and the largest holds {:.0}% of it — repair the parts, not the plate",
             share * 100.0
-        ));
+        );
+        let mut local = settle_after_the_weld(local, weld_changed, options);
+        local.report.residual_issues.push(note);
         return local;
     }
     let rebuilt = crate::solid_remesh::solid_remesh(&mesh, &crate::SolidRemeshOptions::default());
     if rebuilt.report.declined.is_some() {
-        let mut local = local;
-        local.report.residual_issues.push(format!(
+        let note = format!(
             "the local pipeline left {} defect(s) and the rebuild declined ({})",
             before.total(),
             rebuilt.report.declined.clone().unwrap_or_default()
-        ));
+        );
+        let mut local = settle_after_the_weld(local, weld_changed, options);
+        local.report.residual_issues.push(note);
         return local;
     }
     if let Some(s) = sink.as_deref_mut() {
@@ -991,12 +1004,13 @@ fn rebuild_route(
     // has spent that for nothing. "Better but still broken" is not the trade this route is for; a
     // caller that wants it can ask for the surfacing mode by name.
     if !rebuilt_outcome.report.fully_repaired {
-        let mut local = local;
-        local.report.residual_issues.push(format!(
+        let note = format!(
             "a rebuild was tried and not kept: it came out with {} defect(s) against the local pipeline's {}, and a rebuild is only worth the surface it moves when it finishes the job",
             after.total(),
             before.total()
-        ));
+        );
+        let mut local = settle_after_the_weld(local, weld_changed, options);
+        local.report.residual_issues.push(note);
         return local;
     }
     let moved = if volume_before.abs() > 1e-9 {
@@ -1048,25 +1062,42 @@ pub fn repair_with_progress(
     options: &RepairOptions,
     sink: Option<&mut dyn FnMut(&str, usize) -> bool>,
 ) -> RepairOutcome {
-    // The ordered stages, then — if the weld the pipeline ends with changed the mesh — the ordered stages
-    // again.
-    //
-    // The weld is not decoration: every export path here is a triangle soup and the loader welds a soup at
-    // `DEFAULT_MERGE_EPSILON`, so a repair that ends finer than that hands over a mesh the next read
-    // changes. But the weld has a cost, and the *stages* are what repair it, not the defect loop: measured
-    // on the reported model, one pass ended 26/117/1/193 in memory and in the file, and one more pass took
-    // it to 0/0/0/0 in both. A second pass runs only when the weld actually merged or culled something.
+    // The ordered stages, then — if the weld the pipeline ends with changed the mesh — the ordered
+    // stages again, which is [`settle_after_the_weld`]'s job so that a caller can defer it.
     let (first, weld_changed) = repair_passes(mesh, options, sink);
-    // The settle pass takes no sink: it is bounded, and a cancel that arrived during the first pass has
-    // already been honoured.
+    settle_after_the_weld(first, weld_changed, options)
+}
+
+/// The ordered stages again, when the weld the pipeline ends with changed the mesh.
+///
+/// The weld is not decoration: every export path here is a triangle soup and the loader welds a soup
+/// at `DEFAULT_MERGE_EPSILON`, so a repair that ends finer than that hands over a mesh the next read
+/// changes. But the weld has a cost, and the *stages* are what repair it, not the defect loop:
+/// measured on the reported model, one pass ended 26/117/1/193 in memory and in the file, and one more
+/// pass took it to 0/0/0/0 in both. A second pass runs only when the weld actually merged or culled
+/// something.
+///
+/// It takes no sink: it is bounded, and a cancel that arrived during the first pass has already been
+/// honoured. Returns `first` untouched when there is nothing to settle, so a caller can call it
+/// without asking first — which is what [`repair_auto_with_progress`] does, deferring it until it
+/// knows the local result is the one the caller gets.
+fn settle_after_the_weld(
+    first: RepairOutcome,
+    weld_changed: bool,
+    options: &RepairOptions,
+) -> RepairOutcome {
     if !weld_changed {
         return first;
     }
-    let (settled, _) = repair_passes(first.mesh, options, None);
+    let RepairOutcome {
+        mesh,
+        report: first_report,
+    } = first;
+    let (settled, _) = repair_passes(mesh, options, None);
     let RepairOutcome { mesh, mut report } = settled;
-    report.pre = first.report.pre;
-    report.total_ms = first.report.total_ms + report.total_ms;
-    let mut steps = first.report.steps;
+    report.pre = first_report.pre;
+    report.total_ms = first_report.total_ms + report.total_ms;
+    let mut steps = first_report.steps;
     steps.extend(report.steps);
     report.steps = steps;
     RepairOutcome { mesh, report }
