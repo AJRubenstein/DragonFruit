@@ -59,24 +59,6 @@ pub fn refinement_budget(triangles: usize) -> usize {
     by_fraction.max(triangles.saturating_add(COARSE_GROWTH_HEADROOM))
 }
 
-/// Above this, a face is a strip rather than a piece of surface, and splitting it only makes the
-/// band it belongs to finer. See the guard in [`refine_long_edges_with_budget`].
-const SPLIT_MAX_ASPECT: f32 = 20.0;
-
-/// The same shape factor `dragonfruit-mesh-repair` measures needles with: longest edge squared over
-/// twice the area, 1 for an equilateral triangle and 100 for a needle.
-fn aspect_of_triangle(positions: &[Vec3], triangle: &[u32; 3]) -> f32 {
-    let p = |v: u32| positions[v as usize];
-    let (a, b, c) = (p(triangle[0]), p(triangle[1]), p(triangle[2]));
-    let longest = a.sub(b).length().max(b.sub(c).length()).max(c.sub(a).length());
-    let area2 = b.sub(a).cross(c.sub(a)).length();
-    if area2 > 1e-12 {
-        longest * longest / area2
-    } else {
-        f32::INFINITY
-    }
-}
-
 /// Subdivide the triangles whose edges are longer than `max_edge`.
 ///
 /// Returns the input unchanged when nothing exceeds it, so a caller can run this
@@ -105,7 +87,6 @@ pub fn refine_long_edges_with_budget(
         // Which long edges this pass is allowed to split, longest first, until the
         // budget is spent. Faces sharing a chosen edge are split together.
         let mut over: HashMap<(u32, u32), (f32, [u32; 2], usize)> = HashMap::new();
-        let mut strips_only: HashMap<(u32, u32), bool> = HashMap::new();
         for (face, triangle) in triangles.iter().enumerate() {
             for edge in 0..3 {
                 let (a, b) = (triangle[edge], triangle[(edge + 1) % 3]);
@@ -114,18 +95,6 @@ pub fn refine_long_edges_with_budget(
                 if span <= max_edge {
                     continue;
                 }
-                // A face that is already a strip is not made better by splitting it. Its longest edge
-                // halves, so its own aspect improves, but a band of them is made *finer*: one 100
-                // triangle becomes two 50s, which is more lines in the same place and more of them
-                // over any threshold a reader uses. This is what a rebuild's pocket rims are, and
-                // densifying them is what reads as a fan. The guard is per edge, because two faces
-                // share it and half a split leaves a T-junction, so an edge is only skipped when
-                // *every* face touching it is a strip.
-                if aspect_of_triangle(&positions, triangle) > SPLIT_MAX_ASPECT {
-                    strips_only.insert(key, true);
-                    continue;
-                }
-                strips_only.insert(key, false);
                 let entry = over.entry(key).or_insert((span, [u32::MAX; 2], 0));
                 if entry.1[0] == u32::MAX {
                     entry.1[0] = face as u32;
@@ -154,10 +123,6 @@ pub fn refine_long_edges_with_budget(
         // faces undercounts by half and the cap never binds.
         let mut projected = triangles.len();
         let mut chosen: HashMap<(u32, u32), ()> = HashMap::new();
-        let candidates: Vec<_> = candidates
-            .into_iter()
-            .filter(|(key, _, _)| !strips_only.get(key).copied().unwrap_or(false))
-            .collect();
         for (key, _, faces) in candidates {
             let delta = faces.iter().filter(|face| **face != u32::MAX).count();
             if projected + delta > max_triangles {
