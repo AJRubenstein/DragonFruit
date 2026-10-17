@@ -2023,6 +2023,7 @@ pub async fn load_mesh_bytes(request: tauri::ipc::Request<'_>) -> Result<Respons
 /// The pipeline behind `load_mesh_bytes`: parse the file's bytes, refine, classify
 /// when asked, and encode the same `DFMX` payload the path loader writes.
 fn load_mesh_bytes_response(bytes: &[u8], classify: bool) -> Result<Vec<u8>, String> {
+    let started = std::time::Instant::now();
     let mesh = io::stl::parse_bytes(bytes)
         .map_err(|e| format!("Failed to parse mesh bytes: {e}"))?;
     let mesh = io::refine_coarse_faces(mesh);
@@ -2033,7 +2034,15 @@ fn load_mesh_bytes_response(bytes: &[u8], classify: bool) -> Result<Vec<u8>, Str
     };
 
     let tri_count: usize = bodies.iter().map(|body| body.triangles.len()).sum();
-    encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref())
+    let encoded = encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref())?;
+    // The other half of the import's per-model time: the frontend logs its own
+    // round trip for the same call, and the wire between them measures 110-135
+    // MB/s, so this line and that one together say where a model's load went.
+    log::info!(
+        "[load_mesh_bytes] parsed, refined and encoded in {}ms",
+        started.elapsed().as_millis()
+    );
+    Ok(encoded)
 }
 
 /// Classify one body: section-ordered mesh plus the report as JSON.

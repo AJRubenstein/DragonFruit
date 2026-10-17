@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { invoke } from '@tauri-apps/api/core';
 import { expandGeometryToTriangleSoup } from '@/utils/tauriMeshBridge';
+import { logToNativeFile } from '@/utils/nativeLog';
 
 /**
  * Model ambient occlusion, baked per vertex by the native side and attached to
@@ -95,10 +96,11 @@ export async function bakeOcclusionForGeometry(
   // sending the native side something other than what it is about to shade.
   const body = new Uint8Array(soup.byteLength);
   body.set(new Uint8Array(soup.buffer, soup.byteOffset, soup.byteLength));
-  console.log(
+  const soupTiming =
     `[ao] ${(soup.byteLength / 1_000_000).toFixed(1)} MB soup copied for the bake in ` +
-    `${(performance.now() - prepared).toFixed(0)}ms`,
-  );
+    `${(performance.now() - prepared).toFixed(0)}ms`;
+  console.log(soupTiming);
+  void logToNativeFile('info', soupTiming);
   const payload = await invoke<ArrayBuffer | Uint8Array | number[]>(
     'bake_vertex_occlusion',
     body,

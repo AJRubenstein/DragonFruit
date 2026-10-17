@@ -10,6 +10,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { loadMeshBytes, loadMeshFileFromNativePath } from '@/features/slicing/tauri/nativeSlicerBridge';
 import { accelerateGeometry } from '@/utils/bvh';
+import { logToNativeFile } from '@/utils/nativeLog';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import { REFINE_MAX_TRIANGLES, refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import {
@@ -1149,21 +1150,23 @@ export function classificationForPayload(
 async function loadNativeMeshBytes(buffer: Uint8Array, classify: boolean): Promise<DecodedMesh | null> {
   if (!isTauriRuntime()) return null;
   try {
-    // The two phases nobody else can see, and the two that a scene of
-    // print-sized models actually waits on: a DFMX body is 72 bytes a triangle
-    // (65-130 MB for the models here), so it crosses the IPC and is copied into
-    // the geometry's own buffers. Logged because the import pipeline is asserted
-    // against these numbers in `docs/dev/backlog.md`, not because they are fine.
+    // The phase nobody else can see, and the one a scene of print-sized models
+    // waits on. "Round trip", not "transfer": the window contains the native
+    // command too (parse, refine and encode, whose duration the Rust log line has
+    // on its own). The wire is not the problem — measured with a plain
+    // `read_print_file_bytes` from the page, it delivers 110-135 MB/s with about
+    // 3 ms of latency — so the interesting half of this number is the native side.
+    // Logged to the file as well: it is what the import is argued with.
     const requested = performance.now();
     const payload = await loadMeshBytes(buffer, classify);
     const received = performance.now();
     const decoded = decodeDfmx(payload);
-    console.log(
-      `[loadMeshFile] native payload ${(payload.byteLength / 1_000_000).toFixed(1)} MB in ` +
-      `${(received - requested).toFixed(0)}ms over the IPC, ` +
-      `${(performance.now() - received).toFixed(0)}ms to decode ` +
-      `(${decoded.bodies.length} bodies, ${decoded.previewTriangleCount.toLocaleString()} triangles)`,
-    );
+    const timing =
+      `[loadMeshFile] native payload ${(payload.byteLength / 1_000_000).toFixed(1)} MB, ` +
+      `round trip ${(received - requested).toFixed(0)}ms including the native load ` +
+      `(${decoded.bodies.length} bodies, ${decoded.previewTriangleCount.toLocaleString()} triangles)`;
+    console.log(timing);
+    void logToNativeFile('info', timing);
     return decoded.bodies.length > 0 ? decoded : null;
   } catch (error) {
     console.warn('[loadMeshFile] native byte load failed; falling back to the renderer loaders.', error);

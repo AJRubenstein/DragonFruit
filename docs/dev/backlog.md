@@ -503,15 +503,45 @@ structure rather than for work:
   few milliseconds either way, and what the app casts at a model is a handful of
   picking rays. `accelerateGeometry` asks for 32 now.
 
-What that run still does not account for is the gap between a model's native load
-finishing and its prep starting: 0.2-1.8 s, scaling with the payload (52 MB -> 1.0 s,
-129 MB -> 1.8 s), which is more than copying that many bytes can cost. Two phases
-were invisible and are now logged — `[loadMeshFile] native payload … over the IPC,
-… to decode` and `[ao] … MB soup copied for the bake` — so the next measurement is
-reading them. If the transfer really runs near 70 MB/s, the lever is the payload
-itself: 72 bytes a triangle is half normals, and those normals are now each face's
-own, which the renderer can derive for ~0.15 s a model instead of receiving 36 bytes
-a triangle for every one of them.
+What that run did not account for was the gap between a model's native load
+finishing and its prep starting: 0.2-1.8 s, scaling with the payload. Two phases are
+now logged (`[loadMeshFile] native payload … round trip …` and
+`[load_mesh_bytes] parsed, refined and encoded in …`), and a direct probe settles
+what they are.
+
+### The wire was never the problem, and compression was a dead end
+
+Measured from the running app over CDP, invoking `read_print_file_bytes` on files
+of known size — a plain command with no mesh work behind it:
+
+| payload | round trip | rate |
+| --- | --- | --- |
+| 1 KB | 3 ms | fixed latency ~3 ms |
+| 24 MB | 207-232 ms | ~110 MB/s |
+| 96 MB | 674-742 ms | ~135 MB/s |
+
+So the IPC is fast and its overhead is negligible, and the per-model 1.2-1.8 s in
+the import is the **native command**, not the transfer: the JS timer starts before
+`invoke`, so it encloses parse + refine + encode as well as the wire.
+
+That falsified the payload work this page previously pointed at. Shrinking the
+payload looked attractive while the wire was assumed slow: the soup is 72 bytes a
+triangle (52-129 MB a model) and it deflates 2.7x at zlib level 1 on real geometry
+(not the 7x a half-zeroed buffer suggests). It was implemented and measured end to
+end — DFMX v2 with a zlib stream per body, verified on the same 13-model scene —
+and it **lost**: the payloads fell 65.8 -> 24.2 MB and 129.1 -> 48.1 MB, yet the
+round trip only moved 1664 -> 1425 ms, because the bytes were never the cost, while
+`fflate` spent 0.5-1.3 s inflating each body back (and the encoder spent its own
+time compressing). Reverted rather than shipped. Dropping the normals to halve the
+payload is the same arithmetic one step weaker: ~0.2 s of transfer saved against
+~0.15 s of `computeVertexNormals` per model, for a format change.
+
+What the numbers leave, in value order, is everything *off* the wire: the container
+parse (4.6 s before any model work), the main-thread geometry work (BVH 0.25-0.50 s
+and flattening planes 0.15-0.40 s a model, now well under a third of what they
+were), and — in a dev build only — the shell being unoptimized, which is most of
+that per-model native load (`Cargo.toml` keeps it that way deliberately: the mesh
+crates are `opt-level = 3`, the shell is not, for incremental builds).
 
 ## STL imports: facets, missing normals, and a shuffled per-vertex attribute
 
