@@ -624,8 +624,13 @@ three runs and a median; the `[voxl] load:` line makes that cheap to take.
 | tree + normals + kernel (`dragonfruit_ao_gpu::bake_smoothed`) | 518 ms | 6.7 s |
 | expand the welded values back onto corners | 4 ms | 0.06 s |
 
+And the tree is not what the `tree + normals + kernel` column is paying for: measured
+in-crate on release builds, `Bvh::build` is **131 ms for 980k triangles** (27 ms at
+245k, 294 ms at 2M), against 518 ms for that whole phase. The rest is the GPU upload,
+the kernel, the readback and the smoothing pass — the occlusion itself, not overhead.
 So of a bake's ~850 ms, the part the mesh-by-reference step would remove **is the weld
-(2.7 s over a scene) and the 430 MB upload** — not the larger half. The tree build and
+(2.7 s over a scene), the 430 MB upload, and at most 131 ms a model of tree** — and the
+tree only if it is cached, which a scene cannot afford. The tree build and
 kernel stay, and they are the next thing worth attacking on this lever: the tree is
 rebuilt per bake over a mesh the loader had already indexed, and a resident cache for
 it is 30-60 MB a model, which is not affordable for a scene. A cheaper build (a
