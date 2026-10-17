@@ -15,7 +15,7 @@ Header (32 bytes):
 | Offset | Size | Field |
 | --- | --- | --- |
 | 0..3 | 4 | magic `DFMX` (`0x44464D58`) |
-| 4..7 | 4 | version — `1` |
+| 4..7 | 4 | version — `2` |
 | 8..11 | 4 | flags — bit 0 `IS_PREVIEW` |
 | 12..15 | 4 | body count |
 | 16..19 | 4 | original input triangle count |
@@ -24,12 +24,32 @@ Header (32 bytes):
 | 28..31 | 4 | reserved, zero |
 
 Body table: `bodyCount` entries of 8 bytes, in payload order — triangle count
-(4 bytes) and 4 reserved bytes (an encoding / vertex-count slot kept for v2).
+(4 bytes) and the length of that body's packed stream (4 bytes).
 
-Payload: each body in table order, positions then normals. Offsets are derived
-from the table; there is no per-body offset scalar. The metadata JSON, when
-present, is the last `metadataLength` bytes — a reader that does not know the key
-reads the bodies and ignores the tail.
+Payload: each body in table order, as a zlib stream. Offsets are derived from the
+table; there is no per-body offset scalar. A body unpacks to its soup: positions
+(9 `f32` per triangle), then one normal per corner (9 `f32` per triangle). The
+metadata JSON, when present, is the last `metadataLength` bytes — a reader that does
+not know the key reads the bodies and ignores the tail.
+
+**Why the bodies are packed** (version 1 wrote them raw). A soup is 72 bytes a
+triangle, and the 13-model scene in `backlog.md` sends **910 MB** of them. The
+channel measures 189 MB/s with thirteen transfers in flight but only ~75 MB/s
+effective during an import, because the transfer and the single main thread that
+receives and prepares each model take turns — so the volume is what a load pays. At
+zlib level 1 the same soup deflates **2.7x** on real geometry (65.8 -> 24.2 MB for an
+869k-triangle model, 129.1 -> 48.1 MB for a 1.79M one), which took that scene's round
+trips from 49.1 s to 35.7 s and its build pass from 17.3 s to 15.4 s — in a *dev*
+build, where the encoder itself is unoptimized and costs 512 ms a model against 258
+before. Each body is its own stream so a reader turns one body into one geometry
+without unpacking another's bytes.
+
+The reader unpacks with the platform's `DecompressionStream`, four bodies at a time —
+**not `fflate`'s async pool**, which in this app's `crossOriginIsolated` webview waits
+on its workers through `SharedArrayBuffer`/`Atomics` and blocks the main thread the
+pool exists to free (that cost 2.8-10 s stalls at scene open and, once, a content
+process the watchdog had to declare dead). That is why `decodeDfmx` is asynchronous;
+the unpacked soup is a fresh buffer the geometry views directly.
 
 The metadata is the classification report for the load. `load_mesh_file`
 classifies a **single-body** load itself, when the caller asks for it, and ships
@@ -43,13 +63,11 @@ construction.
 Because bodies are laid out as separate soups, a body's vertices are not welded
 *across* bodies — matching a 3MF, where each build item is an independent solid.
 
-The reader is `decodeDfmx` (`src/hooks/useStlGeometry.ts`), which returns the
-bodies plus the header facts a preview needs (flags, original and model counts).
-Each body is two views into the payload buffer — positions and normals — not a
-copy: the payload is the body of a `fetch` response (Tauri's IPC is a
-custom-protocol fetch) and is ours to keep, and the body layout keeps every pair
-of views 4-byte aligned. Bodies sharing the buffer is safe for the in-place
-`translate` that centres them, because each body writes only its own range.
+The reader is `decodeDfmx` (`src/hooks/useStlGeometry.ts`), which returns the bodies
+plus the header facts a preview needs (flags, original and model counts). Each packed
+body is a view into the payload buffer — the payload is the body of a `fetch` response
+(Tauri's IPC is a custom-protocol fetch) and belongs to that call — and the unpacked
+soup becomes the geometry's storage, so nothing is copied twice.
 
 ## Bodies come from the loader, not this format
 

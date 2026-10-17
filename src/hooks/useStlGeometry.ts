@@ -11,6 +11,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshBytes, loadMeshFileFromNativePath } from '@/features/slicing/tauri/nativeSlicerBridge';
 import { accelerateGeometry } from '@/utils/bvh';
 import { logToNativeFile } from '@/utils/nativeLog';
+import { runWithConcurrency } from '@/utils/runWithConcurrency';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import { REFINE_MAX_TRIANGLES, refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import {
@@ -903,7 +904,7 @@ async function loadStlViaTauri(filePath: string, classify: boolean): Promise<Nat
   try {
     const bytes = await loadMeshFileFromNativePath(filePath, classify);
     if (!bytes || bytes.byteLength === 0) return null;
-    const decoded = decodeDfmx(bytes);
+    const decoded = await decodeDfmx(bytes);
     const geometry = mergeBodyGeometries(decoded.bodies);
 
     console.log(
@@ -939,6 +940,18 @@ async function loadStlViaTauri(filePath: string, classify: boolean): Promise<Nat
 const MESH_RESPONSE_HEADER_BYTES = 32;
 const MESH_RESPONSE_BODY_ENTRY_BYTES = 8;
 const SOUP_BYTES_PER_TRIANGLE = 9 * Float32Array.BYTES_PER_ELEMENT * 2;
+/**
+ * Version 2: each body is a zlib stream holding that body's soup (positions, then
+ * one normal per corner). A scene's payloads are 910 MB across thirteen models, and
+ * the channel only does ~75 MB/s effective during an import because the transfer
+ * and the main thread that receives each model take turns — the volume is what the
+ * load pays. The native encoder packs each body at zlib level 1 (2.7x on real
+ * geometry) and the bodies are unpacked here with the platform's
+ * `DecompressionStream`, off the main thread.
+ */
+const MESH_RESPONSE_VERSION = 2;
+/** Bodies unpacked at once: 52-129 MB each once inflated, so not all at once. */
+const BODY_INFLATE_CONCURRENCY = 4;
 
 /** One decoded native payload: its bodies plus the header facts the STL preview
  *  path needs. */
@@ -958,15 +971,56 @@ export type DecodedMesh = {
 };
 
 /**
+ * Unpack one packed body into its geometry.
+ *
+ * The stream is the platform's own decompressor — genuinely off the main thread,
+ * unlike `fflate`'s pool, which waits on its workers through `SharedArrayBuffer` in
+ * a `crossOriginIsolated` webview and blocks the thread it should free. Its output
+ * is a fresh `ArrayBuffer`, so the geometry can view it directly rather than copying
+ * the soup again.
+ */
+async function decodeBody(packed: Uint8Array, triangleCount: number): Promise<THREE.BufferGeometry> {
+  const source = new ReadableStream<BufferSource>({
+    start(controller) {
+      // `BufferSource` wants an `ArrayBuffer`-backed view; the bytes are the same.
+      controller.enqueue(packed as BufferSource);
+      controller.close();
+    },
+  });
+  const stream = source.pipeThrough<Uint8Array>(new DecompressionStream('deflate'));
+  const soup = new Uint8Array(await new Response(stream).arrayBuffer());
+  const expected = triangleCount * SOUP_BYTES_PER_TRIANGLE;
+  if (soup.byteLength !== expected) {
+    throw new Error(
+      `Native mesh loader returned a body that unpacks to ${soup.byteLength} bytes, ` +
+      `not the ${expected} its table entry claims.`,
+    );
+  }
+  const corners = triangleCount * 9;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array(soup.buffer, soup.byteOffset, corners), 3),
+  );
+  geometry.setAttribute(
+    'normal',
+    new THREE.BufferAttribute(
+      new Float32Array(soup.buffer, soup.byteOffset + corners * Float32Array.BYTES_PER_ELEMENT, corners),
+      3,
+    ),
+  );
+  return geometry;
+}
+
+/**
  * Decode a DFMX payload into one geometry per body.
  *
- * Each body is a pair of views into the payload buffer — positions and normals —
- * rather than a copy of it: the buffer arrives as a `fetch` response body and is
- * ours, and the DFMX layout keeps every body 4-byte aligned. The bodies therefore
- * share one underlying buffer, which is fine for the in-place `translate` that
- * centres them: each body writes only its own range.
+ * Each body arrives packed (version 2) and is unpacked four at a time; the packed
+ * bytes are views into the payload buffer, which belongs to this call — Tauri's IPC
+ * is a `fetch` against a custom-protocol URL (`tauri`'s `ipc-protocol.js`), so
+ * `response.arrayBuffer()` hands back a buffer nothing reuses or shortens.
  */
-export function decodeDfmx(payload: Uint8Array | ArrayBuffer): DecodedMesh {
+export async function decodeDfmx(payload: Uint8Array | ArrayBuffer): Promise<DecodedMesh> {
   const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
   if (bytes.byteLength < MESH_RESPONSE_HEADER_BYTES) {
     throw new Error('Native mesh loader returned a truncated DFMX header.');
@@ -978,50 +1032,31 @@ export function decodeDfmx(payload: Uint8Array | ArrayBuffer): DecodedMesh {
   if (magic !== 'DFMX') {
     throw new Error(`Native mesh loader returned an unsupported payload (${magic}).`);
   }
-  if (header.getUint32(4, true) !== 1) {
+  if (header.getUint32(4, true) !== MESH_RESPONSE_VERSION) {
     throw new Error('Native mesh loader returned an unsupported DFMX version.');
   }
 
   const bodyCount = header.getUint32(12, true);
+  // The table first: each entry carries the body's triangle count and the length of
+  // its packed stream, so the bodies no longer follow from the header alone.
   let offset = MESH_RESPONSE_HEADER_BYTES + bodyCount * MESH_RESPONSE_BODY_ENTRY_BYTES;
-  const bodies: THREE.BufferGeometry[] = [];
-  let previewTriangleCount = 0;
+  const table: Array<{ index: number; triangleCount: number; packed: Uint8Array }> = [];
   for (let index = 0; index < bodyCount; index += 1) {
-    const triangleCount = header.getUint32(
-      MESH_RESPONSE_HEADER_BYTES + index * MESH_RESPONSE_BODY_ENTRY_BYTES, true,
-    );
-    const soupBytes = triangleCount * SOUP_BYTES_PER_TRIANGLE;
-    if (offset + soupBytes > bytes.byteLength) {
+    const entry = MESH_RESPONSE_HEADER_BYTES + index * MESH_RESPONSE_BODY_ENTRY_BYTES;
+    const triangleCount = header.getUint32(entry, true);
+    const packedBytes = header.getUint32(entry + 4, true);
+    if (offset + packedBytes > bytes.byteLength) {
       throw new Error('Native mesh loader returned a truncated DFMX body.');
     }
-    // A view into the payload, not a copy of it. Tauri's IPC is a `fetch` against
-    // a custom-protocol URL (`tauri`'s `ipc-protocol.js`), so `response.arrayBuffer()`
-    // hands back a buffer that belongs to this call and nothing reuses, detaches or
-    // shortens — the views outlive it. The DFMX layout keeps every body 4-byte
-    // aligned (32-byte header, 8-byte table entries, 72-byte triangles), so they are
-    // valid `Float32Array` views. Copying cost a full pass over 52-130 MB per model
-    // — the size of the payload again in peak memory — for no property the buffer
-    // does not already have.
-    const soupOffset = bytes.byteOffset + offset;
-    const corners = triangleCount * 9;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array(bytes.buffer, soupOffset, corners), 3),
-    );
-    geometry.setAttribute(
-      'normal',
-      new THREE.BufferAttribute(
-        new Float32Array(
-          bytes.buffer, soupOffset + corners * Float32Array.BYTES_PER_ELEMENT, corners,
-        ),
-        3,
-      ),
-    );
-    bodies.push(geometry);
-    previewTriangleCount += triangleCount;
-    offset += soupBytes;
+    table.push({ index, triangleCount, packed: bytes.subarray(offset, offset + packedBytes) });
+    offset += packedBytes;
   }
+
+  const bodies = new Array<THREE.BufferGeometry>(bodyCount);
+  await runWithConcurrency(table, BODY_INFLATE_CONCURRENCY, async (body) => {
+    bodies[body.index] = await decodeBody(body.packed, body.triangleCount);
+  });
+  const previewTriangleCount = table.reduce((sum, body) => sum + body.triangleCount, 0);
 
   const modelTriangleCount = header.getUint32(20, true);
   const metadataLength = header.getUint32(24, true);
@@ -1081,7 +1116,7 @@ async function loadNativeMeshBodies(filePath: string | undefined): Promise<THREE
   }
   try {
     // This path does not consume the report yet, so do not pay for the classify.
-    const decoded = decodeDfmx(await loadMeshFileFromNativePath(filePath, false));
+    const decoded = await decodeDfmx(await loadMeshFileFromNativePath(filePath, false));
     if (decoded.bodies.length === 0) return null;
     console.log(
       `[${new Date().toISOString()}] [loadMeshFile] native loader returned ${decoded.bodies.length} bodies`,
@@ -1166,7 +1201,7 @@ async function loadNativeMeshBytes(buffer: Uint8Array, classify: boolean): Promi
     const requested = performance.now();
     const payload = await loadMeshBytes(buffer, classify);
     const received = performance.now();
-    const decoded = decodeDfmx(payload);
+    const decoded = await decodeDfmx(payload);
     const timing =
       `[loadMeshFile] native payload ${(payload.byteLength / 1_000_000).toFixed(1)} MB, ` +
       `round trip ${(received - requested).toFixed(0)}ms including the native load ` +

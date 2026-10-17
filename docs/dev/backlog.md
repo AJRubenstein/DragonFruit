@@ -581,9 +581,18 @@ end — DFMX v2 with a zlib stream per body, verified on the same 13-model scene
 and it **lost**: the payloads fell 65.8 -> 24.2 MB and 129.1 -> 48.1 MB, yet the
 round trip only moved 1664 -> 1425 ms, because the bytes were never the cost, while
 `fflate` spent 0.5-1.3 s inflating each body back (and the encoder spent its own
-time compressing). Reverted rather than shipped. Dropping the normals to halve the
-payload is the same arithmetic one step weaker: ~0.2 s of transfer saved against
-~0.15 s of `computeVertexNormals` per model, for a format change.
+time compressing). Reverted at the time — see the correction above for why that
+verdict was wrong, and below for what the retry measured.
+
+**The retry, with the native decompressor and the aggregate metric: build 17.3 s ->
+15.4 s** (round trips 49.1 s -> 35.7 s, per-model payloads 65.8 -> 24.2 MB, 2.7x) on
+the same scene, and that is in a *dev* build where `flate2` runs unoptimized — the
+native column of the table below went 258 ms to 512 ms a model to buy the packing.
+In a release build the encode is a fraction of that (36 ms per 868k-triangle model,
+measured with Node's zlib), so the win is larger than what is recorded here. The
+per-body inflate is `DecompressionStream` (see the fflate gotcha under the container
+parse), four bodies at a time, and it added nothing measurable to the main thread
+(prep 203 -> 235 ms a model, within noise).
 
 What the numbers leave, in value order, is everything *off* the wire: the container
 parse (4.6 s before any model work), the main-thread geometry work (BVH 0.25-0.50 s

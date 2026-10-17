@@ -2092,14 +2092,25 @@ fn classify_single_body(mesh: IndexedMesh) -> (Vec<IndexedMesh>, Option<String>)
 ///
 /// Body table: `bodyCount` entries of 8 bytes each, in payload order:
 ///   0 .. 3 : Triangle count u32 LE
-///   4 .. 7 : Reserved (zero; an encoding/vertex-count slot for v2)
+///   4 .. 7 : Length of this body's packed stream u32 LE
 ///
-/// Payload: each body in table order, positions then normals, 9 f32 per
-/// triangle each (72 bytes/triangle). The metadata JSON, when present, is the
-/// last `metadataLength` bytes of the payload — a reader that does not know the
-/// key reads the bodies and ignores the tail.
+/// Payload: each body in table order, as a zlib stream. A body unpacks to its
+/// soup: positions then normals, 9 f32 per triangle each (72 bytes/triangle). The
+/// metadata JSON, when present, is the last `metadataLength` bytes of the payload
+/// — a reader that does not know the key reads the bodies and ignores the tail.
 const MESH_RESPONSE_MAGIC: &[u8; 4] = b"DFMX";
-const MESH_RESPONSE_VERSION: u32 = 1;
+/// Version 2: each body is a zlib stream holding that body's soup.
+///
+/// Version 1 wrote the soup raw, and a soup is 72 bytes a triangle — 910 MB across
+/// the 15-model scene this is measured on, which is the largest single cost in a
+/// scene load. Tauri's IPC does 189 MB/s with thirteen transfers in flight but only
+/// ~75 MB/s effective during an import, because the transfer and the single main
+/// thread that receives and prepares each model take turns; the volume is what the
+/// load pays. The same soup deflates 2.7x at zlib level 1 (65.8 -> 24.2 MB on an
+/// 869k-triangle model), and the renderer inflates it with the platform's
+/// `DecompressionStream` — off the main thread, unlike `fflate`'s pool, which waits
+/// on its workers through SharedArrayBuffer and blocks the thread it should free.
+const MESH_RESPONSE_VERSION: u32 = 2;
 const MESH_RESPONSE_HEADER_BYTES: usize = 32;
 const MESH_RESPONSE_BODY_ENTRY_BYTES: usize = 8;
 const MESH_RESPONSE_FLAG_PREVIEW: u32 = 1;
@@ -2115,9 +2126,17 @@ fn encode_mesh_bodies(
 ) -> Result<Vec<u8>, String> {
     let total_triangles: usize = bodies.iter().map(|body| body.triangles.len()).sum();
     let metadata_len = metadata_json.map_or(0, str::len);
+    // Each body is encoded and packed on its own: a body is the unit a reader turns
+    // into a geometry, and packing bodies together would make one body's first byte
+    // depend on another's.
+    let packed: Vec<Vec<u8>> = bodies
+        .iter()
+        .map(encode_body_deflated)
+        .collect::<Result<_, _>>()?;
+    let packed_len: usize = packed.iter().map(Vec::len).sum();
     let response_len = MESH_RESPONSE_HEADER_BYTES
         .checked_add(bodies.len() * MESH_RESPONSE_BODY_ENTRY_BYTES)
-        .and_then(|size| size.checked_add(total_triangles * SOUP_BYTES_PER_TRIANGLE))
+        .and_then(|size| size.checked_add(packed_len))
         .and_then(|size| size.checked_add(metadata_len))
         .ok_or_else(|| "DFMX response size overflow".to_string())?;
 
@@ -2143,30 +2162,47 @@ fn encode_mesh_bodies(
     result.extend_from_slice(&model_triangle_count.unwrap_or(0).to_le_bytes());
     result.extend_from_slice(&(metadata_len as u32).to_le_bytes());
     result.extend_from_slice(&[0u8; 4]);
-    for body in bodies {
+    for (body, bytes) in bodies.iter().zip(&packed) {
         result.extend_from_slice(&(body.triangles.len() as u32).to_le_bytes());
-        result.extend_from_slice(&[0u8; 4]);
+        result.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
     }
-    result.resize(response_len, 0);
-
-    let mut offset = MESH_RESPONSE_HEADER_BYTES + bodies.len() * MESH_RESPONSE_BODY_ENTRY_BYTES;
-    for body in bodies {
-        let len = body.triangles.len() * SOUP_BYTES_PER_TRIANGLE;
-        write_soup(body, &mut result[offset..offset + len]);
-        offset += len;
+    for bytes in &packed {
+        result.extend_from_slice(bytes);
     }
     if let Some(json) = metadata_json {
-        result[offset..offset + metadata_len].copy_from_slice(json.as_bytes());
+        result.extend_from_slice(json.as_bytes());
     }
+    debug_assert_eq!(result.len(), response_len);
 
     log::info!(
-        "[load_mesh] {} bodies, {} triangles, {:.1} MB payload, {} B metadata",
+        "[load_mesh] {} bodies, {} triangles, {:.1} MB payload ({:.1}x deflated), {} B metadata",
         bodies.len(),
         total_triangles,
         (response_len - MESH_RESPONSE_HEADER_BYTES) as f64 / 1_000_000.0,
+        total_triangles as f64 * SOUP_BYTES_PER_TRIANGLE as f64 / packed_len.max(1) as f64,
         metadata_len,
     );
     Ok(result)
+}
+
+/// One body's soup, zlib-packed at the fastest level.
+///
+/// Level 1 rather than the default: the encoder runs per model on the import's
+/// critical path, and on this data the difference is 2.7x against 3.6x for six
+/// times the CPU (36 ms against 226 ms on an 869k-triangle model, measured with
+/// Node's zlib on a real soup).
+fn encode_body_deflated(body: &IndexedMesh) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+
+    let mut raw = vec![0u8; body.triangles.len() * SOUP_BYTES_PER_TRIANGLE];
+    write_soup(body, &mut raw);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder
+        .write_all(&raw)
+        .map_err(|e| format!("DFMX body compression failed: {e}"))?;
+    encoder
+        .finish()
+        .map_err(|e| format!("DFMX body compression failed: {e}"))
 }
 
 /// Write a mesh's soup — positions (9 f32 per triangle), then one normal per
@@ -2575,23 +2611,40 @@ mod tests {
     /// normals) as f32 triples. These fixtures carry one body, so the soup
     /// starts right after the header and its single table entry.
     fn decode_positions_and_normals(bytes: &[u8]) -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
+        use std::io::Read;
+
+        let entry = MESH_RESPONSE_HEADER_BYTES;
+        assert_eq!(
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            MESH_RESPONSE_VERSION,
+            "the fixture must be a current payload"
+        );
         let tri_count =
-            u32::from_le_bytes(bytes[MESH_RESPONSE_HEADER_BYTES..MESH_RESPONSE_HEADER_BYTES + 4].try_into().unwrap())
-                as usize;
-        let header = MESH_RESPONSE_HEADER_BYTES + MESH_RESPONSE_BODY_ENTRY_BYTES;
-        let floats = |start: usize| -> Vec<[f32; 3]> {
+            u32::from_le_bytes(bytes[entry..entry + 4].try_into().unwrap()) as usize;
+        let packed_len =
+            u32::from_le_bytes(bytes[entry + 4..entry + 8].try_into().unwrap()) as usize;
+        let start = entry + MESH_RESPONSE_BODY_ENTRY_BYTES;
+
+        // Bodies ship packed (version 2): unpack the one this fixture carries.
+        let mut soup = Vec::with_capacity(tri_count * SOUP_BYTES_PER_TRIANGLE);
+        flate2::read::ZlibDecoder::new(&bytes[start..start + packed_len])
+            .read_to_end(&mut soup)
+            .expect("the body must inflate");
+        assert_eq!(soup.len(), tri_count * SOUP_BYTES_PER_TRIANGLE, "soup size");
+
+        let floats = |offset: usize| -> Vec<[f32; 3]> {
             (0..tri_count * 3)
                 .map(|v| {
-                    let at = start + v * 12;
+                    let at = offset + v * 12;
                     [
-                        f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()),
-                        f32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()),
-                        f32::from_le_bytes(bytes[at + 8..at + 12].try_into().unwrap()),
+                        f32::from_le_bytes(soup[at..at + 4].try_into().unwrap()),
+                        f32::from_le_bytes(soup[at + 4..at + 8].try_into().unwrap()),
+                        f32::from_le_bytes(soup[at + 8..at + 12].try_into().unwrap()),
                     ]
                 })
                 .collect()
         };
-        (floats(header), floats(header + tri_count * 36))
+        (floats(0), floats(tri_count * 36))
     }
 
     /// A coarsely triangulated cylinder: every adjacent face pair differs by enough
@@ -2831,15 +2884,17 @@ mod tests {
             tauri::ipc::InvokeResponseBody::Raw(b) => b,
             _ => panic!("Expected Raw body"),
         };
-        // DFMX: body count at 12, body table at 32 (8 bytes each), then soups.
+        // DFMX: body count at 12, body table at 32 (8 bytes each: triangles, then
+        // the packed stream's length), then the packed bodies.
         let u32_at = |bytes: &[u8], at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
         let bodies = |bytes: &[u8]| u32_at(bytes, 12);
         let body_triangles = |bytes: &[u8], index: usize| u32_at(bytes, 32 + index * 8);
+        let body_packed_len = |bytes: &[u8], index: usize| u32_at(bytes, 36 + index * 8);
         let described_len = |bytes: &[u8]| {
             let count = bodies(bytes) as usize;
             let metadata = u32_at(bytes, 24) as usize;
             (0..count).fold(32 + count * 8 + metadata, |sum, i| {
-                sum + body_triangles(bytes, i) as usize * 72
+                sum + body_packed_len(bytes, i) as usize
             })
         };
 
@@ -2848,7 +2903,7 @@ mod tests {
             Some(true),
         )));
         assert_eq!(&stl[0..4], b"DFMX");
-        assert_eq!(u32_at(&stl, 4), 1, "DFMX version");
+        assert_eq!(u32_at(&stl, 4), MESH_RESPONSE_VERSION, "DFMX version");
         assert_eq!(bodies(&stl), 1);
         assert_eq!(body_triangles(&stl, 0), 3);
         assert_eq!(stl.len(), described_len(&stl));
@@ -2906,7 +2961,12 @@ mod tests {
         let plain = load_mesh_bytes_response(&stl, false).unwrap();
         assert_eq!(&plain[0..4], b"DFMX");
         assert_eq!(u32::from_le_bytes(plain[24..28].try_into().unwrap()), 0);
-        assert_eq!(plain.len(), 32 + 8 + 3 * 72);
+        let packed = u32::from_le_bytes(plain[36..40].try_into().unwrap()) as usize;
+        assert_eq!(
+            plain.len(),
+            MESH_RESPONSE_HEADER_BYTES + MESH_RESPONSE_BODY_ENTRY_BYTES + packed
+        );
+        assert!(packed < 3 * 72, "the body ships packed, not as a raw soup");
     }
 
     #[test]
@@ -2925,7 +2985,12 @@ mod tests {
 
         let metadata_len = u32::from_le_bytes(bytes[24..28].try_into().unwrap()) as usize;
         assert_eq!(metadata_len, json.len(), "header carries the metadata length");
-        assert_eq!(bytes.len(), 32 + 8 + 72 + metadata_len, "tail sits after every body");
+        let packed = u32::from_le_bytes(bytes[36..40].try_into().unwrap()) as usize;
+        assert_eq!(
+            bytes.len(),
+            MESH_RESPONSE_HEADER_BYTES + MESH_RESPONSE_BODY_ENTRY_BYTES + packed + metadata_len,
+            "tail sits after every body"
+        );
         assert_eq!(&bytes[bytes.len() - metadata_len..], json.as_bytes());
     }
 
@@ -2948,21 +3013,38 @@ mod tests {
         let bytes = encode_mesh_bodies(&bodies, 3, false, None, None).unwrap();
 
         assert_eq!(&bytes[0..4], b"DFMX");
-        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 1);
+        assert_eq!(
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            MESH_RESPONSE_VERSION
+        );
         assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 2);
         assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 3);
         // Body table records each body's triangle count, in payload order.
         assert_eq!(u32::from_le_bytes(bytes[32..36].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), 2);
-        assert_eq!(bytes.len(), 32 + 2 * 8 + 3 * 72);
-
-        // Body 1's soup starts after body 0's 72 bytes; its first vertex is the
-        // origin it was built with, so the offsets are not simply concatenated
-        // in the wrong direction.
-        let body1 = 32 + 2 * 8 + 72;
+        let packed0 = u32::from_le_bytes(bytes[36..40].try_into().unwrap()) as usize;
+        let packed1 = u32::from_le_bytes(bytes[44..48].try_into().unwrap()) as usize;
         assert_eq!(
-            f32::from_le_bytes(bytes[body1..body1 + 4].try_into().unwrap()),
-            0.0
+            bytes.len(),
+            MESH_RESPONSE_HEADER_BYTES + 2 * MESH_RESPONSE_BODY_ENTRY_BYTES + packed0 + packed1
         );
+
+        // Bodies are independent streams, each unpacking to its own soup: body 1's
+        // vertices are the origin it was built with, so a reader that shared one
+        // stream between them would see body 0's data here.
+        use std::io::Read;
+        let first = MESH_RESPONSE_HEADER_BYTES + 2 * MESH_RESPONSE_BODY_ENTRY_BYTES;
+        let mut soup0 = Vec::new();
+        flate2::read::ZlibDecoder::new(&bytes[first..first + packed0])
+            .read_to_end(&mut soup0)
+            .unwrap();
+        let mut soup1 = Vec::new();
+        flate2::read::ZlibDecoder::new(&bytes[first + packed0..first + packed0 + packed1])
+            .read_to_end(&mut soup1)
+            .unwrap();
+        assert_eq!(soup0.len(), SOUP_BYTES_PER_TRIANGLE);
+        assert_eq!(soup1.len(), 2 * SOUP_BYTES_PER_TRIANGLE);
+        assert_eq!(f32::from_le_bytes(soup0[12..16].try_into().unwrap()), 1.0);
+        assert!(soup1.iter().all(|byte| *byte == 0), "body 1 is the degenerate fixture");
     }
 }

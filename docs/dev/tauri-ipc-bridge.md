@@ -374,7 +374,7 @@ magnitude is off by two orders of magnitude at the ends of its range.
 
 One command reads a mesh from disk in Rust and hands it to the renderer as the
 `DFMX` binary payload specified in `dev/mesh-wire-formats.md`: a 32-byte header,
-a body table, then one positions-and-normals soup per body.
+a body table, then one zlib-packed body per model (positions and normals).
 
 `load_mesh_file` takes `filePath` and an optional `classify` (default true). It
 dispatches through `io::load_mesh_bodies_from_path` — `stl`/`obj` give one body;

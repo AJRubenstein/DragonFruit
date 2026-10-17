@@ -1699,6 +1699,7 @@ dependencies = [
  "dragonfruit-organic-cut",
  "dragonfruit-rtsp-relay",
  "dragonfruit-slicing-engine",
+ "flate2",
  "futures-util",
  "if-addrs",
  "libloading 0.8.9",
