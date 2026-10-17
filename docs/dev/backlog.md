@@ -605,6 +605,17 @@ welds a 3M-corner soup and builds a BVH over the same mesh the loader welded mom
 earlier — and removing that needs the mesh to travel by reference rather than as a
 re-uploaded soup (see the native-range step under the container parse).
 
+**A scene load's wall time is noisy: two runs of the *same* build measured 15.35 s and
+17.16 s (12%), and the log is shared, so a second instance on the same machine
+contaminates both.** That does not touch the claims above that rest on a *mechanism*
+being measured directly — 11.9 s of duplicate classification, payloads of 65.8 vs 24.2
+MB, round trips summed at 49.1 s vs 35.7 s, 500-1100 ms of main-thread compression per
+model, the parse at 4.6 s vs 1.2 s in Node — but it does put the one-line wall-clock
+deltas (the packing's ~2 s, the extra build width's ~2 s, the bake gate's ~2.6 s) inside
+the noise, and they should be read as "not worse, and less work on a resource the load
+is short of" rather than as measured savings. Anything under two seconds here needs
+three runs and a median; the `[voxl] load:` line makes that cheap to take.
+
 **What a bake actually spends** (instrumented, 13 models, GPU path, dev build):
 
 | phase | mean | sum |

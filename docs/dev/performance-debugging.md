@@ -242,6 +242,18 @@ detector invented hundreds of freezes, and the progress reporting doubled the
 runtime. When a measurement surprises you, question the instrument before the
 code.
 
+### Scene loads: three runs, then a median
+
+A scene load reports itself in `dragonfruit.log` as one line — `[voxl] load: parse …,
+build …, place …, commit …, total …` — with per-model halves beside it (`native
+payload … round trip …`, `parsed, refined and encoded in …`, and the prep/BVH/planes
+phases). Read the *split* before the total: the per-model lines are mechanism
+measurements (megabytes, milliseconds of a named phase) and they repeat within a few
+percent, while the total swings by ~12% between runs of the same build. Any change
+worth under two seconds needs three runs and a median, and only one instance may be
+running: the log file is shared and a second window on the same machine takes both CPU
+and GPU from the first.
+
 ## External profilers
 
 ### Windows: drive the app over CDP
