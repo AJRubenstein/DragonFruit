@@ -2699,7 +2699,7 @@ msgstr "Decrease point position"
 msgid "Decrease spacing"
 msgstr "Decrease spacing"
 
-#: src/components/ui/NumberInput.tsx:180
+#: src/components/ui/NumberInput.tsx:186
 msgid "Decrease value"
 msgstr "Decrease value"
 
@@ -3973,8 +3973,8 @@ msgstr "Height Factor Cap"
 msgid "Height Gradient"
 msgstr "Height Gradient"
 
-#: src/components/controls/LayerSlider.tsx:850
-#: src/components/controls/LayerSlider.tsx:949
+#: src/components/controls/LayerSlider.tsx:860
+#: src/components/controls/LayerSlider.tsx:959
 msgid "Height mm"
 msgstr "Height mm"
 
@@ -4368,7 +4368,7 @@ msgstr "Increase point position"
 msgid "Increase spacing"
 msgstr "Increase spacing"
 
-#: src/components/ui/NumberInput.tsx:170
+#: src/components/ui/NumberInput.tsx:176
 msgid "Increase value"
 msgstr "Increase value"
 
@@ -4687,7 +4687,7 @@ msgstr "Lattice"
 msgid "Launching UVTools to inspect the sliced file…"
 msgstr "Launching UVTools to inspect the sliced file…"
 
-#: src/components/controls/LayerSlider.tsx:660
+#: src/components/controls/LayerSlider.tsx:671
 msgid "Layer"
 msgstr "Layer"
 
@@ -4723,10 +4723,10 @@ msgstr "Layer {layer} preview"
 msgid "Layer {layers}"
 msgstr "Layer {layers}"
 
-#: src/components/controls/LayerSlider.tsx:821
-#: src/components/controls/LayerSlider.tsx:850
-#: src/components/controls/LayerSlider.tsx:920
-#: src/components/controls/LayerSlider.tsx:949
+#: src/components/controls/LayerSlider.tsx:831
+#: src/components/controls/LayerSlider.tsx:860
+#: src/components/controls/LayerSlider.tsx:930
+#: src/components/controls/LayerSlider.tsx:959
 msgid "Layer #"
 msgstr "Layer #"
 

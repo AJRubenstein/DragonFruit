@@ -264,7 +264,7 @@ export function LayerSlider({ min, max, step, value, onChange, onScrubStart, onS
     const current = fmt.parse(editRawValue);
     if (!isNaN(current) && current >= 0) {
       if (newMode === 'mm') {
-        setEditRawValue(fmt.number(current * layerHeightMm, { maximumFractionDigits: 3, useGrouping: false }));
+        setEditRawValue(fmt.field(current * layerHeightMm, 3));
       } else {
         setEditRawValue(String(Math.round(current / layerHeightMm)));
       }

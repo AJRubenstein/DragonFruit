@@ -29,8 +29,11 @@ test('parseDecimal reads the locale separator and a dot', () => {
   assert.equal(parseDecimal('10.6', 'es'), 10.6);
   assert.equal(parseDecimal(' 215 ', 'es'), 215);
   assert.equal(parseDecimal('10.6', 'en'), 10.6);
-  // In English the comma groups thousands; a field never shows one, so it stops the number.
-  assert.equal(parseDecimal('10,6', 'en'), 10);
+  // In English the comma groups thousands, and a field never shows one: "10,6" is no number.
+  assert.ok(Number.isNaN(parseDecimal('10,6', 'en')));
+  assert.equal(parseDecimal('-.5', 'es'), -0.5);
+  assert.ok(Number.isNaN(parseDecimal('-', 'es')));
   assert.ok(Number.isNaN(parseDecimal('', 'es')));
   assert.ok(Number.isNaN(parseDecimal('abc', 'es')));
+  assert.ok(Number.isNaN(parseDecimal('12abc', 'es')), 'the whole text, not a leading number');
 });

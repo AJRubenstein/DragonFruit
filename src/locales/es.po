@@ -2699,7 +2699,7 @@ msgstr "Reducir la posición del punto"
 msgid "Decrease spacing"
 msgstr "Reducir la separación"
 
-#: src/components/ui/NumberInput.tsx:180
+#: src/components/ui/NumberInput.tsx:186
 msgid "Decrease value"
 msgstr "Reducir el valor"
 
@@ -3973,8 +3973,8 @@ msgstr "Tope del factor de altura"
 msgid "Height Gradient"
 msgstr "Degradado por altura"
 
-#: src/components/controls/LayerSlider.tsx:850
-#: src/components/controls/LayerSlider.tsx:949
+#: src/components/controls/LayerSlider.tsx:860
+#: src/components/controls/LayerSlider.tsx:959
 msgid "Height mm"
 msgstr "Altura (mm)"
 
@@ -4368,7 +4368,7 @@ msgstr "Aumentar la posición del punto"
 msgid "Increase spacing"
 msgstr "Aumentar la separación"
 
-#: src/components/ui/NumberInput.tsx:170
+#: src/components/ui/NumberInput.tsx:176
 msgid "Increase value"
 msgstr "Aumentar el valor"
 
@@ -4687,7 +4687,7 @@ msgstr "Celosía"
 msgid "Launching UVTools to inspect the sliced file…"
 msgstr "Abriendo UVTools para revisar el archivo laminado…"
 
-#: src/components/controls/LayerSlider.tsx:660
+#: src/components/controls/LayerSlider.tsx:671
 msgid "Layer"
 msgstr "Capa"
 
@@ -4723,10 +4723,10 @@ msgstr "Vista previa de la capa {layer}"
 msgid "Layer {layers}"
 msgstr "Capa {layers}"
 
-#: src/components/controls/LayerSlider.tsx:821
-#: src/components/controls/LayerSlider.tsx:850
-#: src/components/controls/LayerSlider.tsx:920
-#: src/components/controls/LayerSlider.tsx:949
+#: src/components/controls/LayerSlider.tsx:831
+#: src/components/controls/LayerSlider.tsx:860
+#: src/components/controls/LayerSlider.tsx:930
+#: src/components/controls/LayerSlider.tsx:959
 msgid "Layer #"
 msgstr "Capa n.º"
 

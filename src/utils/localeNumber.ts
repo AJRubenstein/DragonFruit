@@ -39,13 +39,28 @@ export function formatFixed(value: number, fractionDigits: number, locale: strin
 }
 
 /**
+ * A value as an editable field shows it, for `parseDecimal` to read back: no
+ * thousands grouping, no trailing zeros, and never "-0".
+ */
+export function formatFieldNumber(value: number, maxFractionDigits: number, locale: string): string {
+  const rounded = Number(value.toFixed(maxFractionDigits)) || 0;
+  return formatNumber(rounded, locale, { maximumFractionDigits: maxFractionDigits, useGrouping: false });
+}
+
+/** The character `locale` writes between a number's whole and its fraction. */
+export function decimalSeparator(locale: string): string {
+  return formatNumber(1.5, locale).charAt(1);
+}
+
+/**
  * Reads a number typed into a field: the locale's decimal separator, or a ".",
- * which is what a number pad or a habit often types. NaN when it isn't one.
+ * which is what a number pad or a habit often types. NaN when the text, all of
+ * it, isn't one.
  */
 export function parseDecimal(text: string, locale: string): number {
-  const separator = formatNumber(1.5, locale).charAt(1);
+  const separator = decimalSeparator(locale);
   const normalized = separator === '.' ? text.trim() : text.trim().replaceAll(separator, '.');
-  return normalized === '' ? Number.NaN : Number.parseFloat(normalized);
+  return normalized === '' ? Number.NaN : Number(normalized);
 }
 
 /** Number formatting bound to one locale; see `localeFormat`. */
@@ -53,8 +68,12 @@ export interface LocaleFormat {
   readonly locale: string;
   number(value: number, options?: Intl.NumberFormatOptions): string;
   fixed(value: number, fractionDigits: number): string;
+  /** `formatFieldNumber` for this locale. */
+  field(value: number, maxFractionDigits: number): string;
   /** `parseDecimal` for this locale. */
   parse(text: string): number;
+  /** `decimalSeparator` for this locale. */
+  readonly decimalSeparator: string;
 }
 
 const localeFormats = new Map<string, LocaleFormat>();
@@ -70,7 +89,9 @@ export function localeFormat(locale: string): LocaleFormat {
       locale,
       number: (value, options) => formatNumber(value, locale, options),
       fixed: (value, fractionDigits) => formatFixed(value, fractionDigits, locale),
+      field: (value, maxFractionDigits) => formatFieldNumber(value, maxFractionDigits, locale),
       parse: (text) => parseDecimal(text, locale),
+      decimalSeparator: decimalSeparator(locale),
     };
     localeFormats.set(locale, format);
   }
