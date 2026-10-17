@@ -2588,6 +2588,16 @@ export const KICKSTAND_HOST_TYPES: readonly KickstandHostTypeId[] =
     (Object.keys(KICKSTAND_HOST_BY_TYPE) as SupportTypeId[])
         .filter((id): id is KickstandHostTypeId => KICKSTAND_HOST_BY_TYPE[id]);
 
+/**
+ * The types leaf sprouting may hang a knot on.
+ *
+ * Sprouting walks each host's real `segments`, so this is the kickstand hosts
+ * that declare `hasSegments`. A brace hosts a kickstand on its selectable span
+ * but carries no segments, so it is excluded here.
+ */
+export const LEAF_SPROUT_HOST_TYPES: readonly KickstandHostTypeId[] =
+    KICKSTAND_HOST_TYPES.filter((id) => getSupportTypeDescriptor(id).hasSegments);
+
 /** Whether an untrusted `kind` names a type a kickstand may host on. */
 export function isKickstandHostType(kind: string): kind is KickstandHostTypeId {
     return (KICKSTAND_HOST_TYPES as readonly string[]).includes(kind);
