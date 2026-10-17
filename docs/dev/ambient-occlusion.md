@@ -60,6 +60,17 @@ it unbaked and re-queueable on the next `models` change. Both halves are needed:
 without the first, one `models` change during a bake sends the soup twice; without
 the second, the same model is re-baked on every later change.
 
+**"Outstanding" is the run's remaining queue plus the bakes in flight**, and both
+are state rather than bookkeeping: the queue is `pendingAoQueueRef`, *replaced*
+wholesale by each effect run (so a superseded run cannot leave anything counted —
+the workers shift the same array), and the in-flight count rides the take. It used
+to be the run's whole queue added up front and returned a bake at a time, which
+leaked a count per superseded run: every `models` change while a bake was queued
+(a hollowing apply patches them, the idle plane pass patches them again) left the
+count above zero forever, and `hasPendingBackgroundGeometryWork()` is what the
+modifier-apply overlay polls to clear its "loading mesh" spinner — it then waited
+out its 20-second cap with all the work already done.
+
 ## The shipped recipe
 
 `bake_smoothed_occlusion_for_soup` is what the command calls: the estimator with

@@ -1603,6 +1603,8 @@ export function useSceneCollectionManager(options?: {
   // Models whose AO volume bake is queued or awaiting the native round trip.
   // Part of hasPendingBackgroundGeometryWork.
   const pendingAoBakeRef = useRef(0);
+  /** The AO sweep's remaining work, replaced wholesale on every run. */
+  const pendingAoQueueRef = useRef<string[]>([]);
   // Geometries with a bake in flight. The attribute lands only when the bake
   // resolves, so without this the queue rebuilt on a later `models` change would
   // send the same soup a second time — measured as 25 bakes of one mesh in three
@@ -2456,6 +2458,7 @@ export function useSceneCollectionManager(options?: {
     || deferredDisposalProcessingRef.current
     || pendingFlatteningPlanesRef.current > 0
     || pendingAoBakeRef.current > 0
+    || pendingAoQueueRef.current.length > 0
   ), []);
 
   const processDeferredDisposalQueue = useCallback(() => {
@@ -3918,6 +3921,12 @@ export function useSceneCollectionManager(options?: {
    * paid per frame afterwards.
    */
   useEffect(() => {
+    // Whatever the last run left, this one owns the queue from here: cleared
+    // before any early return, because a stale one keeps
+    // `hasPendingBackgroundGeometryWork()` true for work nobody will do (the
+    // modifier-apply overlay polls it to clear its spinner).
+    pendingAoQueueRef.current = [];
+
     // Zero intensity means off, so there is nothing to bake for: raising the
     // slider later re-runs this and the geometries that never got an attribute
     // are the ones that get baked.
@@ -3938,8 +3947,14 @@ export function useSceneCollectionManager(options?: {
       .map((model) => model.id);
     if (queue.length === 0) return;
 
+    // What this run still has to bake, as a ref as well as a local: the workers
+    // below shift the same array, so the ref is the live remainder and
+    // `hasPendingBackgroundGeometryWork` can read it without the run's own
+    // bookkeeping. Re-derived on every run, so a superseded run cannot leave
+    // anything counted.
+    pendingAoQueueRef.current = queue;
+
     let cancelled = false;
-    pendingAoBakeRef.current += queue.length;
 
     const scheduleIdle = (cb: () => void) => {
       if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -3953,6 +3968,14 @@ export function useSceneCollectionManager(options?: {
       if (cancelled) return;
       const id = queue.shift();
       if (!id) return;
+      // Taken, so in flight: the counter rides the take, not the whole queue. It
+      // used to be `+= queue.length` at the top of the run and decremented per
+      // bake, so the items a superseded run never took stayed counted — and every
+      // `models` change while a bake was queued (a hollowing apply patches them,
+      // the idle plane pass patches them again) leaked one. The "finalizing"
+      // overlay then waited out its 20 s cap after every hollow, with all the
+      // work done in the first 200 ms.
+      pendingAoBakeRef.current += 1;
       const model = modelsRef.current.find((m) => m.id === id);
       const geometry = model?.geometry.geometry;
       if (geometry) pendingAoGeometriesRef.current.add(geometry);
