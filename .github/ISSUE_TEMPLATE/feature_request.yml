@@ -54,8 +54,8 @@ body:
         - Antialiasing / 3DAA
         - Printer or material profiles
         - Exporting files
-        - Sending to / printing on the printer
-        - Interface (menus, viewport, shortcuts)
+        - Sending to the printer (network, status, camera)
+        - Interface (menus, viewport, shortcuts, selection, undo)
         - Installing, starting, updating
         - Not sure / other
     validations:
