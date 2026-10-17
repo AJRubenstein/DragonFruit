@@ -594,6 +594,15 @@ per-body inflate is `DecompressionStream` (see the fflate gotcha under the conta
 parse), four bodies at a time, and it added nothing measurable to the main thread
 (prep 203 -> 235 ms a model, within noise).
 
+**The rule both attempts produced: pack what the native side produces, never what the
+renderer must pack.** The bake's soup upload was packed as well — 36 bytes a triangle,
+430 MB across the scene, halved on the wire — and it *lost*: the build pass went
+15.36 s -> 16.64 s, because `CompressionStream` in the webview cost 500-1100 ms a
+model, on the main thread, which is the resource a load is short of, while the upload
+it shrank was already overlapped with the mesh transfers. Native-side packing is nearly
+free (tens of milliseconds in an optimized build) and its inflate runs off-thread;
+packing in the renderer is the expensive direction.
+
 What the numbers leave, in value order, is everything *off* the wire: the container
 parse (4.6 s before any model work), the main-thread geometry work (BVH 0.25-0.50 s
 and flattening planes 0.15-0.40 s a model, now well under a third of what they
