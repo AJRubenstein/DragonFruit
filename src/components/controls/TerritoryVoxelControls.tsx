@@ -1,6 +1,9 @@
 "use client";
 
 import React from 'react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 import { Card, CardHeader, Toggle } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
@@ -29,6 +32,7 @@ export function TerritoryVoxelControls({
     onUseSurfaceContiguityChange,
     onRescan,
 }: TerritoryVoxelControlsProps) {
+    const { _ } = useLingui();
     const [expanded, setExpanded] = useFloatingPanelCollapse(false);
 
     return (
@@ -37,7 +41,7 @@ export function TerritoryVoxelControls({
                 left={(
                     <>
                         <PanelCollapseToggle expanded={expanded} onToggle={() => setExpanded(!expanded)} />
-                        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Territory Voxels</h3>
+                        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}><Trans>Territory Voxels</Trans></h3>
                     </>
                 )}
                 right={(
@@ -56,9 +60,11 @@ export function TerritoryVoxelControls({
                                 background: 'var(--surface-1)',
                                 color: 'var(--text-muted)',
                             }}
-                        title="Toggle Territory Voxels"
+                        title={_(msg`Toggle Territory Voxels`)}
                     >
-                        {enabled ? 'ON' : 'OFF'}
+                        {enabled
+                            ? _(msg({ message: 'ON', comment: 'Toggle state on a narrow uppercase button. Keep it very short.' }))
+                            : _(msg({ message: 'OFF', comment: 'Toggle state on a narrow uppercase button. Keep it very short.' }))}
                     </button>
                 )}
             />
@@ -67,7 +73,7 @@ export function TerritoryVoxelControls({
                 <div className="px-2.5 pt-2 pb-3">
                     {islandCount > 0 && (
                         <div className="ui-meta mb-2">
-                            {islandCount} island{islandCount !== 1 ? 's' : ''} detected
+                            <Plural value={islandCount} one="# island detected" other="# islands detected" />
                         </div>
                     )}
 
@@ -75,7 +81,7 @@ export function TerritoryVoxelControls({
                         <div className="space-y-2.5">
                             <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-between">
-                            <label className="ui-meta">Opacity</label>
+                            <label className="ui-meta"><Trans>Opacity</Trans></label>
                             <span className="ui-meta" style={{ color: 'var(--text-strong)' }}>{Math.round(opacity * 100)}%</span>
                         </div>
                         <input
@@ -91,13 +97,13 @@ export function TerritoryVoxelControls({
                     </div>
 
                     <div className="ui-meta pt-1.5 border-t leading-snug" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <p>Visualizes &apos;Vertical Watershed&apos; territories, preserving identity after merges.</p>
+                        <p><Trans>Visualizes “Vertical Watershed” territories, preserving identity after merges.</Trans></p>
                     </div>
 
                     {/* Analysis Settings */}
                     <div className="pt-1.5 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                         <div className="flex items-center justify-between">
-                            <label className="ui-meta" title="Prioritize surface connectivity to prevent internal tunneling">Surface Priority Mode</label>
+                            <label className="ui-meta" title={_(msg`Prioritize surface connectivity to prevent internal tunneling`)}><Trans>Surface Priority Mode</Trans></label>
                             <Toggle
                                 size="sm"
                                 checked={useSurfaceContiguity}
@@ -115,7 +121,7 @@ export function TerritoryVoxelControls({
                             />
                         </div>
                         <div className="mt-1 text-[10px] leading-snug" style={{ color: 'color-mix(in srgb, var(--text-muted), black 20%)' }}>
-                            {onRescan ? 'Automatically recalculates territory when toggled.' : 'Toggles between internal centroid (OFF) and surface neighbor (ON) logic. Requires Re-Scan.'}
+                            {onRescan ? _(msg`Automatically recalculates territory when toggled.`) : _(msg`Toggles between internal centroid (OFF) and surface neighbor (ON) logic. Requires Re-Scan.`)}
                         </div>
                     </div>
                         </div>

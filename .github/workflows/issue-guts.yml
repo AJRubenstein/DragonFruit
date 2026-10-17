@@ -68,3 +68,35 @@ jobs:
             gh label create "$l" --color c5def5 2>/dev/null || true
           done
           gh issue edit "$NUMBER" --add-label "$LABELS"
+
+      - name: Add missing title prefix
+        # Only for newly opened issues; a manual re-classify shouldn't rename anything.
+        if: ${{ github.event_name == 'issues' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          # Passed through env, never inlined, because title and body are user input.
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          # Adds [BUG] or [FEAT] to issues created from the issue forms, in case
+          # the reporter deleted the pre-filled prefix. Each form leaves a heading
+          # only it produces.
+          if grep -qF '### Steps to reproduce' <<< "$BODY"; then
+            prefix='[BUG]'
+          elif grep -qF '### What problem are you trying to solve?' <<< "$BODY"; then
+            prefix='[FEAT]'
+          else
+            echo "Not from an issue form; leaving the title alone."
+            exit 0
+          fi
+
+          # Already prefixed (any capitalisation)? Nothing to do.
+          if [[ "${TITLE,,}" == "${prefix,,}"* ]]; then
+            echo "Title already starts with $prefix."
+            exit 0
+          fi
+
+          gh issue edit "$NUMBER" --title "$prefix $TITLE"
+          echo "Renamed #$NUMBER to: $prefix $TITLE"

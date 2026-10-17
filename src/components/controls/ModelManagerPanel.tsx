@@ -33,6 +33,8 @@ import type { ScenePlate } from '@/features/scene/useSceneCollectionManager';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { UnitFormat } from '@/utils/unitFormatting';
 import { ContextMenu, type ContextMenuEntry } from '@/components/ui/ContextMenu';
 
 type SelectMode = 'single' | 'toggle' | 'add';
@@ -46,9 +48,9 @@ type Translate = (descriptor: MessageDescriptor, values?: Record<string, unknown
  * the placeholders raw in production — the same reason page.tsx keeps its
  * formatters out here.
  */
-function formatModelInfoTooltip(translate: Translate, model: LoadedModel): string {
+function formatModelInfoTooltip(translate: Translate, fmt: UnitFormat, model: LoadedModel): string {
   const polygons = translate(msg`${plural(model.polygonCount, { one: '# polygon', other: '# polygons' })}`);
-  const size = formatFileSize(model.fileSizeBytes);
+  const size = formatFileSize(model.fileSizeBytes, fmt);
   return size ? translate(msg`${size} · ${polygons}`) : polygons;
 }
 
@@ -164,7 +166,7 @@ function buildModelGroups(models: readonly LoadedModel[]): GroupedEntry[] {
     });
 }
 
-const splitModelNameSuffix = (name: string): { base: string; suffix: string } => {
+const splitModelNameSuffix = (name: string, fallbackBase: string): { base: string; suffix: string } => {
   const trimmed = name.trim();
   const match = trimmed.match(/^(.*?)(\.[^.\s]+)$/);
   if (!match) {
@@ -173,7 +175,7 @@ const splitModelNameSuffix = (name: string): { base: string; suffix: string } =>
 
   const base = match[1].trim();
   return {
-    base: base.length > 0 ? base : 'Model',
+    base: base.length > 0 ? base : fallbackBase,
     suffix: match[2],
   };
 };
@@ -210,6 +212,7 @@ export function ModelManagerPanel({
   collapsible = true,
 }: ModelManagerPanelProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [collapseExpanded, setCollapseExpanded] = useFloatingPanelCollapse(true);
   // Where collapse is not offered the panel is pinned expanded. This has to be a
   // fallback, not a conjunction: `collapsible && collapseExpanded` reads false in
@@ -404,7 +407,7 @@ export function ModelManagerPanel({
   };
 
   const beginRenameModel = (modelId: string, currentName: string) => {
-    const { base, suffix } = splitModelNameSuffix(currentName);
+    const { base, suffix } = splitModelNameSuffix(currentName, _(msg({ message: 'Model', context: 'Default model name', comment: 'Prefilled name when renaming a model whose file name is only an extension, e.g. ".stl".' })));
     setRenamingGroupId(null);
     setRenamingGroupName('');
     setRenamingModelId(modelId);
@@ -681,7 +684,7 @@ export function ModelManagerPanel({
 
                     <div className="flex items-center gap-0.5">
                       {onOpenSupportsInfo && (
-                        <Tooltip content={formatModelInfoTooltip(_, model)}>
+                        <Tooltip content={formatModelInfoTooltip(_, fmt, model)}>
                           <IconButton
                             variant="ghost"
                             size="sm"
@@ -729,6 +732,10 @@ export function ModelManagerPanel({
       style={panelStyle}
     >
       <CardHeader
+        // Only the column layout is missing the collapse chevron, so there the title
+        // alone sets the header height and the 32px plus sat nearly flush with the
+        // top edge. `py-4` gives it the room the chevron gives the bar's header.
+        className={collapsible ? undefined : 'py-4'}
         left={(
           <>
             {collapsible && (
@@ -744,7 +751,8 @@ export function ModelManagerPanel({
           // says, line by line. The slot earns its keep as the way to add more.
           <IconButton
             onClick={onAddModels}
-            className="!p-0.5 !text-[var(--text-muted)] hover:!text-[var(--text-strong)] hover:!bg-[var(--surface-2)]"
+            size="sm"
+            className="!text-[var(--text-muted)] hover:!text-[var(--text-strong)] hover:!bg-[var(--surface-2)]"
             title={_(msg({ message: 'Add models to the plate', comment: 'Tooltip on the plus in the Models panel header, which opens the mesh picker.' }))}
           >
             <Plus className="h-3.5 w-3.5" />

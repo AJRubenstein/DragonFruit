@@ -104,6 +104,7 @@ import {
   writeCornerOnlyWireframePositions,
 } from './SceneCanvasGeometry';
 import { ModelAttachedSupportLayer } from './ModelAttachedSupportLayer';
+import { FollowModelMove } from './FollowModelMove';
 import {
   CameraModeEntryFramingController,
   CameraProjectionController,
@@ -185,7 +186,7 @@ import {
   isBoundsOutsideVolume,
   shouldUsePreciseBoundsForTransform,
 } from '@/utils/modelBounds';
-import { computeLowestZ } from '@/utils/geometry';
+import { computeLowestZ, countTriangles } from '@/utils/geometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { Toast } from '@/components/atoms';
 import { getCenteredPositions } from '@/utils/modelBounds';
@@ -200,6 +201,7 @@ import {
 import { applyScaleFactor } from '@/components/gizmo/scale/applyScaleFactor';
 import { createWheelDeviceClassifier, type WheelDevice } from '@/components/scene/SceneCanvas/wheelDeviceClassifier';
 import { getSelectionGizmoCenter } from '@/features/scene/selectionPosition';
+import { rotateSelectionFromActive, type SelectionRotationMode } from '@/features/scene/selectionTransform';
 import { DEFAULT_LIFT_DISTANCE_MM } from '@/features/transform/liftDefaults';
 import { setPickRayFromCamera } from '@/components/scene/camera/pickRay';
 import {
@@ -520,6 +522,7 @@ export function SceneCanvas({
   transform,
   uniformScaling = true,
   localTransformSpace = false,
+  selectionRotationMode = 'group',
   autoLift = false,
   liftDistance = DEFAULT_LIFT_DISTANCE_MM,
   autoSnapEnabled = true,
@@ -682,6 +685,8 @@ export function SceneCanvas({
   uniformScaling?: boolean;
   /** Drive the transform gizmo in the model's own frame instead of the world axes. */
   localTransformSpace?: boolean;
+  /** How the gizmo turns a multi-model selection: as one block, or each model in place. */
+  selectionRotationMode?: SelectionRotationMode;
   autoLift?: boolean;
   liftDistance?: number;
   autoSnapEnabled?: boolean;
@@ -1020,9 +1025,7 @@ export function SceneCanvas({
           },
           visible,
           color: fallbackColor,
-          polygonCount: geom.geometry.getAttribute('position')?.count
-            ? geom.geometry.getAttribute('position').count / 3
-            : 0,
+          polygonCount: countTriangles(geom.geometry),
         },
       ];
     }
@@ -1147,7 +1150,7 @@ export function SceneCanvas({
     before: ModelTransform;
   } | null>(null);
   const [gizmoGroupStartSnapshot, setGizmoGroupStartSnapshot] = React.useState<{
-    operation: 'move' | 'scale';
+    operation: 'move' | 'rotate' | 'scale';
     activeModelId: string;
     pivot: THREE.Vector3;
     beforeByModelId: Record<string, ModelTransform>;
@@ -2611,6 +2614,11 @@ export function SceneCanvas({
     return null;
   }, [activeActualMeshRef, clipLower, clipUpper]);
 
+  // A drag that only moves models: the gizmo's move arrows, or a Select-mode drag, which
+  // has no gizmo descriptor. Footprint outlines follow these instead of hiding.
+  const isMoveDrag = isGizmoDragging && (
+    activeGizmoDragDescriptor ? activeGizmoDragDescriptor.operation === 'move' : selectDragPressed
+  );
   const isActiveGizmoZMove = activeGizmoDragDescriptor?.operation === 'move'
     && activeGizmoDragDescriptor.axis === 'z';
 
@@ -2858,7 +2866,7 @@ export function SceneCanvas({
 
   const buildMultiSelectionTransformsFromActive = React.useCallback((
     snapshot: {
-      operation: 'move' | 'scale';
+      operation: 'move' | 'rotate' | 'scale';
       activeModelId: string;
       pivot: THREE.Vector3;
       beforeByModelId: Record<string, ModelTransform>;
@@ -2869,6 +2877,18 @@ export function SceneCanvas({
     if (!activeBefore) return {} as Record<string, ModelTransform>;
 
     const result: Record<string, ModelTransform> = {};
+
+    if (snapshot.operation === 'rotate') {
+      const rotated = rotateSelectionFromActive(
+        Object.entries(snapshot.beforeByModelId).map(([id, transform]) => ({ id, transform })),
+        snapshot.activeModelId,
+        activeAfter.rotation,
+        selectionRotationMode,
+        snapshot.pivot,
+      );
+      for (const { id, transform } of rotated) result[id] = transform;
+      return result;
+    }
 
     if (snapshot.operation === 'move') {
       const delta = activeAfter.position.clone().sub(activeBefore.position);
@@ -2911,7 +2931,7 @@ export function SceneCanvas({
     }
 
     return result;
-  }, []);
+  }, [selectionRotationMode]);
 
   const multiGizmoPreviewTransformsById = React.useMemo(() => {
     const snapshot = gizmoGroupStartSnapshot;
@@ -2973,7 +2993,7 @@ export function SceneCanvas({
 
   const applyImmediateMultiPreview = React.useCallback((
     snapshot: {
-      operation: 'move' | 'scale';
+      operation: 'move' | 'rotate' | 'scale';
       activeModelId: string;
       pivot: THREE.Vector3;
       beforeByModelId: Record<string, ModelTransform>;
@@ -7029,20 +7049,26 @@ export function SceneCanvas({
 
               {!hideRaftPrimitives
                 && !thumbnailCaptureActive
-                && !isGizmoDragging
+                && (!isGizmoDragging || isMoveDrag)
                 && !isGizmoRetargeting
                 && !hideFootprintOutlineForPreview
                 && !(transformMode === 'placeOnFace' && disableRaycast)
                 && (
                 <>
                   {footprintOutlineTargets.map((entry) => (
-                    <FootprintBorderRenderer
+                    <FollowModelMove
                       key={`footprint-border-${entry.id}`}
-                      modelGeometry={entry.geometry}
-                      modelTransform={entry.transform}
                       modelId={entry.id}
-                      color={supportHoverTintColor}
-                    />
+                      baseTransform={entry.transform}
+                      liveTransformsRef={crossSectionLiveTransformsRef}
+                    >
+                      <FootprintBorderRenderer
+                        modelGeometry={entry.geometry}
+                        modelTransform={entry.transform}
+                        modelId={entry.id}
+                        color={supportHoverTintColor}
+                      />
+                    </FollowModelMove>
                   ))}
                 </>
               )}
@@ -7158,7 +7184,7 @@ export function SceneCanvas({
                   ]}
                   rotation={gizmoFrameRotation}
                   enableMove
-                  enableRotate={!isMultiGizmoSelection}
+                  enableRotate
                   enableScale
                   uniformScaling={uniformScaling}
                   enableLighting
@@ -7361,7 +7387,18 @@ export function SceneCanvas({
                       activeGroupRef.current.quaternion.premultiply(quaternion);
                       applySupportGroupDelta();
                       const live = captureActiveGroupTransform();
-                      if (live) {
+                      if (live && isMultiGizmoSelection && gizmoGroupStartSnapshot?.operation === 'rotate') {
+                        // The selection turns about its centre, so the active model orbits too
+                        // rather than turning in place; the page seats everything on release.
+                        const immediatePreviewByModelId = buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, live);
+                        const activePreview = immediatePreviewByModelId[gizmoGroupStartSnapshot.activeModelId];
+                        if (activePreview) {
+                          activeGroupRef.current.position.copy(activePreview.position);
+                          applySupportGroupDelta();
+                        }
+                        applyImmediateMultiPreview(gizmoGroupStartSnapshot, immediatePreviewByModelId);
+                        queueLiveDragTransform(activePreview ?? live);
+                      } else if (live) {
                         const correctedLive = alignLiveTransformToLift(activeModel ?? null, live) ?? live;
                         activeGroupRef.current.position.copy(correctedLive.position);
                         activeGroupRef.current.quaternion.copy(new THREE.Quaternion().setFromEuler(correctedLive.rotation));
@@ -7400,6 +7437,26 @@ export function SceneCanvas({
                           scale: sourceTransform.scale.clone(),
                         },
                       };
+
+                      if (isMultiGizmoSelection) {
+                        const beforeByModelId: Record<string, ModelTransform> = {};
+                        selectedTransformableModelIds.forEach((modelId) => {
+                          const model = models.find((entry) => entry.id === modelId);
+                          if (!model) return;
+                          const beforeTransform = modelId === activeModelId ? sourceTransform : model.transform;
+                          beforeByModelId[modelId] = {
+                            position: beforeTransform.position.clone(),
+                            rotation: beforeTransform.rotation.clone(),
+                            scale: beforeTransform.scale.clone(),
+                          };
+                        });
+                        setGizmoGroupStartSnapshot({
+                          operation: 'rotate',
+                          activeModelId,
+                          pivot: computeCenterFromTransforms(beforeByModelId) ?? sourceTransform.position.clone(),
+                          beforeByModelId,
+                        });
+                      }
                     }
                     return true;
                   }}
@@ -7415,13 +7472,36 @@ export function SceneCanvas({
                         }
                       : null);
 
-                    if (live && onTransformChange) {
+                    const isGroupRotate = isMultiGizmoSelection && gizmoGroupStartSnapshot?.operation === 'rotate';
+                    if (live && onTransformChange && !isGroupRotate) {
                       flushPendingTransformChange();
                       onTransformChange(live.position, live.rotation, live.scale);
                     }
 
                     const startSnapshot = gizmoTransformStartSnapshotRef.current;
-                    if (live && startSnapshot && startSnapshot.modelId === activeModelId) {
+                    if (live && isGroupRotate && gizmoGroupStartSnapshot) {
+                      const finalByModelId = buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, live);
+                      applyImmediateMultiPreview(gizmoGroupStartSnapshot, finalByModelId);
+                      onGizmoTransformGroupCommit?.({
+                        operation: 'rotate',
+                        entries: Object.entries(gizmoGroupStartSnapshot.beforeByModelId).map(([modelId, before]) => {
+                          const after = finalByModelId[modelId] ?? before;
+                          return {
+                            modelId,
+                            before: {
+                              position: before.position.clone(),
+                              rotation: before.rotation.clone(),
+                              scale: before.scale.clone(),
+                            },
+                            after: {
+                              position: after.position.clone(),
+                              rotation: after.rotation.clone(),
+                              scale: after.scale.clone(),
+                            },
+                          };
+                        }),
+                      });
+                    } else if (live && startSnapshot && startSnapshot.modelId === activeModelId) {
                       onGizmoTransformCommit?.({
                         modelId: activeModelId,
                         operation: startSnapshot.operation,
@@ -7439,8 +7519,9 @@ export function SceneCanvas({
                     }
                     gizmoTransformStartSnapshotRef.current = null;
                     setActiveGizmoDragDescriptor(null);
-                    onTransformEnd?.('rotate', live ?? undefined);
+                    onTransformEnd?.('rotate', live ?? undefined, { skipStoreCommit: isGroupRotate });
                     queueLiveDragTransform(null);
+                    setGizmoGroupStartSnapshot(null);
                     clearDragCornerCageBaseData();
                     if (!onTransformEnd) {
                       scheduleSupportDragGroupReset();

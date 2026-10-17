@@ -203,6 +203,7 @@ export function SharedPanelStack({
         />
       )}
 
+      {/* i18n-ignore-start: developer debug overlay (Ctrl+Shift+X), kept in English */}
       {isTransformDebugOverlayOpen && (
         <Card
           key="transform-debug-overlay"
@@ -450,6 +451,7 @@ export function SharedPanelStack({
           </div>
         </Card>
       )}
+      {/* i18n-ignore-end */}
     </>
   );
 }

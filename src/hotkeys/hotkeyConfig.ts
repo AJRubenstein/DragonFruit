@@ -219,13 +219,6 @@ export const DEFAULT_KEYBINDINGS: HotkeyConfig = {
             description: 'Re-run the first-run onboarding wizard'
         }
     },
-    MESH: {
-        INVERT_NORMALS: {
-            key: 'n',
-            modifier: 'alt',
-            description: 'Invert selected model normals'
-        }
-    },
     NAVIGATION: {
         LAYER_UP: {
             key: 'arrowup',

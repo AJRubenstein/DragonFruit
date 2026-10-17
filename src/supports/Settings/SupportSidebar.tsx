@@ -74,6 +74,8 @@ import {
 import { DEFAULT_RAFT_SETTINGS } from '../Rafts/Crenelated/RaftDefaults';
 import type { SidebarPanel } from './sidebarPanels';
 import { resetSupportSettingsScrollForTabChange } from './supportSidebarScroll';
+import { Trans } from '@lingui/react/macro';
+import { adjustSupportSettingsLabel } from '@/supports/history/supportHistoryLabels';
 
 const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners !bg-[var(--surface-0)]';
 const SECTION_CARD_STYLE: React.CSSProperties = {
@@ -128,10 +130,6 @@ function hasMeaningfulSupportEditChange(
     // Kickstands, their roots and their knots all live on SupportState, so
     // this comparison covers them.
     return JSON.stringify(beforeSupport) !== JSON.stringify(afterSupport);
-}
-
-function formatSupportKindLabel(kind: EditableSupportTarget['kind']): string {
-    return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
 }
 
 function Section({
@@ -396,7 +394,7 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
             const after = captureSupportEditSnapshot();
             if (hasMeaningfulSupportEditChange(before, after)) {
                 pushSupportEditHistory(
-                    `Adjust ${formatSupportKindLabel(target.kind)} Settings`,
+                    adjustSupportSettingsLabel(target.kind),
                     before,
                     after,
                 );
@@ -985,7 +983,7 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
 
                     <div className="space-y-2">
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.diskHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Root Disk Height</div>
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}><Trans>Root Disk Height</Trans></div>
                             <div className="relative">
                                 <NumberInput
                                     value={settings.roots.diskHeightMm}
@@ -1000,7 +998,7 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
                         </div>
 
                         <div className="space-y-1 min-w-0" {...makeRowFocusHandlers('roots.coneHeightMm')}>
-                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}>Cone Height</div>
+                            <div className={compactFieldLabelClass} style={{ color: 'var(--text-muted)' }}><Trans>Cone Height</Trans></div>
                             <div className="relative">
                                 <NumberInput
                                     value={settings.roots.coneHeightMm}

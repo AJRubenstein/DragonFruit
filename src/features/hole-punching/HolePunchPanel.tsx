@@ -2,6 +2,9 @@ import React from 'react';
 import { Button, Card, CardHeader, Spinner } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { ScrollableNumberField } from '@/components/ui/scrollableNumberField';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 
 export interface HolePunchPanelState {
   radiusMm: number;
@@ -37,6 +40,7 @@ export function HolePunchPanel({
   interiorView = false,
   interiorViewAvailable = false,
 }: HolePunchPanelProps) {
+  const { _ } = useLingui();
   const [expanded, setExpanded] = React.useState(true);
   const [linked, setLinked] = React.useState(true);
   const effectiveRadiusYMm = state.radiusYMm ?? state.radiusMm;
@@ -83,7 +87,7 @@ export function HolePunchPanel({
                 setExpanded((prev) => !prev);
               }}
             />
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>Hole Punching</h3>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}><Trans>Hole Punching</Trans></h3>
           </>
         )}
       />
@@ -98,7 +102,7 @@ export function HolePunchPanel({
                 background: 'var(--accent-secondary-action-bg-92)',
               }}
             >
-              <div className="ui-meta text-xs" style={{ color: 'var(--accent-secondary-action-color)' }}>Interior View Mode</div>
+              <div className="ui-meta text-xs" style={{ color: 'var(--accent-secondary-action-color)' }}><Trans>Interior View Mode</Trans></div>
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
                   Press <kbd className="px-1 rounded text-xs font-medium" style={{ background: 'var(--surface-2)', color: '#baf72e' }}>X</kbd> for <strong style={{ color: 'var(--accent-secondary-action-color)' }}>{interiorView ? 'Exterior View' : 'Interior View'}</strong>
@@ -107,7 +111,7 @@ export function HolePunchPanel({
             </div>
           )}
           <div className="rounded-md border p-2 space-y-1.5" style={accentCardStyle}>
-            <div className="ui-meta" style={{ color: 'var(--text-muted)' }}>Depth Mode</div>
+            <div className="ui-meta" style={{ color: 'var(--text-muted)' }}><Trans>Depth Mode</Trans></div>
             <div className="grid grid-cols-2 gap-1">
               <Button
                 variant="secondary"
@@ -116,9 +120,9 @@ export function HolePunchPanel({
                 onClick={() => setState({ depthMode: 'auto' })}
                 disabled={disabled || isApplying || !canUseAutoDepth}
                 style={state.depthMode === 'auto' ? activeModeStyle : undefined}
-                title={!canUseAutoDepth ? 'Auto depth requires a hollowed model or hollow preview.' : undefined}
+                title={!canUseAutoDepth ? _(msg`Auto depth requires a hollowed model or hollow preview.`) : undefined}
               >
-                Auto
+                <Trans>Auto</Trans>
               </Button>
               <Button
                 variant="secondary"
@@ -128,14 +132,14 @@ export function HolePunchPanel({
                 disabled={disabled || isApplying}
                 style={state.depthMode === 'manual' ? activeModeStyle : undefined}
               >
-                Manual
+                <Trans>Manual</Trans>
               </Button>
             </div>
           </div>
 
           {state.depthMode === 'manual' && (
             <div className="rounded-md border p-2 space-y-1.5" style={cardStyle}>
-              <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}>Punch Depth</label>
+              <label className="ui-meta block" style={{ color: 'var(--text-muted)' }}><Trans>Punch Depth</Trans></label>
               <ScrollableNumberField
                 value={state.depthMm}
                 onChange={(value) => setState({ depthMm: clampFloat(value, 1, 120, 1) })}
@@ -143,7 +147,7 @@ export function HolePunchPanel({
                 max={120}
                 step={0.5}
                 unit="mm"
-                ariaLabel="Hole punch depth in millimeters"
+                ariaLabel={_(msg`Hole punch depth in millimeters`)}
                 disabled={disabled || isApplying}
                 className="mt-1"
               />
@@ -152,7 +156,7 @@ export function HolePunchPanel({
 
           <div className="rounded-md border p-2 space-y-2" style={cardStyle}>
             <div className="flex items-center justify-between">
-              <label className="ui-meta" style={{ color: 'var(--text-muted)' }}>Hole Diameter</label>
+              <label className="ui-meta" style={{ color: 'var(--text-muted)' }}><Trans>Hole Diameter</Trans></label>
               <button
                 type="button"
                 className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-white/10"
@@ -166,7 +170,7 @@ export function HolePunchPanel({
                     setState({ radiusYMm: state.radiusMm });
                   }
                 }}
-                title={linked ? 'Unlink X and Y' : 'Link X and Y'}
+                title={linked ? _(msg`Unlink X and Y`) : _(msg`Link X and Y`)}
                 disabled={disabled || isApplying}
               >
                 <svg
@@ -209,7 +213,7 @@ export function HolePunchPanel({
               max={40}
               step={0.1}
               unit="mm"
-              ariaLabel="Hole diameter X in millimeters"
+              ariaLabel={_(msg`Hole diameter X in millimeters`)}
               disabled={disabled || isApplying}
               className="mt-0"
             />
@@ -221,7 +225,7 @@ export function HolePunchPanel({
               max={40}
               step={0.1}
               unit="mm"
-              ariaLabel="Hole diameter Y in millimeters"
+              ariaLabel={_(msg`Hole diameter Y in millimeters`)}
               disabled={disabled || isApplying || linked}
               className="mt-0"
             />
@@ -235,7 +239,7 @@ export function HolePunchPanel({
               onClick={onReset}
               disabled={disabled || isApplying || !canReset}
             >
-              Reset
+              <Trans>Reset</Trans>
             </Button>
             <Button
               variant="accent"
@@ -246,7 +250,7 @@ export function HolePunchPanel({
             >
               <span className="inline-flex items-center justify-center gap-1.5">
                 {isApplying && <Spinner size="xs" />}
-                <span>{isApplying ? 'Applying...' : 'Apply'}</span>
+                <span>{isApplying ? <Trans>Applying…</Trans> : <Trans>Apply</Trans>}</span>
               </span>
             </Button>
           </div>

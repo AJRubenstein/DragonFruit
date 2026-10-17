@@ -177,7 +177,8 @@ module scope for data. Build a sentence as one message with placeholders and
 `<0>…</0>` tags, never by concatenating fragments — word order differs per
 language. When the same English word means two things (the "Light" theme vs the
 "Light" preset), give the messages a `context`. After adding strings, run
-`npm run i18n:extract` and translate the new Spanish entries in `src/locales/es.po`.
+`npm run i18n:extract` and leave the new entries untranslated in every catalog:
+translations go through Crowdin, not through code changes.
 
 CI enforces this with `npm run check:i18n-literals`, which works like `check:lint`:
 it covers only the directories and files listed in `scripts/i18n-clean-dirs.json`
@@ -185,8 +186,13 @@ and fails on any unwrapped literal there. Coverage grows one path at a time —
 `node scripts/check-i18n-literals.mjs --suggest` lists clean directories not yet on
 the list, and `--report <path>` shows what is left to wrap in one. Never take a path
 off the list to turn a build green, and follow renames in it. Text that is genuinely
-not translatable (a unit, a brand) takes an `i18n-ignore` comment on its line or the
-line above.
+not translatable (a brand) takes an `i18n-ignore` comment on its line or the line
+above; a developer-only section (a debug overlay, raw protocol commands) sits
+between `i18n-ignore-start` and `i18n-ignore-end` comments and stays in English.
+Units are translatable — other scripts write them with their own glyphs
+("мм", "מ״מ") — so a displayed number, with or without a unit, goes through
+`useLocaleFormat()` (`fmt.fixed`, `fmt.quantity`, `fmt.unit`), never `toFixed`. See
+`docs/dev/localization.md`.
 
 ## i18n / Lingui — interpolation gotcha
 

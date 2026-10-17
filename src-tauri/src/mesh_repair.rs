@@ -15,12 +15,15 @@
 //!   build item for 3MF, a decimated single body for an oversized STL) in the
 //!   `DFMX` wire format.
 
+use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
-    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair, HolePunchOptions,
+    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_with_progress,
+    HolePunchOptions,
     HollowOptions, HollowSession, IndexedMesh, RepairOptions, Vec3,
 };
 // The organic cut feature now lives in its own crate.
@@ -28,6 +31,7 @@ use dragonfruit_organic_cut::{organic_cut, GeodesicSolver, OrganicCutOptions};
 use rayon::prelude::*;
 use serde::Deserialize;
 use tauri::ipc::Response;
+use tauri::Emitter;
 
 use crate::{
     staged_mesh, staged_mesh_file_appender, staged_mesh_file_path, staged_mesh_stats,
@@ -186,9 +190,6 @@ struct RepairOptionsDto {
     keep_largest_n_components: Option<usize>,
     repair_orientation: Option<bool>,
     resolve_self_intersections: Option<bool>,
-    solidify_fragmented_components: Option<bool>,
-    solidify_component_threshold: Option<usize>,
-    solidify_self_intersection_threshold: Option<usize>,
     #[serde(alias = "assume_support_geometry")]
     assume_support_geometry: Option<bool>,
 }
@@ -197,10 +198,11 @@ impl From<RepairOptionsDto> for RepairOptions {
     fn from(dto: RepairOptionsDto) -> Self {
         let defaults = RepairOptions::default();
         RepairOptions {
-            weld_epsilon: dto.weld_epsilon.unwrap_or(defaults.weld_epsilon),
-            fill_holes_max_edges: dto
-                .fill_holes_max_edges
-                .unwrap_or(defaults.fill_holes_max_edges),
+            // Passed through as they arrive, `None` and all: the engine derives a tolerance the
+            // caller did not name. The frontend is not better placed to pick these than the crate
+            // is — it has no mesh in hand when it builds them.
+            weld_epsilon: dto.weld_epsilon,
+            fill_holes_max_edges: dto.fill_holes_max_edges,
             keep_largest_n_components: dto
                 .keep_largest_n_components
                 .or(defaults.keep_largest_n_components),
@@ -210,15 +212,6 @@ impl From<RepairOptionsDto> for RepairOptions {
             resolve_self_intersections: dto
                 .resolve_self_intersections
                 .unwrap_or(defaults.resolve_self_intersections),
-            solidify_fragmented_components: dto
-                .solidify_fragmented_components
-                .unwrap_or(defaults.solidify_fragmented_components),
-            solidify_component_threshold: dto
-                .solidify_component_threshold
-                .unwrap_or(defaults.solidify_component_threshold),
-            solidify_self_intersection_threshold: dto
-                .solidify_self_intersection_threshold
-                .unwrap_or(defaults.solidify_self_intersection_threshold),
             assume_support_geometry: dto
                 .assume_support_geometry
                 .or(defaults.assume_support_geometry),
@@ -404,10 +397,56 @@ pub async fn mesh_analyze_from_path(file_path: String) -> Result<String, String>
     serde_json::to_string(&analysis).map_err(|e| format!("serialize analysis: {e}"))
 }
 
+/// Registers a cancel flag for this run, and returns it.
+///
+/// The frontend's token is what keeps two repairs from writing into each other's progress
+/// display, and what a cancel is addressed to.
+fn register_cancel(token: Option<&String>) -> Option<Arc<AtomicBool>> {
+    token.map(|token| {
+        let flag = Arc::new(AtomicBool::new(false));
+        if let Ok(mut registry) = cancels().lock() {
+            registry.insert(token.clone(), flag.clone());
+        }
+        flag
+    })
+}
+
+/// Forgets a finished run's cancel flag.
+fn release_cancel(token: Option<&String>) {
+    if let Some(token) = token {
+        if let Ok(mut registry) = cancels().lock() {
+            registry.remove(token);
+        }
+    }
+}
+
+/// The sink a repair runs with: it announces each stage to the frontend, and says no when
+/// this run has been asked to stop.
+fn progress_sink(
+    token: Option<String>,
+    cancel: Option<Arc<AtomicBool>>,
+    app: crate::DragonFruitAppHandle,
+) -> impl FnMut(&str, usize) -> bool + Send + 'static {
+    move |name: &str, index: usize| {
+        if let Some(token) = token.as_deref() {
+            let _ = app.emit(
+                "mesh-repair-progress",
+                serde_json::json!({ "token": token, "name": name, "index": index }),
+            );
+        }
+        cancel
+            .as_ref()
+            .map(|flag| !flag.load(Ordering::SeqCst))
+            .unwrap_or(true)
+    }
+}
+
 #[tauri::command]
 pub async fn mesh_repair_from_path(
     file_path: String,
     options_json: String,
+    progress_token: Option<String>,
+    app: crate::DragonFruitAppHandle,
 ) -> Result<String, String> {
     let path = PathBuf::from(&file_path);
     if !path.exists() {
@@ -418,29 +457,91 @@ pub async fn mesh_repair_from_path(
     }
     let options = parse_options(&options_json)?;
     let source_path = file_path.clone();
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
     let (mesh, mut report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::load_mesh_from_path(&path).map_err(|e| e.to_string())?;
-        let outcome = repair(mesh, &options);
+        let mut sink = progress_sink(token, cancel, app);
+        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
     .map_err(|e| format!("repair task panicked: {e}"))??;
+    release_cancel(progress_token.as_ref());
     report.source_path = Some(source_path);
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
 }
 
+/// Loads a mesh from a path and stages it, repairing nothing.
+///
+/// The webview refuses a `file://` fetch at the security boundary, so a model's file cannot be read
+/// back from the UI directly. This is the first half of [`mesh_repair_from_path`] on its own, for
+/// putting a model back to how it arrived.
 #[tauri::command]
-pub async fn mesh_repair_staged(options_json: String) -> Result<String, String> {
+pub async fn mesh_load_from_path(file_path: String) -> Result<(), String> {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!(
+            "mesh_load_from_path: not found: {}",
+            path.display()
+        ));
+    }
+    let mesh = tauri::async_runtime::spawn_blocking(move || {
+        io::load_mesh_from_path(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("load task panicked: {e}"))??;
+    replace_staging_with_mesh(&mesh)
+}
+
+/// Repairs in flight, by progress token.
+///
+/// A cancel flips the flag and the repair reads it at its next stage boundary, so a
+/// cancel never lands halfway through a pass.
+fn cancels() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static CANCELS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    CANCELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Asks the repair carrying this token to stop at its next stage boundary.
+///
+/// Returns whether a repair was actually carrying that token: a cancel that arrives
+/// after the repair finished is not an error, it is a no-op.
+#[tauri::command]
+pub async fn mesh_repair_cancel(progress_token: String) -> Result<bool, String> {
+    let registry = cancels().lock().map_err(|e| e.to_string())?;
+    Ok(registry
+        .get(&progress_token)
+        .map(|flag| {
+            flag.store(true, Ordering::SeqCst);
+            true
+        })
+        .unwrap_or(false))
+}
+
+#[tauri::command]
+pub async fn mesh_repair_staged(
+    options_json: String,
+    progress_token: Option<String>,
+    app: crate::DragonFruitAppHandle,
+) -> Result<String, String> {
     let options = parse_options(&options_json)?;
     let bytes = read_staging_bytes()?;
+
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
+
     let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let outcome = repair(mesh, &options);
+        let mut sink = progress_sink(token, cancel, app);
+        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
     .map_err(|e| format!("repair task panicked: {e}"))??;
+    release_cancel(progress_token.as_ref());
+
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
 }

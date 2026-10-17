@@ -4,7 +4,7 @@ import React from 'react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Settings, RotateCcw } from 'lucide-react';
-import { Button, Card, CardHeader, IconButton } from '@/components/atoms';
+import { Button, Card, CardHeader, IconButton, Spinner } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -12,6 +12,8 @@ import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { useFloatingPanelCollapse } from '@/components/layout/FloatingPanelStack';
 import type { UseIslandsReturn } from '@/volumeAnalysis/Islands/useIslands';
 import { ISLAND_LAYER_COLORS, markerIdFor } from '@/volumeAnalysis/Islands/islandPuckMarkers';
+import { Trans } from '@lingui/react/macro';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 
 const SECTION_CARD: React.CSSProperties = {
   borderColor: 'var(--border-subtle)',
@@ -65,6 +67,7 @@ interface IslandsPanelProps {
 
 export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: IslandsPanelProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const [expanded, setExpanded] = useFloatingPanelCollapse(true);
   const [showSettings, setShowSettings] = React.useState(false);
 
@@ -159,10 +162,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                 }}
               >
                 <div className="flex items-center gap-2 px-3 py-2 border rounded-md shadow-md" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                  <svg className="animate-spin h-4 w-4" style={{ color: 'var(--accent)' }} viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
+                  <Spinner size="md" style={{ color: 'var(--accent)' }} />
                   <span className="text-[11px] font-semibold" style={{ color: 'var(--text-strong)' }}>{_(msg`Recalculating…`)}</span>
                 </div>
               </div>
@@ -181,7 +181,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                 color: 'var(--accent)',
               }}
             >
-              {scanning ? 'Scanning…' : 'Scan Islands'}
+              {scanning ? <Trans>Scanning…</Trans> : <Trans>Scan Islands</Trans>}
             </Button>
 
 
@@ -287,7 +287,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
       {/* Settings Modal */}
       <StructuredDialogModal
         open={showSettings}
-        ariaLabel={_(msg`Scan settings`)}
+        ariaLabel={_(msg`Scan Settings`)}
         title={_(msg`Scan Settings`)}
         subtitle={_(msg`Configure island detection parameters`)}
         iconTone="neutral"
@@ -340,7 +340,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{_(msg`Resolution`)}</span>
-                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{draftPxMm.toFixed(2)} mm/px</span>
+                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.quantity(draftPxMm, 2, 'mmPerPx')}</span>
                 </div>
                 <input type="range" min="0.03" max="0.5" step="0.01" value={draftPxMm} onChange={(e) => setDraftPxMm(parseFloat(e.target.value))} disabled={scanning} className="ui-range w-full" />
               </div>
@@ -349,7 +349,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{_(msg`Support buffer`)}</span>
-                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{draftSupportBufMm.toFixed(2)} mm</span>
+                  <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--text-strong)' }}>{fmt.quantity(draftSupportBufMm, 2, 'mm')}</span>
                 </div>
                 <input type="range" min="0" max="1" step="0.05" value={draftSupportBufMm} onChange={(e) => setDraftSupportBufMm(parseFloat(e.target.value))} disabled={scanning} className="ui-range w-full" />
               </div>
@@ -459,7 +459,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                       max={10.0}
                       showStepper={false}
                     />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>mm²</span>
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>{/* i18n-ignore: unit */}mm²</span>
                   </div>
                 )}
               </div>
@@ -481,7 +481,7 @@ export function IslandsPanel({ islands, hasGeometry, bottomClearancePx = 88 }: I
                       max={2.0}
                       showStepper={false}
                     />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>mm²</span>
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>{/* i18n-ignore: unit */}mm²</span>
                   </div>
                 )}
               </div>

@@ -9,7 +9,7 @@
     title/subtitle/action cards. The six legacy shell toasts predate both —
     leave them until the consolidation in the internal backlog lands.
 
-## The three paths
+## The two paths
 
 **1. The editor shell** — `src/features/notifications/useEditorToasts.ts` (~300 lines), extracted verbatim from `page.tsx`. It owns six toasts through **twelve `useState` values and eleven timer/raf refs**:
 
@@ -24,15 +24,13 @@
 
 The hook returns every setter under its original name; the things that *trigger* a toast — the export flow, undo/redo, autosave, the print monitor, scene import — still live in `page.tsx` and call those setters.
 
-**2. Support mode** — `src/components/ui/SupportToasts.tsx`, eighteen lines. Error tone only, a CSS `fadeIn` animation, and **no timer at all**: the caller owns how long `message` stays non-null.
-
-**3. Inline, per-component** — `AutoBracingSettingsCard.tsx` and `page.tsx` render their own `<ToastViewport><Toast>` directly.
+**2. Inline, per-component** — `AutoBracingSettingsCard.tsx` and `page.tsx` render their own `<ToastViewport><Toast>` directly.
 
 ### Keep rendered strings out of toast state
 
 The save toast holds a **mode** (`'saving' | 'autosaving'`), not a label; `NotificationStack` picks the message at render time with `_(msg\`Saving…\`)`. It used to store the finished string. Storing rendered text in state puts it outside the catalog and freezes it in whatever locale was active when the toast fired — so a new toast carries the state it needs to *choose* its message, never the message.
 
-All three bottom out in the same two primitives, `Toast` and `ToastViewport` (`src/components/atoms/Toast.tsx`), which is the one piece that *is* shared.
+Both bottom out in the same two primitives, `Toast` and `ToastViewport` (`src/components/atoms/Toast.tsx`), which is the one piece that *is* shared.
 
 ## The pattern the shell repeats
 

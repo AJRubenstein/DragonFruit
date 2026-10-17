@@ -1,5 +1,8 @@
 import React from 'react';
 import { AlertTriangle, Trash2 } from 'lucide-react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { Button } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 
@@ -20,16 +23,17 @@ export function DestructiveTransformModal({
   onCancel,
   onConfirm,
 }: DestructiveTransformModalProps) {
+  const { _ } = useLingui();
   return (
     <StructuredDialogModal
       open={isOpen}
-      ariaLabel="Destructive transform warning"
-      title="Destructive Transform"
-      subtitle="Supports will be deleted before continuing"
+      ariaLabel={_(msg`Destructive Transform`)}
+      title={_(msg`Destructive Transform`)}
+      subtitle={_(msg`Supports will be deleted before continuing`)}
       icon={<AlertTriangle className="h-4 w-4" />}
       iconTone="warning"
       zIndexClassName="z-[130]"
-      closeAriaLabel="Close warning modal"
+      closeAriaLabel={_(msg`Close warning modal`)}
       onClose={onCancel}
       onBackdropClick={onCancel}
       bodyClassName="p-4 space-y-3"
@@ -37,7 +41,7 @@ export function DestructiveTransformModal({
       actions={(
         <>
           <Button variant="secondary" onClick={onCancel}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button
             variant="tinted-danger"
@@ -45,30 +49,30 @@ export function DestructiveTransformModal({
             onClick={onConfirm}
           >
             <Trash2 className="w-3.5 h-3.5" />
-            Delete & Continue
+            <Trans>Delete & Continue</Trans>
           </Button>
         </>
       )}
     >
       <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-        <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Operation</div>
+        <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Operation</Trans></div>
         <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>{operationLabel}</div>
       </div>
 
       <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-        <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Model</div>
-        <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>{modelName ?? 'Unknown Model'}</div>
+        <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{_(msg({ message: 'Model', context: 'Dialog field' }))}</div>
+        <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>{modelName ?? _(msg`Unknown Model`)}</div>
       </div>
 
       <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-        <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Supports Detected</div>
+        <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Supports Detected</Trans></div>
         <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-strong)' }}>
           {supportCount.toLocaleString()}
         </div>
       </div>
 
       <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-        This transform invalidates existing supports. If you continue, all supports for this model will be deleted.
+        <Trans>This transform invalidates existing supports. If you continue, all supports for this model will be deleted.</Trans>
       </p>
     </StructuredDialogModal>
   );

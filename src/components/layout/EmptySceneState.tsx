@@ -9,6 +9,8 @@ import type { MessageDescriptor } from '@lingui/core';
 import type { RecentOpenedFileEntry } from '@/features/scene/useSceneCollectionManager';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useSceneFileExtensions, useSceneFileExtensionLabels, useSceneFileInputAccept } from '@/features/plugins/pluginFileTypeExtensions';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { UnitFormat, Unit } from '@/utils/unitFormatting';
 
 const BUILD_CHANNEL = (process.env.NEXT_PUBLIC_BUILD_CHANNEL ?? '').toLowerCase();
 const APP_VERSION = (process.env.NEXT_PUBLIC_APP_VERSION ?? '').toLowerCase();
@@ -106,11 +108,16 @@ const TAGLINES: MessageDescriptor[] = [
   msg({ message: "Not all slicers are created equal. This one's free!", comment: 'Play on "all men are created equal" from the United States Declaration of Independence (1776).' }),
 ];
 
-function formatBytes(bytes?: number): string | null {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
-  if (bytes < 1024) return `${bytes} B`;
+/** Build chip under the welcome title; reuses the updater's "Version {version}" wording. */
+function formatVersionChip(translate: (descriptor: MessageDescriptor) => string, version: string, beta: boolean): string {
+  return beta ? translate(msg`Version ${version} — Beta`) : translate(msg`Version ${version}`);
+}
 
-  const units = ['KB', 'MB', 'GB'];
+function formatBytes(fmt: UnitFormat, bytes?: number): string | null {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
+  if (bytes < 1024) return fmt.quantity(bytes, 0, 'B');
+
+  const units = ['KB', 'MB', 'GB'] as const satisfies readonly Unit[];
   let value = bytes / 1024;
   let unitIndex = 0;
 
@@ -120,7 +127,7 @@ function formatBytes(bytes?: number): string | null {
   }
 
   const rounded = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
-  return `${rounded} ${units[unitIndex]}`;
+  return fmt.unit(units[unitIndex], fmt.number(rounded));
 }
 
 function getFileExtension(name: string): string {
@@ -226,6 +233,7 @@ export function EmptySceneState({
   onUseWithoutPrinter,
 }: EmptySceneStateProps) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const sceneExtensions = useSceneFileExtensions();
   const sceneExtensionLabels = useSceneFileExtensionLabels();
   const sceneFileAccept = useSceneFileInputAccept();
@@ -477,7 +485,7 @@ export function EmptySceneState({
               boxShadow: '0 0 6px color-mix(in srgb, var(--accent), transparent 84%)',
             }}
           >
-            {copied ? '✓ Copied!' : `Version ${APP_VERSION}${IS_BETA_BUILD ? ' — Beta' : ''}`}
+            {copied ? `✓ ${_(msg`Copied!`)}` : formatVersionChip(_, APP_VERSION, IS_BETA_BUILD)}
           </span>
         </Tooltip>
         <h1 className="ui-empty-title" suppressHydrationWarning>{_(taglineDescriptor)}</h1>
@@ -640,7 +648,7 @@ export function EmptySceneState({
               ) : (
                 <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                   {recentOpenedFiles.slice().reverse().slice(0, 8).map((entry) => {
-                    const sizeLabel = formatBytes(entry.sizeBytes);
+                    const sizeLabel = formatBytes(fmt, entry.sizeBytes);
                     const isBusy = reopeningEntryId === entry.id;
                     const period = formatRecentOpenedAt(entry.openedAt, _);
                     const kindAccent = entry.kind === 'scene'

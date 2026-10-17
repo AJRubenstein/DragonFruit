@@ -1,3 +1,4 @@
+import type { MessageDescriptor } from '@lingui/core';
 import React from 'react';
 import type { SceneImportReport } from '@/features/scene/useSceneCollectionManager';
 
@@ -59,7 +60,7 @@ export function useEditorToasts({
   isAutosaving,
   sceneImportReport,
 }: UseEditorToastsOptions) {
-  const [historyActionToast, setHistoryActionToast] = React.useState<{ id: number; text: string; direction: 'undo' | 'redo' } | null>(null);
+  const [historyActionToast, setHistoryActionToast] = React.useState<{ id: number; label: MessageDescriptor; direction: 'undo' | 'redo' } | null>(null);
   const [isHistoryActionToastVisible, setIsHistoryActionToastVisible] = React.useState(false);
   const [isSceneImportToastVisible, setIsSceneImportToastVisible] = React.useState(false);
   const [exportSuccessToast, setExportSuccessToast] = React.useState<{ id: number; path: string } | null>(null);

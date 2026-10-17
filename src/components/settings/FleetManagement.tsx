@@ -150,7 +150,7 @@ export function FleetManagement({
                     {activeManagedPrinter && index === 1 && (
                       <div className="my-1.5 border-t pt-1" style={{ borderColor: 'var(--border-subtle)' }}>
                         <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                          Other Printers
+                          <Trans>Other Printers</Trans>
                         </div>
                       </div>
                     )}
@@ -266,7 +266,7 @@ export function FleetManagement({
                 style={{ color: 'var(--accent-secondary)' }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                <Trans>Add Printer</Trans>
+                <Trans>Add printer</Trans>
               </Button>
             ) : (
               managedPrinters.length > 0 && (
