@@ -270,9 +270,9 @@ A plugin cannot call native code, so geometry an importer builds in the renderer
 (LYS, via `plugins/lys-import/`) never reaches that dispatcher either. The host
 calls `refine_mesh_soup` after a plugin import instead: soup in the request body,
 `[u32 triangle count][positions][normals]` out. It welds the mesh on the way in,
-which is what gives the refinement shared edges to split and the normals adjacency
-to average over, and it returns normals for the same reason the loaders compute
-them, so the importer does not have to repeat the crease rule in TypeScript.
+which is what gives the refinement shared edges to split, and it returns the face
+normals for the same reason the loaders do, so the importer does not have to
+derive them in TypeScript.
 
 The fix is at the source. `io::load_mesh_from_path` refines faces longer than 2% of
 the model's diagonal, which is a quarter of the occlusion reach, before anything
@@ -288,7 +288,7 @@ carries its models' original STL bytes in its MESH chunks, and the loader handed
 them to three's `STLLoader` in the renderer (`loadStlGeometryFromBuffer`), which
 is neither the native file dispatcher nor the plugin command, so a scene's models
 were never refined at all. The same call now asks `refine_mesh_soup`, which also
-gives them the welded, crease-split normals the native loaders produce, and it
+gives them the face normals the native loaders produce, and it
 asks only below `REFINE_MAX_TRIANGLES` (400k): the command costs twice the mesh in
 traffic, and a mesh with faces too long for the field is a mesh with few of them,
 so the meshes that need it are the ones small enough to send. Above that limit a

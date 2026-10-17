@@ -363,9 +363,9 @@ export const REFINE_MAX_TRIANGLES = 400_000;
  * fraction of the model's diagonal (bounded, longest first) is what stops a flat
  * panel interpolating its occlusion across a ten millimetre triangle.
  *
- * Returns a new geometry with the refined positions and welded, crease-aware
- * normals, or `null` when there is no native side to ask (the web build) or the
- * import failed.
+ * Returns a new geometry with the refined positions and one normal per face, or
+ * `null` when there is no native side to ask (the web build) or the import
+ * failed.
  */
 export async function refineCoarseFaces(
   geometry: THREE.BufferGeometry,
@@ -386,7 +386,7 @@ export async function refineCoarseFaces(
 
 /**
  * Decode a `refine_mesh_soup` response: `[u32 triangle count][positions][normals]`,
- * both 9 floats per triangle with the normals welded and split at creases.
+ * both 9 floats per triangle, the normals one per face.
  * Returns `null` when the payload does not describe the same mesh the header
  * claims, rather than attaching slices of one mesh to another.
  */

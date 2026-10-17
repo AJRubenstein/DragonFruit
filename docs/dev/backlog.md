@@ -454,21 +454,32 @@ Reported as mottling that appeared on STL imports and not on LYS ones, and
 mistaken for broken baked ambient occlusion. Three separate causes, on the same
 path, none of them in the occlusion estimator:
 
-**1. The loader baked the file's per-face normals into the render.**
+**1. The loader shaded the model with a normal the mesh does not have.**
 The STL response encoder wrote one triangle's normal onto all three of its corners.
-An STL has no vertex normals, so this looked faithful, but with
+An STL has no vertex normals, so that looked faithful, but with
 `flatShading={false}` three *interpolates* a constant and every face is lit by its
 own orientation. Measured on `poussin.stl` (150k triangles, 75k welded vertices),
 counting shared positions shaded by more than one normal: **74976 / 75000 and up
-to 168° apart** before, 0 / 75000 and 0.00° after. Fixed by accumulating face
-normals over the already-welded mesh; `stl_normals_are_smooth_at_shared_vertices`
-pins it.
+to 168° apart**. It was read as a defect at the time and the encoder was changed to
+accumulate face normals over the already-welded mesh — and then, when that average
+drew a forty-five degree ramp across every ninety degree crease, to average only
+the faces within 60° of each corner's own.
 
-This alone was *not* the mottling: rendering the same geometry through the app's
+**Both averages are reverted (issue #797).** They were a shading *look* baked into
+the import, wrong twice over: they paint a smooth surface over the triangulation
+the file describes, so a scan's facets and an imported edge both come out soft, and
+they disagreed with the geometry a repair pass hands back — the renderer recomputes
+*that* per face, so the same model changed its shading the moment it was repaired.
+The encoder writes each triangle's own geometric normal onto its three corners
+again, which `imported_normals_are_each_face_own_geometric_normal` pins. The
+ambient-occlusion bake is untouched: it derives its own welded normals for the probe
+fan (`vertex_occlusion`), and it was the only consumer that ever wanted an average.
+
+This was *not* the mottling: rendering the same geometry through the app's
 material with smooth and with per-face normals differs by **0.5-1.5% mean
 brightness** even under a hard key light (measured in a headless render of the
-real loader output). It is a real defect and it had to go, but it is not what the
-report was about.
+real loader output), so the mosaic reading was about a shading difference smaller
+than the report.
 
 **2. A repaired geometry kept no normals at all.** The Manifold repair rewrote
 positions and index in place and deleted the now-stale `normal` attribute, with a

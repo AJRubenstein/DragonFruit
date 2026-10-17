@@ -3,8 +3,8 @@
 One binary payload carries a mesh from Rust to the renderer: `DFMX`, written by
 `encode_mesh_bodies` and returned by the `load_mesh_file` command. It is
 little-endian, versioned, and holds one or more *bodies*. Each body ends in the
-same soup: positions (9 `f32` per triangle), then per-corner normals (9 `f32` per
-triangle, welded and split at creases — see `dragonfruit_mesh_core::normals`).
+same soup: positions (9 `f32` per triangle), then one normal per corner (9 `f32` per
+triangle — each triangle's own geometric normal, see `dragonfruit_mesh_core::normals`).
 Write it through `write_soup`, which owns the one implementation of the soup
 layout so the encoder cannot drift from the reader.
 

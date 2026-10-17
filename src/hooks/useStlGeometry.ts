@@ -1141,11 +1141,11 @@ export async function loadStlGeometry(fileUrl: string, options: ProcessGeometryO
  *
  * This is where a VOXL scene's embedded mesh arrives: the MESH chunk is the
  * original STL bytes, and `loadMeshGeometry` routes them here rather than to the
- * native file loaders. Those refine coarse faces and return welded, crease-split
- * normals as they read; a buffer parsed by three does neither, so the same
- * command the plugin import asks is asked here, and only when the mesh is small
- * enough for the round trip to be free (see `REFINE_MAX_TRIANGLES`). The command
- * returns the normals it welded, which is why the caller then has to skip
+ * native file loaders. Those refine coarse faces and return face normals as they
+ * read; a buffer parsed by three does neither, so the same command the plugin
+ * import asks is asked here, and only when the mesh is small enough for the round
+ * trip to be free (see `REFINE_MAX_TRIANGLES`). The command returns the normals
+ * with the payload, which is why the caller then has to skip
  * `computeVertexNormals`.
  */
 export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: ProcessGeometryOptions = {}): Promise<GeometryWithBounds> {

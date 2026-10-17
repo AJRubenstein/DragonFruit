@@ -5793,8 +5793,8 @@ export function useSceneCollectionManager(options?: {
       for (const normalized of normalizedPayloads) {
         // The plugin built this geometry in the renderer, so it has not been
         // through the native loaders that refine coarse faces. Refine it here, and
-        // keep the normals the command returns: they are welded and split at
-        // creases, which `computeVertexNormals` would flatten again.
+        // keep the normals the command returns: it ships one per face, so there is
+        // nothing left for `computeVertexNormals` to derive.
         let geometry = normalized.geometry;
         // Bake the cavity in first, so refine, classification and the BVH all
         // describe the hollow solid rather than the shell that encloses it.

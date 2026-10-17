@@ -380,9 +380,10 @@ fn bake_against_with_visibility_and_rotation(
         return VertexVisibility { occlusion: Vec::new(), moment: Vec::new() };
     }
 
-    // Vertex normals from the adjacent faces: the bake's probe directions and
-    // the material's shading both want the smooth normal, and an unindexed mesh
-    // has none of its own.
+    // Vertex normals from the adjacent faces: the probe fan's axis is the smooth
+    // normal, and the mesh handed in here has none of its own. The renderer's
+    // shading normals are per face (`crate::normals`) and never reach this — the
+    // bake is the one consumer that wants an average.
     let mut normals = vec![Vec3::ZERO; vertex_count];
     for tri in &mesh.triangles {
         let a = mesh.positions[tri[0] as usize];

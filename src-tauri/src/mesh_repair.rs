@@ -1945,7 +1945,7 @@ fn stl_special_case_response(
 /// The format-agnostic entry point: it dispatches through
 /// `io::load_mesh_bodies_from_path` (`stl`/`obj` give one body; `3mf` gives one
 /// per build item expanded through its components, with transforms baked), so
-/// refinement and the welded, crease-split normals are the same ones every other
+/// refinement and the face normals are the same ones every other
 /// import path gets. Materials and units are dropped, matching the renderer's
 /// loaders. STL adds one format-specific step — [`stl_special_case_response`],
 /// which turns a mesh too large to render into a decimated preview.
@@ -2160,9 +2160,14 @@ fn encode_mesh_bodies(
     Ok(result)
 }
 
-/// Write a mesh's soup — positions (9 f32 per triangle), then welded,
-/// crease-split corner normals — into `out`, which must be exactly
-/// `triangleCount * 72` bytes.
+/// Write a mesh's soup — positions (9 f32 per triangle), then one normal per
+/// corner — into `out`, which must be exactly `triangleCount * 72` bytes.
+///
+/// Every corner carries its own triangle's geometric normal, so the viewport
+/// shades the facets the file describes (see `dragonfruit_mesh_core::normals`).
+/// The geometry a repair pass hands back gets the same normals from the
+/// renderer's per-face recompute, so repairing a model no longer changes how it
+/// looks.
 fn write_soup(mesh: &IndexedMesh, out: &mut [u8]) {
     let positions_len = mesh.triangles.len() * 9 * std::mem::size_of::<f32>();
     let (position_output, normal_output) = out.split_at_mut(positions_len);
@@ -2181,17 +2186,14 @@ fn write_soup(mesh: &IndexedMesh, out: &mut [u8]) {
                 vertex_output[8..12].copy_from_slice(&vertex.z.to_le_bytes());
             }
         });
-    // Smooth vertex normals, averaged over the welded mesh and split at creases:
-    // see `dragonfruit_mesh_core::normals` for why both halves matter.
-    let normals = dragonfruit_mesh_core::normals::corner_normals(mesh);
+    // One face normal per triangle, written onto its three corners: see
+    // `dragonfruit_mesh_core::normals` for why the welded average is gone.
+    let normals = dragonfruit_mesh_core::normals::face_normals(mesh);
     normal_output
         .par_chunks_mut(9 * std::mem::size_of::<f32>())
-        .zip(mesh.triangles.par_iter().enumerate())
-        .for_each(|(output, (face, _))| {
-            for (normal_output, normal) in output
-                .chunks_exact_mut(12)
-                .zip(normals[face * 3..face * 3 + 3].iter())
-            {
+        .zip(normals.par_iter())
+        .for_each(|(output, normal)| {
+            for normal_output in output.chunks_exact_mut(12) {
                 normal_output[0..4].copy_from_slice(&normal.x.to_le_bytes());
                 normal_output[4..8].copy_from_slice(&normal.y.to_le_bytes());
                 normal_output[8..12].copy_from_slice(&normal.z.to_le_bytes());
@@ -2604,26 +2606,56 @@ mod tests {
         IndexedMesh { positions, triangles }
     }
 
-    /// STL imports must shade as a surface, not as a stack of facets.
+    /// The soup carries each triangle's own geometric normal, not an average.
     ///
-    /// The file format carries one normal per triangle and the loader used to
-    /// write that normal onto all three corners, so every face was lit by its own
-    /// orientation: a coarsely triangulated part rendered as a mosaic, which also
-    /// made a smooth per-vertex baked-AO field look like broken per-triangle data.
-    /// LYS imports arrive welded with shared normals, so the two paths disagreed
-    /// about the same model.
+    /// The viewport shades the facets the file describes, so a position two faces
+    /// meet at is shaded by two normals. It used to be one: the encoder averaged
+    /// the faces incident to a welded vertex, and later only those within a crease
+    /// angle of the corner's own. That painted a smooth surface over the
+    /// triangulation — a scan's facets and an imported edge both came out soft —
+    /// and it disagreed with the geometry a repair pass hands back, which the
+    /// renderer recomputes per face, so the same model changed its shading the
+    /// moment it was repaired. `face_normals` owns the rule; this pins what the
+    /// payload ships.
     #[test]
-    fn stl_normals_are_smooth_at_shared_vertices() {
+    fn imported_normals_are_each_face_own_geometric_normal() {
         let sides = 8;
         let mesh = cylinder_mesh(sides);
         let bytes = encode_mesh_bodies(std::slice::from_ref(&mesh), mesh.triangles.len() as u32, false, None, None)
             .unwrap();
         let (positions, normals) = decode_positions_and_normals(&bytes);
 
-        // A welded vertex has ONE normal, whichever triangle it is read from.
+        // Read back from the payload's own numbers: every corner of a triangle
+        // carries that triangle's geometric normal, right-handed with its winding.
+        for tri in 0..mesh.triangles.len() {
+            let a = positions[tri * 3];
+            let b = positions[tri * 3 + 1];
+            let c = positions[tri * 3 + 2];
+            let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let cross = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let length = (cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]).sqrt();
+            assert!(length > 1e-6, "the fixture must not be degenerate");
+            for corner in 0..3 {
+                for axis in 0..3 {
+                    let shipped = normals[tri * 3 + corner][axis];
+                    let expected = cross[axis] / length;
+                    assert!(
+                        (shipped - expected).abs() < 1e-4,
+                        "face {tri} corner {corner} axis {axis}: shipped {shipped}, expected \
+                         {expected} - the payload is not the face's own normal"
+                    );
+                }
+            }
+        }
+
+        // A shared position is therefore shaded by more than one normal.
         // Indexed by position, which is what the consumer sees, so this does not
         // depend on the builder's corner ordering.
-        // sees, so this does not depend on the builder's corner ordering.
         let mut shared: std::collections::HashMap<[i64; 3], Vec<[f32; 3]>> =
             std::collections::HashMap::new();
         for (corner, position) in positions.iter().enumerate() {
@@ -2634,54 +2666,34 @@ mod tests {
             ];
             shared.entry(key).or_default().push(normals[corner]);
         }
-        let mut checked = 0usize;
+        let mut faceted = 0usize;
         for (key, list) in &shared {
             if list.len() < 2 {
                 continue;
             }
-            checked += 1;
-            for normal in list {
-                let delta = (0..3)
-                    .map(|axis| (normal[axis] - list[0][axis]).abs())
-                    .fold(0.0f32, f32::max);
-                assert!(
-                    delta < 1e-6,
-                    "position {key:?} is shaded by two different normals ({list:?}) - the mesh \
-                     will render as facets"
-                );
-            }
+            let differs = list.iter().any(|normal| {
+                (0..3).any(|axis| (normal[axis] - list[0][axis]).abs() > 1e-6)
+            });
+            assert!(
+                differs,
+                "position {key:?} is shaded by one averaged normal ({:?}) - the mesh will render \
+                 smooth over its own facets",
+                list[0]
+            );
+            faceted += 1;
         }
-        assert!(checked >= sides, "the fixture must have shared vertices, got {checked}");
-
-        // ...and the normals carry the vertex orientation, so a curved face has
-        // three distinct corner normals rather than one flat one.
-        let smooth_faces = (0..mesh.triangles.len())
-            .filter(|tri| {
-                let n0 = normals[tri * 3];
-                (1..3).any(|corner| {
-                    (0..3).any(|axis| (normals[tri * 3 + corner][axis] - n0[axis]).abs() > 1e-6)
-                })
-            })
-            .count();
-        assert!(
-            smooth_faces * 2 > mesh.triangles.len(),
-            "only {smooth_faces} of {} faces carry vertex normals - still flat shaded",
-            mesh.triangles.len()
-        );
-
-        for normal in &normals {
-            let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
-            assert!((len - 1.0).abs() < 1e-4, "normal is not unit length: {normal:?}");
-        }
+        assert!(faceted >= sides, "the fixture must have shared vertices, got {faceted}");
     }
 
-    /// A hard crease keeps two normals; a shallow fold still averages.
+    /// The fold angle decides nothing: no two faces are averaged, however shallow.
     ///
-    /// Averaging across a crease is what put a faceted band around every organic
-    /// shape that meets the base, because the shared vertices carried a ramp
-    /// between the two surfaces and the rest of the base did not.
+    /// The crease rule this replaces averaged a shallow fold and split a hard one,
+    /// so a scanned surface came out smooth and a right angle crisp — the angle is
+    /// a property of the model's shape, not of what its shading should show. The
+    /// second half of that rule is also what a repair pass disagreed with: it
+    /// recomputes normals per face, so repairing a model changed how it looked.
     #[test]
-    fn stl_normals_split_at_creases_and_average_on_shallow_folds() {
+    fn a_fold_keeps_its_two_normals_at_any_angle() {
         // Two quads sharing the edge x = 0, folded by `fold_deg` about it: a
         // floor to the left, a wall rising to the right at that angle. The two
         // crease vertices are shared, which is what the welding produces on a
@@ -2706,40 +2718,25 @@ mod tests {
             }
         };
 
-        let hard = folded(90.0);
-        let bytes = encode_mesh_bodies(std::slice::from_ref(&hard), hard.triangles.len() as u32, false, None, None)
-            .unwrap();
-        let (_, normals) = decode_positions_and_normals(&bytes);
-        // The two faces at the shared vertex keep their own normals: up for the
-        // floor, sideways for the wall.
-        let floor_normal = normals[0];
-        let wall_normal = normals[2 * 3];
-        assert!(
-            floor_normal[2].abs() > 0.9,
-            "the floor face should keep an upward normal, got {floor_normal:?}"
-        );
-        assert!(
-            wall_normal[0].abs() > 0.9 || wall_normal[2].abs() > 0.9,
-            "the wall face should keep its own normal, got {wall_normal:?}"
-        );
-        let dot: f32 = (0..3).map(|i| floor_normal[i] * wall_normal[i]).sum();
-        assert!(
-            dot.abs() < 0.5,
-            "a ninety degree crease must not be averaged into a ramp, got dot {dot}"
-        );
-
-        // A twenty degree fold is a curve as far as shading is concerned.
-        let shallow = folded(20.0);
-        let bytes = encode_mesh_bodies(std::slice::from_ref(&shallow), shallow.triangles.len() as u32, false, None, None)
-            .unwrap();
-        let (_, normals) = decode_positions_and_normals(&bytes);
-        let floor_normal = normals[0];
-        let fold_normal = normals[2 * 3];
-        let dot: f32 = (0..3).map(|i| floor_normal[i] * fold_normal[i]).sum();
-        assert!(
-            dot > 0.8,
-            "a twenty degree fold should still average, got dot {dot}"
-        );
+        // The two faces at the shared vertices keep their own normals at either
+        // angle: up for the floor, turned by the fold for the wall.
+        for fold_deg in [20.0f32, 90.0] {
+            let mesh = folded(fold_deg);
+            let bytes = encode_mesh_bodies(std::slice::from_ref(&mesh), mesh.triangles.len() as u32, false, None, None)
+                .unwrap();
+            let (_, normals) = decode_positions_and_normals(&bytes);
+            let floor_normal = normals[0];
+            let fold_normal = normals[2 * 3];
+            assert!(
+                floor_normal[2].abs() > 0.9,
+                "the floor face should keep an upward normal, got {floor_normal:?}"
+            );
+            let dot: f32 = (0..3).map(|i| floor_normal[i] * fold_normal[i]).sum();
+            assert!(
+                dot < 0.999,
+                "a {fold_deg} degree fold must not be averaged into one normal, got dot {dot}"
+            );
+        }
     }
 
     #[test]
