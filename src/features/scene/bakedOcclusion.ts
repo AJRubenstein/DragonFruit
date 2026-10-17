@@ -75,12 +75,17 @@ export async function bakeOcclusionForGeometry(
 ): Promise<Float32Array | null> {
   if (!canBakeOcclusion()) return null;
 
+  const prepared = performance.now();
   const soup = expandGeometryToTriangleSoup(geometry);
   // A copy, not a view over the geometry's own buffer: the request outlives this
   // call, and anything that touches the mesh while it is in flight would be
   // sending the native side something other than what it is about to shade.
   const body = new Uint8Array(soup.byteLength);
   body.set(new Uint8Array(soup.buffer, soup.byteOffset, soup.byteLength));
+  console.log(
+    `[ao] ${(soup.byteLength / 1_000_000).toFixed(1)} MB soup copied for the bake in ` +
+    `${(performance.now() - prepared).toFixed(0)}ms`,
+  );
   const payload = await invoke<ArrayBuffer | Uint8Array | number[]>(
     'bake_vertex_occlusion',
     body,

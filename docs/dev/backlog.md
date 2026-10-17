@@ -484,6 +484,35 @@ overwritten by an identical one, for ~34% of the whole load. And the AO bakes, w
 are the GPU's work, were awaited inside each model's prep, so they ran one model at
 a time while the main thread was idle waiting on them.
 
+### Second run: 35 s -> 21 s, and what is left
+
+After the classification reuse and the parallel bakes, the same file loads in ~21 s
+(app log, 13 unique models; no `classified in` line, and the bakes interleaved with
+the other models' prep). The logged stages in that run are BVH 0.25-0.56 s and
+flattening planes 0.15-0.39 s a model, and two of them were paying for a data
+structure rather than for work:
+
+- **The plane decimation loop keyed its grid cells with a string per vertex.** A
+  `` `${cx},${cy},${cz}` `` built 2.6M times on an 869k-triangle model was 240 ms of
+  the function's 250 ms. Cell indices taken relative to the grid's own corner pack
+  into one integer key and produce the same cells: measured on the file's own
+  meshes, 240 ms -> 50 ms there and 500 ms -> 108 ms on a 1.8M-triangle model.
+- **`three-mesh-bvh`'s default leaf of 10 triangles costs a third more build time
+  than it needs.** On the same two meshes, a leaf of 32 builds in 287 ms against
+  466 ms, and 508 ms against 835 ms, with an identical hit set; query cost moves a
+  few milliseconds either way, and what the app casts at a model is a handful of
+  picking rays. `accelerateGeometry` asks for 32 now.
+
+What that run still does not account for is the gap between a model's native load
+finishing and its prep starting: 0.2-1.8 s, scaling with the payload (52 MB -> 1.0 s,
+129 MB -> 1.8 s), which is more than copying that many bytes can cost. Two phases
+were invisible and are now logged — `[loadMeshFile] native payload … over the IPC,
+… to decode` and `[ao] … MB soup copied for the bake` — so the next measurement is
+reading them. If the transfer really runs near 70 MB/s, the lever is the payload
+itself: 72 bytes a triangle is half normals, and those normals are now each face's
+own, which the renderer can derive for ~0.15 s a model instead of receiving 36 bytes
+a triangle for every one of them.
+
 ## STL imports: facets, missing normals, and a shuffled per-vertex attribute
 
 Reported as mottling that appeared on STL imports and not on LYS ones, and
