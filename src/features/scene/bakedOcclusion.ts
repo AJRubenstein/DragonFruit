@@ -75,6 +75,19 @@ export async function bakeOcclusionForGeometry(
 ): Promise<Float32Array | null> {
   if (!canBakeOcclusion()) return null;
 
+  const positions = geometry.getAttribute('position');
+  if (!positions) return null;
+
+  // The corner-to-vertex table this request is built from, read *now*. The bake is
+  // started before the BVH is built (see `processGeometry`), and what the values
+  // belong to is the table the soup was expanded through — not whatever the
+  // geometry carries when the values come back. Mapping against the live index was
+  // what put a shuffled occlusion field on an imported mesh: the values landed one
+  // triangle over, which reads as speckled shading. The table is captured whole, so
+  // nothing that happens to the geometry's index in between can move them.
+  const indexAtRequest = geometry.getIndex();
+  const cornerTable = indexAtRequest ? (indexAtRequest.array as Uint16Array | Uint32Array).slice() : null;
+
   const prepared = performance.now();
   const soup = expandGeometryToTriangleSoup(geometry);
   // A copy, not a view over the geometry's own buffer: the request outlives this
@@ -106,13 +119,42 @@ export async function bakeOcclusionForGeometry(
     cornerValues = new Float32Array(copy.buffer);
   }
 
-  const values = mapCornerValuesToVertices(cornerValues, geometry);
+  // A geometry whose positions were replaced while its bake was in flight (a
+  // repair landing late, a swap) would take these values onto vertices they were
+  // never computed for. Dropping them costs an unoccluded model until the idle
+  // sweep re-bakes it, against the geometry that will actually be drawn.
+  if (geometry.getAttribute('position') !== positions) {
+    console.warn('[ao] geometry changed while its bake was in flight; dropping the values');
+    return null;
+  }
+
+  // An indexed geometry whose table moved under the request is the case the
+  // snapshot exists for, and it is worth saying out loud: it is the only signal
+  // that the ordering here is load-bearing. Sampled rather than compared whole —
+  // a reorder shows up in any window of the table, and this runs per model.
+  if (indexAtRequest) {
+    const live = geometry.getIndex();
+    const table = cornerTable!;
+    const moved = !live
+      || live.array.length !== table.length
+      || live.array[0] !== table[0]
+      || live.array[8] !== table[8]
+      || live.array[live.array.length - 1] !== table[table.length - 1];
+    if (moved) {
+      console.warn(
+        '[ao] the geometry was re-indexed while its bake was in flight; the values are mapped ' +
+        'through the table the soup was sent through',
+      );
+    }
+  }
+
+  const values = mapCornerValuesToVertices(cornerValues, positions.count, cornerTable);
   if (!values) {
     console.warn(
       '[ao] bake does not map onto this geometry:',
       `${cornerValues.length} corner values,`,
-      `${geometry.getAttribute('position')?.count ?? 0} vertices,`,
-      geometry.getIndex() ? 'indexed' : 'soup',
+      `${positions.count} vertices,`,
+      cornerTable ? 'indexed when sent' : 'soup when sent',
     );
     return null;
   }
@@ -123,35 +165,39 @@ export async function bakeOcclusionForGeometry(
  * Turn the bake's per-corner values into a per-*vertex* attribute, or `null` when
  * the two do not describe the same mesh.
  *
- * The bake returns one value per triangle corner, in the order the soup was
- * sent. A non-indexed geometry *is* that soup, so the mapping is the identity. An
- * indexed geometry is not: the index buffer is the corner order, and slot `s` of
- * it draws `cornerValues[s]` at vertex `index.getX(s)`. Reading it the other way
- * round — `values[vertex] = cornerValues[index.getX(vertex)]` — silently assumes
- * the buffer is its own inverse, which is true only for an identity index. On a
- * welded mesh it hands nearly every vertex a neighbouring vertex's occlusion,
- * which renders as a mosaic of triangles and looks exactly like broken shading.
+ * The bake returns one value per triangle corner, in the order the soup was sent.
+ * A non-indexed geometry *is* that soup, so its corners are its vertices and the
+ * mapping is the identity. An indexed one is not: the table handed in is the
+ * corner order the soup was expanded through — slot `s` of it holds value
+ * `cornerValues[s]` at vertex `table[s]`. Reading it the other way round —
+ * `values[vertex] = cornerValues[table[vertex]]` — silently assumes the table is
+ * its own inverse, which is true only for an identity index; on a welded mesh it
+ * hands nearly every vertex a neighbouring vertex's occlusion, which renders as a
+ * mosaic of triangles and looks exactly like broken shading.
+ *
+ * The table is a parameter rather than `geometry.getIndex()` for the same reason:
+ * the geometry can be re-indexed while a bake is in flight (three-mesh-bvh's
+ * build reorders a soup's index), and what the values belong to is the table the
+ * soup was expanded through, not whatever the geometry carries afterwards.
  */
 export function mapCornerValuesToVertices(
   cornerValues: Float32Array,
-  geometry: THREE.BufferGeometry,
+  positionCount: number,
+  cornerTable: ArrayLike<number> | null,
 ): Float32Array | null {
-  const positionCount = geometry.getAttribute('position')?.count ?? 0;
   if (positionCount === 0) return null;
 
-  const index = geometry.getIndex();
-  if (!index) {
+  if (!cornerTable) {
     return cornerValues.length === positionCount ? cornerValues : null;
   }
 
-  const array = index.array as ArrayLike<number>;
-  if (array.length !== cornerValues.length) return null;
+  if (cornerTable.length !== cornerValues.length) return null;
 
   // Unreferenced vertices keep "open sky"; a baked mesh has none, but a
   // half-built attribute shades as black rather than as a bug if one appears.
   const values = new Float32Array(positionCount).fill(1);
-  for (let slot = 0; slot < array.length; slot += 1) {
-    values[array[slot]] = cornerValues[slot];
+  for (let slot = 0; slot < cornerTable.length; slot += 1) {
+    values[cornerTable[slot]] = cornerValues[slot];
   }
   return values;
 }

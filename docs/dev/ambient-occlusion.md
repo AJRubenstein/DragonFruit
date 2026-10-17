@@ -117,6 +117,16 @@ different fields.
 - **Weld before you smooth.** Both soup entry points weld with
   `SOUP_MERGE_EPSILON`; a caller that welds with its own tolerance bakes a
   different mesh than the corners it expands onto.
+- **A bake's values belong to the corner table its soup was expanded through, not
+  to whatever the geometry's index is when the reply lands.** The bake can be
+  started long before the geometry is finished — that is how it overlaps the BVH
+  and the flattening planes — and those steps re-index geometry (building the BVH
+  gives a soup an index it did not have). `bakeOcclusionForGeometry` snapshots the
+  table with the request and maps through the snapshot; `mapCornerValuesToVertices`
+  takes it as a parameter for that reason. Reading the live index at reply time
+  landed the field one triangle over, which shows as speckled shading on an
+  imported mesh (`backlog.md`, "a Rust mesh result must be indexed against the
+  geometry you sent").
 
 ## Related pages
 

@@ -578,17 +578,19 @@ actually is — indexed or not, and whether it has normals at all.
 
 Any native command whose output is addressed *by element* — triangle ids,
 per-vertex values, per-region masks — is a place this bug can appear, and it has
-appeared three times now: the island scanner first, overhang classification
-second, the ambient-occlusion bake third. It is worth recognising, because the
-symptom looks like a rendering or a maths problem and is neither.
+appeared four times now: the island scanner first, overhang classification
+second, the ambient-occlusion bake third, and the same bake again when its request
+was moved ahead of the BVH build. It is worth recognising, because the symptom
+looks like a rendering or a maths problem and is neither.
 
 **Symptom.** Misaligned triangles: the values are right for the mesh Rust saw and
 wrong for the mesh on screen, so shading or masks land one element over, or in
 patches that follow no feature of the model. The island scanner's version was
-"disconnected speckles"; the AO bake's was facets that follow the triangulation.
-It shows only on *some* models, which is what makes it feel random.
+"disconnected speckles"; the AO bake's was facets that follow the triangulation, and
+its second version was speckled shading on an imported mesh. It shows only on
+*some* models, which is what makes it feel random.
 
-**Three ways the Rust-side mesh diverges from the frontend's mesh:**
+**Four ways the Rust-side mesh diverges from the frontend's mesh:**
 
 - **The shared staging buffer is process-wide mutable state.** Repair, hole
   punching, hollowing and the next import all write it. A command that stages a
@@ -604,6 +606,16 @@ It shows only on *some* models, which is what makes it feel random.
   back out must use the *same* weld for both directions. Two tolerances disagree
   about which corners are the same vertex, so the expansion reads one mapping's
   ids into a mesh built by the other.
+- **The geometry's index moving while the request is in flight.** A command's
+  values come back addressed against the mesh it was handed, and the mapping back
+  onto the frontend's vertices has to use the corner table the request was built
+  through — not `geometry.getIndex()` when the reply lands. Something as ordinary
+  as building the BVH re-indexes a geometry (`three-mesh-bvh` indexes a soup it is
+  given), and a bake started early to overlap that build mapped its values through
+  the table that existed *afterwards*: the field landed one triangle over.
+  `bakeOcclusionForGeometry` snapshots the table with the request and warns if the
+  live one moved; a guard drops the values outright when the *positions* attribute
+  is replaced under it, because those belong to a mesh that is no longer there.
 
 **The rule.** Send the geometry in the request and return values in the geometry's
 own order or index space. For indexed geometry, map back through the index buffer

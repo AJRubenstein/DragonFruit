@@ -624,8 +624,11 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // measured below — while the BVH, the flattening planes and the edge overlay
   // are main-thread work. Both are wanted before the model reaches the scene, and
   // in that order they were one after the other; started here the bake runs during
-  // them. Positions are final by now (the centering translate above is the last
-  // write to them), which is all the bake reads.
+  // them. What it reads is the geometry's positions, final by now (the centering
+  // translate above is the last write to them) and its corner table, which
+  // `bakeOcclusionForGeometry` snapshots with the request — so whatever prep does
+  // to either afterwards cannot move the values. It does do something: the BVH
+  // build gives a non-indexed geometry an index it did not have.
   //
   // Deferring the bake to idle was tried and reverted: paying it while the user is
   // already waiting beats stuttering while they are interacting. Moving the *wait*
