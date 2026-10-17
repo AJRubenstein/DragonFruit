@@ -121,7 +121,7 @@ strings in the binary or the script. It does not repair them.
 | the trivial-hole pass / the all-holes pass | `fill_holes` | ours is one pass on the caller's cap |
 | splitting the self-intersections | `corefine_self_intersections` | same: split the crossings in place |
 | removing the inner faces | `extract_union_boundary_faces` | same shape; theirs is a boolean union |
-| the noise-shell pass | **nothing** | the ratio rule was RE'd and we have no equivalent |
+| the noise-shell pass | **nothing** | the reference's ratio rule has no equivalent here |
 | - | `split_non_manifold_vertices` | ours; the reference has no vertex-split stage |
 | - | `micro_topology_heal` | ours |
 | - | `resample_outer_surface` | ours, opt-in; the reference's equivalent is a separate command |

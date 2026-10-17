@@ -16,6 +16,10 @@ import type { MessageDescriptor } from '@lingui/core';
 type Translate = (descriptor: MessageDescriptor) => string;
 
 const STAGE_LABELS: Record<string, MessageDescriptor> = {
+  // The two the automatic route reports: the local pipeline, and — when the local pipeline cannot
+  // settle a mesh — the rebuild that resolves it into a solid.
+  repair: msg`Repairing`,
+  rebuild: msg`Rebuilding the surface into a solid`,
   orient_components: msg`Pointing faces the same way`,
   stitch: msg`Joining loose edges`,
   holes_trivial: msg`Closing small holes`,

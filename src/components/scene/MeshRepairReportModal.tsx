@@ -5,7 +5,11 @@ import { CheckCircle2, XCircle, X, Wrench, ClipboardCopy, ChevronDown, ChevronRi
 import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { Button, IconButton } from '@/components/atoms';
 import type { MeshRepairReportEntry } from '@/features/scene/useSceneCollectionManager';
-import type { MeshAnalysisJson } from '@/utils/meshRepair';
+import type {
+  MeshAnalysisJson,
+  MeshHealthReport,
+  MeshRepairPartSummary,
+} from '@/utils/meshRepair';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -138,8 +142,28 @@ function formatDeltaParts(pre: MeshAnalysisJson, post: MeshAnalysisJson, transla
   return parts;
 }
 
+/**
+ * The rebuild route's line in the summary. A rebuilt mesh is a different object rather than the same
+ * one repaired, so this leads the list: everything below it compares two meshes, this says which two.
+ *
+ * Interpolated and therefore module scope, for the reason given above [`partsSummaryLabel`].
+ */
+function rebuildSummaryLabel(report: MeshRepairReportEntry['report'], translate: Translate): string {
+  const from = report.pre.triangle_count.toLocaleString();
+  const to = report.post.triangle_count.toLocaleString();
+  const base = Math.abs(report.pre.signed_volume);
+  const moved = base > 0 ? ((report.post.signed_volume - report.pre.signed_volume) / base) * 100 : 0;
+  const percent = Math.abs(moved).toFixed(1);
+  return moved >= 0
+    ? translate(msg`Rebuilt the surface into a solid: ${to} triangles from ${from}, with ${percent}% more volume.`)
+    : translate(msg`Rebuilt the surface into a solid: ${to} triangles from ${from}, with ${percent}% less volume.`);
+}
+
 function summarizeRepairWins(report: MeshRepairReportEntry['report'], translate: Translate): string[] {
   const wins: string[] = [];
+  if (report.rebuilt) {
+    wins.push(rebuildSummaryLabel(report, translate));
+  }
   const closedHoles = Math.max(0, report.pre.boundary_loops - report.post.boundary_loops);
   const resolvedSelfIntersections = Math.max(0, report.pre.self_intersections - report.post.self_intersections);
   const cleanedNonManifoldEdges = Math.max(0, report.pre.non_manifold_edges - report.post.non_manifold_edges);
@@ -219,8 +243,11 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
   // On the optimistic "Repair Complete" page, an unsuccessful repair (mesh still
   // not valid) is flagged with a red cross instead of the green check.
   const optimisticFailed = effectivePresentation === 'optimistic' && hasResidual;
+  const rebuiltSingle = isSingle && reports[0].report.rebuilt === true;
   const headerTitle = effectivePresentation === 'optimistic'
-    ? (optimisticFailed ? _(msg`Repair Incomplete`) : _(msg`Repair Complete`))
+    ? (optimisticFailed
+      ? _(msg`Repair Incomplete`)
+      : rebuiltSingle ? _(msg`Repair Complete: Rebuild`) : _(msg`Repair Complete`))
     : _(msg`Mesh Repair Report`);
   const headerToneColor = optimisticFailed
     ? '#ef4444'
@@ -325,16 +352,36 @@ export function MeshRepairReportModal({ reports, presentation = 'default', onDis
   );
 }
 
+function partsRepairedCount(report: MeshHealthReport): number {
+  return (report.parts ?? []).filter((part) => part.fully_repaired).length;
+}
+
+/**
+ * Interpolated translations live in module-scope helpers, not inline in the component: React
+ * Compiler renames the interpolated locals in production builds, which desyncs the message id from
+ * the compiled catalog and renders the placeholders raw. See `docs/dev/backlog.md`.
+ */
+function partsSummaryLabel(repaired: number, total: number, translate: Translate): string {
+  return translate(msg`${repaired} of ${total} parts repaired`);
+}
+
+function partLabel(part: MeshRepairPartSummary, translate: Translate): string {
+  return translate(msg`Part ${part.index + 1}: ${part.triangles_after} triangles`);
+}
+
 function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
   const { _ } = useLingui();
   const { modelName, report } = entry;
   const wins = React.useMemo(() => summarizeRepairWins(report, _), [report, _]);
   const [showResidualIssues, setShowResidualIssues] = React.useState(false);
+  const [showParts, setShowParts] = React.useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = React.useState(false);
 
-  const summaryText = report.fully_repaired
-    ? _(msg`DragonFruit repaired this mesh and replaced the model in your current scene.`)
-    : _(msg`DragonFruit could not fully repair this mesh — it is still not a valid manifold and may cause problems later in your workflow.`);
+  const summaryText = report.rebuilt
+    ? _(msg`DragonFruit rebuilt this mesh into a solid and replaced the model in your current scene.`)
+    : report.fully_repaired
+      ? _(msg`DragonFruit repaired this mesh and replaced the model in your current scene.`)
+      : _(msg`DragonFruit could not fully repair this mesh — it is still not a valid manifold and may cause problems later in your workflow.`);
 
   const summaryAccent = report.fully_repaired ? '#22c55e' : '#ef4444';
 
@@ -354,7 +401,9 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-                {report.fully_repaired ? <Trans>Repair Complete</Trans> : <Trans>Repair Incomplete</Trans>}
+                {report.rebuilt
+                  ? <Trans>Repair Complete: Rebuild</Trans>
+                  : report.fully_repaired ? <Trans>Repair Complete</Trans> : <Trans>Repair Incomplete</Trans>}
               </div>
               <span
                 className="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums"
@@ -396,6 +445,33 @@ function OptimisticReportBody({ entry }: { entry: MeshRepairReportEntry }) {
           ))}
         </ul>
       </div>
+
+      {report.parts && report.parts.length > 0 ? (
+        <DrawerSection
+          title={_(msg`Parts`)}
+          subtitle={_(msg`Each object was repaired on its own.`)}
+          open={showParts}
+          onToggle={() => setShowParts((value) => !value)}
+          tone={partsRepairedCount(report) === report.parts.length ? 'neutral' : 'warning'}
+          compact
+        >
+          <p className="mb-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            {partsSummaryLabel(partsRepairedCount(report), report.parts.length, _)}
+          </p>
+          <ul className="space-y-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-strong)' }}>
+            {report.parts.map((part) => (
+              <li key={part.index}>
+                {part.fully_repaired ? '✓' : '•'} {partLabel(part, _)}
+                {part.fully_repaired
+                  ? null
+                  : part.residual_issues.length > 0
+                    ? ` — ${part.residual_issues[0]}`
+                    : ''}
+              </li>
+            ))}
+          </ul>
+        </DrawerSection>
+      ) : null}
 
       {report.residual_issues.length > 0 && (
         <DrawerSection

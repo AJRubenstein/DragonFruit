@@ -4,12 +4,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSceneFileExtensionLabels } from '@/features/plugins/pluginFileTypeExtensions';
 import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { detectIsIOS } from '@/hooks/usePlatform';
 import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
-import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Pyramid, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
 import { SceneCanvas } from '@/components/scene/SceneCanvas';
 import { SceneOverlays } from '@/components/organisms/scene/SceneOverlays';
 import { FloatingPanelStack } from '@/components/layout/FloatingPanelStack';
@@ -402,6 +403,13 @@ import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveReco
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
+import { TetrahedralRemeshConfirmModal } from '@/components/modals/TetrahedralRemeshConfirmModal';
+import { ShrinkWrapConfirmModal } from '@/components/modals/ShrinkWrapConfirmModal';
+import { SurfacingProgressModal, type SurfacingProgressState } from '@/components/scene/SurfacingProgressModal';
+import { tetSurfaceProgressFraction, translateTetSurfacePhase } from '@/components/scene/tetSurfaceProgressMessages';
+import { solidRemeshProgressFraction, translateSolidRemeshPhase } from '@/components/scene/solidRemeshProgressMessages';
+import type { SolidRemeshOptions, TetWrapOptions } from '@/utils/meshShrinkwrap';
+import { cancelMeshRepair } from '@/utils/meshRepair';
 
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
@@ -572,6 +580,44 @@ const HOLE_PUNCH_DEPTH_OFFSET_FROM_SHELL_MM = 1;
 const HOLE_PUNCH_AUTO_DEPTH_RAY_START_OFFSET_MM = 0.3;
 const HOLE_PUNCH_AUTO_DEPTH_MIN_INSIDE_MM = 1;
 const HOLLOW_PREVIEW_DEBOUNCE_MS = 90;
+
+/**
+ * The remesh defaults: the pass measured on a ~600k-triangle model, which lands
+ * within a fraction of a percent of the input triangle count while closing the
+ * surface. The voxel is the detail floor — anything finer than it does not
+ * survive the rebuild.
+ */
+/**
+ * The tetrahedral remesh defaults.
+ *
+ * `pQ` reads the model as a piecewise linear complex, so the decomposition is constrained to contain
+ * the model's own triangles rather than only its points: on a clean 170k-triangle model that is
+ * 323,632 tetrahedra against 596,374, and the surface it returns keeps more of the model. `Q` keeps
+ * TetGen quiet. No triangle budget, which keeps every boundary face the decomposition produced.
+ *
+ * `tolerance_mm` simplifies the input before decomposing it, because point spacing is what the cell
+ * size follows. A hundredth of a millimetre is a light pass on a dense export and leaves a coarse
+ * one alone.
+ */
+/**
+ * The shrink-wrap defaults: close every boundary loop, then drop scrap shells. Both are what the
+ * reference does, and neither has a knob worth exposing yet — a caller who wants fewer loops closed
+ * is asking for a different result rather than the same one cheaper.
+ */
+const SOLID_REMESH_DEFAULT_OPTIONS: SolidRemeshOptions = {
+  fill_holes_max_edges: Number.MAX_SAFE_INTEGER,
+  remove_noise_shells: true,
+  // A quarter of a dense model gone: enough that a shrink-wrap visibly lowers the poly count, which
+  // is the point of it, and nowhere near the 0.05 that leaves 190 triangles of 170,790.
+  tolerance: 0.001,
+};
+
+const TET_SURFACE_DEFAULT_OPTIONS: TetWrapOptions = {
+  switches: 'pQ',
+  max_triangles: 0,
+  // Off: the decomposition constrains the model's own facets, and simplifying folds them.
+  tolerance: 0,
+};
 
 function getDefaultHolePunchDepthMm(shellThicknessMm: number): number {
   return Number(
@@ -1354,6 +1400,18 @@ export default function Home() {
     point: { x: number; y: number; z: number };
   } | null>(null);
   const [manualRepairModelIds, setManualRepairModelIds] = React.useState<string[] | null>(null);
+  // Remesh is a decomposition, so it carries a confirm — it replaces the whole surface — and a
+  // progress dialog, because it takes tens of seconds on a large model.
+  const [tetSurfaceConfirmModelId, setTetSurfaceConfirmModelId] = React.useState<string | null>(null);
+  const [tetSurfaceProgress, setTetSurfaceProgress] = React.useState<SurfacingProgressState | null>(null);
+  const [tetSurfaceToken, setTetSurfaceToken] = React.useState<string | null>(null);
+  const [tetSurfaceCancelling, setTetSurfaceCancelling] = React.useState(false);
+  // Shrink-wrap: a confirm because it reworks the whole surface, and a progress dialog because the
+  // boolean takes seconds on a large model.
+  const [shrinkWrapConfirmModelId, setShrinkWrapConfirmModelId] = React.useState<string | null>(null);
+  const [shrinkWrapProgress, setShrinkWrapProgress] = React.useState<SurfacingProgressState | null>(null);
+  const [shrinkWrapToken, setShrinkWrapToken] = React.useState<string | null>(null);
+  const [shrinkWrapCancelling, setShrinkWrapCancelling] = React.useState(false);
   // `autoStartRepair` marks a repair that must begin on its own — the manifold warning's
   // Repair Now — instead of waiting in the Repair Mesh dialog for a second confirmation.
   const [autoStartRepair, setAutoStartRepair] = React.useState(false);
@@ -1882,6 +1940,7 @@ export default function Home() {
     const seconds = total % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }, [modifierApplyOverlayElapsedSec]);
+
   const [supportRenderRefreshNonce, setSupportRenderRefreshNonce] = React.useState(0);
   const [gizmoResetNonce, setGizmoResetNonce] = React.useState(0);
   const [pendingDestructiveTransform, setPendingDestructiveTransform] = React.useState<{
@@ -2546,7 +2605,6 @@ export default function Home() {
             ...item,
             children: [
               { id: 'repair' as const, label: repaired ? msg`Repair Again` : msg`Auto-Repair`, icon: Wrench },
-              { id: 'remesh' as const, label: msg`Remesh`, icon: RefreshCw },
               // The second group only exists once there is a repair to undo or report on.
               ...(repaired
                 ? [
@@ -2593,9 +2651,6 @@ export default function Home() {
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
       ...(!canMergeSupports ? (['merge-supports'] as const) : []),
-      // Remesh is not wired yet. It sits in the flyout greyed out so the shape of the repair menu is
-      // settled before the pass behind it exists.
-      'remesh' as const,
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
@@ -11379,6 +11434,121 @@ export default function Home() {
           setManualRepairModelIds([manifoldWarningModelId]);
         }}
       />
+
+      <TetrahedralRemeshConfirmModal
+        isOpen={tetSurfaceConfirmModelId !== null}
+        onCancel={() => setTetSurfaceConfirmModelId(null)}
+        onConfirm={() => {
+          const targetId = tetSurfaceConfirmModelId;
+          setTetSurfaceConfirmModelId(null);
+          if (targetId) {
+            setTetSurfaceCancelling(false);
+            setTetSurfaceToken(null);
+            setTetSurfaceProgress({ startedAt: performance.now(), phase: null, phases: [] });
+            void scene.tetSurfaceModelInPlace(targetId, TET_SURFACE_DEFAULT_OPTIONS, {
+              onToken: setTetSurfaceToken,
+              onProgress: (progress) => setTetSurfaceProgress((previous) => (
+                previous
+                  ? { ...previous, phase: progress, phases: [...previous.phases, progress] }
+                  : previous
+              )),
+            }).finally(() => {
+              setTetSurfaceProgress(null);
+              setTetSurfaceToken(null);
+              setTetSurfaceCancelling(false);
+            });
+          }
+        }}
+      />
+
+      {tetSurfaceProgress && (
+        <SurfacingProgressModal
+          state={tetSurfaceProgress}
+          cancelling={tetSurfaceCancelling}
+          presentation={{
+            title: _(msg`Remesh`),
+            subtitle: _(msg`Rebuilding the surface.`),
+            ariaLabel: _(msg`Remesh`),
+            progressAriaLabel: _(msg`Remesh progress`),
+            icon: Pyramid,
+            accent: '#d97706',
+            phaseLabel: (name) => translateTetSurfacePhase(name, _),
+            progressFraction: tetSurfaceProgressFraction,
+            notices: [
+              {
+                tone: 'info',
+                body: (
+                  <Trans>The rebuilt surface will replace this model in your current scene. Large models take longer, and some models cannot be rebuilt at all and are left untouched. You can undo this afterwards.</Trans>
+                ),
+              },
+            ],
+          }}
+          onStop={() => {
+            if (tetSurfaceCancelling || !tetSurfaceToken) return;
+            // Stops at the next phase boundary, so the model is left exactly as it was.
+            setTetSurfaceCancelling(true);
+            void cancelMeshRepair(tetSurfaceToken);
+          }}
+        />
+      )}
+
+
+      <ShrinkWrapConfirmModal
+        isOpen={shrinkWrapConfirmModelId !== null}
+        onCancel={() => setShrinkWrapConfirmModelId(null)}
+        onConfirm={() => {
+          const targetId = shrinkWrapConfirmModelId;
+          setShrinkWrapConfirmModelId(null);
+          if (targetId) {
+            setShrinkWrapCancelling(false);
+            setShrinkWrapToken(null);
+            setShrinkWrapProgress({ startedAt: performance.now(), phase: null, phases: [] });
+            void scene.solidRemeshModelInPlace(targetId, SOLID_REMESH_DEFAULT_OPTIONS, {
+              onToken: setShrinkWrapToken,
+              onProgress: (progress) => setShrinkWrapProgress((previous) => (
+                previous
+                  ? { ...previous, phase: progress, phases: [...previous.phases, progress] }
+                  : previous
+              )),
+            }).finally(() => {
+              setShrinkWrapProgress(null);
+              setShrinkWrapToken(null);
+              setShrinkWrapCancelling(false);
+            });
+          }
+        }}
+      />
+
+      {shrinkWrapProgress && (
+        <SurfacingProgressModal
+          state={shrinkWrapProgress}
+          cancelling={shrinkWrapCancelling}
+          presentation={{
+            title: _(msg`Shrink-Wrap`),
+            subtitle: _(msg`Resolving the surface into a solid.`),
+            ariaLabel: _(msg`Shrink-Wrap`),
+            progressAriaLabel: _(msg`Shrink-Wrap progress`),
+            icon: RefreshCw,
+            accent: '#2563eb',
+            phaseLabel: (name) => translateSolidRemeshPhase(name, _),
+            progressFraction: solidRemeshProgressFraction,
+            notices: [
+              {
+                tone: 'info',
+                body: (
+                  <Trans>The rebuilt surface will replace this model in your current scene. Large models take longer, and some models cannot be rebuilt at all and are left untouched. You can undo this afterwards.</Trans>
+                ),
+              },
+            ],
+          }}
+          onStop={() => {
+            if (shrinkWrapCancelling || !shrinkWrapToken) return;
+            // Stops at the next phase boundary, so the model is left exactly as it was.
+            setShrinkWrapCancelling(true);
+            void cancelMeshRepair(shrinkWrapToken);
+          }}
+        />
+      )}
 
 
       <MeshRepairModals

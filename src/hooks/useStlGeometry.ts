@@ -19,6 +19,7 @@ import {
   isHeavyRepair,
   repairFromGeometry,
   repairFromPath,
+  repairPartsFromPath,
   type MeshAnalysisJson,
   type MeshHealthReport,
   type MeshRepairProgressSink,
@@ -98,6 +99,9 @@ function sanitizePositionAttribute(geometry: THREE.BufferGeometry): MeshDefects 
   };
 }
 
+/** What the caller decided when a heavy repair was offered. */
+export type HeavyRepairChoice = 'repair' | 'repair_parts' | 'skip';
+
 export interface ProcessGeometryOptions {
   center?: boolean;
   /**
@@ -110,10 +114,13 @@ export interface ProcessGeometryOptions {
     nativeProcessingMode?: 'auto' | 'classify-only' | 'none' | 'repair';
   /**
    * Called when analysis indicates a heavy solidification repair is needed.
-   * Return true to proceed with repair, false to skip repair and load as-is.
+   *
+   * `'repair'` runs the whole-file pipeline, `'repair_parts'` repairs the file's separate objects
+   * each on their own (which is what a plate needs: one verdict for 25 objects says nothing about
+   * which object is the problem), and `'skip'` loads it as it came.
    * Only invoked when running under Tauri.
    */
-  onConfirmHeavyRepair?: (analysis: MeshAnalysisJson) => Promise<boolean>;
+  onConfirmHeavyRepair?: (analysis: MeshAnalysisJson) => Promise<HeavyRepairChoice>;
   /**
    * Optional status callback for native mesh processing stages.
    * Useful for surfacing progress text in import loading overlays.
@@ -173,6 +180,8 @@ export interface ProcessGeometryOptions {
   _isTauriRuntime?: () => boolean;
   _classifyFromGeometry?: typeof classifyFromGeometry;
   _repairFromGeometry?: typeof repairFromGeometry;
+  _repairPartsFromPath?: typeof repairPartsFromPath;
+  _analyzeFromGeometry?: typeof analyzeFromGeometry;
 }
 
 // Cloning extremely large position buffers can require hundreds of MB and can
@@ -393,6 +402,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
     } else try {
       let classifyOnly = nativeMode === 'classify-only' || nativeMode === 'none';
       const forceRepair = nativeMode === 'repair';
+      let repairParts = false;
 
       // If a confirmation callback is wired up, run a quick pre-repair analysis
       // so we can ask the user before committing to a heavy solidification pass.
@@ -400,16 +410,25 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
         try {
           options.onNativeProcessingStage?.('analyzing');
           console.log(`[${new Date().toISOString()}] [processGeometry] Running pre-repair analysis`);
-          const analysis = await analyzeFromGeometry(geometry);
+          const runAnalysis = options._analyzeFromGeometry ?? analyzeFromGeometry;
+          const analysis = await runAnalysis(geometry);
           if (analysis && isHeavyRepair(analysis)) {
             console.log(
               `[processGeometry] Heavy repair detected (components=${analysis.component_count}, ` +
               `self_intersections=${analysis.self_intersections}). Requesting user confirmation.`,
             );
-            const confirmed = await options.onConfirmHeavyRepair(analysis);
-            if (!confirmed) {
+            const choice = await options.onConfirmHeavyRepair(analysis);
+            if (choice === 'skip') {
               console.log('[processGeometry] User declined heavy repair — running classify-only shell split pass.');
               classifyOnly = true;
+            } else if (choice === 'repair_parts') {
+              console.log('[processGeometry] Repairing the file part by part.');
+              repairParts = Boolean(options.sourcePath);
+              if (!repairParts) {
+                console.warn(
+                  '[processGeometry] A part-by-part repair needs the source file, and this import has no path; repairing whole instead.',
+                );
+              }
             }
           }
         } catch (analysisErr) {
@@ -429,12 +448,15 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
         : {};
       const runClassify = options._classifyFromGeometry ?? classifyFromGeometry;
       const runRepair = options._repairFromGeometry ?? repairFromGeometry;
+      const runParts = options._repairPartsFromPath ?? repairPartsFromPath;
       const useLoaderPath = !options._repairFromGeometry && Boolean(options.sourcePath);
       const result = classifyOnly
         ? await runClassify(geometry, repairOpts)
-        : useLoaderPath
-          ? await repairFromPath(options.sourcePath!, repairOpts, options.repairProgressSink)
-          : await runRepair(geometry, repairOpts, options.repairProgressSink);
+        : repairParts && useLoaderPath
+          ? await runParts(options.sourcePath!, repairOpts, options.repairProgressSink)
+          : useLoaderPath
+            ? await repairFromPath(options.sourcePath!, repairOpts, options.repairProgressSink)
+            : await runRepair(geometry, repairOpts, options.repairProgressSink);
       if (result) {
         let effectiveResult = result;
         let usedFallbackClassification = false;

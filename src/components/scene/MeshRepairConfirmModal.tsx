@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Wrench, AlertTriangle } from 'lucide-react';
+import { Wrench, AlertTriangle, Layers } from 'lucide-react';
 import { Button } from '@/components/atoms';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
+import type { Translate } from '@/utils/unitFormatting';
 import type { MeshRepairConfirmPrompt } from '@/features/scene/useSceneCollectionManager';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
@@ -12,9 +13,21 @@ import { Trans } from '@lingui/react/macro';
 type Props = {
   prompt: MeshRepairConfirmPrompt;
   onRepair: () => void;
+  onRepairParts: () => void;
   onLoadAsIs: () => void;
   onCancelImport: () => void;
 };
+
+/**
+ * Interpolated translations live in module-scope helpers rather than inline in the component: React
+ * Compiler renames the interpolated locals in production builds, which desyncs the message id from
+ * the compiled catalog and renders the placeholders raw. See `docs/dev/backlog.md`.
+ */
+function separateShellsNote(shells: number, translate: Translate): string {
+  return translate(
+    msg`This file holds ${shells} separate shells, which usually means several objects on one plate. Repaired whole it gets a single verdict for all of them; repaired part by part each object is reported on its own, and the ones that are fine stay fine.`,
+  );
+}
 
 function StatRow({ label, value }: { label: string; value: string | number }) {
   return (
@@ -27,9 +40,15 @@ function StatRow({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function MeshRepairConfirmModal({ prompt, onRepair, onLoadAsIs, onCancelImport }: Props) {
+export function MeshRepairConfirmModal({
+  prompt,
+  onRepair,
+  onRepairParts,
+  onLoadAsIs,
+  onCancelImport,
+}: Props) {
   const { _ } = useLingui();
-  const { fileName, analysis } = prompt;
+  const { fileName, analysis, canRepairParts } = prompt;
 
   return (
     <StructuredDialogModal
@@ -60,6 +79,16 @@ export function MeshRepairConfirmModal({ prompt, onRepair, onLoadAsIs, onCancelI
             <Wrench className="h-3.5 w-3.5" />
             <Trans>Repair</Trans>
           </Button>
+          {canRepairParts && analysis.component_count >= 2 ? (
+            <Button
+              variant="secondary"
+              className="w-full gap-1.5"
+              onClick={onRepairParts}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <Trans>Repair parts separately</Trans>
+            </Button>
+          ) : null}
         </>
       )}
     >
@@ -79,6 +108,14 @@ export function MeshRepairConfirmModal({ prompt, onRepair, onLoadAsIs, onCancelI
         <StatRow label={_(msg({ message: 'Non-manifold edges', context: 'Mesh analysis row' }))} value={analysis.non_manifold_edges} />
         <StatRow label={_(msg({ message: 'Boundary loops', context: 'Mesh analysis row' }))} value={analysis.boundary_loops} />
       </div>
+
+      {canRepairParts && analysis.component_count >= 2 ? (
+        <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            {separateShellsNote(analysis.component_count, _)}
+          </p>
+        </div>
+      ) : null}
 
       {/* Disclaimer */}
       <div

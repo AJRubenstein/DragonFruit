@@ -37,16 +37,28 @@ A boundary made of ends and unbalanced vertices is a set of **open chains**, not
 `fill_holes_oriented` closes loops. There are no loops in that boundary, so it closes nothing, and
 it is right to.
 
-The confusion that cost the most time here is that **two different walks report different things
-about the same mesh**, and neither is wrong:
+**There is one walk now, and it is by rotation.** That is the fix for a confusion that cost a lot of
+time here: two walks used to report different things about the same mesh, and the difference was read as
+the two answering different questions. It was not.
 
-- `Topology::boundary_loops` reports 805 loops for the model section. It is a **counting** walk: its
-  job is to give the report a number, and any pairing satisfies that.
-- `directed_hole_loops` finds 0 loops there. It is a **filling** walk, and it only closes loops whose
-  caps will not create defects.
+- the old `Topology::boundary_loops` was a **counting** walk. It chose the next boundary vertex by
+  index, "prefer a neighbour that isn't the previous vertex", which is a pairing, and any pairing gives
+  *a* number. At a pinch — two openings sharing a vertex — the pairing is not the surface's, so the count
+  is not the surface's either.
+- the old `directed_hole_loops` was a **filling** walk, and it produced "loops" that were not cycles: a
+  walk that runs into a path it has already used, at a boundary that is not closed, came back as a loop.
+  Filling one invents a face, and the face it invents can be a copy of the one already there.
 
-Reading the 805 against the 0 looks like the filling walk is failing. It is not. The two are
-answering different questions.
+So the two walks were not answering different questions; they were both mis-laying the same boundary, and
+the fill's 0 against the count's 805 hid it. Both are gone. `Topology::boundary_loops` now rotates — from
+the face the walk arrived in, around the shared vertex, to the next face that carries a boundary edge —
+and returns only cycles that closed, and `fill_holes_oriented` fills what it returns (reversed, because
+the fill wants the cycle the other way round so its triangles face outwards).
+
+Measured on the model whose cavity breaks through its outer wall, the walk handed the fill rims of 180,
+218 and 704 points around a hole one millimetre across, doubling back on themselves. That is the fanned
+gap and the flat sheet in a render of the repaired file, and it is a *walk* defect rather than a filling
+one.
 
 ## The five attempts, and how each failed
 

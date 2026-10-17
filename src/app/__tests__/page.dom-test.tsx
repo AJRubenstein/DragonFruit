@@ -12,7 +12,13 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // dependencies stable. Mounted uncompiled, its commits keep climbing (15 at
 // 300 ms, ~300 at 1 s) and React logs "Maximum update depth exceeded";
 // compiled, it stops after a handful. So: no commits at all in the second half
-// of a one-second window.
+// of the window.
+//
+// The window is two seconds, not one, because the scene schedules an idle chunk-store sweep as it
+// mounts and an idle callback can land past 500 ms on a loaded runner: this test imports nothing and
+// fails on 4 -> 5 there. An idle task that lands inside the window is the page settling. What the
+// window is for is a loop, and a loop commits ~300 times a second, so the extra second costs the
+// check nothing.
 test('the page mounts on an empty scene and settles', async () => {
     const errors: string[] = [];
     const originalError = console.error;
@@ -35,11 +41,11 @@ test('the page mounts on an empty scene and settles', async () => {
                 <Home />
             </Profiler>,
         ));
-        await wait(500);
+        await wait(1000);
         const commitsAtHalfTime = commits;
-        await wait(500);
+        await wait(1000);
 
-        assert.equal(commits, commitsAtHalfTime, `still committing after 500 ms (${commitsAtHalfTime} → ${commits})`);
+        assert.equal(commits, commitsAtHalfTime, `still committing after half the window (${commitsAtHalfTime} → ${commits})`);
         assert.deepEqual(errors.filter((message) => message.startsWith('Maximum update depth exceeded')), []);
         // i18n-ignore-start: selectors against the English UI
         assert.ok(container.querySelector('button[aria-label="Open DragonFruit menu"]'), 'the top bar menu renders');

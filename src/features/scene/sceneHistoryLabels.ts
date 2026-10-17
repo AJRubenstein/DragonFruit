@@ -202,6 +202,19 @@ export function repairModelsLabel(count: number): MessageDescriptor {
   });
 }
 
+export function shrinkWrapModelLabel(modelName: string): MessageDescriptor {
+  return msg({ message: `Remesh ${modelName}`, context: 'Undo history entry' });
+}
+
+/** The undo-history label for a shrink-wrap run. */
+export function solidRemeshModelLabel(modelName: string): MessageDescriptor {
+  return msg({ message: `Shrink-Wrap ${modelName}`, context: 'Undo history entry' });
+}
+
+export function tetSurfaceModelLabel(modelName: string): MessageDescriptor {
+  return msg({ message: `Remesh ${modelName}`, context: 'Undo history entry' });
+}
+
 export function switchPrinterLabel(printerName: string): MessageDescriptor {
   return msg({ message: `Switch to ${printerName}`, context: 'Undo history entry' });
 }

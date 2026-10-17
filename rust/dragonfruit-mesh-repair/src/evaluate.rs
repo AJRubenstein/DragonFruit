@@ -11,6 +11,8 @@
 //! verdict here is the reference engine's five classes and nothing else; self-intersections are a
 //! number to report, not a defect to declare.
 
+use std::cell::RefCell;
+
 use crate::core::halfedge::Topology;
 use crate::core::mesh::IndexedMesh;
 use crate::shells::noise_shells;
@@ -47,18 +49,34 @@ impl MeshDefects {
             || self.noise_shells > 0
     }
 
-    /// Did this mesh come out worse than `before` on any class?
+    /// Did this mesh come out worse than `before` on a class that is damage?
     ///
     /// A total is the wrong test. A pass that closes five holes and opens four
     /// non-manifold edges has improved the sum and left the mesh worse, and damage is a
     /// class going up whatever the other classes did.
+    ///
+    /// Four classes are damage: an edge whose faces disagree, an edge that does not carry exactly two
+    /// faces, an edge carrying more, and the vertices those edges pass through. A rise in any of them
+    /// is something the pass did to the object.
+    ///
+    /// Two are not, and refusing on them is how a guard blocks the passes it exists to protect:
+    ///
+    /// - **holes** is a *count of loops*, not of boundary edges, and `bad_edges` already counts those
+    ///   (an edge with one face is a bad edge). Removing a face can open one edge and split one loop
+    ///   into two, so the count rises while the boundary gets shorter and every other class improves.
+    ///   Measured on a model with a cavity: the cull that removes repeated-vertex faces took
+    ///   inconsistent edges from 113 to 18 and non-manifold from 1,364 to 1,363, and was refused
+    ///   because the loop count went from 14 to 17. The same geometry re-decomposed into more loops is
+    ///   not a worse mesh.
+    /// - **noise_shells** is the scrap the pipeline deletes on purpose, one stage later. Capping a
+    ///   small hole *makes* a shell that small, so this counts the p删ass's own work as damage: the
+    ///   fill that closed all 14 of that model's holes and took its bad edges from 2,186 to 2,129 was
+    ///   refused because the noise-shell count went from 3 to 8.
     pub fn worse_than(&self, before: &Self) -> bool {
         self.inconsistent_edges > before.inconsistent_edges
             || self.bad_edges > before.bad_edges
-            || self.holes > before.holes
             || self.non_manifold_edges > before.non_manifold_edges
             || self.non_manifold_vertices > before.non_manifold_vertices
-            || self.noise_shells > before.noise_shells
     }
 
     /// Every defect, added up, for comparing a mesh with itself across a pass.
@@ -72,8 +90,32 @@ impl MeshDefects {
     }
 }
 
-/// Evaluates the five classes on a mesh.
+/// The five classes, for a mesh.
+///
+/// A pure function of the mesh, and the pipeline asks it the same question about the same mesh
+/// several times: a guarded pass weighs the mesh it made against the one it started from, the next
+/// pass's "before" is that same mesh, and the report's post verdict usually describes a mesh that
+/// never moved. Measured on `poussin.stl`, 13 of the run's 21 halfedge builds came from here, for
+/// 1041 ms of 2008. The verdict is a handful of integers, so it is worth remembering; see
+/// [`crate::memo`] for what a hit is keyed on.
 pub fn evaluate(mesh: &IndexedMesh) -> MeshDefects {
+    let key = crate::memo::mesh_key(mesh);
+    if let Some(verdict) = EVALUATIONS.with(|memo| memo.borrow().get(&key)) {
+        return verdict;
+    }
+    let verdict = evaluate_uncached(mesh);
+    EVALUATIONS.with(|memo| memo.borrow_mut().put(key, verdict));
+    verdict
+}
+
+thread_local! {
+    /// The verdicts this thread has already produced, against the meshes they were about.
+    static EVALUATIONS: RefCell<crate::memo::Memo<MeshDefects>> =
+        const { RefCell::new(crate::memo::Memo::new()) };
+}
+
+/// [`evaluate`] without the memo: the work itself, for the first time a mesh is seen.
+fn evaluate_uncached(mesh: &IndexedMesh) -> MeshDefects {
     if mesh.triangles.is_empty() {
         return MeshDefects::default();
     }

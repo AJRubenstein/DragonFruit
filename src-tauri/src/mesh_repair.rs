@@ -9,6 +9,13 @@
 //!   the report JSON.
 //! - `mesh_classify_staged` — classify-only pass over staged mesh (no repair),
 //!   optionally reorders model/support sections and returns a report JSON.
+//! - `mesh_shrinkwrap_staged` — resample the staged mesh into a closed one with
+//!   the shrinkwrap resampler (deliberately separate from `repair`), replace the
+//!   staging buffer with the result, return the report JSON.
+//! - `mesh_tet_surface_staged` — resample the staged mesh by tetrahedralising its
+//!   points and keeping the inside/outside boundary (the second surfacing mode,
+//!   beside `mesh_shrinkwrap_staged`), replace the staging buffer with the result,
+//!   return the report JSON.
 //! - `mesh_repair_read_positions` — raw-binary response of the current staged
 //!   positions (little-endian f32, 9 per triangle), for frontend hydration.
 //! - `load_mesh_file` — parse `stl`/`obj`/`3mf` and return its bodies (one per
@@ -22,9 +29,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use dragonfruit_mesh_repair::{
-    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_with_progress,
-    HolePunchOptions,
-    HollowOptions, HollowSession, IndexedMesh, RepairOptions, Vec3,
+    analyze, classify_support_split, hollow_voxel, io, punch_cylinders, repair_auto_with_progress,
+    repair_separate_parts,
+    shrink_wrap_with_progress, solid_remesh_with_progress, tet_surface_with_progress, HolePunchOptions,
+    HollowOptions, HollowSession, IndexedMesh, RepairOptions, ShrinkWrapOptions, SolidRemeshOptions,
+    TetWrapOptions,
+    Vec3,
 };
 // The organic cut feature now lives in its own crate.
 use dragonfruit_organic_cut::{organic_cut, GeodesicSolver, OrganicCutOptions};
@@ -185,11 +195,13 @@ fn reset_hollow_preview_derived_state() -> Result<(), String> {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct RepairOptionsDto {
-    weld_epsilon: Option<f32>,
+    weld_tolerance_mm: Option<f32>,
     fill_holes_max_edges: Option<usize>,
     keep_largest_n_components: Option<usize>,
     repair_orientation: Option<bool>,
     resolve_self_intersections: Option<bool>,
+    cut_unsatisfiable_edges: Option<bool>,
+    allow_rebuild: Option<bool>,
     #[serde(alias = "assume_support_geometry")]
     assume_support_geometry: Option<bool>,
 }
@@ -201,7 +213,7 @@ impl From<RepairOptionsDto> for RepairOptions {
             // Passed through as they arrive, `None` and all: the engine derives a tolerance the
             // caller did not name. The frontend is not better placed to pick these than the crate
             // is — it has no mesh in hand when it builds them.
-            weld_epsilon: dto.weld_epsilon,
+            weld_tolerance_mm: dto.weld_tolerance_mm,
             fill_holes_max_edges: dto.fill_holes_max_edges,
             keep_largest_n_components: dto
                 .keep_largest_n_components
@@ -212,6 +224,10 @@ impl From<RepairOptionsDto> for RepairOptions {
             resolve_self_intersections: dto
                 .resolve_self_intersections
                 .unwrap_or(defaults.resolve_self_intersections),
+            cut_unsatisfiable_edges: dto
+                .cut_unsatisfiable_edges
+                .unwrap_or(defaults.cut_unsatisfiable_edges),
+            allow_rebuild: dto.allow_rebuild.unwrap_or(defaults.allow_rebuild),
             assume_support_geometry: dto
                 .assume_support_geometry
                 .or(defaults.assume_support_geometry),
@@ -234,6 +250,30 @@ fn parse_hollow_options(options_json: &str) -> Result<HollowOptions, String> {
     }
     serde_json::from_str::<HollowOptions>(options_json)
         .map_err(|e| format!("invalid hollow options JSON: {e}"))
+}
+
+fn parse_shrinkwrap_options(options_json: &str) -> Result<ShrinkWrapOptions, String> {
+    if options_json.trim().is_empty() {
+        return Ok(ShrinkWrapOptions::default());
+    }
+    serde_json::from_str::<ShrinkWrapOptions>(options_json)
+        .map_err(|e| format!("invalid shrinkwrap options JSON: {e}"))
+}
+
+fn parse_solid_remesh_options(options_json: &str) -> Result<SolidRemeshOptions, String> {
+    if options_json.trim().is_empty() {
+        return Ok(SolidRemeshOptions::default());
+    }
+    serde_json::from_str::<SolidRemeshOptions>(options_json)
+        .map_err(|e| format!("invalid shrink-wrap options JSON: {e}"))
+}
+
+fn parse_tet_wrap_options(options_json: &str) -> Result<TetWrapOptions, String> {
+    if options_json.trim().is_empty() {
+        return Ok(TetWrapOptions::default());
+    }
+    serde_json::from_str::<TetWrapOptions>(options_json)
+        .map_err(|e| format!("invalid tet surface options JSON: {e}"))
 }
 
 fn parse_hole_punch_options(options_json: &str) -> Result<HolePunchOptions, String> {
@@ -423,6 +463,7 @@ fn release_cancel(token: Option<&String>) {
 /// The sink a repair runs with: it announces each stage to the frontend, and says no when
 /// this run has been asked to stop.
 fn progress_sink(
+    event: &'static str,
     token: Option<String>,
     cancel: Option<Arc<AtomicBool>>,
     app: crate::DragonFruitAppHandle,
@@ -430,7 +471,7 @@ fn progress_sink(
     move |name: &str, index: usize| {
         if let Some(token) = token.as_deref() {
             let _ = app.emit(
-                "mesh-repair-progress",
+                event,
                 serde_json::json!({ "token": token, "name": name, "index": index }),
             );
         }
@@ -461,14 +502,73 @@ pub async fn mesh_repair_from_path(
     let token = progress_token.clone();
     let (mesh, mut report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::load_mesh_from_path(&path).map_err(|e| e.to_string())?;
-        let mut sink = progress_sink(token, cancel, app);
-        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
+        let mut sink = progress_sink("mesh-repair-progress", token, cancel, app);
+        let outcome = repair_auto_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
     .map_err(|e| format!("repair task panicked: {e}"))??;
     release_cancel(progress_token.as_ref());
     report.source_path = Some(source_path);
+    replace_staging_with_mesh(&mesh)?;
+    serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
+}
+
+/// Repairs a plate part by part: the shells that meet stay together as one object, each object is
+/// repaired on its own, and the result is staged as one mesh with a per-object verdict.
+///
+/// A plate is not one model — the reported one is 25 objects over 118 components — and repairing it
+/// whole returns one verdict for all of them, which tells a user nothing they can act on. This is
+/// the same flow the `parts` CLI command runs; the difference is that the app hands the joined
+/// result back through the staging buffer instead of writing files.
+#[tauri::command]
+pub async fn mesh_repair_parts_from_path(
+    file_path: String,
+    options_json: String,
+    progress_token: Option<String>,
+    app: crate::DragonFruitAppHandle,
+) -> Result<String, String> {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!(
+            "mesh_repair_parts_from_path: not found: {}",
+            path.display()
+        ));
+    }
+    let options = parse_options(&options_json)?;
+    let source_path = file_path.clone();
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
+    let parts = tauri::async_runtime::spawn_blocking(move || {
+        let mesh = io::load_mesh_from_path(&path).map_err(|e| e.to_string())?;
+        let mut announced = 0usize;
+        let mut sink = |index: usize, name: &str| {
+            announced = index;
+            if let Some(token) = token.as_deref() {
+                let _ = app.emit(
+                    "mesh-repair-progress",
+                    serde_json::json!({ "token": token, "name": name, "index": index }),
+                );
+            }
+        };
+        let parts =
+            repair_separate_parts(&mesh, &options, Some(&mut sink)).ok_or_else(|| {
+                "mesh_repair_parts_from_path: the mesh is one object, or its shells meet each other"
+                    .to_string()
+            })?;
+        let _ = announced;
+        Ok::<_, String>(parts)
+    })
+    .await
+    .map_err(|e| format!("repair parts task panicked: {e}"))??;
+    let cancelled = cancel
+        .as_ref()
+        .map(|flag| flag.load(Ordering::SeqCst))
+        .unwrap_or(false);
+    release_cancel(progress_token.as_ref());
+    let mesh = parts.combined_mesh();
+    let mut report = parts.report(Some(source_path));
+    report.cancelled = cancelled;
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize report: {e}"))
 }
@@ -534,8 +634,8 @@ pub async fn mesh_repair_staged(
 
     let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
         let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
-        let mut sink = progress_sink(token, cancel, app);
-        let outcome = repair_with_progress(mesh, &options, Some(&mut sink));
+        let mut sink = progress_sink("mesh-repair-progress", token, cancel, app);
+        let outcome = repair_auto_with_progress(mesh, &options, Some(&mut sink));
         Ok::<_, String>((outcome.mesh, outcome.report))
     })
     .await
@@ -602,6 +702,109 @@ pub async fn mesh_hollow_staged(options_json: String) -> Result<String, String> 
 
     replace_staging_with_mesh(&mesh)?;
     serde_json::to_string(&report).map_err(|e| format!("serialize hollow report: {e}"))
+}
+
+/// Resamples the current staged mesh with the shrinkwrap resampler.
+///
+/// Deliberately separate from `mesh_repair_staged`: shrinkwrap rebuilds the
+/// surface from a signed distance field, so the result has no relation to the
+/// input beyond its shape — every vertex is new. It exists for meshes whose
+/// topology cannot be repaired, where `repair` has to refuse rather than damage
+/// the object. Replaces the staged positions with the resampled mesh and returns
+/// the report JSON (input/output triangles, voxel size, elapsed ms).
+#[tauri::command]
+pub async fn mesh_shrinkwrap_staged(
+    options_json: String,
+    progress_token: Option<String>,
+    app: crate::DragonFruitAppHandle,
+) -> Result<String, String> {
+    let options = parse_shrinkwrap_options(&options_json)?;
+    let bytes = read_staging_bytes()?;
+
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
+
+    let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
+        let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
+        let mut sink = progress_sink("mesh-shrinkwrap-progress", token, cancel, app);
+        let outcome = shrink_wrap_with_progress(&mesh, &options, Some(&mut sink));
+        Ok::<_, String>((outcome.mesh, outcome.report))
+    })
+    .await
+    .map_err(|e| format!("shrinkwrap task panicked: {e}"))??;
+    release_cancel(progress_token.as_ref());
+
+    replace_staging_with_mesh(&mesh)?;
+    serde_json::to_string(&report).map_err(|e| format!("serialize shrinkwrap report: {e}"))
+}
+
+/// Resamples the current staged mesh by tetrahedralising its points and keeping the inside/outside
+/// boundary — the second surfacing mode, beside [`mesh_shrinkwrap_staged`].
+///
+/// Where shrinkwrap resamples onto a uniform lattice, this decomposition follows the model's own
+/// points, so it preserves detail a lattice would lose, and the boundary between two labels is
+/// closed by construction, so it emits no debris where the band isosurface does. Like shrinkwrap it
+/// rebuilds the surface rather than editing it, so it is deliberately separate from
+/// `mesh_repair_staged`. Replaces the staged positions with the resampled mesh and returns the
+/// report JSON (input/output triangles, decomposition size, per-phase elapsed ms).
+#[tauri::command]
+pub async fn mesh_tet_surface_staged(
+    options_json: String,
+    progress_token: Option<String>,
+    app: crate::DragonFruitAppHandle,
+) -> Result<String, String> {
+    let options = parse_tet_wrap_options(&options_json)?;
+    let bytes = read_staging_bytes()?;
+
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
+
+    let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
+        let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
+        let mut sink = progress_sink("mesh-tet-surface-progress", token, cancel, app);
+        let outcome = tet_surface_with_progress(&mesh, &options, Some(&mut sink));
+        Ok::<_, String>((outcome.mesh, outcome.report))
+    })
+    .await
+    .map_err(|e| format!("tet surface task panicked: {e}"))??;
+    release_cancel(progress_token.as_ref());
+
+    replace_staging_with_mesh(&mesh)?;
+    serde_json::to_string(&report).map_err(|e| format!("serialize tet surface report: {e}"))
+}
+
+/// Rebuilds the current staged mesh's surface by resolving it into a solid — the third surfacing
+/// mode, beside [`mesh_shrinkwrap_staged`] and [`mesh_tet_surface_staged`].
+///
+/// This is the mode the reference implementation's shrinkwrap uses: close what is open, boolean the
+/// mesh with itself so the result is resolved and retriangulated, then drop scrap shells. It moves
+/// the surface, where the tetrahedral mode conforms to it and hands it back. On a clean closed solid
+/// it is a no-op, so it is for a mesh that is not one solid. Replaces the staged positions with the
+/// rebuilt mesh and returns the report JSON.
+#[tauri::command]
+pub async fn mesh_solid_remesh_staged(
+    options_json: String,
+    progress_token: Option<String>,
+    app: crate::DragonFruitAppHandle,
+) -> Result<String, String> {
+    let options = parse_solid_remesh_options(&options_json)?;
+    let bytes = read_staging_bytes()?;
+
+    let cancel = register_cancel(progress_token.as_ref());
+    let token = progress_token.clone();
+
+    let (mesh, report) = tauri::async_runtime::spawn_blocking(move || {
+        let mesh = io::staged::load_positions_le(&bytes).map_err(|e| e.to_string())?;
+        let mut sink = progress_sink("mesh-solid-remesh-progress", token, cancel, app);
+        let outcome = solid_remesh_with_progress(&mesh, &options, Some(&mut sink));
+        Ok::<_, String>((outcome.mesh, outcome.report))
+    })
+    .await
+    .map_err(|e| format!("shrink-wrap task panicked: {e}"))??;
+    release_cancel(progress_token.as_ref());
+
+    replace_staging_with_mesh(&mesh)?;
+    serde_json::to_string(&report).map_err(|e| format!("serialize shrink-wrap report: {e}"))
 }
 
 /// Captures the current staged mesh bytes as the source for repeated
@@ -2561,7 +2764,7 @@ mod tests {
 
     #[test]
     fn repair_and_punch_options_parsing_reject_malformed_json() {
-        assert!(parse_options(r#"{"weldEpsilon": "tiny"}"#).is_err());
+        assert!(parse_options(r#"{"weldToleranceMm": "tiny"}"#).is_err());
         assert!(parse_hole_punch_options(r#"{"punches": {}}"#).is_err());
     }
 
