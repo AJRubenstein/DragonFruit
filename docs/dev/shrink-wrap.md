@@ -213,25 +213,6 @@ broke through, making the two one component, and the scan reports only fragments
 1.016 million. Separating that case needs a per-face test, distinguishing air that is enclosed
 (cavity) from air that is unbounded (outside), rather than a component test.
 
-### The resolve is a union, not just a construction
-
-Building a `Manifold` from a mesh resolves it into a valid solid, but it keeps the interior wall of
-every overlap as a shell of its own, and a presupported plate is hundreds of overlapping shells. The
-resolve therefore unions the pieces it is built from, which is what this module's own description
-means by "a boolean of the mesh with itself". Measured on `Gusano_de_Dune_70%.stl`:
-
-| | shells | triangles | resolve |
-| --- | --- | --- | --- |
-| the input | 391 | 596,293 | |
-| the construction alone | 960 | 627,458 | 34 s |
-| the union of its 1,022 pieces | 106 | 916,744 | 68 s |
-
-The shell count is the visible part: the construction left a web of interior sheets inside every
-pocket in the underside, and the union removes them, so what shows in a pocket is the support's own
-cross-section. Rendering the underside is how that was found and how it is checked; the counts alone
-do not show it, and one pocket is still capped flat by the separation phase's fill, which is a
-separate defect.
-
 ### The resolve works at the model's own scale
 
 Manifold's default tolerance is an absolute 1.2e-5 whatever the model is, and on a presupported plate
