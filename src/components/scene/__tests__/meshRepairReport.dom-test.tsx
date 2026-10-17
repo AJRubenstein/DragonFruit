@@ -3,7 +3,8 @@ import test from 'node:test';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
-import type { MeshHealthReport, MeshRepairReportEntry } from '@/utils/meshRepair';
+import type { MeshHealthReport } from '@/utils/meshRepair';
+import type { MeshRepairReportEntry } from '@/features/scene/useSceneCollectionManager';
 import { withProviders } from '@/utils/__tests__/helpers/renderDom';
 
 const reactGlobals = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
