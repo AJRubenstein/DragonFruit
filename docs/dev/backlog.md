@@ -594,6 +594,17 @@ per-body inflate is `DecompressionStream` (see the fflate gotcha under the conta
 parse), four bodies at a time, and it added nothing measurable to the main thread
 (prep 203 -> 235 ms a model, within noise).
 
+**The bakes' concurrency is not the binding constraint either** (the third lever, as
+first attacked). Their reported times swing 400 ms - 1.9 s for models of the same
+size, which looks like CPU contention on the rayon pool the loads are refining on, so
+they were gated to two in flight — the figure the idle sweep uses — and the build pass
+went **15.36 -> 17.97 s**. Serially waiting for a bake slot costs more than any pool
+thrashing it avoids: the work is real, it is just overlapped already. Reverted. What
+that leaves is not the *concurrency* of the bakes but their *redundancy* — each one
+welds a 3M-corner soup and builds a BVH over the same mesh the loader welded moments
+earlier — and removing that needs the mesh to travel by reference rather than as a
+re-uploaded soup (see the native-range step under the container parse).
+
 **The rule both attempts produced: pack what the native side produces, never what the
 renderer must pack.** The bake's soup upload was packed as well — 36 bytes a triangle,
 430 MB across the scene, halved on the wire — and it *lost*: the build pass went
