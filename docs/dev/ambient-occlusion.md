@@ -27,12 +27,28 @@ the values get attached to. See `tauri-ipc-bridge.md` for that seam's rules.
 
 Two call sites, and both must leave the geometry with `aBakedAo`:
 
-- `processGeometry` (`src/hooks/useStlGeometry.ts`) bakes at the end of prep, so
-  a model's first frame already carries the field. Every import goes through
-  prep, which makes this the one that covers the common case.
+- `processGeometry` (`src/hooks/useStlGeometry.ts`) starts the bake as soon as the
+  geometry's positions are final and attaches the field before the model reaches
+  the scene, so a model's first frame already carries it. Every import goes
+  through prep, which makes this the one that covers the common case.
 - The idle sweep in `useSceneCollectionManager.ts` is the net for a geometry
   that never went through prep — one restored from a project, or one swapped in
   by a repair, a boolean cut or a hole punch.
+
+**The bake starts before the BVH and the flattening planes, not after them.** It is
+native work — a GPU kernel where the machine has one, and the measured bake is
+0.4-1.2 s per model on a print-sized part — while those two are main-thread work.
+In sequence they cost their sum; started early they cost the longer of the two.
+What was tried and reverted is *deferring* the bake (to an idle callback, after the
+model is visible, which is the pop-in this design exists to prevent), not overlapping
+it.
+
+A batch import — a VOXL scene, or several files at once — passes
+`_deferOcclusionBake` instead of waiting per model: the bake is still started at the
+same point in that model's prep, but the *wait* is collected and taken once, after
+every mesh in the batch has been prepared and before any model is placed. On the
+15-model scene measured in `backlog.md` the thirteen bakes total 7.4 s of GPU time
+that used to run one model at a time, with the main thread idle in between.
 
 `aBakedAo` is the queue's only key, so the sweep must not re-issue a bake whose
 result has not landed yet: a geometry with a bake in flight has no attribute, and

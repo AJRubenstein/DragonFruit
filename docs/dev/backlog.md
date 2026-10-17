@@ -429,6 +429,14 @@ mount and there is no shared cache at that layer.
 
 **What remains, in value order:**
 
+- **The container parse is 4.6 s on a 303 MB, 15-model scene** (`parseVoxlBinaryV2`,
+  `scripts/dragonfruit-ts-cli.ts scene list-models` as the harness: 66 ms to read the
+  file, 4.6 s to parse it into a document plus 782 MB of mesh views). It is a
+  synchronous main-thread block *before* any model work starts, which is what makes
+  the first second of a big scene load feel dead. It is the clearest candidate for a
+  worker in the whole import: the input is one `ArrayBuffer` (transferable, and
+  handed straight back afterwards so the mesh views stay valid on the main thread),
+  the output is the document plus offsets, and nothing in it touches the DOM.
 - **The overlay build itself (~1.9 s per 500k-triangle model) is unavoidable
   main-thread work while the setting is on.** It is the only remaining
   multi-second op in the load path; a worker (the repo already runs workers for
@@ -440,13 +448,41 @@ mount and there is no shared cache at that layer.
   idle callbacks for geometry swaps, and `hasPendingBackgroundGeometryWork()`
   reports when that queue is still draining, so the UI can stay honest. Routing
   imports through the same seam would remove ~220 ms/model and shrink the
-  "import finished" to "app responsive" gap.
+  "import finished" to "app responsive" gap. Measured on the 13-unique-mesh scene
+  below they are **0.22-0.50 s and 0.17-0.40 s per model** — together about half of
+  the main-thread work an import has left once the native side is off the critical
+  path, which makes them the next step for a scene load (there is no worker to hand
+  them to: `computeFlatteningPlanes` is plain geometry maths that could move to Rust,
+  and `three-mesh-bvh` builds in JS over the position buffer).
+
 - **VOXL original-mesh sidecars are resolved on the import path.** When a VOXL
   has no embedded `ORIG` chunk, `resolveOriginalRefSidecar` falls back to the
   model's on-disk `sourcePath` and `readSidecarFileBytes` fetches it. For a
   source that has moved or been re-exported (the common case after a repair
   round-trip) that is a real network attempt per model that can only 404 — noisy
   and awaited, though harmless (the loader falls back to the embedded preview).
+
+### Measured: a 15-model VOXL scene (303 MB, 13 unique meshes, 782 MB of meshes)
+
+Import cost, from the app's own log plus a Rust timing run (`E:/tmp` harness,
+same code path as `load_mesh_bytes`):
+
+| stage | per model | 13 models |
+| --- | --- | --- |
+| loader with the classify pass | 544-553 ms (725k-triangle model) | — |
+| loader without it | 118-121 ms | ~1.5-5 s total |
+| the classify pass itself | 430 ms measured; 641-1736 ms in the app log | **11.9 s** |
+| AO bake (RTX 3080) | 0.38-1.21 s | 7.4 s |
+| BVH build (JS) | 0.22-0.50 s | 3.8 s |
+| flattening planes (JS) | 0.17-0.40 s | 2.9 s |
+| DFMX decode + prep | 0.06-0.15 s | ~1.1 s |
+
+Two conclusions from it. Every model in that file carries a `MODL.classification`
+with a `pre.triangle_count` that matches the payload the loader builds exactly, and
+the loader re-classified all thirteen anyway — the stored report was computed, then
+overwritten by an identical one, for ~34% of the whole load. And the AO bakes, which
+are the GPU's work, were awaited inside each model's prep, so they ran one model at
+a time while the main thread was idle waiting on them.
 
 ## STL imports: facets, missing normals, and a shuffled per-vertex attribute
 

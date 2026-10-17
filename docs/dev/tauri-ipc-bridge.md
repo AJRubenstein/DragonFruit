@@ -403,14 +403,28 @@ repair has nothing left to run: the geometry arrives section-ordered, the report
 rides the metadata tail, and the frontend passes it to `processGeometry` as
 `bakedClassification`. Which imports ask is `wantsLoaderClassification`
 (`useStlGeometry.ts`): a classify-only import does; one that may auto-repair does
-not, because that pass classifies too.
+not, because that pass classifies too; and neither does one that already holds the
+report — a VOXL model carries its own (`voxl-format-spec.md`, revision 3.3), and
+asking the loader for a second one replaces the stored answer with an identical
+one at the price of the whole classify pass (430 ms of a 550 ms load on a
+725k-triangle model; 11.9 s over the 13-model scene in `backlog.md`).
+`classificationForPayload` then checks the stored report against the payload that
+came back — its `pre.triangle_count` must match — and drops it when it does not, so
+a file written under another refinement rule still gets classified.
 
 ### Deferred post-processing
 
-Not used. An import builds its BVH, computes its flattening planes and awaits its
-AO bake inside `processGeometry`, while the import's progress modal is up.
-Deferring them to idle was tried and reverted: the work is the same either way, and
-paying it while the user is already waiting beats stuttering while they interact.
+Not used for the BVH and the flattening planes: an import builds both inside
+`processGeometry`, while the import's progress modal is up. Deferring them to idle
+was tried and reverted: the work is the same either way, and paying it while the
+user is already waiting beats stuttering while they interact. Together they are
+0.4-0.9 s per model, which is the largest main-thread cost an import has left and
+the reason they are the next thing to move (see `backlog.md`).
+
+The AO bake is not deferred either — it starts *early*, before the BVH and the
+planes, so the GPU works while the main thread does; a batch import (a VOXL scene,
+several files at once) takes the wait once for the whole batch instead of per model
+(`_deferOcclusionBake`). `ambient-occlusion.md` owns that contract.
 
 `finalizeModelGeometryPostProcessing` and the AO sweep remain for the paths that
 genuinely need them: a geometry swapped in by a repair, a boolean cut or a hole

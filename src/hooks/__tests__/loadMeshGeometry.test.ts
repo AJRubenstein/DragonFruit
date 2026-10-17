@@ -2,7 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-import { evaluateNativeRepairQualityGate, loadMeshGeometry, processGeometry } from '../useStlGeometry';
+import {
+  classificationForPayload,
+  evaluateNativeRepairQualityGate,
+  loadMeshGeometry,
+  processGeometry,
+} from '../useStlGeometry';
 import type { MeshHealthReport } from '@/utils/meshRepair';
 
 function ensureProgressEventPolyfill() {
@@ -427,5 +432,38 @@ describe('processGeometry parts flow', () => {
 
     assert.equal(partsCalled, false, 'no source path, so the parts runner cannot read the file');
     assert.equal(wholeCalled, true, 'the staged whole-file repair runs instead');
+  });
+});
+
+describe('classificationForPayload', () => {
+  it('uses the stored report when it still describes the payload', () => {
+    const stored = makeReport({ preTriangles: 725694 });
+    const chosen = classificationForPayload(undefined, stored, 725694);
+    assert.equal(chosen, stored, 'a report for these triangles is the answer');
+  });
+
+  it('prefers the loader report when the loader classified', () => {
+    const loader = makeReport({ preTriangles: 10 });
+    const stored = makeReport({ preTriangles: 10 });
+    assert.equal(classificationForPayload(loader, stored, 10), loader);
+  });
+
+  it('drops a stored report that describes a different mesh', () => {
+    // A file written under another refinement rule: a section boundary is a
+    // triangle index, so its report is about triangles this mesh does not have.
+    const stored = makeReport({ preTriangles: 500 });
+    assert.equal(classificationForPayload(undefined, stored, 725694), undefined);
+  });
+
+  it('keeps a stored split, which the payload is already ordered by', () => {
+    // The writer stamps a report only when the classifier ran over the exact
+    // payload stored, and the classifier reorders as it reports, so the boundary
+    // addresses this mesh's own triangle order.
+    const stored = { ...makeReport({ preTriangles: 10 }), model_triangle_count: 4 };
+    assert.equal(classificationForPayload(undefined, stored, 10), stored);
+  });
+
+  it('has no report to offer when neither side has one', () => {
+    assert.equal(classificationForPayload(undefined, undefined, 10), undefined);
   });
 });

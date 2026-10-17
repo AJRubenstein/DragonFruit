@@ -6353,9 +6353,20 @@ export function useSceneCollectionManager(options?: {
       if (uniqueBuilds.size > 0) {
         let finished = 0;
         const buildCount = uniqueBuilds.size;
+        // Every mesh's occlusion bake is left in flight rather than awaited per
+        // model: it is the GPU's work (0.4-1.2 s a model on the scene this was
+        // measured against) while the remaining meshes are still being parsed,
+        // refined and classified, and running them one model at a time left the
+        // GPU idle for most of the load. They are all awaited below, before any
+        // model is placed, so each one's first frame still carries its occlusion
+        // — the pop-in that baking after the fact produced.
+        const pendingOcclusionBakes: Array<Promise<boolean>> = [];
         await runWithConcurrency([...uniqueBuilds], VOXL_BUILD_CONCURRENCY, async ([hash, spec]) => {
           try {
-            const built = await loadMeshGeometry(spec.bytes, spec.name, buildOptionsFor(spec.model));
+            const built = await loadMeshGeometry(spec.bytes, spec.name, {
+              ...buildOptionsFor(spec.model),
+              _deferOcclusionBake: (bake) => pendingOcclusionBakes.push(bake),
+            });
             builtGeometryByHash.set(hash, built);
           } catch (error) {
             // The loop below reports the model as skipped; one mesh that will not
@@ -6371,6 +6382,7 @@ export function useSceneCollectionManager(options?: {
             progress: null,
           });
         });
+        await Promise.all(pendingOcclusionBakes);
       }
 
       for (let i = 0; i < document.models.length; i += 1) {

@@ -175,6 +175,21 @@ export interface ProcessGeometryOptions {
    * knows the overlay is unwanted (e.g. a slicing-only geometry).
    */
   computeEdgeGeometry?: boolean;
+  /**
+   * Take the occlusion bake's promise instead of waiting for it.
+   *
+   * The bake is started at the same point either way — as soon as the geometry's
+   * positions are final, before the BVH and the flattening planes — so it always
+   * overlaps this model's own tail. This only moves the *wait*: a multi-model
+   * import (a VOXL scene, a drop of several files) keeps every model's bake in
+   * flight while the remaining meshes are still being prepared, and awaits them
+   * before the models reach the scene.
+   *
+   * The caller MUST await it before the geometry is cloned or shown: the bake
+   * attaches its attribute to the geometry it was handed, and anything cloned
+   * from it before then misses the attribute. @internal
+   */
+  _deferOcclusionBake?: (bake: Promise<boolean>) => void;
   /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
   _skipComputeNormals?: boolean;
   _isTauriRuntime?: () => boolean;
@@ -604,6 +619,23 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // Yield before BVH (expensive synchronous tree build)
   await new Promise<void>(r => setTimeout(r, 0));
 
+  // The occlusion bake starts here, not at the end of prep: it is native work —
+  // a GPU kernel where the machine has one, 0.4-1.2 s per model on the scene
+  // measured below — while the BVH, the flattening planes and the edge overlay
+  // are main-thread work. Both are wanted before the model reaches the scene, and
+  // in that order they were one after the other; started here the bake runs during
+  // them. Positions are final by now (the centering translate above is the last
+  // write to them), which is all the bake reads.
+  //
+  // Deferring the bake to idle was tried and reverted: paying it while the user is
+  // already waiting beats stuttering while they are interacting. Moving the *wait*
+  // is a different thing, and only a caller that owns the rest of the batch
+  // (`_deferOcclusionBake`) does that.
+  const occlusionBake = bakeAndAttachOcclusionForGeometry(geometry).catch((error) => {
+    console.warn('[ao] bake during prep failed', error);
+    return false;
+  });
+
   // Add BVH acceleration for fast raycasting (critical for support placement)
   console.log(`[${new Date().toISOString()}] [processGeometry] Starting BVH Construction`);
   const startBVH = performance.now();
@@ -655,14 +687,11 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   const shouldSurfaceDefects = meshDefects.hasDefects || meshDefects.nativeRepairReport != null;
   // The model is not added to the scene until this resolves, so its first frame
   // already carries the occlusion, and the import's progress modal is still up
-  // while it runs. Deferring it to idle was tried and reverted: the work is the
-  // same either way, and paying it while the user is already waiting beats
-  // stuttering while they are interacting with the scene.
-  const baked = await bakeAndAttachOcclusionForGeometry(geometry).catch((error) => {
-    console.warn('[ao] bake during prep failed', error);
-    return false;
-  });
-  if (baked) {
+  // while it runs. A batch import takes the promise instead and awaits every
+  // model's bake before it places any of them — same guarantee, one wait.
+  if (options._deferOcclusionBake) {
+    options._deferOcclusionBake(occlusionBake);
+  } else if (await occlusionBake) {
     console.log(`[${new Date().toISOString()}] [processGeometry] Baked occlusion attached during prep`);
   }
 
@@ -1051,12 +1080,57 @@ async function loadNativeMeshBodies(filePath: string | undefined): Promise<THREE
  *
  * A classify-only import does: it has nothing else to run. One that may
  * auto-repair does not, because that pass classifies too. Nor does a mesh already
- * known to be support-only, which skips classification entirely.
+ * known to be support-only, which skips classification entirely. Nor, finally,
+ * one whose report is *already in hand*: a VOXL scene stores a classification per
+ * model (V3.3), and paying the loader's whole pass — 0.6-1.7 s on a
+ * million-triangle model, measured on a 13-model scene where it was the largest
+ * single cost — to replace the stored answer with an identical one is the wrong
+ * trade. {@link classificationForPayload} still checks the stored report against
+ * the payload that comes back, and drops it when the two do not fit.
  */
 function wantsLoaderClassification(options: ProcessGeometryOptions): boolean {
   if (options.skipClassification) return false;
+  if (options.bakedClassification) return false;
   const mode = options.nativeProcessingMode ?? 'auto';
   return mode === 'none' || mode === 'classify-only';
+}
+
+/**
+ * The classification report that describes the payload the loader just produced.
+ *
+ * The loader's own report when it classified, since it describes exactly what it
+ * built. Otherwise a caller's stored one — a VOXL model carries the report its
+ * file was written with, and the format requires a reader that honours it *not*
+ * to re-run the classifier — but only while it is still *this* geometry's report:
+ * the triangle count has to agree. Refinement is deterministic but versioned, and
+ * a section boundary is a triangle index, so a file written under a different
+ * refinement rule describes a mesh this build does not produce.
+ *
+ * A split boundary in a stored report is honoured as written. The writer's rule
+ * (same document) is that a report is stamped only when the classifier ran over
+ * the exact payload stored — and the classifier reorders the mesh as it reports —
+ * so the payload is in the order the boundary addresses, and the sections can be
+ * sliced by count alone.
+ *
+ * Dropping the report is safe: prep falls back to the classify pass, which is a
+ * round trip and the cost this reuse exists to avoid, paid only by a file whose
+ * refinement no longer matches the app's.
+ */
+export function classificationForPayload(
+  loaderReport: MeshHealthReport | undefined,
+  storedReport: MeshHealthReport | undefined,
+  triangles: number,
+): MeshHealthReport | undefined {
+  if (loaderReport) return loaderReport;
+  if (!storedReport) return undefined;
+  if (storedReport.pre.triangle_count !== triangles) {
+    console.warn(
+      `[loadMeshFile] Ignoring the stored mesh classification: it describes ` +
+      `${storedReport.pre.triangle_count} triangles and this mesh has ${triangles}. Running the classify pass.`,
+    );
+    return undefined;
+  }
+  return storedReport;
 }
 
 /** The byte-source twin of {@link loadNativeMeshBodies}: null means fall back. */
@@ -1096,7 +1170,14 @@ export async function loadStlGeometry(fileUrl: string, options: ProcessGeometryO
         _skipComputeNormals: true,
         _isNativePreview: nativeResult.isPreview,
         _nativeModelTriangleCount: nativeResult.modelTriangleCount,
-        ...(nativeResult.bakedClassification ? { bakedClassification: nativeResult.bakedClassification } : {}),
+        // The loader's report when it classified, the caller's stored one when it
+        // still fits this payload, and nothing when neither holds: that last case
+        // is what sends prep down the classify pass.
+        bakedClassification: classificationForPayload(
+          nativeResult.bakedClassification,
+          options.bakedClassification,
+          nativeResult.previewTriangleCount,
+        ),
         ...(nativeResult.isPreview ? { nativeProcessingMode: 'none' as const } : {}),
       });
       if (nativeResult.isPreview) {
@@ -1158,7 +1239,11 @@ export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: Pro
     return processGeometry(mergeBodyGeometries(decoded.bodies), {
       ...options,
       _skipComputeNormals: true,
-      ...(decoded.report ? { bakedClassification: decoded.report } : {}),
+      bakedClassification: classificationForPayload(
+        decoded.report,
+        options.bakedClassification,
+        decoded.previewTriangleCount,
+      ),
     });
   }
 
