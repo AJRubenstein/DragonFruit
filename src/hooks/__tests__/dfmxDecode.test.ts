@@ -95,3 +95,19 @@ test('a metadata tail comes back as the classification report', () => {
   assert.equal(decoded.bodies.length, 1);
   assert.equal(decoded.report?.model_triangle_count, 7);
 });
+
+test('a payload that is a view into a larger buffer decodes from its own offset', () => {
+  // How the IPC hands it over today is offset 0, but the reader must not assume
+  // it: the views are taken from `byteOffset + body offset`, and a reader that
+  // ignored the view's own offset would decode the wrong bytes — or throw on an
+  // unaligned `Float32Array`.
+  const payload = buildDfmx([[0, 0, 0, 1, 0, 0, 0, 1, 0]]);
+  const padded = new Uint8Array(payload.byteLength + 8);
+  padded.set(new Uint8Array(payload), 8);
+
+  const decoded = decodeDfmx(padded.subarray(8));
+
+  assert.equal(decoded.bodies.length, 1);
+  assert.equal(decoded.bodies[0].getAttribute('position').getX(1), 1);
+  assert.equal(decoded.bodies[0].getAttribute('normal').getZ(0), 1);
+});

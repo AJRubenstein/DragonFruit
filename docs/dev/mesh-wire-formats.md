@@ -45,8 +45,11 @@ Because bodies are laid out as separate soups, a body's vertices are not welded
 
 The reader is `decodeDfmx` (`src/hooks/useStlGeometry.ts`), which returns the
 bodies plus the header facts a preview needs (flags, original and model counts).
-It gives each body its own `ArrayBuffer`: `processGeometry` translates a geometry
-in place to centre it, so bodies sharing one buffer would drag each other around.
+Each body is two views into the payload buffer — positions and normals — not a
+copy: the payload is the body of a `fetch` response (Tauri's IPC is a
+custom-protocol fetch) and is ours to keep, and the body layout keeps every pair
+of views 4-byte aligned. Bodies sharing the buffer is safe for the in-place
+`translate` that centres them, because each body writes only its own range.
 
 ## Bodies come from the loader, not this format
 

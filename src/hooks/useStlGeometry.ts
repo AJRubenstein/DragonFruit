@@ -953,9 +953,11 @@ export type DecodedMesh = {
 /**
  * Decode a DFMX payload into one geometry per body.
  *
- * Each body gets its own ArrayBuffer. `processGeometry` translates a geometry in
- * place to centre it, so bodies sharing one buffer would drag each other around;
- * the copy is what the renderer loaders already pay per mesh.
+ * Each body is a pair of views into the payload buffer — positions and normals —
+ * rather than a copy of it: the buffer arrives as a `fetch` response body and is
+ * ours, and the DFMX layout keeps every body 4-byte aligned. The bodies therefore
+ * share one underlying buffer, which is fine for the in-place `translate` that
+ * centres them: each body writes only its own range.
  */
 export function decodeDfmx(payload: Uint8Array | ArrayBuffer): DecodedMesh {
   const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
@@ -985,19 +987,26 @@ export function decodeDfmx(payload: Uint8Array | ArrayBuffer): DecodedMesh {
     if (offset + soupBytes > bytes.byteLength) {
       throw new Error('Native mesh loader returned a truncated DFMX body.');
     }
-    const soup = bytes.slice(offset, offset + soupBytes);
+    // A view into the payload, not a copy of it. Tauri's IPC is a `fetch` against
+    // a custom-protocol URL (`tauri`'s `ipc-protocol.js`), so `response.arrayBuffer()`
+    // hands back a buffer that belongs to this call and nothing reuses, detaches or
+    // shortens — the views outlive it. The DFMX layout keeps every body 4-byte
+    // aligned (32-byte header, 8-byte table entries, 72-byte triangles), so they are
+    // valid `Float32Array` views. Copying cost a full pass over 52-130 MB per model
+    // — the size of the payload again in peak memory — for no property the buffer
+    // does not already have.
+    const soupOffset = bytes.byteOffset + offset;
     const corners = triangleCount * 9;
     const geometry = new THREE.BufferGeometry();
-    // `soup` is its own copy, so these views are aligned and outlive the payload.
     geometry.setAttribute(
       'position',
-      new THREE.BufferAttribute(new Float32Array(soup.buffer, soup.byteOffset, corners), 3),
+      new THREE.BufferAttribute(new Float32Array(bytes.buffer, soupOffset, corners), 3),
     );
     geometry.setAttribute(
       'normal',
       new THREE.BufferAttribute(
         new Float32Array(
-          soup.buffer, soup.byteOffset + corners * Float32Array.BYTES_PER_ELEMENT, corners,
+          bytes.buffer, soupOffset + corners * Float32Array.BYTES_PER_ELEMENT, corners,
         ),
         3,
       ),
