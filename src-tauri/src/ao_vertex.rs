@@ -38,16 +38,36 @@ const BAKED_RAYS: usize = 32;
 /// attaches them to. Any failure returns `Err` and the caller falls back to the
 /// CPU recipe: the GPU is only ever a faster way to the same field.
 fn bake_on_gpu(soup: &[f32], rays: usize) -> Result<(Vec<f32>, usize), String> {
+    // Split the bake's phases: the weld and the accelerator's own tree build are CPU
+    // work a caller *re-pays* for a mesh that was welded and indexed moments earlier
+    // (the loader refines and classifies the same triangles), so the sizes are worth
+    // having next to the total. `bake_smoothed` covers the tree, the normals and the
+    // kernel; the two lines of log per model are the whole cost either way.
+    let welded_at = std::time::Instant::now();
     let (mesh, corner_map) =
         IndexedMesh::from_triangle_soup_with_corner_map(soup, SOUP_MERGE_EPSILON);
     if mesh.positions.is_empty() {
         return Err("mesh has no usable vertices".into());
     }
+    let weld_ms = welded_at.elapsed().as_millis();
+
+    let baked_at = std::time::Instant::now();
     let values = dragonfruit_ao_gpu::bake_smoothed(&mesh, rays)?;
+    let bake_ms = baked_at.elapsed().as_millis();
+
+    let expand_at = std::time::Instant::now();
     let out: Vec<f32> = corner_map
         .iter()
         .map(|id| values.get(*id as usize).copied().unwrap_or(1.0))
         .collect();
+    log::info!(
+        "[ao] phases: weld {}ms of {} triangles, tree+kernel {}ms, expand {}ms ({} welded vertices)",
+        weld_ms,
+        mesh.triangles.len(),
+        bake_ms,
+        expand_at.elapsed().as_millis(),
+        mesh.positions.len(),
+    );
     Ok((out, mesh.positions.len()))
 }
 

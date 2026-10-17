@@ -605,6 +605,22 @@ welds a 3M-corner soup and builds a BVH over the same mesh the loader welded mom
 earlier — and removing that needs the mesh to travel by reference rather than as a
 re-uploaded soup (see the native-range step under the container parse).
 
+**What a bake actually spends** (instrumented, 13 models, GPU path, dev build):
+
+| phase | mean | sum |
+| --- | --- | --- |
+| weld the soup (`from_triangle_soup_with_corner_map`) | 208 ms | 2.7 s |
+| tree + normals + kernel (`dragonfruit_ao_gpu::bake_smoothed`) | 518 ms | 6.7 s |
+| expand the welded values back onto corners | 4 ms | 0.06 s |
+
+So of a bake's ~850 ms, the part the mesh-by-reference step would remove **is the weld
+(2.7 s over a scene) and the 430 MB upload** — not the larger half. The tree build and
+kernel stay, and they are the next thing worth attacking on this lever: the tree is
+rebuilt per bake over a mesh the loader had already indexed, and a resident cache for
+it is 30-60 MB a model, which is not affordable for a scene. A cheaper build (a
+coarser split than SAH) is the direction that does not cost memory; the field's
+*values* do not depend on the tree, only the time the rays take.
+
 **The rule both attempts produced: pack what the native side produces, never what the
 renderer must pack.** The bake's soup upload was packed as well — 36 bytes a triangle,
 430 MB across the scene, halved on the wire — and it *lost*: the build pass went
