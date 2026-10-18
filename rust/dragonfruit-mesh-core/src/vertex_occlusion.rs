@@ -380,9 +380,10 @@ fn bake_against_with_visibility_and_rotation(
         return VertexVisibility { occlusion: Vec::new(), moment: Vec::new() };
     }
 
-    // Vertex normals from the adjacent faces: the bake's probe directions and
-    // the material's shading both want the smooth normal, and an unindexed mesh
-    // has none of its own.
+    // Vertex normals from the adjacent faces: the probe fan's axis is the smooth
+    // normal, and the mesh handed in here has none of its own. The renderer's
+    // shading normals are per face (`crate::normals`) and never reach this — the
+    // bake is the one consumer that wants an average.
     let mut normals = vec![Vec3::ZERO; vertex_count];
     for tri in &mesh.triangles {
         let a = mesh.positions[tri[0] as usize];
@@ -485,6 +486,56 @@ fn bake_against_with_visibility_and_rotation(
         });
 
     VertexVisibility { occlusion: out, moment: moments }
+}
+
+/// The precondition behind baking a mesh the loader already welded instead of
+/// re-welding a soup of it: for a soup built out of an *already welded* mesh, the soup
+/// weld must map every corner back to the vertex it came from. That is what lets the
+/// bake use the mesh's own triangle indices to expand its values onto corners, and it
+/// is a property of the two tolerances (`SOUP_MERGE_EPSILON` against the loader's),
+/// so it is asserted rather than assumed.
+#[cfg(test)]
+mod welded_soup_tests {
+    use super::*;
+    use crate::mesh::{IndexedMesh, Vec3};
+
+    #[test]
+    fn a_soup_of_a_welded_mesh_welds_back_to_its_own_indices() {
+        // Two triangles sharing an edge, at millimetre scale — the spacing a refined
+        // mesh has.
+        let mesh = IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(1.0, 1.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+        };
+        let mut soup = Vec::new();
+        for triangle in &mesh.triangles {
+            for index in triangle {
+                let p = mesh.positions[*index as usize];
+                soup.extend_from_slice(&[p.x, p.y, p.z]);
+            }
+        }
+
+        let (welded, corner_map) =
+            IndexedMesh::from_triangle_soup_with_corner_map(&soup, SOUP_MERGE_EPSILON);
+
+        assert_eq!(
+            welded.positions.len(),
+            mesh.positions.len(),
+            "re-welding an already-welded mesh must not merge anything"
+        );
+        for (slot, mapped) in corner_map.iter().enumerate() {
+            let expected = mesh.triangles[slot / 3][slot % 3];
+            assert_eq!(
+                *mapped, expected,
+                "corner {slot} must map to the index it came from"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

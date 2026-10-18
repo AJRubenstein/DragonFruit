@@ -94,6 +94,69 @@ export function followedPlateIdForMove({
   return [...landedPlateIds][0] ?? null;
 }
 
+/**
+ * How far a model on another bed — and the supports and raft under it — is dimmed from
+ * its own colour. Multiplied into the colour rather than made translucent, so a dimmed
+ * model still reads as solid and does not sort against the ones behind it.
+ */
+export const SCENERY_DIM = 0.4;
+
+/**
+ * The models the scene draws as scenery: on another bed, and not selected.
+ *
+ * One set covers both halves of the rule, because a model here is dimmed *and* answers no
+ * pointer, and the selected exception applies to both: a drag that lands on a bed which
+ * does not become the one being worked on leaves the model selected there, and a model
+ * that stopped answering the pointer could not be dragged any further. Supports and rafts
+ * ask the same question through [`supportAnswersPointer`], so a model's scaffolding is
+ * scoped wherever the model itself is.
+ */
+export function sceneryModelIds({
+  models,
+  frames,
+  activePlateId,
+  plateCount,
+  selectedModelIds,
+}: {
+  models: readonly { id: string; transform: { position: { x: number; y: number } } }[];
+  frames: readonly PlatePointerFrame[];
+  activePlateId: string | undefined;
+  plateCount: number;
+  selectedModelIds: readonly string[];
+}): ReadonlySet<string> {
+  if (plateCount <= 1 || frames.length === 0) return EMPTY_MODEL_IDS;
+  const selected = new Set(selectedModelIds);
+  const scenery = new Set<string>();
+  for (const model of models) {
+    if (selected.has(model.id)) continue;
+    const scope = modelPlateScope({
+      position: model.transform.position,
+      frames,
+      activePlateId,
+      plateCount,
+    });
+    if (scope === 'other') scenery.add(model.id);
+  }
+  return scenery.size > 0 ? scenery : EMPTY_MODEL_IDS;
+}
+
+/** One shared empty set, so a single-plate scene allocates nothing per render. */
+const EMPTY_MODEL_IDS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Whether a support primitive answers the pointer, given the model it belongs to.
+ *
+ * A support with no model — a loose one, or a preview being placed — stays live, the way a
+ * model standing on no bed does.
+ */
+export function supportAnswersPointer(
+  modelId: string | undefined,
+  scenery: ReadonlySet<string> | undefined,
+): boolean {
+  if (modelId === undefined || !scenery || scenery.size === 0) return true;
+  return !scenery.has(modelId);
+}
+
 /** An axis-aligned rect in world XY: a bed's build volume, or a footprint on it. */
 export type PlateRect = { minX: number; minY: number; maxX: number; maxY: number };
 

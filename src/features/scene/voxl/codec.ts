@@ -148,7 +148,7 @@ export function readScenePlates(scene: VoxlSceneState): ReadScenePlates {
  * Returns a `ParsedVoxlResult` with the normalised document and the pre-decoded
  * mesh bytes in `meshBytes`.
  */
-export function parseVoxlAuto(data: Uint8Array | ArrayBuffer): ParsedVoxlResult {
+export async function parseVoxlAuto(data: Uint8Array | ArrayBuffer): Promise<ParsedVoxlResult> {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
 
   if (bytes.length === 0) {

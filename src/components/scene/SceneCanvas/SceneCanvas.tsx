@@ -136,7 +136,7 @@ import { PickingProviderWrapper, SelectionSync, useInteractionWarning } from './
 import { CameraClipPlaneStabilizer, CameraProvider, EnableLocalClipping, Helpers, Lights, SceneMoodOverlay } from './SceneEnvironment';
 import { plateNumberPlaceholder } from '@/features/scene/plates/plateMessages';
 import { plateCascadeOffsetMm, type PlateOrdering } from '@/features/scene/plates/plateCascade';
-import { modelAnswersPointer, modelPlateScope, type PlateScope } from '@/features/scene/plates/plateInteractivity';
+import { modelAnswersPointer, modelPlateScope, sceneryModelIds, SCENERY_DIM, type PlateScope } from '@/features/scene/plates/plateInteractivity';
 import type { PlateFrame, ScenePlate } from '@/features/scene/useSceneCollectionManager';
 import { StlMesh } from './StlMesh';
 import { setClipBounds } from './clipBoundsStore';
@@ -345,13 +345,6 @@ function resolveTrackpadGestureAction(
 }
 
 const EMPTY_MODEL_ID_LIST: readonly string[] = Object.freeze([]);
-
-/**
- * How much darker a model standing on a bed that is not the one being worked on is
- * drawn. Module scope, not the component body: the render pass that dims the models
- * runs before a later `const` in the body would have been initialised.
- */
-const INACTIVE_PLATE_MODEL_DIM = 0.4;
 
 const FLOATING_PANEL_RIGHT_INSET_PX = 12;
 // Drei GizmoHelper positions by gizmo center, not right edge.
@@ -1092,6 +1085,22 @@ export function SceneCanvas({
     };
   }, [autoLift, autoSnapEnabled, liftDistance]);
 
+  /**
+   * The models standing on another bed, which are scenery: drawn dimmed, and answering no
+   * pointer — the model, the supports under it and its raft. Selected models are not in
+   * here: one dragged onto a bed that did not become the active one has to stay workable.
+   */
+  const plateSceneryModelIds = React.useMemo(
+    () => sceneryModelIds({
+      models,
+      frames: plateFrames ?? [],
+      activePlateId,
+      plateCount: plates?.length ?? 0,
+      selectedModelIds: selectedModelIds ?? [],
+    }),
+    [models, plateFrames, activePlateId, plates, selectedModelIds],
+  );
+
   const supportColorsByModelId = React.useMemo(() => {
     const fallbackColor = meshColor ?? '#a3a3a3';
     const entries = models.map((model) => [model.id, model.color || fallbackColor] as const);
@@ -1709,7 +1718,7 @@ export function SceneCanvas({
         ? {
             scope,
             dimmedColor: new THREE.Color(model.color || meshColor || '#c8c8ce')
-              .multiplyScalar(INACTIVE_PLATE_MODEL_DIM)
+              .multiplyScalar(SCENERY_DIM)
               .getStyle(),
           }
         : { scope });
@@ -6975,6 +6984,7 @@ export function SceneCanvas({
                   modelDropOffsetsById={entryDropOffsets}
                   navigationLodActive={navigationLodActive}
                   disableSelectionAndHover={suppressSupportProxyPointerInteraction}
+                  pointerSceneryModelIds={plateSceneryModelIds}
                   raftColorized={raftColorized}
                   raftHoverized={raftHoverized}
                   onModelPointerSelect={(modelId) => selectModelFromPointerHit(modelId)}
@@ -7109,6 +7119,7 @@ export function SceneCanvas({
                   modelDropOffsetsById={entryDropOffsets}
                   navigationLodActive={transformMode !== 'select'}
                   disableSelectionAndHover={suppressSupportProxyPointerInteraction}
+                  pointerSceneryModelIds={plateSceneryModelIds}
                   raftColorized={raftColorized}
                   raftHoverized={raftHoverized}
                   passive={transformMode !== 'select'}

@@ -27,12 +27,40 @@ the values get attached to. See `tauri-ipc-bridge.md` for that seam's rules.
 
 Two call sites, and both must leave the geometry with `aBakedAo`:
 
-- `processGeometry` (`src/hooks/useStlGeometry.ts`) bakes at the end of prep, so
-  a model's first frame already carries the field. Every import goes through
-  prep, which makes this the one that covers the common case.
+- `processGeometry` (`src/hooks/useStlGeometry.ts`) starts the bake as soon as the
+  geometry's positions are final and attaches the field before the model reaches
+  the scene, so a model's first frame already carries it. Every import goes
+  through prep, which makes this the one that covers the common case.
 - The idle sweep in `useSceneCollectionManager.ts` is the net for a geometry
   that never went through prep — one restored from a project, or one swapped in
   by a repair, a boolean cut or a hole punch.
+
+**The bake starts before the BVH and the flattening planes, not after them.** It is
+native work — a GPU kernel where the machine has one, and the measured bake is
+0.4-1.2 s per model on a print-sized part — while those two are main-thread work.
+In sequence they cost their sum; started early they cost the longer of the two.
+What was tried and reverted is *deferring* the bake (to an idle callback, after the
+model is visible, which is the pop-in this design exists to prevent), not overlapping
+it.
+
+A batch import — a VOXL scene, or several files at once — passes
+`_deferOcclusionBake` instead of waiting per model: the bake is still started at the
+same point in that model's prep, but the *wait* is collected and taken once, after
+every mesh in the batch has been prepared and before any model is placed. On the
+15-model scene measured in `backlog.md` the thirteen bakes total 7.4 s of GPU time
+that used to run one model at a time, with the main thread idle in between.
+
+**A geometry whose mesh the loader kept is baked by token, not by upload.** The native
+loader registers each model's refined mesh as it encodes the `DFMX` payload and reports a
+token in the header (`mesh-wire-formats.md`); the bake sends forty bytes naming it, and
+the native side welds nothing — the mesh it uses is the one the loader already welded and
+indexed. The field is the same by construction: measured on a real model, re-welding the
+same soup at the bake's own epsilon produces the identical vertex set and a bit-identical
+field. The token is recorded against the geometry's *position array* and checked natively
+against the corner count, so a geometry that was repaired, swapped, cloned or rewritten
+since — and an evicted token — fall back to the soup path, which cannot go stale. That
+fallback is what every other geometry uses: a plugin's, a repaired one, a file out of a
+zip.
 
 `aBakedAo` is the queue's only key, so the sweep must not re-issue a bake whose
 result has not landed yet: a geometry with a bake in flight has no attribute, and
@@ -43,6 +71,17 @@ superseded — the values belong to that geometry, and discarding them is what l
 it unbaked and re-queueable on the next `models` change. Both halves are needed:
 without the first, one `models` change during a bake sends the soup twice; without
 the second, the same model is re-baked on every later change.
+
+**"Outstanding" is the run's remaining queue plus the bakes in flight**, and both
+are state rather than bookkeeping: the queue is `pendingAoQueueRef`, *replaced*
+wholesale by each effect run (so a superseded run cannot leave anything counted —
+the workers shift the same array), and the in-flight count rides the take. It used
+to be the run's whole queue added up front and returned a bake at a time, which
+leaked a count per superseded run: every `models` change while a bake was queued
+(a hollowing apply patches them, the idle plane pass patches them again) left the
+count above zero forever, and `hasPendingBackgroundGeometryWork()` is what the
+modifier-apply overlay polls to clear its "loading mesh" spinner — it then waited
+out its 20-second cap with all the work already done.
 
 ## The shipped recipe
 
@@ -101,6 +140,16 @@ different fields.
 - **Weld before you smooth.** Both soup entry points weld with
   `SOUP_MERGE_EPSILON`; a caller that welds with its own tolerance bakes a
   different mesh than the corners it expands onto.
+- **A bake's values belong to the corner table its soup was expanded through, not
+  to whatever the geometry's index is when the reply lands.** The bake can be
+  started long before the geometry is finished — that is how it overlaps the BVH
+  and the flattening planes — and those steps re-index geometry (building the BVH
+  gives a soup an index it did not have). `bakeOcclusionForGeometry` snapshots the
+  table with the request and maps through the snapshot; `mapCornerValuesToVertices`
+  takes it as a parameter for that reason. Reading the live index at reply time
+  landed the field one triangle over, which shows as speckled shading on an
+  imported mesh (`backlog.md`, "a Rust mesh result must be indexed against the
+  geometry you sent").
 
 ## Related pages
 

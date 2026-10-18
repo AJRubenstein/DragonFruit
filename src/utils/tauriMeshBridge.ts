@@ -363,9 +363,9 @@ export const REFINE_MAX_TRIANGLES = 400_000;
  * fraction of the model's diagonal (bounded, longest first) is what stops a flat
  * panel interpolating its occlusion across a ten millimetre triangle.
  *
- * Returns a new geometry with the refined positions and welded, crease-aware
- * normals, or `null` when there is no native side to ask (the web build) or the
- * import failed.
+ * Returns a new geometry with the refined positions and one normal per face, or
+ * `null` when there is no native side to ask (the web build) or the import
+ * failed.
  */
 export async function refineCoarseFaces(
   geometry: THREE.BufferGeometry,
@@ -385,8 +385,41 @@ export async function refineCoarseFaces(
 }
 
 /**
+ * Load a mesh that sits at a known offset inside a file on disk.
+ *
+ * A VOXL stores each model's mesh as a packed STL chunk at a directory-recorded
+ * offset. Handing the native loader those numbers lets it read and inflate the chunk
+ * where it already parses, so the bytes never enter the webview: the alternative
+ * inflated 677 MB across a 15-model scene in JS before any model work started, and
+ * everything that arrived here came back out again as a soup for the AO bake.
+ *
+ * Desktop only, and only for a source that has a path — a file out of a zip has no
+ * range to give.
+ */
+export async function loadMeshRangeFromNativePath(request: {
+  sourcePath: string;
+  offset: number;
+  compressedSize: number;
+  compression: number;
+  classify?: boolean;
+}): Promise<Uint8Array> {
+  const core = await loadTauriCore();
+  if (!core) {
+    throw new Error('Native mesh loading is only available in DragonFruit Desktop (Tauri runtime).');
+  }
+  const bytes = await core.invoke<ArrayBuffer | Uint8Array>('load_mesh_range', {
+    sourcePath: request.sourcePath,
+    offset: request.offset,
+    length: request.compressedSize,
+    compression: request.compression,
+    classify: request.classify ?? false,
+  });
+  return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+}
+
+/**
  * Decode a `refine_mesh_soup` response: `[u32 triangle count][positions][normals]`,
- * both 9 floats per triangle with the normals welded and split at creases.
+ * both 9 floats per triangle, the normals one per face.
  * Returns `null` when the payload does not describe the same mesh the header
  * claims, rather than attaching slices of one mesh to another.
  */

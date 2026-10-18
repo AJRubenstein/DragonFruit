@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { FolderInput, Upload, Printer, Wrench } from 'lucide-react';
-import { ProgressBar, Spinner } from '@/components/atoms';
+import { ProgressBar } from '@/components/atoms';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
@@ -501,8 +501,7 @@ export function EmptySceneState({
               background: 'color-mix(in srgb, var(--surface-1), transparent 8%)',
             }}
           >
-            <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-              <Spinner size="md" style={{ color: 'var(--accent)' }} />
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
               <span>{loadingLabel ?? _(msg`Importing your file…`)}</span>
             </div>
             <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>

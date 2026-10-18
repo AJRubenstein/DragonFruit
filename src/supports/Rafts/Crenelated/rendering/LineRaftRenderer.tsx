@@ -2,6 +2,7 @@
 
 import React from 'react';
 import * as THREE from 'three';
+import { supportAnswersPointer } from '@/features/scene/plates/plateInteractivity';
 import { useSyncExternalStore } from 'react';
 import { subscribe, getSnapshot } from '@/supports/state';
 import { getRaftSettings, subscribeToRaftStore } from '../RaftState';
@@ -126,6 +127,8 @@ interface LineRaftRendererProps {
   excludeModelIds?: string[];
   navigationLodActive?: boolean;
   onModelPointerSelect?: (modelId: string, e: any) => void;
+  /** Models on another bed: their raft answers no pointer. */
+  pointerSceneryModelIds?: ReadonlySet<string>;
   /** Models whose plate footprint the raft has to clear. */
   plateClearanceTargets?: readonly PlateFootprintSource[];
 }
@@ -148,6 +151,7 @@ export default function LineRaftRenderer({
   excludeModelIds = [],
   navigationLodActive = false,
   onModelPointerSelect,
+  pointerSceneryModelIds,
   plateClearanceTargets = EMPTY_PLATE_CLEARANCE_TARGETS,
 }: LineRaftRendererProps) {
   const supportState = useSyncExternalStore(subscribe, getSnapshot);
@@ -368,6 +372,7 @@ export default function LineRaftRenderer({
 
   const handleClick = React.useCallback((e: any) => {
     const modelId = e?.object?.userData?.modelId;
+    if (!supportAnswersPointer(modelId, pointerSceneryModelIds)) return;
     if (!modelId || !onModelPointerSelect) return;
 
     e.stopPropagation();
@@ -377,17 +382,18 @@ export default function LineRaftRenderer({
     }
 
     onModelPointerSelect(modelId, e);
-  }, [onModelPointerSelect]);
+  }, [onModelPointerSelect, pointerSceneryModelIds]);
 
   const handlePointerMove = React.useCallback((e: any) => {
     const modelId = e?.object?.userData?.modelId ?? null;
+    if (!supportAnswersPointer(modelId ?? undefined, pointerSceneryModelIds)) return;
     window.dispatchEvent(new CustomEvent('support-raft-model-pointer-hover', {
       detail: {
         modelId,
         category: 'raft',
       },
     }));
-  }, []);
+  }, [pointerSceneryModelIds]);
 
   const handlePointerOut = React.useCallback(() => {
     window.dispatchEvent(new CustomEvent('support-raft-model-pointer-hover', {

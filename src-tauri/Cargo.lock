@@ -1699,6 +1699,7 @@ dependencies = [
  "dragonfruit-organic-cut",
  "dragonfruit-rtsp-relay",
  "dragonfruit-slicing-engine",
+ "flate2",
  "futures-util",
  "if-addrs",
  "libloading 0.8.9",
@@ -1745,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "dragonfruit-mesh-core"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "ahash 0.8.12",
  "bytemuck",
