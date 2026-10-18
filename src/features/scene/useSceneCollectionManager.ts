@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { loadTauriCore, refineCoarseFaces, shouldRefineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { solidRemeshFromGeometry, tetSurfaceFromGeometry, type SolidRemeshProgressSink, type SolidRemeshOptions, type TetSurfaceProgressSink, type TetWrapOptions } from '@/utils/meshShrinkwrap';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
-import { loadMeshGeometry, loadMeshGeometryFromRange, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
+import { loadMeshGeometry, loadMeshGeometryFromRange, load3mfGeometryMergedWithSplitData, processGeometry, skipsNativePassForModelOnly, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
 import { loadMeshFromPath } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
@@ -5872,7 +5872,10 @@ export function useSceneCollectionManager(options?: {
           center: false,
           ...(skipComputeNormals ? { _skipComputeNormals: true } : {}),
           nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
-          skipClassification: normalized.skipClassification === true,
+          skipClassification: skipsNativePassForModelOnly(
+            normalized.skipClassification === true,
+            autoRepairScenes,
+          ),
           onNativeProcessingStage: (stage) => {
             if (options?.suppressProgress) return;
 

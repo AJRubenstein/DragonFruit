@@ -1174,6 +1174,21 @@ function wantsLoaderClassification(options: ProcessGeometryOptions): boolean {
 }
 
 /**
+ * Whether a model-only import may skip the native pass.
+ *
+ * {@link ProcessGeometryOptions.skipClassification} suppresses repair as well as
+ * classification, so a mesh that carries no support section can only claim it
+ * while the import is not auto-repairing. A LYS scene supplies its supports
+ * separately and is not pre-repaired, which is the case this separates.
+ */
+export function skipsNativePassForModelOnly(
+  modelOnly: boolean,
+  autoRepair: boolean,
+): boolean {
+  return modelOnly && !autoRepair;
+}
+
+/**
  * The classification report that describes the payload the loader just produced.
  *
  * The loader's own report when it classified, since it describes exactly what it
