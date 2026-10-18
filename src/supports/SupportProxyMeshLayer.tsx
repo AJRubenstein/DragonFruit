@@ -934,8 +934,20 @@ export function SupportProxyMeshLayer({
   // draws with a constant number of draw calls regardless of model count. This
   // restores the "singular mesh" performance characteristic that was lost when
   // per-model groups were introduced in the ZIP Import / Batch Export refactor.
-  const baseGeometry = React.useMemo(() => {
-    const base: FlatProxyGeometry = { straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] };
+  //
+  // Two sets, not one: the models the pointer can reach, and the ones standing on
+  // another bed. One batch per kind for the whole scene cannot be frustum culled —
+  // its bounds cover every plate, so three draws every bed's supports whenever any
+  // part of one is on screen. Split, the scenery set has its own bounds and falls
+  // out of the frustum the moment the camera is on the bed being worked on, which
+  // is the normal pose: the draw calls go from one set per kind to two, and the
+  // second one is usually not drawn at all.
+  const batches = React.useMemo(() => {
+    const empty = (): FlatProxyGeometry => ({ straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] });
+    const live = empty();
+    const scenery = empty();
+    const setFor = (modelId: string | undefined): FlatProxyGeometry =>
+      (supportAnswersPointer(modelId, pointerSceneryModelIds) ? live : scenery);
 
     const offsetShaft = (shaft: InstancedShaft, zOffset: number): InstancedShaft => {
       if (Math.abs(zOffset) < 1e-6) return shaft;
@@ -950,33 +962,36 @@ export function SupportProxyMeshLayer({
     };
 
     const appendRoot = (root: InstancedRoot, zOffset: number) => {
+      const target = setFor(root.modelId);
       if (Math.abs(zOffset) < 1e-6) {
-        base.roots.push(root);
+        target.roots.push(root);
         return;
       }
-      base.roots.push({
+      target.roots.push({
         ...root,
         basePos: { x: root.basePos.x, y: root.basePos.y, z: root.basePos.z + zOffset },
       });
     };
 
     const appendJoint = (joint: InstancedJoint, zOffset: number) => {
+      const target = setFor(joint.modelId);
       if (Math.abs(zOffset) < 1e-6) {
-        base.joints.push(joint);
+        target.joints.push(joint);
         return;
       }
-      base.joints.push({
+      target.joints.push({
         ...joint,
         pos: { x: joint.pos.x, y: joint.pos.y, z: joint.pos.z + zOffset },
       });
     };
 
     const appendCone = (cone: InstancedContactCone, zOffset: number) => {
+      const target = setFor(cone.modelId);
       if (Math.abs(zOffset) < 1e-6) {
-        base.cones.push(cone);
+        target.cones.push(cone);
         return;
       }
-      base.cones.push({
+      target.cones.push({
         ...cone,
         pos: { x: cone.pos.x, y: cone.pos.y, z: cone.pos.z + zOffset },
       });
@@ -993,7 +1008,8 @@ export function SupportProxyMeshLayer({
       for (const shaft of entry.geometry.shafts) {
         const curved = isCurvedBatchedShaft(shaft);
         if (hidesExcludedModels && curved) continue;
-        (curved ? base.curvedShafts : base.straightShafts).push(offsetShaft(shaft, zOffset));
+        const target = setFor(shaft.modelId);
+        (curved ? target.curvedShafts : target.straightShafts).push(offsetShaft(shaft, zOffset));
       }
       for (const root of entry.geometry.roots) appendRoot(root, zOffset);
       if (includeDetailedPrimitives) {
@@ -1005,13 +1021,15 @@ export function SupportProxyMeshLayer({
     if (hidesExcludedModels) {
       for (const entry of visibleModelEntries) {
         for (const shaft of entry.geometry.shafts) {
-          if (isCurvedBatchedShaft(shaft)) base.curvedShafts.push(offsetShaft(shaft, entry.zOffset));
+          if (isCurvedBatchedShaft(shaft)) {
+            setFor(shaft.modelId).curvedShafts.push(offsetShaft(shaft, entry.zOffset));
+          }
         }
       }
     }
 
-    return base;
-  }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives]);
+    return { live, scenery };
+  }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives, pointerSceneryModelIds]);
 
   // A support a fraction of a pixel wide must still be grabbable, so the grab
   // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.
@@ -1039,19 +1057,25 @@ export function SupportProxyMeshLayer({
     return null;
   }
 
-  const hasBase = baseGeometry.straightShafts.length > 0
-    || baseGeometry.curvedShafts.length > 0
-    || baseGeometry.roots.length > 0
-    || (includeDetailedPrimitives && (baseGeometry.joints.length > 0 || baseGeometry.cones.length > 0));
+  // Two batch sets, each with bounds of its own: the live one and the scenery one.
+  // Separate is the point - see the memo above.
+  const batchSets = [
+    { key: 'live', geometry: batches.live },
+    { key: 'scenery', geometry: batches.scenery },
+  ];
+  const hasBatch = (geometry: FlatProxyGeometry) => geometry.straightShafts.length > 0
+    || geometry.curvedShafts.length > 0
+    || geometry.roots.length > 0
+    || (includeDetailedPrimitives && (geometry.joints.length > 0 || geometry.cones.length > 0));
 
   return (
     <group>
-      {hasBase && (
-        <group key="proxy-base-batch">
-          {baseGeometry.straightShafts.length > 0 && (
+      {batchSets.map(({ key, geometry }) => hasBatch(geometry) && (
+        <group key={`proxy-base-batch-${key}`}>
+          {geometry.straightShafts.length > 0 && (
             <InstancedShaftGroup
               pointerSceneryModelIds={pointerSceneryModelIds}
-              shafts={baseGeometry.straightShafts}
+              shafts={geometry.straightShafts}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               isHidden={isHiddenPrimitive}
@@ -1067,10 +1091,10 @@ export function SupportProxyMeshLayer({
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {baseGeometry.curvedShafts.length > 0 && (
+          {geometry.curvedShafts.length > 0 && (
             <InstancedShaftGroup
               pointerSceneryModelIds={pointerSceneryModelIds}
-              shafts={baseGeometry.curvedShafts}
+              shafts={geometry.curvedShafts}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               transparent={proxyTransparent}
@@ -1084,9 +1108,9 @@ export function SupportProxyMeshLayer({
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {baseGeometry.roots.length > 0 && (
+          {geometry.roots.length > 0 && (
             <InstancedRootsGroup
-              roots={baseGeometry.roots}
+              roots={geometry.roots}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               isHidden={isHiddenPrimitive}
@@ -1100,9 +1124,9 @@ export function SupportProxyMeshLayer({
               onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {includeDetailedPrimitives && baseGeometry.joints.length > 0 && (
+          {includeDetailedPrimitives && geometry.joints.length > 0 && (
             <InstancedJointGroup
-              joints={baseGeometry.joints}
+              joints={geometry.joints}
               outOfBoundsMaterial={outOfBoundsMaterial}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
@@ -1116,10 +1140,10 @@ export function SupportProxyMeshLayer({
               onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {includeDetailedPrimitives && baseGeometry.cones.length > 0 && (
+          {includeDetailedPrimitives && geometry.cones.length > 0 && (
             <InstancedContactConeGroup
               pointerSceneryModelIds={pointerSceneryModelIds}
-              cones={baseGeometry.cones}
+              cones={geometry.cones}
               outOfBoundsMaterial={outOfBoundsMaterial}
               grabRadiusAt={grabRadiusAt}
               color={DEFAULT_SUPPORT_COLOR}
@@ -1135,7 +1159,7 @@ export function SupportProxyMeshLayer({
             />
           )}
         </group>
-      )}
+      ))}
 
     </group>
   );
