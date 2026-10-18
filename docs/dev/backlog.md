@@ -497,6 +497,35 @@ overwritten by an identical one, for ~34% of the whole load. And the AO bakes, w
 are the GPU's work, were awaited inside each model's prep, so they ran one model at
 a time while the main thread was idle waiting on them.
 
+### Fourth run: the mesh chunks stay in the file (13.5 s)
+
+The container's mesh chunks are read by the *native* loader now (`load_mesh_range`), so
+the parse no longer inflates anything for them — the descriptors come out of the
+directory and the loader reads each range inside that model's own build. Measured on
+the same scene and build:
+
+| | eager parse | by range |
+| --- | --- | --- |
+| parse | 1.93-2.76 s | **164 ms** |
+| build pass | 15.3-18.0 s | **13.21 s** |
+| total | 18.2-20.0 s | **13.51 s** |
+| JS mesh bytes held | 677 MB | 0 |
+| per-model native read+inflate | — | 80-228 ms, pipelined |
+
+Backwards compatible by construction: the byte path is the *default*
+(`deferMeshChunks` is opt-in) and is what a source without a path still takes — a file
+out of a zip has no range to give. The range arithmetic is pinned by reading a
+descriptor back out of the file and comparing it to the bytes the eager parse hands
+over, dedup included.
+
+What is left of this idea is its other half: the AO bake still uploads its soup (430 MB
+over a scene — now the largest single piece of traffic left, with the mesh payloads
+down to 337 MB). The geometry could carry the same descriptor and the bake could read
+the range instead, with two guards, because a stale descriptor means a subtly wrong
+field: key the range by the *position array's identity* (a repair, a swap and a clone
+all replace it; an in-place write must clear it), and have the native side refuse when
+the mesh it re-derives is not the size the caller claims.
+
 ### Third run: where a scene load goes now (19.4 s)
 
 The app logs one line per scene — `[voxl] load: parse …, build …, place …, commit …,

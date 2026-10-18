@@ -9,6 +9,7 @@ import {
 } from '../codec-v2';
 import type { BuildVoxlDocumentInput, VoxlModelRuntimeLike } from '../types';
 import type { DragonfruitImportFormat } from '@/supports/types';
+import { unzlibSync } from 'fflate';
 
 const EMPTY_SUPPORTS: DragonfruitImportFormat = {
   version: 1,
@@ -107,4 +108,34 @@ test('missing SHA → never deduped (cannot prove identity), stays V2', async ()
   const { meshBytes: out } = await parseVoxlBinaryV2(bin);
   assert.deepEqual([...out.get('a')!], [...MESH_A]);
   assert.deepEqual([...out.get('a2')!], [...MESH_A]);
+});
+
+/**
+ * A deferred parse reports *where* each mesh chunk is, so the native loader can read
+ * and inflate it. What this pins is the arithmetic: reading the range out of the same
+ * file and inflating it must produce exactly the bytes the eager parse hands over —
+ * and the V3 dedup must survive as two models reporting one range.
+ */
+test('deferred mesh chunks point at the bytes an eager parse would inflate', async () => {
+  const meshBytes = new Map<number, Uint8Array>([[0, MESH_A], [1, MESH_A], [2, MESH_B]]);
+  const sha = new Map<number, string>([[0, SHA_A], [1, SHA_A], [2, SHA_B]]);
+  const bin = await serializeVoxlDocumentV2(input(['m0', 'm1', 'm2']), meshBytes, sha);
+
+  const eager = await parseVoxlBinaryV2(bin);
+  const deferred = await parseVoxlBinaryV2(bin, { deferMeshChunks: true });
+
+  assert.equal(deferred.meshBytes.size, 0, 'nothing is inflated when the chunks are deferred');
+  const ranges = deferred.meshRanges;
+  assert.ok(ranges && ranges.size === 3, 'every embedded model reports a range');
+
+  for (const id of ['m0', 'm1', 'm2']) {
+    const range = ranges.get(id);
+    assert.ok(range, `${id} has a range`);
+    const stored = bin.subarray(range.offset, range.offset + range.compressedSize);
+    const unpacked: Uint8Array = range.compression === 1 ? unzlibSync(stored) : stored;
+    assert.equal(unpacked.byteLength, range.uncompressedSize, `${id} range length`);
+    assert.deepEqual([...unpacked], [...(eager.meshBytes.get(id) ?? [])], `${id} range contents`);
+  }
+  // The dedup pair points at one chunk: same range, not two copies of it.
+  assert.deepEqual(ranges.get('m0'), ranges.get('m1'));
 });

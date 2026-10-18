@@ -235,6 +235,14 @@ Requirements:
   (`wantsLoaderClassification`): a second pass over the same triangles costs the whole classify —
   measured at 430 ms of a 550 ms native load of a 725k-triangle model, and 11.9 s across the
   13-unique-mesh scene in `backlog.md` — to reproduce the stored answer.
+- A reader that has the *file's path* may leave the `MESH` chunks packed: the directory
+  already carries `(offset, compressedSize, uncompressedSize, compression)`, and
+  `load_mesh_range` reads and inflates a range natively, so a scene never holds its
+  meshes' bytes in the webview (`parseVoxlBinaryV2(bytes, { deferMeshChunks: true })`
+  returns those descriptors as `meshRanges`). A reader holding only bytes inflates them
+  itself, which is the default and stays supported — a file out of a zip has no range
+  to give. Reading a range and unpacking it must reproduce the eager bytes exactly,
+  which the dedup test pins.
 - Readers must accept a `MODL` entry without it and classify as before. `classification` is never
   required to interpret a file, and an auto-repair pass on load supersedes it.
 

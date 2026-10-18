@@ -237,11 +237,32 @@ export interface PrecompressedChunk {
  * V2 binary files provide pre-decoded mesh bytes in `meshBytes`,
  * keyed by model ID, so the consumer can skip base64 round-trips.
  */
+/** Where a model's mesh chunk sits inside the container it was read from. */
+export type VoxlMeshRange = {
+  /** Byte offset of the chunk's data in the file. */
+  offset: number;
+  /** Length of the stored (compressed) bytes. */
+  compressedSize: number;
+  /** Length once decompressed, as the directory records it. */
+  uncompressedSize: number;
+  /** The container's compression code: 0 none, 1 zlib. */
+  compression: number;
+};
+
 export type ParsedVoxlResult = {
   /** The parsed document normalised to V1 schema shape. */
   document: VoxlDocumentV1;
-  /** Pre-decoded mesh bytes keyed by model ID (populated for V2 files). */
+  /** Pre-decoded mesh bytes keyed by model ID (populated for V2 files, and empty
+   *  for the models a deferred parse left to the native loader by range). */
   meshBytes: Map<string, Uint8Array>;
+  /**
+   * Mesh chunk locations keyed by model ID, when the parse deferred them
+   * (`deferMeshChunks`): the native loader reads and inflates these itself, so a
+   * scene load never holds 677 MB of mesh bytes in the webview. A model with a
+   * range has no entry in `meshBytes`, and a caller that cannot reach the file
+   * (no path) must parse without deferring.
+   */
+  meshRanges?: Map<string, VoxlMeshRange>;
   /** Pre-decoded original full-res mesh bytes keyed by model ID (if ORIG chunk present). */
   originalMeshBytes?: Map<string, Uint8Array>;
   /** Pre-compressed original mesh chunks for lazy decompression. */

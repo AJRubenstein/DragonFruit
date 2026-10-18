@@ -41,6 +41,7 @@ import {
   type VoxlModelEntry,
   type VoxlSceneState,
   type PrecompressedChunk,
+  type VoxlMeshRange,
 } from './types';
 import type { DragonfruitImportFormat } from '@/supports/types';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
@@ -1075,7 +1076,21 @@ async function inflateChunk(entry: ChunkDirEntry, raw: Uint8Array): Promise<Uint
  * zlib streams, so they all go to `fflate`'s pool at once and the loops below read
  * the resolved bytes; anything not pre-listed still inflates synchronously.
  */
-export async function parseVoxlBinaryV2(data: Uint8Array): Promise<ParsedVoxlResult> {
+export async function parseVoxlBinaryV2(
+  data: Uint8Array,
+  options: {
+    /**
+     * Leave the MESH chunks where they are and report their locations instead of
+     * inflating them (default: inflate, which is what a caller holding only the
+     * bytes needs). The native loader reads and inflates a range itself, so a scene
+     * opened from a path pays neither the 677 MB of heap nor the ~2 s of inflate
+     * this parse used to do before any model work started. The V3.1 modifier
+     * snapshots (HSRC/CAVT/PSRC) are *document* state — they are base64-encoded into
+     * the document below — so those still inflate here.
+     */
+    deferMeshChunks?: boolean;
+  } = {},
+): Promise<ParsedVoxlResult> {
   if (data.length < HEADER_SIZE) {
     throw new Error('Invalid VOXL V2 file: too small.');
   }
@@ -1171,9 +1186,10 @@ export async function parseVoxlBinaryV2(data: Uint8Array): Promise<ParsedVoxlRes
   // data: one STL per MESH chunk, plus the V3.1 position snapshots. Scheduling
   // them together is what turns a serial 4.6 s into the pool's throughput; ORIG
   // chunks stay packed on purpose (they are decompressed on demand, if at all).
+  const deferMeshChunks = options.deferMeshChunks === true;
   const bulkChunks = entries.filter(
     (entry) => entry.compression === COMPRESSION_ZLIB
-      && (entry.type === CHUNK_MESH
+      && ((entry.type === CHUNK_MESH && !deferMeshChunks)
         || entry.type === CHUNK_HSRC
         || entry.type === CHUNK_CAVT
         || entry.type === CHUNK_PSRC),
@@ -1198,6 +1214,7 @@ export async function parseVoxlBinaryV2(data: Uint8Array): Promise<ParsedVoxlRes
   // ── Resolve MESH chunks ───────────────────────────────────────────────
 
   const meshBytesMap = new Map<string, Uint8Array>();
+  const meshRangesMap = new Map<string, VoxlMeshRange>();
   // Decompress each MESH chunk at most once even when many models share it
   // (dedup) — the shared bytes are handed to every referencing model.
   const chunkBytesByIndex = new Map<number, Uint8Array>();
@@ -1208,17 +1225,26 @@ export async function parseVoxlBinaryV2(data: Uint8Array): Promise<ParsedVoxlRes
       // V3 duplicates point at an owner chunk via chunkIndex; V2/legacy files
       // map 1:1, so a missing chunkIndex means "my own model index".
       const chunkIdx = typeof model.mesh.chunkIndex === 'number' ? model.mesh.chunkIndex : i;
+      const meshEntry = entries.find((e) => e.type === CHUNK_MESH && e.index === chunkIdx);
+      if (!meshEntry) continue;
+      if (deferMeshChunks) {
+        // Where it is, not what it is: the native loader reads and inflates it.
+        // Dedup survives — a V3 duplicate points at the owner's chunk, so both
+        // report the same range.
+        meshRangesMap.set(model.id, {
+          offset: meshEntry.offset,
+          compressedSize: meshEntry.compressedSize,
+          uncompressedSize: meshEntry.uncompressedSize,
+          compression: meshEntry.compression,
+        });
+        continue;
+      }
       let bytes = chunkBytesByIndex.get(chunkIdx);
       if (!bytes) {
-        const meshEntry = entries.find((e) => e.type === CHUNK_MESH && e.index === chunkIdx);
-        if (meshEntry) {
-          bytes = readChunk(meshEntry);
-          chunkBytesByIndex.set(chunkIdx, bytes);
-        }
+        bytes = readChunk(meshEntry);
+        chunkBytesByIndex.set(chunkIdx, bytes);
       }
-      if (bytes) {
-        meshBytesMap.set(model.id, bytes);
-      }
+      meshBytesMap.set(model.id, bytes);
     }
   }
 
@@ -1317,6 +1343,7 @@ export async function parseVoxlBinaryV2(data: Uint8Array): Promise<ParsedVoxlRes
       extensions,
     },
     meshBytes: meshBytesMap,
+    ...(deferMeshChunks ? { meshRanges: meshRangesMap } : {}),
     ...(lazyOriginalMeshBytesMap ? { originalMeshBytes: lazyOriginalMeshBytesMap } : {}),
     ...(originalMeshChunksMap.size > 0 ? { originalMeshChunks: originalMeshChunksMap } : {}),
     sourceVersion: hasModifierChunks ? VOXL_V3_SEMANTIC_REVISION : VOXL_V2_INLINE_REVISION,

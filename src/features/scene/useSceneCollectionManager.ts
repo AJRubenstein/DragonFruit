@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { loadTauriCore, refineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { solidRemeshFromGeometry, tetSurfaceFromGeometry, type SolidRemeshProgressSink, type SolidRemeshOptions, type TetSurfaceProgressSink, type TetWrapOptions } from '@/utils/meshShrinkwrap';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
-import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
+import { loadMeshGeometry, loadMeshGeometryFromRange, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
 import { loadMeshFromPath } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
@@ -17,7 +17,7 @@ import {
   readPlateOrdering,
   type PlateOrdering,
 } from '@/features/scene/plates/plateCascade';
-import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef, type VoxlMeshRange } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -6318,7 +6318,19 @@ export function useSceneCollectionManager(options?: {
 
       const importStarted = performance.now();
       let committedAt = 0;
-      const parsed = await parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
+      // The file's own path, when it has one: that is what lets the native loader
+      // read a mesh chunk by range instead of receiving its bytes. Same expression
+      // the sidecar resolution below uses.
+      const voxlPath = (file as File & { path?: string; filePath?: string }).path
+        || (file as File & { filePath?: string }).filePath
+        || options?.sourcePath
+        || undefined;
+      // With a path, the 13 mesh chunks (677 MB, ~2 s of inflate before any model
+      // work starts) stay where they are and the loader inflates each one itself.
+      // Without one — a zip entry, a synthesized file — nothing changes.
+      const parsed = await parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()), {
+        deferMeshChunks: Boolean(voxlPath),
+      });
       const parsedAt = performance.now();
       const document: VoxlDocumentV1 = parsed.document;
       const resolvedMeshBytes: Map<string, Uint8Array> = parsed.meshBytes;
@@ -6367,20 +6379,33 @@ export function useSceneCollectionManager(options?: {
       const hashByModelId = new Map<string, string>();
       const uniqueBuilds = new Map<
         string,
-        { bytes: Uint8Array; name: string; model: (typeof document.models)[number] }
+        {
+          bytes?: Uint8Array;
+          range?: VoxlMeshRange;
+          name: string;
+          model: (typeof document.models)[number];
+        }
       >();
-      for (const model of document.models) {
+      const meshRanges = parsed.meshRanges;
+      for (const [index, model] of document.models.entries()) {
         const meshRef = model.mesh;
         const bytes = resolvedMeshBytes.get(model.id);
-        if (!meshRef || meshRef.mode !== 'embedded-chunk' || !bytes) continue;
+        const range = meshRanges?.get(model.id);
+        if (!meshRef || meshRef.mode !== 'embedded-chunk' || (!bytes && !range)) continue;
         const declaredSha = typeof meshRef.sha256 === 'string' && meshRef.sha256.trim().length > 0
           ? meshRef.sha256.trim().toLowerCase()
           : undefined;
-        const contentHash = declaredSha ?? (await sha256Hex(bytes));
+        // A deferred chunk has no bytes to hash. Its identity inside the file is its
+        // chunk anyway — a V3 duplicate points at the owner's chunk — so the chunk
+        // index is the dedup key, and it is stable for the whole parse.
+        const contentHash = declaredSha
+          ?? (range
+            ? `chunk:${typeof meshRef.chunkIndex === 'number' ? meshRef.chunkIndex : index}`
+            : await sha256Hex(bytes!));
         hashByModelId.set(model.id, contentHash);
         if (builtGeometryByHash.has(contentHash) || uniqueBuilds.has(contentHash)) continue;
         uniqueBuilds.set(contentHash, {
-          bytes,
+          ...(bytes ? { bytes } : { range: range! }),
           name: meshRef.fileName?.trim() || `${model.name || 'model'}.stl`,
           model,
         });
@@ -6398,10 +6423,13 @@ export function useSceneCollectionManager(options?: {
         const pendingOcclusionBakes: Array<Promise<boolean>> = [];
         await runWithConcurrency([...uniqueBuilds], VOXL_BUILD_CONCURRENCY, async ([hash, spec]) => {
           try {
-            const built = await loadMeshGeometry(spec.bytes, spec.name, {
+            const options = {
               ...buildOptionsFor(spec.model),
-              _deferOcclusionBake: (bake) => pendingOcclusionBakes.push(bake),
-            });
+              _deferOcclusionBake: (bake: Promise<boolean>) => pendingOcclusionBakes.push(bake),
+            };
+            const built = spec.range && voxlPath
+              ? await loadMeshGeometryFromRange(voxlPath, spec.range, spec.name, options)
+              : await loadMeshGeometry(spec.bytes!, spec.name, options);
             builtGeometryByHash.set(hash, built);
           } catch (error) {
             // The loop below reports the model as skipped; one mesh that will not
@@ -6445,9 +6473,12 @@ export function useSceneCollectionManager(options?: {
           continue;
         }
 
-        // Mesh bytes arrive pre-decoded from the container's MESH chunks.
+        // Mesh bytes arrive pre-decoded from the container's MESH chunks — unless
+        // the parse deferred them, in which case the location is what arrives and
+        // the native loader reads it.
         const meshDataBytes = resolvedMeshBytes.get(model.id);
-        if (!meshDataBytes) {
+        const meshRange = meshRanges?.get(model.id);
+        if (!meshDataBytes && !(meshRange && voxlPath)) {
           console.warn(`[SceneCollection] Skipping VOXL model "${model.name}": missing embedded mesh payload.`);
           skippedModels += 1;
           continue;
@@ -6463,7 +6494,9 @@ export function useSceneCollectionManager(options?: {
               ? meshRef.sha256.trim().toLowerCase()
               : undefined;
           // Computed by the build pass above; the fallback covers a model it skipped.
-          const contentHash = hashByModelId.get(model.id) ?? declaredSha ?? (await sha256Hex(bytes));
+          const contentHash = hashByModelId.get(model.id)
+            ?? declaredSha
+            ?? (bytes ? await sha256Hex(bytes) : `chunk:${typeof meshRef.chunkIndex === 'number' ? meshRef.chunkIndex : i}`);
 
           const cached = builtGeometryByHash.get(contentHash);
           let geometry: GeometryWithBounds;
@@ -6477,7 +6510,11 @@ export function useSceneCollectionManager(options?: {
             );
             geometry = cloneGeometryWithBounds(cached, { shared: true });
           } else {
-            if (declaredSha) {
+            // A deferred chunk has no bytes here to hash: its integrity is the
+            // container's own (the directory ranges are bounds-checked as the file
+            // is parsed) and the loader refuses a short read. The byte-source path
+            // below verifies the declared SHA as before.
+            if (declaredSha && bytes) {
               const actual = await sha256Hex(bytes);
               if (actual !== declaredSha) {
                 throw new Error('VOXL integrity check failed (SHA-256 mismatch).');

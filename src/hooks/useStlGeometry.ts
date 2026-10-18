@@ -9,6 +9,8 @@ import { Fast3MFLoader, fast3mfBuilder } from 'fast-3mf-loader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { loadMeshBytes, loadMeshFileFromNativePath } from '@/features/slicing/tauri/nativeSlicerBridge';
+import { loadMeshRangeFromNativePath } from '@/utils/tauriMeshBridge';
+import type { VoxlMeshRange } from '@/features/scene/voxl/types';
 import { accelerateGeometry } from '@/utils/bvh';
 import { logToNativeFile } from '@/utils/nativeLog';
 import { runWithConcurrency } from '@/utils/runWithConcurrency';
@@ -1216,6 +1218,39 @@ async function loadNativeMeshBytes(buffer: Uint8Array, classify: boolean): Promi
   }
 }
 
+/**
+ * Load a mesh from a byte range of a file on disk, natively.
+ *
+ * The VOXL twin of the byte-source loader: the container already told us where each
+ * model's mesh chunk sits, so the native side reads and inflates it and nothing
+ * crosses the IPC until the finished `DFMX` payload comes back. Same payload, same
+ * decode, same prep as every other native load — which is what keeps the two paths
+ * from drifting.
+ */
+export async function loadMeshGeometryFromRange(
+  sourcePath: string,
+  range: VoxlMeshRange,
+  fileName: string | undefined,
+  options: ProcessGeometryOptions = {},
+): Promise<GeometryWithBounds> {
+  const payload = await loadMeshRangeFromNativePath({
+    sourcePath,
+    offset: range.offset,
+    compressedSize: range.compressedSize,
+    compression: range.compression,
+    classify: wantsLoaderClassification(options),
+  });
+  const decoded = await decodeDfmx(payload);
+  return processGeometry(mergeBodyGeometries(decoded.bodies), {
+    ...options,
+    _skipComputeNormals: true,
+    bakedClassification: classificationForPayload(
+      decoded.report,
+      options.bakedClassification,
+      decoded.previewTriangleCount,
+    ),
+  });
+}
 /** Merge native bodies into one geometry, preserving their relative positions. */
 function mergeBodyGeometries(bodies: THREE.BufferGeometry[]): THREE.BufferGeometry {
   if (bodies.length === 1) return bodies[0];

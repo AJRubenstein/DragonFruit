@@ -2020,6 +2020,71 @@ pub async fn load_mesh_bytes(request: tauri::ipc::Request<'_>) -> Result<Respons
     load_mesh_bytes_response(&bytes, classify).map(Response::new)
 }
 
+/// Parse a mesh that sits at a known offset inside a file on disk.
+///
+/// This is a VOXL's embedded mesh chunk: the container stores it as a packed
+/// (zlib) STL at a directory-recorded offset, and the frontend used to inflate all
+/// of them in the webview before handing them over — 677 MB of heap and ~2 s of a
+/// scene load that happens before any model work starts. The bytes never need to
+/// cross: the range is read here, inflated here, and the same pipeline the
+/// byte-source loader runs (parse, refine, classify, encode) produces the same
+/// `DFMX` payload.
+///
+/// `compression` is the container's own code: 0 none, 1 zlib. Anything else is
+/// refused rather than guessed, and a range that does not read exactly `length`
+/// bytes is an error — the container has already been parsed by then, so a short
+/// read means the file changed under it.
+#[tauri::command]
+pub async fn load_mesh_range(
+    source_path: String,
+    offset: u64,
+    length: u64,
+    compression: u16,
+    classify: Option<bool>,
+) -> Result<Response, String> {
+    let started = std::time::Instant::now();
+    let path = source_path.clone();
+    let (bytes, read_ms) = tauri::async_runtime::spawn_blocking(move || {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = std::fs::File::open(&path)
+            .map_err(|e| format!("Failed to open '{path}': {e}"))?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|e| format!("Failed to seek to {offset} in '{path}': {e}"))?;
+        let mut raw = vec![0u8; length as usize];
+        file.read_exact(&mut raw)
+            .map_err(|e| format!("Failed to read {length} bytes at {offset} in '{path}': {e}"))?;
+        let read_at = std::time::Instant::now();
+        let bytes = match compression {
+            0 => raw,
+            // The container's zlib chunks: inflate where the parse happens, on this
+            // side of the IPC.
+            1 => {
+                let mut soup = Vec::with_capacity(raw.len() * 3);
+                flate2::read::ZlibDecoder::new(raw.as_slice())
+                    .read_to_end(&mut soup)
+                    .map_err(|e| format!("Failed to inflate the mesh chunk at {offset}: {e}"))?;
+                soup
+            }
+            other => {
+                return Err(format!(
+                    "Unsupported mesh chunk compression {other} at {offset} in '{path}'"
+                ))
+            }
+        };
+        Ok((bytes, read_at.elapsed().as_millis()))
+    })
+    .await
+    .map_err(|e| format!("mesh range task panicked: {e}"))??;
+
+    log::info!(
+        "[load_mesh_range] {} bytes at {offset} in {}ms (read+inflate), of {}ms total",
+        bytes.len(),
+        read_ms,
+        started.elapsed().as_millis(),
+    );
+    load_mesh_bytes_response(&bytes, classify.unwrap_or(true)).map(Response::new)
+}
+
 /// The pipeline behind `load_mesh_bytes`: parse the file's bytes, refine, classify
 /// when asked, and encode the same `DFMX` payload the path loader writes.
 fn load_mesh_bytes_response(bytes: &[u8], classify: bool) -> Result<Vec<u8>, String> {
@@ -2943,6 +3008,64 @@ mod tests {
 
     /// A byte source has no path, so `load_mesh_bytes` carries the whole pipeline:
     /// parse, refine, classify, encode the same payload the path loader writes.
+    /// The range loader: a container chunk read from a file, inflated and parsed.
+    ///
+    /// The same pipeline as the byte loader, so what this pins is the range
+    /// arithmetic and the compression codes — a wrong offset or a zlib stream read
+    /// as raw would decode to a mesh that is not the one in the file.
+    #[test]
+    fn test_load_mesh_range_reads_inflates_and_parses_a_chunk() {
+        use std::io::Write;
+        use tauri::ipc::IpcResponse;
+
+        let mut stl = vec![0u8; 84];
+        stl[80..84].copy_from_slice(&3u32.to_le_bytes());
+        stl.extend(std::iter::repeat_n(0u8, 3 * 50));
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(&stl).unwrap();
+        let packed = encoder.finish().unwrap();
+
+        let dir = std::env::temp_dir().join(format!("df-load-mesh-range-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("container.bin");
+        {
+            let mut file = std::fs::File::create(&path).unwrap();
+            file.write_all(&[0xABu8; 64]).unwrap();
+            file.write_all(&packed).unwrap();
+        }
+        let path = path.to_str().unwrap().to_string();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let raw = |resp: Result<Response, String>| match resp.unwrap().body().unwrap() {
+            tauri::ipc::InvokeResponseBody::Raw(b) => b,
+            _ => panic!("Expected Raw body"),
+        };
+
+        let bytes = raw(rt.block_on(load_mesh_range(
+            path.clone(),
+            64,
+            packed.len() as u64,
+            1,
+            Some(false),
+        )));
+        assert_eq!(&bytes[0..4], b"DFMX");
+        assert_eq!(
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            MESH_RESPONSE_VERSION
+        );
+        assert_eq!(u32::from_le_bytes(bytes[32..36].try_into().unwrap()), 3, "triangles");
+
+        // The same chunk read as raw bytes is not an STL, and a range that runs off
+        // the end of the file is an error rather than a short payload.
+        assert!(rt
+            .block_on(load_mesh_range(path.clone(), 64, packed.len() as u64, 7, None))
+            .is_err());
+        assert!(rt
+            .block_on(load_mesh_range(path.clone(), 64, 100_000_000, 1, None))
+            .is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn test_load_mesh_bytes_parses_refines_and_classifies() {
         let mut stl = vec![0u8; 84];
