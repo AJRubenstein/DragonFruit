@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useThree } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
+import { supportAnswersPointer, SCENERY_DIM } from '@/features/scene/plates/plateInteractivity';
 import { isCurvedBatchedShaft } from './Curves/batchedBezierTubeGeometry';
 import { subscribe, getSnapshot } from './state';
 // Loading the generated barrel runs every type's proxy geometry registration.
@@ -48,6 +49,13 @@ interface SupportProxyMeshLayerProps {
   outOfBoundsMax?: THREE.Vector3 | null;
   outOfBoundsStripeColor?: string;
   onModelPointerSelect?: (modelId: string) => void;
+  /**
+   * Models on another bed. Their supports are drawn dimmed and answer no pointer: hover,
+   * click and drag start all resolve a model, and a model that is scenery is not one the
+   * user is working on. Their shafts and cones also stay out of the hover index, which is
+   * what makes this a saving and not only a rule.
+   */
+  pointerSceneryModelIds?: ReadonlySet<string>;
   /** In Select mode, a pointer-down on a support proxy reports a potential
    *  model XY-drag start (model + screen coords). The scene owns the drag. */
   onModelPointerDragStart?: (modelId: string, clientX: number, clientY: number) => void;
@@ -108,6 +116,11 @@ const OUT_OF_BOUNDS_STENCIL_BIT = 0x40;
 
 export type ProxySupportTintInput = {
   selectedModelIds: ReadonlySet<string>;
+  /**
+   * Models standing on another bed, which are scenery: their supports take a dimmed
+   * base colour, and no hover or marquee tint — nothing can point at them.
+   */
+  sceneryModelIds?: ReadonlySet<string>;
   hoverModelId: string | null;
   marqueeCandidateModelIds: readonly string[];
   /** The colour an untouched support takes. */
@@ -155,9 +168,16 @@ export function createProxySupportTint(input: ProxySupportTintInput): (modelId?:
     return tinted;
   };
 
+  const dimmedBase = input.baseColor.clone().multiplyScalar(SCENERY_DIM);
+  let dimmed: THREE.Color | null = null;
+
   return (modelId?: string) => {
     if (!modelId) return input.baseColor;
     if (input.selectedModelIds.has(modelId)) return input.activeColor;
+    if (input.sceneryModelIds?.has(modelId)) {
+      dimmed ??= dimmedBase;
+      return dimmed;
+    }
     const strength = strengthByModelId.get(modelId);
     return strength === undefined ? input.baseColor : tintAt(strength);
   };
@@ -393,6 +413,7 @@ export function SupportProxyMeshLayer({
   outOfBoundsMax = null,
   outOfBoundsStripeColor,
   onModelPointerSelect,
+  pointerSceneryModelIds,
   onModelPointerDragStart,
   enablePointerSelection = true,
   includeDetailedPrimitives = true,
@@ -796,13 +817,14 @@ export function SupportProxyMeshLayer({
 
   const reportModelDragStart = React.useCallback((modelId: string | undefined, event: ThreeEvent<PointerEvent>) => {
     if (!pointerDragStartEnabled || !onModelPointerDragStart) return;
+    if (!supportAnswersPointer(modelId, pointerSceneryModelIds)) return;
     if (!modelId) return;
     if (hitCategoryRef.current === 'gizmo') return;
     const native = event.nativeEvent as PointerEvent | undefined;
     if (native?.ctrlKey || native?.metaKey || native?.shiftKey) return;
     if (event.button !== 0) return;
     onModelPointerDragStart(modelId, event.clientX, event.clientY);
-  }, [onModelPointerDragStart, pointerDragStartEnabled]);
+  }, [onModelPointerDragStart, pointerDragStartEnabled, pointerSceneryModelIds]);
 
   const setSupportHoverModel = React.useCallback((nextModelId: string | null) => {
     if (hoverClearRafRef.current !== null) {
@@ -858,15 +880,17 @@ export function SupportProxyMeshLayer({
   // instance was hit: the handler only reads its modelId, exactly as it did when
   // three walked the instances itself.
   const handleProxyInstanceMove = React.useCallback((primitive: { modelId?: string }) => {
+    if (!supportAnswersPointer(primitive.modelId, pointerSceneryModelIds)) return;
     setSupportHoverModel(primitive.modelId ?? null);
-  }, [setSupportHoverModel]);
+  }, [setSupportHoverModel, pointerSceneryModelIds]);
 
   const handleProxyInstanceClick = React.useCallback((primitive: { modelId?: string }) => {
     if (!pointerSelectionEnabled) return;
+    if (!supportAnswersPointer(primitive.modelId, pointerSceneryModelIds)) return;
     if (!primitive.modelId) return;
     if (hitCategoryRef.current === 'gizmo') return;
     onModelPointerSelect?.(primitive.modelId);
-  }, [onModelPointerSelect, pointerSelectionEnabled]);
+  }, [onModelPointerSelect, pointerSelectionEnabled, pointerSceneryModelIds]);
 
   const handleProxyPointerOut = React.useCallback(() => {
     scheduleSupportHoverClear();
@@ -884,6 +908,7 @@ export function SupportProxyMeshLayer({
   const supportColorFor = React.useMemo(
     () => createProxySupportTint({
       selectedModelIds: highlightedModelIdSet,
+      sceneryModelIds: pointerSceneryModelIds,
       hoverModelId: effectiveHoverModelId,
       marqueeCandidateModelIds,
       baseColor: supportColors.base,
@@ -896,6 +921,7 @@ export function SupportProxyMeshLayer({
       highlightedModelIdSet,
       supportColors,
       hoverOverlayStrength,
+      pointerSceneryModelIds,
     ],
   );
 
@@ -1024,6 +1050,7 @@ export function SupportProxyMeshLayer({
         <group key="proxy-base-batch">
           {baseGeometry.straightShafts.length > 0 && (
             <InstancedShaftGroup
+              pointerSceneryModelIds={pointerSceneryModelIds}
               shafts={baseGeometry.straightShafts}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
@@ -1042,6 +1069,7 @@ export function SupportProxyMeshLayer({
           )}
           {baseGeometry.curvedShafts.length > 0 && (
             <InstancedShaftGroup
+              pointerSceneryModelIds={pointerSceneryModelIds}
               shafts={baseGeometry.curvedShafts}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
@@ -1090,6 +1118,7 @@ export function SupportProxyMeshLayer({
           )}
           {includeDetailedPrimitives && baseGeometry.cones.length > 0 && (
             <InstancedContactConeGroup
+              pointerSceneryModelIds={pointerSceneryModelIds}
               cones={baseGeometry.cones}
               outOfBoundsMaterial={outOfBoundsMaterial}
               grabRadiusAt={grabRadiusAt}

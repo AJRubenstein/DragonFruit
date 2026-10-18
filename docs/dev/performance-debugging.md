@@ -215,6 +215,17 @@ reports and a batch that filters its input — zero-length shafts are not drawn 
 would otherwise shift every index against the drawn list. Give raycast-only
 merged geometries a bounds tree.
 
+**Another bed's scaffolding is out of the pointer path entirely.** A model standing on a bed
+that is not the one being worked on — "scenery", computed by `sceneryModelIds` in
+`src/features/scene/plates/plateInteractivity.ts` — is dimmed to 40% and its mesh gets a
+no-op `raycast`, so R3F's per-move walk over the interaction list costs it a function call.
+Its supports and raft follow the same rule rather than being tested and discarded: the
+shafts and contact cones of those models are filtered out of the hover indexes, so the
+batches still draw them but a pointer sweep over another bed's plate of supports does not
+walk its cells at all, and the raft meshes lose their handlers. That matters because the
+support batches are the one shape a per-move raycast cannot avoid entirely — a batch spans
+the whole plate, which is what the grid index above exists to bound.
+
 **A grid belongs to a mesh, not to a kind of primitive.** The shafts, roots,
 joints and cones are drawn by four different components, and three of them split
 their instances into buckets by geometry parameters — hundreds of small meshes,

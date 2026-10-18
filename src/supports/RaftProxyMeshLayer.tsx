@@ -9,6 +9,7 @@ import type { RaftSettings } from './Rafts/Crenelated/RaftTypes';
 import { buildSolidRaftPreviewMeshes } from './Settings/AnatomyPreview/PreviewTypes/Raft/buildSolidRaftPreviewMeshes';
 import { buildLineRaftPreviewMeshes } from './Settings/AnatomyPreview/PreviewTypes/Raft/buildLineRaftPreviewMeshes';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
+import { supportAnswersPointer, SCENERY_DIM } from '@/features/scene/plates/plateInteractivity';
 import {
   collectRaftBaseCirclesByModel,
   fromRaftModelKey,
@@ -39,6 +40,12 @@ interface RaftProxyMeshLayerProps {
    *  start (model + screen coords). The scene owns the drag. */
   onModelPointerDragStart?: (modelId: string, clientX: number, clientY: number) => void;
   enablePointerSelection?: boolean;
+  /**
+   * Models on another bed. Their raft is drawn dimmed and answers no pointer — the same
+   * rule the model and its supports follow, so a bed nobody is working on is one piece of
+   * scenery rather than a dim model on a bright raft.
+   */
+  pointerSceneryModelIds?: ReadonlySet<string>;
   colorized?: boolean;
   hoverized?: boolean;
   navigationLodActive?: boolean;
@@ -240,6 +247,11 @@ function disposeGeneratedMeshes(meshes: Array<THREE.Mesh | null | undefined>) {
   }
 }
 
+/** A raft colour taken down to scenery: the model, its supports and its raft dim together. */
+function dimForScenery(color: string, scenery: boolean): string {
+  return scenery ? new THREE.Color(color).multiplyScalar(SCENERY_DIM).getStyle() : color;
+}
+
 export function RaftProxyMeshLayer({
   clipLower,
   clipUpper,
@@ -255,6 +267,7 @@ export function RaftProxyMeshLayer({
   onModelPointerSelect,
   onModelPointerDragStart,
   enablePointerSelection = true,
+  pointerSceneryModelIds,
   colorized = true,
   hoverized = false,
   navigationLodActive = false,
@@ -406,6 +419,7 @@ export function RaftProxyMeshLayer({
       if (modelId && excludedModelIdSet.has(modelId)) return;
 
       const tintStrength = resolveTintStrength(modelId ?? null);
+      const scenery = !supportAnswersPointer(modelId, pointerSceneryModelIds);
       const bottomTintColor = geometry.kind === 'line' ? LINE_BOTTOM_TINT_COLOR : SOLID_BOTTOM_TINT_COLOR;
 
       entries.push({
@@ -414,8 +428,8 @@ export function RaftProxyMeshLayer({
         kind: geometry.kind,
         bottomGeometry: geometry.bottomGeometry,
         wallGeometry: geometry.wallGeometry,
-        bottomColor: blendColor(RAFT_BASE_COLOR, bottomTintColor, tintStrength),
-        wallColor: blendColor(RAFT_BASE_COLOR, WALL_TINT_COLOR, tintStrength),
+        bottomColor: dimForScenery(blendColor(RAFT_BASE_COLOR, bottomTintColor, tintStrength), scenery),
+        wallColor: dimForScenery(blendColor(RAFT_BASE_COLOR, WALL_TINT_COLOR, tintStrength), scenery),
       });
     };
 
@@ -441,6 +455,7 @@ export function RaftProxyMeshLayer({
     marqueeCandidateModelIdSet,
     modelFilterId,
     selectedModelIdSet,
+    pointerSceneryModelIds,
   ]);
 
   const raftOpacity = Math.max(0.05, Math.min(1, ghostOpacity));
@@ -545,16 +560,19 @@ export function RaftProxyMeshLayer({
 
   return (
     <group>
-      {visibleEntries.map((entry) => (
+      {visibleEntries.map((entry) => {
+        const entryPointerEnabled = pointerEnabled
+          && supportAnswersPointer(entry.modelId, pointerSceneryModelIds);
+        return (
         <group key={`raft-proxy:${entry.modelKey}`}>
           {entry.bottomGeometry && (
             <mesh
               geometry={entry.bottomGeometry}
               renderOrder={ghostRenderOrder}
-              onClick={pointerEnabled ? (event) => handleClick(event, entry.modelId) : undefined}
-              onPointerDown={pointerEnabled && onModelPointerDragStart ? (event) => handlePointerDown(event, entry.modelId) : undefined}
-              onPointerMove={pointerEnabled ? (event) => handlePointerMove(event, entry.modelId) : undefined}
-              onPointerOut={pointerEnabled ? handlePointerOut : undefined}
+              onClick={entryPointerEnabled ? (event) => handleClick(event, entry.modelId) : undefined}
+              onPointerDown={entryPointerEnabled && onModelPointerDragStart ? (event) => handlePointerDown(event, entry.modelId) : undefined}
+              onPointerMove={entryPointerEnabled ? (event) => handlePointerMove(event, entry.modelId) : undefined}
+              onPointerOut={entryPointerEnabled ? handlePointerOut : undefined}
             >
               <meshStandardMaterial
                 color={entry.bottomColor}
@@ -574,10 +592,10 @@ export function RaftProxyMeshLayer({
             <mesh
               geometry={entry.wallGeometry}
               renderOrder={ghostRenderOrder}
-              onClick={pointerEnabled ? (event) => handleClick(event, entry.modelId) : undefined}
-              onPointerDown={pointerEnabled && onModelPointerDragStart ? (event) => handlePointerDown(event, entry.modelId) : undefined}
-              onPointerMove={pointerEnabled ? (event) => handlePointerMove(event, entry.modelId) : undefined}
-              onPointerOut={pointerEnabled ? handlePointerOut : undefined}
+              onClick={entryPointerEnabled ? (event) => handleClick(event, entry.modelId) : undefined}
+              onPointerDown={entryPointerEnabled && onModelPointerDragStart ? (event) => handlePointerDown(event, entry.modelId) : undefined}
+              onPointerMove={entryPointerEnabled ? (event) => handlePointerMove(event, entry.modelId) : undefined}
+              onPointerOut={entryPointerEnabled ? handlePointerOut : undefined}
             >
               <meshStandardMaterial
                 color={entry.wallColor}
@@ -592,7 +610,8 @@ export function RaftProxyMeshLayer({
             </mesh>
           )}
         </group>
-      ))}
+        );
+      })}
     </group>
   );
 }
