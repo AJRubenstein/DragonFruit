@@ -43,7 +43,7 @@ export function initReleaseFeed(): void {
   if (isMobile()) {
     button.href = REPO_URL;
     button.textContent = 'View on GitHub';
-    version.textContent = 'Desktop installers — Windows, macOS and Linux.';
+    version.textContent = 'Desktop installers for Windows, macOS and Linux.';
     return;
   }
 

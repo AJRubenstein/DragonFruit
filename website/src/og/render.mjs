@@ -15,8 +15,8 @@
  * invisible error of less than one level per pixel. That is the difference between
  * dithering a gradient and adding noise to bands that a rasteriser already made.
  *
- * The rest of the card - the rule, the type, the emblem - is rasterised by satori and
- * resvg and composited over it. satori takes TTF and OTF but can read neither woff2
+ * The rest of the card - the rule, the type, the emblem, the wordmark on the home card -
+ * is rasterised by satori and resvg and composited over it. satori takes TTF and OTF but can read neither woff2
  * nor the `fvar` table of a variable font, so `src/og/fonts/` holds static instances
  * of the weights used, generated once from the same woff2 the site ships.
  */
@@ -58,6 +58,9 @@ const WASH_ALPHA = 0.12;
  * which would reach the footer, not something the writing has to fit. Titles are cut at
  * 90. satori has no line clamping, so an overlong card would overlap rather than clip.
  */
+/** The wordmark on the home card, at the width the site's own header gives it. */
+const WORDMARK_WIDTH = 620;
+
 const TITLE_CHARS = 90;
 const SUMMARY_CHARS = 210;
 
@@ -75,14 +78,27 @@ function clamp(value, limit) {
 }
 
 /** The card as markup, so the same strings can be laid out in a browser for checks. */
-export function cardMarkup({ kicker, title, description, meta, mark }) {
+export function cardMarkup({ title, description, meta, mark, wordmark, centred = false }) {
   /* No background, no wash and no top rule: all three are painted from the computed
      base below, which is the only way they lose their 8-bit steps. */
 
+  if (centred) {
+    const { width, height } = wordmark;
+    return `<div style="display:flex;flex-direction:column;width:${OG_WIDTH}px;height:${OG_HEIGHT}px;position:relative;overflow:hidden">
+    <div style="display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;padding:64px 104px 0">
+      <img src="${wordmark.src}" style="width:${WORDMARK_WIDTH}px;height:${Math.round(height * (WORDMARK_WIDTH / width))}px" />
+      <div style="display:flex;font-family:Body;font-weight:400;font-size:34px;line-height:1.4;color:#cfcfd8;margin-top:38px;text-align:center;justify-content:center">${escapeHtml(description)}</div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin:0 76px;padding:22px 0 46px;border-top:1px solid rgba(255,255,255,0.14)">
+      <img src="${mark}" style="width:36px;height:36px;border-radius:9999px" />
+      <div style="display:flex;font-family:Mono;font-weight:500;font-size:19px;letter-spacing:1px;color:#8c8c98">dragonfruit-slicer.com</div>
+    </div>
+  </div>`;
+  }
+
   return `<div style="display:flex;flex-direction:column;width:${OG_WIDTH}px;height:${OG_HEIGHT}px;position:relative;overflow:hidden">
     <div style="display:flex;flex-direction:column;padding:62px 76px 0">
-      ${kicker ? `<div class="og-kicker" style="display:flex;font-family:Mono;font-weight:700;font-size:21px;letter-spacing:5px;text-transform:uppercase;color:#f7b8ee">${escapeHtml(kicker)}</div>` : ''}
-      <div class="og-title" style="display:flex;font-family:Body;font-weight:700;font-size:68px;line-height:1.1;color:#fafafa${kicker ? ';margin-top:26px' : ''}">${escapeHtml(title)}</div>
+      <div class="og-title" style="display:flex;font-family:Body;font-weight:700;font-size:68px;line-height:1.1;color:#fafafa">${escapeHtml(title)}</div>
       <div class="og-summary" style="display:flex;font-family:Body;font-weight:400;font-size:28px;line-height:1.42;color:#a6a6b0;margin-top:22px">${escapeHtml(description)}</div>
     </div>
     <div class="og-spacer" style="display:flex;flex:1"></div>
@@ -97,7 +113,13 @@ export function cardMarkup({ kicker, title, description, meta, mark }) {
 
 let assets;
 
-/** Read once per build: the fonts and the emblem, reused by every card. */
+/** A PNG's pixel size, straight out of the IHDR chunk. Avoids a dependency for it. */
+function pngSize(file) {
+  const header = fs.readFileSync(file).subarray(0, 24);
+  return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+}
+
+/** Read once per build: the fonts, the emblem and the wordmark, reused by every card. */
 function load() {
   if (assets) return assets;
 
@@ -114,6 +136,10 @@ function load() {
       { name: 'Mono', data: read('jetbrains-mono-700.ttf'), weight: 700, style: 'normal' },
     ],
     mark: inline(path.join(here, 'brand', 'mark.png')),
+    wordmark: (() => {
+      const file = path.join(here, 'brand', 'wordmark.png');
+      return { src: inline(file), ...pngSize(file) };
+    })(),
   };
 
   return assets;
@@ -194,15 +220,16 @@ function diffuseBase(width, height) {
   return out;
 }
 
-/** A card as a PNG buffer. */
-export async function renderCard({ kicker, title, description, meta }) {
-  const { fonts, mark } = load();
+/** A card as a PNG buffer. `centred` is the home card: the wordmark and the line. */
+export async function renderCard({ title, description, meta, centred = false }) {
+  const { fonts, mark, wordmark } = load();
   const markup = cardMarkup({
-    kicker,
     title: clamp(title, TITLE_CHARS),
     description: clamp(description, SUMMARY_CHARS),
     meta: flat(meta),
     mark,
+    wordmark,
+    centred,
   });
 
   const svg = await satori(html(markup), { width: OG_WIDTH, height: OG_HEIGHT, fonts });

@@ -15,15 +15,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderCard } from './render.mjs';
 
-const SECTION_KICKERS = [
-  ['/builds', 'Builds'],
-];
-
-/** A page outside a known section gets no label: the card still carries the site in
- *  its footer, and a name repeated above every title is what a label must not be. */
-const kickerFor = (pathname) =>
-  SECTION_KICKERS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.[1] ?? '';
-
 /** Astro escapes text as it writes attributes: undo the few entities that matter here. */
 const decode = (value) =>
   value
@@ -67,12 +58,11 @@ export default function socialCards() {
           if (source.includes('http-equiv="refresh"')) continue;
 
           const title = fromHtml(source, /<meta name="card:title" content="([^"]*)"/) ?? 'DragonFruit';
-          const kicker = kickerFor(`/${slug}`);
 
           const png = await renderCard({
-            /* A card whose label would just repeat its title - "Builds" over "Other
-               builds" - carries no label instead. */
-            kicker: kicker === title ? '' : kicker,
+            /* The home card is the brand's: the wordmark centred, with the project's
+               line under it, and no page title to repeat. */
+            centred: slug === 'home',
             title,
             description:
               fromHtml(source, /<meta name="card:summary" content="([^"]*)"/) ??
