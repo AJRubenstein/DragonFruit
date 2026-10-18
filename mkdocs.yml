@@ -1,6 +1,10 @@
 site_name: DragonFruit Slicer
 site_description: Open-source resin slicer and support-authoring environment for practical print preparation.
-site_url: https://dragonfruit-slicer.com/
+# The documentation is the `/docs/` half of dragonfruit-slicer.com: the landing
+# page at the root is an Astro site (`website/`), and both are published as one
+# Pages artifact. This URL is what canonical links, the search index and the
+# social cards are built from, so it has to carry the prefix.
+site_url: https://dragonfruit-slicer.com/docs/
 repo_name: Open-Resin-Alliance/DragonFruit
 repo_url: https://github.com/Open-Resin-Alliance/DragonFruit
 theme:
@@ -29,7 +33,6 @@ theme:
 extra_css:
   - stylesheets/dragonfruit-theme.css
 extra_javascript:
-  - javascripts/homepage-release-feed.js
   - javascripts/mathjax.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 # Internal docs are versioned but never published. See docs/internal/README.md.
@@ -51,7 +54,9 @@ markdown_extensions:
   - toc:
       permalink: true
 nav:
-  - Home: index.md
+  # The site root is the landing page (the Astro build), not a docs page.
+  - Home: https://dragonfruit-slicer.com/
+  - Documentation: index.md
   - Getting Started:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quick-start.md
@@ -182,6 +187,7 @@ nav:
           - VOXL Plates and Printer: adr/0044-voxl-plates-and-printer.md
           - Organic Cut Surface Redesign: dev/organic-cut-surface-redesign.md
       - Integration and Operations:
+          - The Site and the Landing Page: dev/site-and-landing.md
           - RTSP Relay: dev/rtsp-relay.md
           - Release Process: dev/releases.md
           - Flatpak Packaging: dev/flatpak.md

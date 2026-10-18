@@ -32,6 +32,7 @@
   ],
   "exclude": [
     "node_modules",
+    "website",
     "2. Backup",
     "rust/target",
     "rust/**/target",

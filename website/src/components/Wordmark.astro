@@ -1,0 +1,33 @@
+---
+import raw from '../assets/wordmark.svg?raw';
+
+/**
+ * The DragonFruit wordmark, inlined so its letterforms can follow the theme.
+ *
+ * The file is drawn for a dark ground: "Dragon" is the brand magenta, the dot is
+ * lime, and "Fruit" is white — which disappears on the light theme's page. Only
+ * that part is remapped, to `currentColor`, so the white cut becomes the ink and
+ * the mark keeps its own colours either way.
+ */
+const svg = raw
+  .replaceAll('fill:white', 'fill:currentColor')
+  // The wrapper carries the accessible name; the drawing itself is decoration.
+  .replace('<svg ', '<svg aria-hidden="true" ');
+---
+
+<span class="wordmark" role="img" aria-label="DragonFruit"><Fragment set:html={svg} /></span>
+
+<style>
+  .wordmark {
+    display: block;
+    color: var(--ink);
+    /* The file is 1772×304 with a `100%` box, so the width decides the size. */
+    inline-size: min(420px, 78vw);
+  }
+
+  .wordmark :global(svg) {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+  }
+</style>

@@ -1,0 +1,90 @@
+---
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import BackToTop from '../components/BackToTop.astro';
+import { SITE } from '../data/site';
+import '../styles/ora.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = SITE.name, description = SITE.description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const pageTitle = title === SITE.name ? `${SITE.name} — ${SITE.tagline}` : `${title} · ${SITE.name}`;
+const socialImage = new URL('/brand/social-card-home.png', Astro.site).href;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta name="generator" content={Astro.generator} />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:alt" content={pageTitle} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+
+    <meta name="theme-color" content="#ec2a77" />
+
+    <script is:inline>
+      // Theme bootstrap: applied before the first paint, so a reader who chose the
+      // dark theme never sees the light one flash. The same key openresin.org uses,
+      // so the two sites agree on a visitor's preference.
+      (() => {
+        const preferred = () => {
+          try {
+            const stored = localStorage.getItem('ora-theme');
+            if (stored === 'light' || stored === 'dark') return stored;
+          } catch {
+            /* storage unavailable - fall back to the system preference */
+          }
+          return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        };
+
+        document.documentElement.dataset.theme = preferred();
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <Header />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+    <BackToTop />
+
+    <script is:inline>
+      // Delegated from document, so the listener outlives the header it acts on:
+      // the theme lives on <html>, which no navigation replaces.
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element) || !target.closest('[data-theme-toggle]')) return;
+
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem('ora-theme', next);
+        } catch {
+          /* storage unavailable - the theme applies to this page view only */
+        }
+      });
+    </script>
+  </body>
+</html>
