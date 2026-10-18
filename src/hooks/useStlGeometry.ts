@@ -1,5 +1,5 @@
 import { isTauriRuntime } from '@/utils/tauriRuntime';
-import { bakeAndAttachOcclusionForGeometry } from '@/features/scene/bakedOcclusion';
+import { bakeAndAttachOcclusionForGeometry, rememberLoadedMeshMesh } from '@/features/scene/bakedOcclusion';
 import { getSavedWorkspaceCameraSettings } from '@/components/settings/workspaceCameraPreferences';
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
@@ -195,6 +195,14 @@ export interface ProcessGeometryOptions {
    */
   _deferOcclusionBake?: (bake: Promise<boolean>) => void;
   /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
+  /**
+   * The mesh the native loader kept for this geometry's AO bake, from the payload's
+   * header. Prep records it against the geometry's final position array (the bake
+   * asks for it by token instead of being sent the soup back — 36 bytes a triangle).
+   * A geometry that is not this one any more fails the native corner check and falls
+   * back to the soup. @internal
+   */
+  _meshToken?: number;
   _skipComputeNormals?: boolean;
   _isTauriRuntime?: () => boolean;
   _classifyFromGeometry?: typeof classifyFromGeometry;
@@ -640,6 +648,13 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // already waiting beats stuttering while they are interacting. Moving the *wait*
   // is a different thing, and only a caller that owns the rest of the batch
   // (`_deferOcclusionBake`) does that.
+  const position = geometry.getAttribute('position');
+  if (options._meshToken && position) {
+    // Registered here rather than by the caller: the positions are final at this
+    // point (the centering translate above is the last write to them), which is what
+    // the token is validated against when the bake asks for the mesh.
+    rememberLoadedMeshMesh(geometry, { token: options._meshToken, positions: position.array });
+  }
   const occlusionBake = bakeAndAttachOcclusionForGeometry(geometry).catch((error) => {
     console.warn('[ao] bake during prep failed', error);
     return false;
@@ -970,6 +985,11 @@ export type DecodedMesh = {
   /** The classification report the loader produced for a single-body load, when
    *  it did. Passing this to `processGeometry` skips the native classify pass. */
   report?: MeshHealthReport;
+  /** The mesh the loader kept for this payload's AO bake, when it kept one (a
+   *  single-body load). The bake asks for it by token instead of being sent the
+   *  soup back: 36 bytes a triangle, 430 MB across a scene. 0 or absent means the
+   *  caller sends the soup, which is what every other geometry does. */
+  meshToken?: number;
 };
 
 /**
@@ -1060,6 +1080,7 @@ export async function decodeDfmx(payload: Uint8Array | ArrayBuffer): Promise<Dec
   });
   const previewTriangleCount = table.reduce((sum, body) => sum + body.triangleCount, 0);
 
+  const meshToken = header.getUint32(28, true);
   const modelTriangleCount = header.getUint32(20, true);
   const metadataLength = header.getUint32(24, true);
   let report: MeshHealthReport | undefined;
@@ -1080,6 +1101,7 @@ export async function decodeDfmx(payload: Uint8Array | ArrayBuffer): Promise<Dec
     originalTriangleCount: header.getUint32(16, true),
     previewTriangleCount,
     modelTriangleCount: modelTriangleCount > 0 ? modelTriangleCount : undefined,
+    ...(meshToken > 0 ? { meshToken } : {}),
     report,
   };
 }
@@ -1244,6 +1266,7 @@ export async function loadMeshGeometryFromRange(
   return processGeometry(mergeBodyGeometries(decoded.bodies), {
     ...options,
     _skipComputeNormals: true,
+    ...(decoded.meshToken ? { _meshToken: decoded.meshToken } : {}),
     bakedClassification: classificationForPayload(
       decoded.report,
       options.bakedClassification,

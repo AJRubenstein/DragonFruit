@@ -497,6 +497,35 @@ overwritten by an identical one, for ~34% of the whole load. And the AO bakes, w
 are the GPU's work, were awaited inside each model's prep, so they ran one model at
 a time while the main thread was idle waiting on them.
 
+### Fifth run: the bake takes the loader's mesh (11.1 s)
+
+The other half of the same idea. The loader registers each model's refined mesh as it
+encodes its payload and reports a token in the DFMX header; the bake names it and the
+native side bakes that mesh directly, so neither the soup (430 MB a scene) nor the weld
+(208 ms a bake, 2.7 s a scene) is paid. Measured on the same scene and build:
+
+| | by range | + bake token |
+| --- | --- | --- |
+| build pass | 12.29-13.21 s | **9.72 s** |
+| total | 13.51-13.68 s | **11.15 s** |
+| soup uploads | 13 (430 MB) | **0** |
+| welds | 13 | **0** |
+| token bakes | — | 13 of 13 |
+
+**The gate for it was a measurement, not a hope:** the loader welds at 1e-6 and the bake
+re-weld the same soup at 1e-5, and on a real 725k-triangle model those produce the
+identical vertex set (362,847) and a bit-identical field — rms 0.00000, max 0.00000 over
+2.18M values. So skipping the weld changes nothing about the field, and the token path
+is the same bake on the same mesh.
+
+It is also the one of these four attempts that *helped* on wall clock, for the reason the
+others did not: it removes work (a weld and an upload) rather than adding any. Two guards
+keep it honest, and both are cheap: the token is recorded against the geometry's position
+array and checked against the live one at bake time (a repair, a swap, a clone or a
+rewrite invalidates it), and the native side refuses when its mesh's corner count
+disagrees with the caller's. Either refusal — or an evicted token, the registry holds
+eight — falls back to the soup, which is the path every other geometry takes.
+
 ### Fourth run: the mesh chunks stay in the file (13.5 s)
 
 The container's mesh chunks are read by the *native* loader now (`load_mesh_range`), so

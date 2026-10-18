@@ -89,11 +89,45 @@ export async function bakeOcclusionForGeometry(
   const indexAtRequest = geometry.getIndex();
   const cornerTable = indexAtRequest ? (indexAtRequest.array as Uint16Array | Uint32Array).slice() : null;
 
+  // A geometry whose mesh the loader kept is baked by token: forty bytes instead of
+  // the soup, and the same field (the loader's weld and this path's re-weld of the
+  // same soup were measured to produce the same vertex set and a bit-identical
+  // field). A refusal — an evicted token, a geometry that moved on — falls through to
+  // the soup below, which cannot go stale. Tried first, because expanding and copying
+  // the soup is 36 bytes a triangle this path then does not use.
+  const token = meshTokenForGeometry(geometry);
+  if (token) {
+    try {
+      const byToken = await invoke<ArrayBuffer | Uint8Array | number[]>(
+        'bake_vertex_occlusion',
+        { meshToken: token.token, expectedCorners: cornerCount(geometry) },
+        { headers: {} },
+      );
+      const fromLoader = toCornerValues(byToken);
+      if (fromLoader) {
+        // The values are in the loader's mesh triangle order, which is this
+        // geometry's corner order (a range-loaded geometry is a soup; the BVH's index
+        // over one is the identity), so the mapping is the identity.
+        const values = mapCornerValuesToVertices(fromLoader, cornerCount(geometry), null);
+        if (values) {
+          const note = `[ao] baked via the loader's mesh (token ${token.token}, ${values.length} vertices)`;
+          console.log(note);
+          void logToNativeFile('info', note);
+          return values;
+        }
+        console.warn('[ao] the token bake did not map onto this geometry; sending the soup');
+      }
+    } catch (error) {
+      console.warn('[ao] the loader\'s mesh was not usable for this bake; sending the soup', error);
+    }
+  }
+
+  // The soup, for a mesh the loader never had. A copy, not a view over the geometry's
+  // own buffer: the request outlives this call, and anything that touches the mesh
+  // while it is in flight would be sending the native side something other than what
+  // it is about to shade.
   const prepared = performance.now();
   const soup = expandGeometryToTriangleSoup(geometry);
-  // A copy, not a view over the geometry's own buffer: the request outlives this
-  // call, and anything that touches the mesh while it is in flight would be
-  // sending the native side something other than what it is about to shade.
   const body = new Uint8Array(soup.byteLength);
   body.set(new Uint8Array(soup.buffer, soup.byteOffset, soup.byteLength));
   const soupTiming =
@@ -101,6 +135,7 @@ export async function bakeOcclusionForGeometry(
     `${(performance.now() - prepared).toFixed(0)}ms`;
   console.log(soupTiming);
   void logToNativeFile('info', soupTiming);
+
   const payload = await invoke<ArrayBuffer | Uint8Array | number[]>(
     'bake_vertex_occlusion',
     body,
@@ -111,15 +146,8 @@ export async function bakeOcclusionForGeometry(
   // 4-byte aligned, so that *is* the values; a view or a plain array is neither,
   // and one copy is what makes it viewable. The corner array is transient either
   // way, because the per-vertex attribute is built from it below.
-  let cornerValues: Float32Array;
-  if (payload instanceof ArrayBuffer && payload.byteLength % 4 === 0) {
-    cornerValues = new Float32Array(payload);
-  } else {
-    const view = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-    const copy = new Uint8Array(view.byteLength);
-    copy.set(view);
-    cornerValues = new Float32Array(copy.buffer);
-  }
+  const cornerValues = toCornerValues(payload);
+  if (!cornerValues) return null;
 
   // A geometry whose positions were replaced while its bake was in flight (a
   // repair landing late, a swap) would take these values onto vertices they were
@@ -227,6 +255,70 @@ export function setBakedOcclusionIntensity(intensity: number): void {
  *
  * Returns whether an attribute was attached.
  */
+/**
+ * A mesh the *loader* kept, which the bake can ask for by token instead of being sent
+ * the soup back.
+ *
+ * `positions` is the point of the record: a geometry whose position array is no longer
+ * the one the loader produced is a different mesh — a repair installs a new attribute,
+ * a swap is a new geometry, a clone copies the arrays, and a smoothing pass that writes
+ * in place replaces the attribute too — so the token must not be used for it. The
+ * native side checks the corner count as well, and the caller falls back to sending the
+ * soup when either disagrees.
+ */
+type LoadedMeshToken = { token: number; positions: ArrayLike<number> };
+const loadedMeshTokens = new WeakMap<THREE.BufferGeometry, LoadedMeshToken>();
+
+/** Record that `geometry` is `token`'s mesh, as the loader left it. */
+export function rememberLoadedMeshMesh(
+  geometry: THREE.BufferGeometry,
+  entry: LoadedMeshToken,
+): void {
+  loadedMeshTokens.set(geometry, entry);
+}
+
+/**
+ * The token to bake `geometry` with, or null when it must be sent as a soup.
+ *
+ * Exported for its test: the identity check is the whole guard, and it is the one
+ * thing that must not regress (a stale token means a field computed for a mesh that
+ * is no longer there).
+ */
+export function meshTokenForGeometry(
+  geometry: THREE.BufferGeometry,
+): LoadedMeshToken | null {
+  const entry = loadedMeshTokens.get(geometry);
+  if (!entry) return null;
+  const position = geometry.getAttribute('position');
+  if (!position || position.array !== entry.positions) return null;
+  return entry;
+}
+
+/** How many corners the bake's token request claims, for the native guard. */
+function cornerCount(geometry: THREE.BufferGeometry): number {
+  return geometry.getAttribute('position')?.count ?? 0;
+}
+
+/**
+ * The bake's response as corner values: one `f32` per corner, in the order the request
+ * described them. An `ArrayBuffer` off the IPC channel is ours and 4-byte aligned, so
+ * that *is* the values; a view or a plain array is neither, and one copy is what makes
+ * it viewable.
+ */
+function toCornerValues(
+  payload: ArrayBuffer | Uint8Array | number[],
+): Float32Array | null {
+  if (payload instanceof ArrayBuffer && payload.byteLength % 4 === 0) {
+    return new Float32Array(payload);
+  }
+  if (Array.isArray(payload) && payload.length === 0) return null;
+  const view = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+  if (view.byteLength % 4 !== 0) return null;
+  const copy = new Uint8Array(view.byteLength);
+  copy.set(view);
+  return new Float32Array(copy.buffer);
+}
+
 export async function bakeAndAttachOcclusionForGeometry(
   geometry: THREE.BufferGeometry,
 ): Promise<boolean> {

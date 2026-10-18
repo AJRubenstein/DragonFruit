@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { describe, it } from 'node:test';
 import * as THREE from 'three';
-import { mapCornerValuesToVertices } from '../bakedOcclusion';
+import { mapCornerValuesToVertices, meshTokenForGeometry, rememberLoadedMeshMesh } from '../bakedOcclusion';
 
 /**
  * An indexed geometry's index buffer is the *corner* order, not a vertex lookup.
@@ -90,4 +90,25 @@ test('a count mismatch is refused rather than attached', () => {
     mapCornerValuesToVertices(new Float32Array(9), 4, quadIndexed().getIndex()!.array),
     null,
   );
+});
+
+describe('loaded mesh tokens', () => {
+  it('drops the token when the geometry is no longer the mesh the loader produced', () => {
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    rememberLoadedMeshMesh(geometry, { token: 7, positions });
+    assert.deepEqual(meshTokenForGeometry(geometry), { token: 7, positions });
+
+    // A repair installs a new position attribute: same geometry, different mesh.
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
+    assert.equal(meshTokenForGeometry(geometry), null, 'a replaced position array invalidates it');
+
+    // A clone is another geometry, with arrays of its own.
+    const clone = geometry.clone();
+    assert.equal(meshTokenForGeometry(clone), null, 'a clone is not the loaded mesh');
+
+    // And a geometry the loader never touched has no token to use.
+    assert.equal(meshTokenForGeometry(new THREE.BufferGeometry()), null);
+  });
 });

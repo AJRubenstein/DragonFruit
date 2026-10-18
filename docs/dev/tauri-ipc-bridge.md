@@ -370,6 +370,21 @@ should take its *direction* from, and an estimator of the slope itself is still
 open. It was reverted rather than shipped: nothing consumes a payload whose
 magnitude is off by two orders of magnitude at the ends of its range.
 
+## The AO bake's two request shapes (`bake_vertex_occlusion`)
+
+A raw body is the soup — the mesh in the request, as above — and is what a geometry the
+loader never had sends: a plugin's geometry, a repaired one, a file out of a zip. A
+**JSON** body is `{ meshToken, expectedCorners, rays? }`: the token the loader put in the
+`DFMX` header for that model, naming the refined mesh it kept in `mesh_repair`'s registry.
+That path skips the upload (36 bytes a triangle, 430 MB across a scene) *and* the weld
+the native side would do, because the registered mesh is already welded and indexed; the
+response is identical in shape (one `f32` per corner, in the mesh's triangle order, which
+is the caller's corner order). Both guards are the caller's protection: the token must
+still be registered, and its corner count must equal `expectedCorners` — otherwise the
+command refuses and the caller falls back to sending the soup. The registry holds the
+last eight meshes, and a mesh is registered by its load and taken by its bake moments
+later.
+
 ## Native mesh loading (`load_mesh_file`, `load_mesh_bytes`)
 
 One command reads a mesh from disk in Rust and hands it to the renderer as the

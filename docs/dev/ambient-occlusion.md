@@ -50,6 +50,18 @@ every mesh in the batch has been prepared and before any model is placed. On the
 15-model scene measured in `backlog.md` the thirteen bakes total 7.4 s of GPU time
 that used to run one model at a time, with the main thread idle in between.
 
+**A geometry whose mesh the loader kept is baked by token, not by upload.** The native
+loader registers each model's refined mesh as it encodes the `DFMX` payload and reports a
+token in the header (`mesh-wire-formats.md`); the bake sends forty bytes naming it, and
+the native side welds nothing — the mesh it uses is the one the loader already welded and
+indexed. The field is the same by construction: measured on a real model, re-welding the
+same soup at the bake's own epsilon produces the identical vertex set and a bit-identical
+field. The token is recorded against the geometry's *position array* and checked natively
+against the corner count, so a geometry that was repaired, swapped, cloned or rewritten
+since — and an evicted token — fall back to the soup path, which cannot go stale. That
+fallback is what every other geometry uses: a plugin's, a repaired one, a file out of a
+zip.
+
 `aBakedAo` is the queue's only key, so the sweep must not re-issue a bake whose
 result has not landed yet: a geometry with a bake in flight has no attribute, and
 looks exactly like one that was never baked. The sweep therefore keeps the

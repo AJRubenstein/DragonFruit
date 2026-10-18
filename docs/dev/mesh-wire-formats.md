@@ -21,7 +21,7 @@ Header (32 bytes):
 | 16..19 | 4 | original input triangle count |
 | 20..23 | 4 | model-section triangle count (`0` when absent) |
 | 24..27 | 4 | metadata JSON byte length (`0` when absent) |
-| 28..31 | 4 | reserved, zero |
+| 28..31 | 4 | mesh token — the loader's kept mesh, `0` when it kept none |
 
 Body table: `bodyCount` entries of 8 bytes, in payload order — triangle count
 (4 bytes) and the length of that body's packed stream (4 bytes).
@@ -68,6 +68,17 @@ plus the header facts a preview needs (flags, original and model counts). Each p
 body is a view into the payload buffer — the payload is the body of a `fetch` response
 (Tauri's IPC is a custom-protocol fetch) and belongs to that call — and the unpacked
 soup becomes the geometry's storage, so nothing is copied twice.
+
+**The token in the header's last slot keeps the soup off the wire a second time.** The
+loader has each model's refined mesh in hand when it encodes the payload, so it registers
+it and reports the token here; the AO bake asks for that mesh by token instead of being
+sent a soup back — forty bytes against 36 bytes a triangle, which is 430 MB across a
+scene. The field is unchanged by construction: the loader's weld and the bake's re-weld
+of the same soup were measured to produce the same vertex set and a bit-identical field
+(rms 0.00000 over 2.18M values on a 725k-triangle model). A bake whose geometry is no
+longer that mesh — a repair, a swap, a clone — or whose token has been evicted sends the
+soup as before, and the native side refuses a token whose corner count disagrees with the
+caller's.
 
 ## Bodies come from the loader, not this format
 

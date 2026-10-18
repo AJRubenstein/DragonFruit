@@ -1924,6 +1924,7 @@ fn stl_special_case_response(
                 true,
                 Some(outcome.model_triangle_count as u32),
                 None,
+                None,
             )
             .map(Some);
         }
@@ -1987,7 +1988,7 @@ pub async fn load_mesh_file(file_path: String, classify: Option<bool>) -> Result
     };
 
     let tri_count: usize = bodies.iter().map(|body| body.triangles.len()).sum();
-    encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref())
+    encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref(), None)
         .map(Response::new)
 }
 
@@ -2076,30 +2077,59 @@ pub async fn load_mesh_range(
     .await
     .map_err(|e| format!("mesh range task panicked: {e}"))??;
 
+    let started_parse = std::time::Instant::now();
+    let (bodies, metadata_json) = mesh_bodies(&bytes, classify.unwrap_or(true))?;
+
+    // Keep the mesh for its AO bake. The bake needs exactly this mesh, and sending
+    // one back costs 36 bytes a triangle; a single body is the VOXL case, and only a
+    // single body can be named by one token.
+    let token = if bodies.len() == 1 {
+        // One copy, and only of a welded mesh (13 MB for a 726k-triangle model): the
+        // payload below must encode the same mesh the registry holds.
+        Some(registry::register(bodies[0].clone()))
+    } else {
+        None
+    };
+    let tri_count: usize = bodies.iter().map(|body| body.triangles.len()).sum();
     log::info!(
-        "[load_mesh_range] {} bytes at {offset} in {}ms (read+inflate), of {}ms total",
+        "[load_mesh_range] {} bytes at {offset} in {}ms (read+inflate), parsed in {}ms,          of {}ms total{}",
         bytes.len(),
         read_ms,
+        started_parse.elapsed().as_millis(),
         started.elapsed().as_millis(),
+        if token.is_some() { ", mesh kept for the bake" } else { "" },
     );
-    load_mesh_bytes_response(&bytes, classify.unwrap_or(true)).map(Response::new)
+    encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref(), token)
+        .map(Response::new)
+}
+
+/// Parse a file's bytes, refine its coarse faces, and classify when asked.
+///
+/// Split out of the encoders so a caller that wants to *keep* the refined mesh (the
+/// range loader does, for the AO bake — see the `registry` module) gets the same
+/// meshes the payload was built from, without a second parse.
+fn mesh_bodies(
+    bytes: &[u8],
+    classify: bool,
+) -> Result<(Vec<IndexedMesh>, Option<String>), String> {
+    let mesh = io::stl::parse_bytes(bytes)
+        .map_err(|e| format!("Failed to parse mesh bytes: {e}"))?;
+    let mesh = io::refine_coarse_faces(mesh);
+    Ok(if classify {
+        classify_single_body(mesh)
+    } else {
+        (vec![mesh], None)
+    })
 }
 
 /// The pipeline behind `load_mesh_bytes`: parse the file's bytes, refine, classify
 /// when asked, and encode the same `DFMX` payload the path loader writes.
 fn load_mesh_bytes_response(bytes: &[u8], classify: bool) -> Result<Vec<u8>, String> {
     let started = std::time::Instant::now();
-    let mesh = io::stl::parse_bytes(bytes)
-        .map_err(|e| format!("Failed to parse mesh bytes: {e}"))?;
-    let mesh = io::refine_coarse_faces(mesh);
-    let (bodies, metadata_json) = if classify {
-        classify_single_body(mesh)
-    } else {
-        (vec![mesh], None)
-    };
+    let (bodies, metadata_json) = mesh_bodies(bytes, classify)?;
 
     let tri_count: usize = bodies.iter().map(|body| body.triangles.len()).sum();
-    let encoded = encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref())?;
+    let encoded = encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref(), None)?;
     // The other half of the import's per-model time: the frontend logs its own
     // round trip for the same call, and the wire between them measures 110-135
     // MB/s, so this line and that one together say where a model's load went.
@@ -2153,7 +2183,9 @@ fn classify_single_body(mesh: IndexedMesh) -> (Vec<IndexedMesh>, Option<String>)
 ///  16 .. 19 : Original input triangle count u32 LE
 ///  20 .. 23 : Model section triangle count u32 LE (0 when absent)
 ///  24 .. 27 : Metadata JSON byte length (u32 LE, 0 when absent)
-///  28 .. 31 : Reserved (4 bytes, zero)
+///  28 .. 31 : Mesh token u32 LE (0 when the loader kept nothing): names the refined
+///             mesh in the bake registry, so the AO bake can be asked for it instead
+///             of being sent the soup back
 ///
 /// Body table: `bodyCount` entries of 8 bytes each, in payload order:
 ///   0 .. 3 : Triangle count u32 LE
@@ -2163,6 +2195,86 @@ fn classify_single_body(mesh: IndexedMesh) -> (Vec<IndexedMesh>, Option<String>)
 /// soup: positions then normals, 9 f32 per triangle each (72 bytes/triangle). The
 /// metadata JSON, when present, is the last `metadataLength` bytes of the payload
 /// — a reader that does not know the key reads the bodies and ignores the tail.
+/// The refined meshes a load just built, waiting for the AO bake that needs one.
+///
+/// A model's mesh crosses the IPC once (as `DFMX`) and then, until now and for the
+/// same model, a second time *back* as a soup for the bake — 36 bytes a triangle,
+/// 430 MB across a scene's models. The bake cannot avoid that by re-reading a range:
+/// measured, re-deriving a mesh costs 230-480 ms of native CPU a model against an
+/// upload that is already overlapped, which is the trade the bake gate and the soup
+/// packing both lost. It can avoid it by *keeping* the mesh: the loader has it in
+/// hand, a welded mesh is small (13 MB for a 726k-triangle model), and the bake needs
+/// exactly that mesh — re-welding the same soup at the bake's own epsilon was measured
+/// to produce the identical vertex set and a bit-identical field (rms 0.00000 over
+/// 2.18M values on a real model), so the weld it currently pays for is redundant too.
+///
+/// Bounded: the oldest entry is dropped past `MESH_REGISTRY_CAP`, which a load never
+/// reaches (a mesh is registered by its load and taken by its bake moments later).
+mod registry {
+    use dragonfruit_mesh_core::mesh::IndexedMesh;
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    const MESH_REGISTRY_CAP: usize = 8;
+
+    static REGISTRY: OnceLock<Mutex<VecDeque<(u32, Arc<IndexedMesh>)>>> = OnceLock::new();
+    static NEXT_TOKEN: OnceLock<Mutex<u32>> = OnceLock::new();
+
+    /// Keep `mesh` for its bake and return the token that names it.
+    pub(crate) fn register(mesh: IndexedMesh) -> u32 {
+        let mut next = NEXT_TOKEN
+            .get_or_init(|| Mutex::new(1))
+            .lock()
+            .expect("mesh registry token lock");
+        let token = *next;
+        *next = next.wrapping_add(1).max(1);
+
+        let mut registry = REGISTRY
+            .get_or_init(|| Mutex::new(VecDeque::new()))
+            .lock()
+            .expect("mesh registry lock");
+        registry.push_back((token, Arc::new(mesh)));
+        while registry.len() > MESH_REGISTRY_CAP {
+            registry.pop_front();
+        }
+        token
+    }
+
+    /// The mesh a token names, if it is still registered.
+    pub(crate) fn get(token: u32) -> Option<Arc<IndexedMesh>> {
+        let registry = REGISTRY
+            .get_or_init(|| Mutex::new(VecDeque::new()))
+            .lock()
+            .expect("mesh registry lock");
+        registry
+            .iter()
+            .find(|(registered, _)| *registered == token)
+            .map(|(_, mesh)| Arc::clone(mesh))
+    }
+}
+
+/// The mesh a bake token names, checked against the corner count the caller has.
+///
+/// The check is the guard that makes the token safe: a caller's geometry is the mesh
+/// it loaded, and a count that disagrees means the geometry was replaced or rewritten
+/// since — a repair, a swap, a smoothing pass — so the field computed here would be
+/// attached to a mesh it was never computed for. Refusing sends the caller back to
+/// sending the soup, which is the path that cannot go stale.
+pub(crate) fn mesh_for_bake(
+    token: u32,
+    expected_corners: usize,
+) -> Result<std::sync::Arc<IndexedMesh>, String> {
+    let mesh = registry::get(token)
+        .ok_or_else(|| format!("mesh token {token} is no longer registered"))?;
+    if expected_corners != 0 && mesh.triangles.len() * 3 != expected_corners {
+        return Err(format!(
+            "mesh token {token} has {} corners, the caller has {expected_corners}",
+            mesh.triangles.len() * 3
+        ));
+    }
+    Ok(mesh)
+}
+
 const MESH_RESPONSE_MAGIC: &[u8; 4] = b"DFMX";
 /// Version 2: each body is a zlib stream holding that body's soup.
 ///
@@ -2188,6 +2300,7 @@ fn encode_mesh_bodies(
     is_preview: bool,
     model_triangle_count: Option<u32>,
     metadata_json: Option<&str>,
+    mesh_token: Option<u32>,
 ) -> Result<Vec<u8>, String> {
     let total_triangles: usize = bodies.iter().map(|body| body.triangles.len()).sum();
     let metadata_len = metadata_json.map_or(0, str::len);
@@ -2226,7 +2339,9 @@ fn encode_mesh_bodies(
     result.extend_from_slice(&original_triangle_count.to_le_bytes());
     result.extend_from_slice(&model_triangle_count.unwrap_or(0).to_le_bytes());
     result.extend_from_slice(&(metadata_len as u32).to_le_bytes());
-    result.extend_from_slice(&[0u8; 4]);
+    // The reserved slot is the registry token when the loader kept the mesh for the
+    // bake (0 = nothing kept). See the `registry` module above.
+    result.extend_from_slice(&mesh_token.unwrap_or(0).to_le_bytes());
     for (body, bytes) in bodies.iter().zip(&packed) {
         result.extend_from_slice(&(body.triangles.len() as u32).to_le_bytes());
         result.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
@@ -2748,7 +2863,7 @@ mod tests {
     fn imported_normals_are_each_face_own_geometric_normal() {
         let sides = 8;
         let mesh = cylinder_mesh(sides);
-        let bytes = encode_mesh_bodies(std::slice::from_ref(&mesh), mesh.triangles.len() as u32, false, None, None)
+        let bytes = encode_mesh_bodies(std::slice::from_ref(&mesh), mesh.triangles.len() as u32, false, None, None, None)
             .unwrap();
         let (positions, normals) = decode_positions_and_normals(&bytes);
 
@@ -2849,7 +2964,7 @@ mod tests {
         // angle: up for the floor, turned by the fold for the wall.
         for fold_deg in [20.0f32, 90.0] {
             let mesh = folded(fold_deg);
-            let bytes = encode_mesh_bodies(std::slice::from_ref(&mesh), mesh.triangles.len() as u32, false, None, None)
+            let bytes = encode_mesh_bodies(std::slice::from_ref(&mesh), mesh.triangles.len() as u32, false, None, None, None)
                 .unwrap();
             let (_, normals) = decode_positions_and_normals(&bytes);
             let floor_normal = normals[0];
@@ -3066,6 +3181,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// The bake token's guard: what it refuses is a geometry that moved on.
+    #[test]
+    fn test_mesh_for_bake_refuses_a_mesh_the_caller_no_longer_has() {
+        let mesh = IndexedMesh {
+            positions: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        };
+        let token = registry::register(mesh);
+
+        // The caller's count agrees: the mesh comes back.
+        assert_eq!(
+            mesh_for_bake(token, 3).expect("matching corners").triangles.len(),
+            1
+        );
+        // A geometry that has grown or been replaced since: refused, so the caller
+        // falls back to sending the soup rather than taking a stale field.
+        assert!(mesh_for_bake(token, 9).is_err());
+        // A token nobody registered (an evicted one, or a restart): refused.
+        assert!(mesh_for_bake(token.wrapping_add(97), 3).is_err());
+    }
+
     #[test]
     fn test_load_mesh_bytes_parses_refines_and_classifies() {
         let mut stl = vec![0u8; 84];
@@ -3104,7 +3244,7 @@ mod tests {
         };
         let json = r#"{"model_triangle_count":1}"#;
         let bytes =
-            encode_mesh_bodies(std::slice::from_ref(&body), 1, false, Some(1), Some(json)).unwrap();
+            encode_mesh_bodies(std::slice::from_ref(&body), 1, false, Some(1), Some(json), None).unwrap();
 
         let metadata_len = u32::from_le_bytes(bytes[24..28].try_into().unwrap()) as usize;
         assert_eq!(metadata_len, json.len(), "header carries the metadata length");
@@ -3133,7 +3273,7 @@ mod tests {
                 triangles: vec![[0, 1, 2], [0, 2, 3]],
             },
         ];
-        let bytes = encode_mesh_bodies(&bodies, 3, false, None, None).unwrap();
+        let bytes = encode_mesh_bodies(&bodies, 3, false, None, None, None).unwrap();
 
         assert_eq!(&bytes[0..4], b"DFMX");
         assert_eq!(
