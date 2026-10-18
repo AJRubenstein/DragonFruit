@@ -11,7 +11,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { loadMeshBytes, loadMeshFileFromNativePath } from '@/features/slicing/tauri/nativeSlicerBridge';
 import { accelerateGeometry } from '@/utils/bvh';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { REFINE_MAX_TRIANGLES, refineCoarseFaces } from '@/utils/tauriMeshBridge';
+import { refineCoarseFaces, shouldRefineCoarseFaces } from '@/utils/tauriMeshBridge';
 import {
   analyzeFromGeometry,
   applyRepairedPositions,
@@ -1126,8 +1126,7 @@ export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: Pro
 
   let geometry = source;
   let refined = false;
-  const triangles = (source.getAttribute('position')?.count ?? 0) / 3;
-  if (triangles > 0 && triangles <= REFINE_MAX_TRIANGLES) {
+  if (shouldRefineCoarseFaces(source)) {
     try {
       const result = await refineCoarseFaces(source);
       if (result) {
