@@ -2610,8 +2610,8 @@ export function SceneCanvas({
 
     const raycaster = new THREE.Raycaster();
     raycaster.ray.copy(ray);
-    const hits: THREE.Intersection[] = [];
-    mesh.raycast(raycaster, hits);
+    // Mesh.raycast appends in triangle order; intersectObject sorts nearest first.
+    const hits = raycaster.intersectObject(mesh, false);
 
     for (const hit of hits) {
       if ((clipUpper != null && hit.point.z > clipUpper) || (clipLower != null && hit.point.z < clipLower)) {

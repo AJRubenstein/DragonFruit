@@ -85,6 +85,10 @@ works from inside the cavity, including when the slice viewer clips away the fro
 of the model. In interior view, click a cavity surface away from existing punches
 to place a new hole.
 
+Dragging a punch body snaps it to the nearest model surface within the visible
+slice-view bounds and aligns it to that surface's normal. This works in exterior
+and interior view. Use the gizmo arrows for axis-constrained movement instead.
+
 ### Oval holes
 
 - By default, hole punches are circular (linked X/Y radius).

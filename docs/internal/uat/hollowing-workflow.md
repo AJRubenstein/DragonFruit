@@ -56,3 +56,14 @@ Given a hollowed model in interior view with no hole punch selected
 When I click a cavity surface away from existing punches
 Then a new punch is placed at that surface
 And the build plate or other unrelated geometry behind the model does not block placement
+
+## Scenario 8: Drag a punch body without jumping to a far wall
+
+Given a 30×30×20 mm box with hollowing and a top-face hole punch applied
+When I grab the punch body and drag it across the top face
+Then it stays on the nearest visible surface without flickering to the cavity floor
+And its direction follows that surface's normal
+And releasing and applying the punch keeps the hole at the dragged position
+And the same interaction works in exterior and interior view
+And with a slice-view cutaway, hidden surfaces are skipped
+And the gizmo arrows still provide axis-constrained movement
