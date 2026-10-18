@@ -270,9 +270,9 @@ A plugin cannot call native code, so geometry an importer builds in the renderer
 (LYS, via `plugins/lys-import/`) never reaches that dispatcher either. The host
 calls `refine_mesh_soup` after a plugin import instead: soup in the request body,
 `[u32 triangle count][positions][normals]` out. It welds the mesh on the way in,
-which is what gives the refinement shared edges to split and the normals adjacency
-to average over, and it returns normals for the same reason the loaders compute
-them, so the importer does not have to repeat the crease rule in TypeScript.
+which is what gives the refinement shared edges to split, and it returns the face
+normals for the same reason the loaders do, so the importer does not have to
+derive them in TypeScript.
 
 The fix is at the source. `io::load_mesh_from_path` refines faces longer than 2% of
 the model's diagonal, which is a quarter of the occlusion reach, before anything
@@ -288,7 +288,7 @@ carries its models' original STL bytes in its MESH chunks, and the loader handed
 them to three's `STLLoader` in the renderer (`loadStlGeometryFromBuffer`), which
 is neither the native file dispatcher nor the plugin command, so a scene's models
 were never refined at all. The same call now asks `refine_mesh_soup`, which also
-gives them the welded, crease-split normals the native loaders produce, and it
+gives them the face normals the native loaders produce, and it
 asks only below `REFINE_MAX_TRIANGLES` (400k): the command costs twice the mesh in
 traffic, and a mesh with faces too long for the field is a mesh with few of them,
 so the meshes that need it are the ones small enough to send. Above that limit a
@@ -370,11 +370,26 @@ should take its *direction* from, and an estimator of the slope itself is still
 open. It was reverted rather than shipped: nothing consumes a payload whose
 magnitude is off by two orders of magnitude at the ends of its range.
 
+## The AO bake's two request shapes (`bake_vertex_occlusion`)
+
+A raw body is the soup — the mesh in the request, as above — and is what a geometry the
+loader never had sends: a plugin's geometry, a repaired one, a file out of a zip. A
+**JSON** body is `{ meshToken, expectedCorners, rays? }`: the token the loader put in the
+`DFMX` header for that model, naming the refined mesh it kept in `mesh_repair`'s registry.
+That path skips the upload (36 bytes a triangle, 430 MB across a scene) *and* the weld
+the native side would do, because the registered mesh is already welded and indexed; the
+response is identical in shape (one `f32` per corner, in the mesh's triangle order, which
+is the caller's corner order). Both guards are the caller's protection: the token must
+still be registered, and its corner count must equal `expectedCorners` — otherwise the
+command refuses and the caller falls back to sending the soup. The registry holds the
+last eight meshes, and a mesh is registered by its load and taken by its bake moments
+later.
+
 ## Native mesh loading (`load_mesh_file`, `load_mesh_bytes`)
 
 One command reads a mesh from disk in Rust and hands it to the renderer as the
 `DFMX` binary payload specified in `dev/mesh-wire-formats.md`: a 32-byte header,
-a body table, then one positions-and-normals soup per body.
+a body table, then one zlib-packed body per model (positions and normals).
 
 `load_mesh_file` takes `filePath` and an optional `classify` (default true). It
 dispatches through `io::load_mesh_bodies_from_path` — `stl`/`obj` give one body;
@@ -403,14 +418,28 @@ repair has nothing left to run: the geometry arrives section-ordered, the report
 rides the metadata tail, and the frontend passes it to `processGeometry` as
 `bakedClassification`. Which imports ask is `wantsLoaderClassification`
 (`useStlGeometry.ts`): a classify-only import does; one that may auto-repair does
-not, because that pass classifies too.
+not, because that pass classifies too; and neither does one that already holds the
+report — a VOXL model carries its own (`voxl-format-spec.md`, revision 3.3), and
+asking the loader for a second one replaces the stored answer with an identical
+one at the price of the whole classify pass (430 ms of a 550 ms load on a
+725k-triangle model; 11.9 s over the 13-model scene in `backlog.md`).
+`classificationForPayload` then checks the stored report against the payload that
+came back — its `pre.triangle_count` must match — and drops it when it does not, so
+a file written under another refinement rule still gets classified.
 
 ### Deferred post-processing
 
-Not used. An import builds its BVH, computes its flattening planes and awaits its
-AO bake inside `processGeometry`, while the import's progress modal is up.
-Deferring them to idle was tried and reverted: the work is the same either way, and
-paying it while the user is already waiting beats stuttering while they interact.
+Not used for the BVH and the flattening planes: an import builds both inside
+`processGeometry`, while the import's progress modal is up. Deferring them to idle
+was tried and reverted: the work is the same either way, and paying it while the
+user is already waiting beats stuttering while they interact. Together they are
+0.4-0.9 s per model, which is the largest main-thread cost an import has left and
+the reason they are the next thing to move (see `backlog.md`).
+
+The AO bake is not deferred either — it starts *early*, before the BVH and the
+planes, so the GPU works while the main thread does; a batch import (a VOXL scene,
+several files at once) takes the wait once for the whole batch instead of per model
+(`_deferOcclusionBake`). `ambient-occlusion.md` owns that contract.
 
 `finalizeModelGeometryPostProcessing` and the AO sweep remain for the paths that
 genuinely need them: a geometry swapped in by a repair, a boolean cut or a hole

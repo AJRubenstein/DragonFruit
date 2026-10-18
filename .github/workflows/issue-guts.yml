@@ -70,16 +70,22 @@ jobs:
           gh issue edit "$NUMBER" --add-label "$LABELS"
 
       - name: Add missing title prefix
-        # Only for newly opened issues; a manual re-classify shouldn't rename anything.
-        if: ${{ github.event_name == 'issues' }}
+        # Also on a manual run, so re-running an issue whose first run failed
+        # finishes the job; it only ever adds a missing prefix.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          NUMBER: ${{ github.event.issue.number }}
+          NUMBER: ${{ github.event.issue.number || inputs.issue }}
           # Passed through env, never inlined, because title and body are user input.
           TITLE: ${{ github.event.issue.title }}
           BODY: ${{ github.event.issue.body }}
         run: |
+          # A manual run has no issue in its event; read it from the API.
+          if [[ "$GITHUB_EVENT_NAME" != issues ]]; then
+            TITLE=$(gh issue view "$NUMBER" --json title --jq .title)
+            BODY=$(gh issue view "$NUMBER" --json body --jq .body)
+          fi
+
           # Adds [BUG] or [FEAT] to issues created from the issue forms, in case
           # the reporter deleted the pre-filled prefix. Each form leaves a heading
           # only it produces.

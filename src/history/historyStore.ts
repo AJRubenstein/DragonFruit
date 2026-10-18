@@ -1,4 +1,4 @@
-import { HistoryAction, HistoryHandler, HistoryOrigin, HistorySubscriber, HistoryDirection, HistoryDebugEvent, HistoryDebugEventKind } from './types';
+import { HistoryAction, HistoryChange, HistoryHandler, HistoryOrigin, HistorySubscriber, HistoryDirection, HistoryDebugEvent, HistoryDebugEventKind } from './types';
 
 const undoStack: HistoryAction[] = [];
 const redoStack: HistoryAction[] = [];
@@ -6,6 +6,7 @@ const handlerMap = new Map<string, Set<HistoryHandler>>();
 const subscribers = new Set<HistorySubscriber>();
 const historyOperationSubscribers = new Set<(payload: { direction: HistoryDirection; action: HistoryAction }) => void>();
 const historyDebugSubscribers = new Set<HistorySubscriber>();
+const historyChangeSubscribers = new Set<(change: HistoryChange) => void>();
 const historyDebugLog: HistoryDebugEvent[] = [];
 const HISTORY_DEBUG_LOG_LIMIT = 600;
 let historyDebugIdCounter = 1;
@@ -26,6 +27,17 @@ function notifyHistoryOperation(direction: HistoryDirection, action: HistoryActi
       listener({ direction, action: structuredClone(action) });
     } catch (err) {
       console.error('[HistoryStore] operation subscriber error', err);
+    }
+  });
+}
+
+function notifyHistoryChange(kind: HistoryChange['kind'], action: HistoryAction) {
+  const change: HistoryChange = { kind, actionType: action.type };
+  historyChangeSubscribers.forEach((listener) => {
+    try {
+      listener(change);
+    } catch (err) {
+      console.error('[HistoryStore] change subscriber error', err);
     }
   });
 }
@@ -86,6 +98,7 @@ export function pushHistory(action: HistoryAction) {
   redoStack.length = 0;
   appendHistoryDebugEvent('push', action);
   notifySubscribers();
+  notifyHistoryChange('push', action);
 }
 
 export function undo() {
@@ -100,6 +113,7 @@ export function undo() {
     notifyHistoryOperation('undo', action);
     appendHistoryDebugEvent('undo', action);
     notifySubscribers();
+    notifyHistoryChange('undo', action);
     return;
   }
   if (outcome === 'no-handler') {
@@ -130,6 +144,7 @@ export function redo() {
     notifyHistoryOperation('redo', action);
     appendHistoryDebugEvent('redo', action);
     notifySubscribers();
+    notifyHistoryChange('redo', action);
     return;
   }
   if (outcome === 'no-handler') {
@@ -183,6 +198,15 @@ export function subscribeHistory(listener: HistorySubscriber) {
 export function subscribeHistoryOperations(listener: (payload: { direction: HistoryDirection; action: HistoryAction }) => void) {
   historyOperationSubscribers.add(listener);
   return () => historyOperationSubscribers.delete(listener);
+}
+
+/**
+ * Every entry that changed the scene: a push, or an undo or redo that applied. Unlike the debug
+ * log, which is capped and can be cleared by hand, this is for code that acts on edits.
+ */
+export function subscribeHistoryChanges(listener: (change: HistoryChange) => void) {
+  historyChangeSubscribers.add(listener);
+  return () => historyChangeSubscribers.delete(listener);
 }
 
 export function subscribeHistoryDebug(listener: HistorySubscriber) {

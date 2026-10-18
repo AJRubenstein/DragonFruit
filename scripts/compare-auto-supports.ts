@@ -27,9 +27,9 @@ if (!oursPath || !proPath) {
     process.exit(1);
 }
 
-function load(path: string): DragonfruitImportFormat {
+async function load(path: string): Promise<DragonfruitImportFormat> {
     const bytes = readFileSync(path);
-    const parsed = parseVoxlAuto(bytes);
+    const parsed = await parseVoxlAuto(bytes);
     const supports = (parsed.document as { supports?: DragonfruitImportFormat }).supports;
     if (!supports) {
         // A bare model file carries no supports payload — treat as empty.
@@ -123,8 +123,8 @@ function report(name: string, tips: Tip[], rootXY: XY[]): void {
     console.log(`    anchor layer (z ≤ ${minTipZ.toFixed(1)} + 5): ${anchorTips.length} tips (${((anchorTips.length / tips.length) * 100).toFixed(0)}% of total), spacing ${meanNNDist(anchorTips).toFixed(2)} mm`);
 }
 
-const ours = extract(load(oursPath));
-const pro = extract(load(proPath));
+const ours = extract(await load(oursPath));
+const pro = extract(await load(proPath));
 
 console.log(`\n== Support forest comparison ==`);
 report('ours', ours.tips, ours.rootXY);

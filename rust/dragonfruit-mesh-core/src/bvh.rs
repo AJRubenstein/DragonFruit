@@ -216,6 +216,54 @@ impl Bvh {
         self.traverse_count(mesh, origin, dir, include_face)
     }
 
+    /// The triangle nearest `q`, as its squared distance and its face index.
+    ///
+    /// Branch and bound over the same flat nodes the ray queries walk: a node's own distance to the
+    /// query is a lower bound on any triangle under it, so a node already further away than the best
+    /// found is skipped whole. That is what makes this cheap enough to call once per tetrahedron.
+    ///
+    /// A *point* query rather than a ray, because the question the labelling asks is which side of
+    /// the surface a cell is on, and that is answered by the nearest triangle's own normal. A ray
+    /// answers it too, by parity, but parity is meaningless on the open and mis-oriented meshes this
+    /// exists for, while "which side of the nearest triangle am I on" is local and survives a bad
+    /// region elsewhere in the mesh.
+    pub fn nearest_triangle(&self, mesh: &IndexedMesh, q: Vec3) -> Option<(f32, u32)> {
+        if self.nodes.is_empty() {
+            return None;
+        }
+        let mut best: Option<(f32, u32)> = None;
+        let mut stack = vec![self.root];
+        while let Some(index) = stack.pop() {
+            let node = &self.nodes[index as usize];
+            // Lower bound: squared distance from the query to the node's own box.
+            let dx = (node.min[0] - q.x).max(0.0).max(q.x - node.max[0]);
+            let dy = (node.min[1] - q.y).max(0.0).max(q.y - node.max[1]);
+            let dz = (node.min[2] - q.z).max(0.0).max(q.z - node.max[2]);
+            let box_distance2 = dx * dx + dy * dy + dz * dz;
+            if let Some((best_distance2, _)) = best {
+                if box_distance2 >= best_distance2 {
+                    continue;
+                }
+            }
+            if node.is_leaf() {
+                let start = node.a as usize;
+                for &face in &self.faces[start..start + node.face_count()] {
+                    let [a, b, c] = mesh.tri_positions(face);
+                    let closest = closest_point_on_triangle(q, a, b, c);
+                    let d = q.sub(closest);
+                    let distance2 = d.dot(d);
+                    if best.is_none_or(|(bd, _)| distance2 < bd) {
+                        best = Some((distance2, face));
+                    }
+                }
+            } else {
+                stack.push(node.a);
+                stack.push(node.b);
+            }
+        }
+        best
+    }
+
     /// Is anything hit within `max_distance` along `dir`?
     ///
     /// Unlike [`ray_hit_count`] this stops at the first hit and ignores geometry
@@ -520,6 +568,53 @@ fn face_aabb(mesh: &IndexedMesh, face: u32) -> Aabb {
 }
 
 /// Möller–Trumbore triangle intersection; returns `t >= 0` if hit in front.
+
+/// The point of the triangle `(a, b, c)` closest to `p`.
+///
+/// The standard region test: inside the face, on one of the three edges, or at one of the three
+/// corners. Shared with the signed distance field, which needs the same answer for the same reason.
+pub fn closest_point_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
+    let ab = b.sub(a);
+    let ac = c.sub(a);
+    let ap = p.sub(a);
+    let d1 = ab.dot(ap);
+    let d2 = ac.dot(ap);
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a;
+    }
+    let bp = p.sub(b);
+    let d3 = ab.dot(bp);
+    let d4 = ac.dot(bp);
+    if d3 >= 0.0 && d4 <= d3 {
+        return b;
+    }
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return a.add(ab.scale(v));
+    }
+    let cp = p.sub(c);
+    let d5 = ab.dot(cp);
+    let d6 = ac.dot(cp);
+    if d6 >= 0.0 && d5 <= d6 {
+        return c;
+    }
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return a.add(ac.scale(w));
+    }
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b.add(c.sub(b).scale(w));
+    }
+    let denom = 1.0 / (va + vb + vc);
+    let v = vb * denom;
+    let w = vc * denom;
+    a.add(ab.scale(v)).add(ac.scale(w))
+}
+
 pub fn ray_tri(origin: Vec3, dir: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
     const EPS: f32 = 1e-8;
     let e1 = b.sub(a);

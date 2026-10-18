@@ -429,6 +429,27 @@ mount and there is no shared cache at that layer.
 
 **What remains, in value order:**
 
+- **The container parse was 4.6 s on a 303 MB, 15-model scene, and is now 1.2 s
+  (2.1 s in the dev webview).** (`parseVoxlBinaryV2`; measured through
+  `scripts/dragonfruit-ts-cli.ts scene list-models` and the app's own
+  `[voxl] inflated …` line: 66 ms to read the file, the rest to inflate the mesh
+  chunks — 13 of them, 677 MB, ~1.0 s in Node and 2.06 s in the webview.) The
+  chunks are independent zlib streams, so they now inflate four at a time with the
+  platform's `DecompressionStream` instead of one at a time on the main thread.
+  **Not `fflate`'s async pool, which is what this was first written with:** the
+  webview reports `crossOriginIsolated`, and `fflate` then waits for its workers
+  through `SharedArrayBuffer`/`Atomics`, blocking the main thread the pool was
+  supposed to free. That cost 2.8-10 s of stalls at scene open and, once, a content
+  process the watchdog had to declare dead — with blob workers accumulating (12 of
+  them). The native stream is off-thread for real, streams instead of cloning each
+  buffer back, and is faster besides (70 ms against 93 ms for 24 MB).
+  What is left: the inflate itself (~650 MB/s aggregate, four streams), and one
+  copy per chunk as the inflated bytes come back to the main thread — 677 MB of
+  it. Both disappear if the *native loader* inflates: a VOXL's mesh chunks sit at
+  known offsets in a file on disk, so `load_mesh_bytes` could take
+  `(path, offset, length)` and inflate where it already parses, with nothing
+  crossing into the JS heap at all. That is the next structural step if scene loads
+  are attacked again.
 - **The overlay build itself (~1.9 s per 500k-triangle model) is unavoidable
   main-thread work while the setting is on.** It is the only remaining
   multi-second op in the load path; a worker (the repo already runs workers for
@@ -440,7 +461,13 @@ mount and there is no shared cache at that layer.
   idle callbacks for geometry swaps, and `hasPendingBackgroundGeometryWork()`
   reports when that queue is still draining, so the UI can stay honest. Routing
   imports through the same seam would remove ~220 ms/model and shrink the
-  "import finished" to "app responsive" gap.
+  "import finished" to "app responsive" gap. Measured on the 13-unique-mesh scene
+  below they are **0.22-0.50 s and 0.17-0.40 s per model** — together about half of
+  the main-thread work an import has left once the native side is off the critical
+  path, which makes them the next step for a scene load (there is no worker to hand
+  them to: `computeFlatteningPlanes` is plain geometry maths that could move to Rust,
+  and `three-mesh-bvh` builds in JS over the position buffer).
+
 - **VOXL original-mesh sidecars are resolved on the import path.** When a VOXL
   has no embedded `ORIG` chunk, `resolveOriginalRefSidecar` falls back to the
   model's on-disk `sourcePath` and `readSidecarFileBytes` fetches it. For a
@@ -448,27 +475,280 @@ mount and there is no shared cache at that layer.
   round-trip) that is a real network attempt per model that can only 404 — noisy
   and awaited, though harmless (the loader falls back to the embedded preview).
 
+### Measured: a 15-model VOXL scene (303 MB, 13 unique meshes, 782 MB of meshes)
+
+Import cost, from the app's own log plus a Rust timing run (`E:/tmp` harness,
+same code path as `load_mesh_bytes`):
+
+| stage | per model | 13 models |
+| --- | --- | --- |
+| loader with the classify pass | 544-553 ms (725k-triangle model) | — |
+| loader without it | 118-121 ms | ~1.5-5 s total |
+| the classify pass itself | 430 ms measured; 641-1736 ms in the app log | **11.9 s** |
+| AO bake (RTX 3080) | 0.38-1.21 s | 7.4 s |
+| BVH build (JS) | 0.22-0.50 s | 3.8 s |
+| flattening planes (JS) | 0.17-0.40 s | 2.9 s |
+| DFMX decode + prep | 0.06-0.15 s | ~1.1 s |
+
+Two conclusions from it. Every model in that file carries a `MODL.classification`
+with a `pre.triangle_count` that matches the payload the loader builds exactly, and
+the loader re-classified all thirteen anyway — the stored report was computed, then
+overwritten by an identical one, for ~34% of the whole load. And the AO bakes, which
+are the GPU's work, were awaited inside each model's prep, so they ran one model at
+a time while the main thread was idle waiting on them.
+
+### Fifth run: the bake takes the loader's mesh (11.1 s)
+
+The other half of the same idea. The loader registers each model's refined mesh as it
+encodes its payload and reports a token in the DFMX header; the bake names it and the
+native side bakes that mesh directly, so neither the soup (430 MB a scene) nor the weld
+(208 ms a bake, 2.7 s a scene) is paid. Measured on the same scene and build:
+
+| | by range | + bake token |
+| --- | --- | --- |
+| build pass | 12.29-13.21 s | **9.72 s** |
+| total | 13.51-13.68 s | **11.15 s** |
+| soup uploads | 13 (430 MB) | **0** |
+| welds | 13 | **0** |
+| token bakes | — | 13 of 13 |
+
+**The gate for it was a measurement, not a hope:** the loader welds at 1e-6 and the bake
+re-weld the same soup at 1e-5, and on a real 725k-triangle model those produce the
+identical vertex set (362,847) and a bit-identical field — rms 0.00000, max 0.00000 over
+2.18M values. So skipping the weld changes nothing about the field, and the token path
+is the same bake on the same mesh.
+
+It is also the one of these four attempts that *helped* on wall clock, for the reason the
+others did not: it removes work (a weld and an upload) rather than adding any. Two guards
+keep it honest, and both are cheap: the token is recorded against the geometry's position
+array and checked against the live one at bake time (a repair, a swap, a clone or a
+rewrite invalidates it), and the native side refuses when its mesh's corner count
+disagrees with the caller's. Either refusal — or an evicted token, the registry holds
+eight — falls back to the soup, which is the path every other geometry takes.
+
+### Fourth run: the mesh chunks stay in the file (13.5 s)
+
+The container's mesh chunks are read by the *native* loader now (`load_mesh_range`), so
+the parse no longer inflates anything for them — the descriptors come out of the
+directory and the loader reads each range inside that model's own build. Measured on
+the same scene and build:
+
+| | eager parse | by range |
+| --- | --- | --- |
+| parse | 1.93-2.76 s | **164 ms** |
+| build pass | 15.3-18.0 s | **13.21 s** |
+| total | 18.2-20.0 s | **13.51 s** |
+| JS mesh bytes held | 677 MB | 0 |
+| per-model native read+inflate | — | 80-228 ms, pipelined |
+
+Backwards compatible by construction: the byte path is the *default*
+(`deferMeshChunks` is opt-in) and is what a source without a path still takes — a file
+out of a zip has no range to give. The range arithmetic is pinned by reading a
+descriptor back out of the file and comparing it to the bytes the eager parse hands
+over, dedup included.
+
+What is left of this idea is its other half: the AO bake still uploads its soup (430 MB
+over a scene — now the largest single piece of traffic left, with the mesh payloads
+down to 337 MB). The geometry could carry the same descriptor and the bake could read
+the range instead, with two guards, because a stale descriptor means a subtly wrong
+field: key the range by the *position array's identity* (a repair, a swap and a clone
+all replace it; an in-place write must clear it), and have the native side refuse when
+the mesh it re-derives is not the size the caller claims.
+
+### Third run: where a scene load goes now (19.4 s)
+
+The app logs one line per scene — `[voxl] load: parse …, build …, place …, commit …,
+total …` — beside the per-model lines, all of it in `dragonfruit.log`. With the parse
+parallel and four builds in flight, on the same 15-model scene:
+
+| phase | measure |
+| --- | --- |
+| container parse | 2.0 s (13 chunks / 677 MB, four streams) |
+| build pass | 17.3 s |
+| ..native load | 3.4 s total (258 ms a model) |
+| ..round trips | 49 s total (3.8 s a model) — the rest is wire + waiting |
+| ..main thread | 6.1 s (prep 203 ms, BVH 228 ms, planes 39 ms a model) |
+| ..AO bakes | 10.4 s total (800 ms a model), overlapped |
+| placement | 3 ms |
+| commit and state | 110 ms |
+
+So the build pass is a *three*-way contention: the wire, one main thread that must
+receive, decode, accelerate and measure every model, and the bakes' own CPU work
+(each bake welds its soup and builds a BVH on the shared rayon pool). Raising
+`VOXL_BUILD_CONCURRENCY` from 2 to 4 took the pass from 19.3 s to 17.1 s and is kept;
+the remaining levers, in the order the numbers put them, are the payload volume (fewer
+bytes a model — see the correction above), the main-thread work a model costs (the BVH
+at 228 ms is the largest single piece), and the bakes' contention. Everything after
+the `commit` line — fifteen geometries' upload, their BVHs and their AO attributes
+reaching the GPU — is in none of these numbers.
+
+### Second run: 35 s -> 21 s, and what is left
+
+After the classification reuse and the parallel bakes, the same file loads in ~21 s
+(app log, 13 unique models; no `classified in` line, and the bakes interleaved with
+the other models' prep). The logged stages in that run are BVH 0.25-0.56 s and
+flattening planes 0.15-0.39 s a model, and two of them were paying for a data
+structure rather than for work:
+
+- **The plane decimation loop keyed its grid cells with a string per vertex.** A
+  `` `${cx},${cy},${cz}` `` built 2.6M times on an 869k-triangle model was 240 ms of
+  the function's 250 ms. Cell indices taken relative to the grid's own corner pack
+  into one integer key and produce the same cells: measured on the file's own
+  meshes, 240 ms -> 50 ms there and 500 ms -> 108 ms on a 1.8M-triangle model.
+- **`three-mesh-bvh`'s default leaf of 10 triangles costs a third more build time
+  than it needs** — 287 ms against 466 ms, and 508 ms against 835 ms on the same
+  two meshes — and asking for 32 was in this branch until `npm run
+  bench:auto-supports -- --check` refused it. The build win is real, but a leaf is
+  not a rendering detail: with a leaf of 32 the overhang-slab forest moves
+  (entities 1754 -> 1757, roots 208 -> 209, probes 3671 -> 291) and the sloped
+  cantilever spends 56 more probes. The router reads raycast results, and a coarser
+  leaf hands it a different answer out of the same set of hits, so the forest
+  follows the data structure. Reverted; the change that makes the forest
+  independent of the tree is the one to land it with, and until then the build
+  time stays. The plane grid's integer key above is unrelated and stays.
+
+What that run did not account for was the gap between a model's native load
+finishing and its prep starting: 0.2-1.8 s, scaling with the payload. Two phases are
+now logged (`[loadMeshFile] native payload … round trip …` and
+`[load_mesh_bytes] parsed, refined and encoded in …`), and a direct probe settles
+what they are.
+
+### The wire was never the problem, and compression was a dead end
+
+Measured from the running app over CDP, invoking `read_print_file_bytes` on files
+of known size — a plain command with no mesh work behind it:
+
+| payload | round trip | rate |
+| --- | --- | --- |
+| 1 KB | 3 ms | fixed latency ~3 ms |
+| 24 MB | 207-232 ms | ~110 MB/s |
+| 96 MB | 674-742 ms | ~135 MB/s |
+
+So the IPC is fast and its overhead is negligible, and the per-model 1.2-1.8 s in
+the import is the **native command**, not the transfer: the JS timer starts before
+`invoke`, so it encloses parse + refine + encode as well as the wire.
+
+That said the payload did not matter — and **that reading was wrong**, because the
+comparison used the wrong metric. What a 13-model build pass pays is the *aggregate*
+volume over a shared channel, not what one model waits on. Measured with 13
+concurrent 70 MB reads through the same command, the channel does **189 MB/s**; during
+the import the effective rate is ~75 MB/s, because the wire and the single main thread
+(receive, decode, BVH, planes) take turns rather than overlapping. A smaller payload
+therefore cuts the transfer *and* the per-model receive, and the round-trip numbers
+below are not the way to judge it.
+
+Shrinking the
+payload looked attractive while the wire was assumed slow: the soup is 72 bytes a
+triangle (52-129 MB a model) and it deflates 2.7x at zlib level 1 on real geometry
+(not the 7x a half-zeroed buffer suggests). It was implemented and measured end to
+end — DFMX v2 with a zlib stream per body, verified on the same 13-model scene —
+and it **lost**: the payloads fell 65.8 -> 24.2 MB and 129.1 -> 48.1 MB, yet the
+round trip only moved 1664 -> 1425 ms, because the bytes were never the cost, while
+`fflate` spent 0.5-1.3 s inflating each body back (and the encoder spent its own
+time compressing). Reverted at the time — see the correction above for why that
+verdict was wrong, and below for what the retry measured.
+
+**The retry, with the native decompressor and the aggregate metric: build 17.3 s ->
+15.4 s** (round trips 49.1 s -> 35.7 s, per-model payloads 65.8 -> 24.2 MB, 2.7x) on
+the same scene, and that is in a *dev* build where `flate2` runs unoptimized — the
+native column of the table below went 258 ms to 512 ms a model to buy the packing.
+In a release build the encode is a fraction of that (36 ms per 868k-triangle model,
+measured with Node's zlib), so the win is larger than what is recorded here. The
+per-body inflate is `DecompressionStream` (see the fflate gotcha under the container
+parse), four bodies at a time, and it added nothing measurable to the main thread
+(prep 203 -> 235 ms a model, within noise).
+
+**The bakes' concurrency is not the binding constraint either** (the third lever, as
+first attacked). Their reported times swing 400 ms - 1.9 s for models of the same
+size, which looks like CPU contention on the rayon pool the loads are refining on, so
+they were gated to two in flight — the figure the idle sweep uses — and the build pass
+went **15.36 -> 17.97 s**. Serially waiting for a bake slot costs more than any pool
+thrashing it avoids: the work is real, it is just overlapped already. Reverted. What
+that leaves is not the *concurrency* of the bakes but their *redundancy* — each one
+welds a 3M-corner soup and builds a BVH over the same mesh the loader welded moments
+earlier — and removing that needs the mesh to travel by reference rather than as a
+re-uploaded soup (see the native-range step under the container parse).
+
+**A scene load's wall time is noisy: two runs of the *same* build measured 15.35 s and
+17.16 s (12%), and the log is shared, so a second instance on the same machine
+contaminates both.** That does not touch the claims above that rest on a *mechanism*
+being measured directly — 11.9 s of duplicate classification, payloads of 65.8 vs 24.2
+MB, round trips summed at 49.1 s vs 35.7 s, 500-1100 ms of main-thread compression per
+model, the parse at 4.6 s vs 1.2 s in Node — but it does put the one-line wall-clock
+deltas (the packing's ~2 s, the extra build width's ~2 s, the bake gate's ~2.6 s) inside
+the noise, and they should be read as "not worse, and less work on a resource the load
+is short of" rather than as measured savings. Anything under two seconds here needs
+three runs and a median; the `[voxl] load:` line makes that cheap to take.
+
+**What a bake actually spends** (instrumented, 13 models, GPU path, dev build):
+
+| phase | mean | sum |
+| --- | --- | --- |
+| weld the soup (`from_triangle_soup_with_corner_map`) | 208 ms | 2.7 s |
+| tree + normals + kernel (`dragonfruit_ao_gpu::bake_smoothed`) | 518 ms | 6.7 s |
+| expand the welded values back onto corners | 4 ms | 0.06 s |
+
+And the tree is not what the `tree + normals + kernel` column is paying for: measured
+in-crate on release builds, `Bvh::build` is **131 ms for 980k triangles** (27 ms at
+245k, 294 ms at 2M), against 518 ms for that whole phase. The rest is the GPU upload,
+the kernel, the readback and the smoothing pass — the occlusion itself, not overhead.
+So of a bake's ~850 ms, the part the mesh-by-reference step would remove **is the weld
+(2.7 s over a scene), the 430 MB upload, and at most 131 ms a model of tree** — and the
+tree only if it is cached, which a scene cannot afford. The tree build and
+kernel stay, and they are the next thing worth attacking on this lever: the tree is
+rebuilt per bake over a mesh the loader had already indexed, and a resident cache for
+it is 30-60 MB a model, which is not affordable for a scene. A cheaper build (a
+coarser split than SAH) is the direction that does not cost memory; the field's
+*values* do not depend on the tree, only the time the rays take.
+
+**The rule both attempts produced: pack what the native side produces, never what the
+renderer must pack.** The bake's soup upload was packed as well — 36 bytes a triangle,
+430 MB across the scene, halved on the wire — and it *lost*: the build pass went
+15.36 s -> 16.64 s, because `CompressionStream` in the webview cost 500-1100 ms a
+model, on the main thread, which is the resource a load is short of, while the upload
+it shrank was already overlapped with the mesh transfers. Native-side packing is nearly
+free (tens of milliseconds in an optimized build) and its inflate runs off-thread;
+packing in the renderer is the expensive direction.
+
+What the numbers leave, in value order, is everything *off* the wire: the container
+parse (4.6 s before any model work), the main-thread geometry work (BVH 0.25-0.50 s
+and flattening planes 0.15-0.40 s a model, now well under a third of what they
+were), and — in a dev build only — the shell being unoptimized, which is most of
+that per-model native load (`Cargo.toml` keeps it that way deliberately: the mesh
+crates are `opt-level = 3`, the shell is not, for incremental builds).
+
 ## STL imports: facets, missing normals, and a shuffled per-vertex attribute
 
 Reported as mottling that appeared on STL imports and not on LYS ones, and
 mistaken for broken baked ambient occlusion. Three separate causes, on the same
 path, none of them in the occlusion estimator:
 
-**1. The loader baked the file's per-face normals into the render.**
+**1. The loader shaded the model with a normal the mesh does not have.**
 The STL response encoder wrote one triangle's normal onto all three of its corners.
-An STL has no vertex normals, so this looked faithful, but with
+An STL has no vertex normals, so that looked faithful, but with
 `flatShading={false}` three *interpolates* a constant and every face is lit by its
 own orientation. Measured on `poussin.stl` (150k triangles, 75k welded vertices),
 counting shared positions shaded by more than one normal: **74976 / 75000 and up
-to 168° apart** before, 0 / 75000 and 0.00° after. Fixed by accumulating face
-normals over the already-welded mesh; `stl_normals_are_smooth_at_shared_vertices`
-pins it.
+to 168° apart**. It was read as a defect at the time and the encoder was changed to
+accumulate face normals over the already-welded mesh — and then, when that average
+drew a forty-five degree ramp across every ninety degree crease, to average only
+the faces within 60° of each corner's own.
 
-This alone was *not* the mottling: rendering the same geometry through the app's
+**Both averages are reverted (issue #797).** They were a shading *look* baked into
+the import, wrong twice over: they paint a smooth surface over the triangulation
+the file describes, so a scan's facets and an imported edge both come out soft, and
+they disagreed with the geometry a repair pass hands back — the renderer recomputes
+*that* per face, so the same model changed its shading the moment it was repaired.
+The encoder writes each triangle's own geometric normal onto its three corners
+again, which `imported_normals_are_each_face_own_geometric_normal` pins. The
+ambient-occlusion bake is untouched: it derives its own welded normals for the probe
+fan (`vertex_occlusion`), and it was the only consumer that ever wanted an average.
+
+This was *not* the mottling: rendering the same geometry through the app's
 material with smooth and with per-face normals differs by **0.5-1.5% mean
 brightness** even under a hard key light (measured in a headless render of the
-real loader output). It is a real defect and it had to go, but it is not what the
-report was about.
+real loader output), so the mosaic reading was about a shading difference smaller
+than the report.
 
 **2. A repaired geometry kept no normals at all.** The Manifold repair rewrote
 positions and index in place and deleted the now-stale `normal` attribute, with a
@@ -502,17 +782,19 @@ actually is — indexed or not, and whether it has normals at all.
 
 Any native command whose output is addressed *by element* — triangle ids,
 per-vertex values, per-region masks — is a place this bug can appear, and it has
-appeared three times now: the island scanner first, overhang classification
-second, the ambient-occlusion bake third. It is worth recognising, because the
-symptom looks like a rendering or a maths problem and is neither.
+appeared four times now: the island scanner first, overhang classification
+second, the ambient-occlusion bake third, and the same bake again when its request
+was moved ahead of the BVH build. It is worth recognising, because the symptom
+looks like a rendering or a maths problem and is neither.
 
 **Symptom.** Misaligned triangles: the values are right for the mesh Rust saw and
 wrong for the mesh on screen, so shading or masks land one element over, or in
 patches that follow no feature of the model. The island scanner's version was
-"disconnected speckles"; the AO bake's was facets that follow the triangulation.
-It shows only on *some* models, which is what makes it feel random.
+"disconnected speckles"; the AO bake's was facets that follow the triangulation, and
+its second version was speckled shading on an imported mesh. It shows only on
+*some* models, which is what makes it feel random.
 
-**Three ways the Rust-side mesh diverges from the frontend's mesh:**
+**Four ways the Rust-side mesh diverges from the frontend's mesh:**
 
 - **The shared staging buffer is process-wide mutable state.** Repair, hole
   punching, hollowing and the next import all write it. A command that stages a
@@ -528,6 +810,16 @@ It shows only on *some* models, which is what makes it feel random.
   back out must use the *same* weld for both directions. Two tolerances disagree
   about which corners are the same vertex, so the expansion reads one mapping's
   ids into a mesh built by the other.
+- **The geometry's index moving while the request is in flight.** A command's
+  values come back addressed against the mesh it was handed, and the mapping back
+  onto the frontend's vertices has to use the corner table the request was built
+  through — not `geometry.getIndex()` when the reply lands. Something as ordinary
+  as building the BVH re-indexes a geometry (`three-mesh-bvh` indexes a soup it is
+  given), and a bake started early to overlap that build mapped its values through
+  the table that existed *afterwards*: the field landed one triangle over.
+  `bakeOcclusionForGeometry` snapshots the table with the request and warns if the
+  live one moved; a guard drops the values outright when the *positions* attribute
+  is replaced under it, because those belong to a mesh that is no longer there.
 
 **The rule.** Send the geometry in the request and return values in the geometry's
 own order or index space. For indexed geometry, map back through the index buffer

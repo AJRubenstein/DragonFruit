@@ -9,12 +9,11 @@
 //!
 //! In: a non-indexed triangle soup in the request body, 9 floats per triangle.
 //! Out: `[u32 triangle count][f32 positions][f32 normals]`, 9 of each per
-//! triangle, normals welded and split at creases (`mesh_core::normals`). The
-//! mesh is welded on the way in, which is what gives the refinement shared edges
-//! to split and the normals adjacency to average over.
+//! triangle, one normal per corner (`mesh_core::normals`). The mesh is welded on
+//! the way in, which is what gives the refinement shared edges to split.
 
 use dragonfruit_mesh_core::mesh::IndexedMesh;
-use dragonfruit_mesh_core::normals::corner_normals;
+use dragonfruit_mesh_core::normals::face_normals;
 use dragonfruit_mesh_core::refine::{
     longest_edge, refine_long_edges_with_budget, refinement_budget, MAX_EDGE_DIAGONAL_FRACTION,
     MAX_PASSES,
@@ -64,7 +63,7 @@ pub async fn refine_mesh_soup(request: Request<'_>) -> Result<Response, String> 
             mesh
         };
 
-        let normals = corner_normals(&refined);
+        let normals = face_normals(&refined);
         let triangles = refined.triangles.len();
         log::info!(
             "[refine_mesh_soup] {} soup triangles -> {} refined in {}ms",
@@ -93,3 +92,4 @@ pub async fn refine_mesh_soup(request: Request<'_>) -> Result<Response, String> 
     .await
     .map_err(|e| format!("refine task panicked: {e}"))?
 }
+

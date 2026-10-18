@@ -132,7 +132,8 @@ export type SharedPanelStackProps = {
   printingSendProgress: number;
   printingSendBusy: boolean;
   printingSendStageText: string | null;
-  printingLayerPreviewUrls: Array<string | null>;
+  printingLayerPreviewUrlAt: (layerNumber: number) => string | null;
+  printingLayerPreviewCount: number;
   printingArtifact: SliceExportArtifact | null;
   printingUploadDialogOpen: boolean;
   printingUploadDialogStage: 'uploading' | 'processing' | 'ready' | 'starting' | 'failed' | 'started';
@@ -170,7 +171,8 @@ export function SharedPanelStack({
   printingSendProgress,
   printingSendBusy,
   printingSendStageText,
-  printingLayerPreviewUrls,
+  printingLayerPreviewUrlAt,
+  printingLayerPreviewCount,
   printingArtifact,
   printingUploadDialogOpen,
   printingUploadDialogStage,
@@ -264,9 +266,9 @@ export function SharedPanelStack({
               <div className="mb-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Preview State
               </div>
-              <div>Preview URLs loaded: {printingLayerPreviewUrls.filter(u => u !== null).length} / {printingPreviewTotalLayers}</div>
-              <div>Selected URL exists: {(printingLayerPreviewUrls[printingSelectedLayer - 1] ?? null) ? 'true' : 'false'}</div>
-              <div>Displayed URL exists: {(printingLayerPreviewUrls[printingDisplayedLayer - 1] ?? null) ? 'true' : 'false'}</div>
+              <div>Preview URLs loaded: {printingLayerPreviewCount} / {printingPreviewTotalLayers}</div>
+              <div>Selected URL exists: {printingLayerPreviewUrlAt(printingSelectedLayer) ? 'true' : 'false'}</div>
+              <div>Displayed URL exists: {printingLayerPreviewUrlAt(printingDisplayedLayer) ? 'true' : 'false'}</div>
               <div>Artifact ready: {printingArtifact ? 'true' : 'false'}</div>
               <div>Artifact name: {printingArtifact?.outputName ?? 'none'}</div>
               <div>Upload dialog open: {printingUploadDialogOpen ? 'true' : 'false'}</div>

@@ -105,7 +105,6 @@ export type SliceExportOrchestratorOptions = {
     exportThumbnailPng?: Uint8Array | null;
     abortSignal?: AbortSignal;
     onProgress?: (done: number, total: number, phase: string) => void;
-    onLayerPreview?: (layerIndex: number, totalLayers: number, pngBytes: Uint8Array) => void;
 };
 
 function encodeBytesToBase64(bytes: Uint8Array): string {

@@ -47,6 +47,14 @@ wording also works on issues it was not tuned on.
 - **Write a `note` for every close call,** so the next person does not relabel
   it the other way and call that progress.
 
+`.github/guts/forms.json` holds the user reports from before the issue forms,
+rewritten as the bug form would have recorded them, keyed by issue number with
+one entry per form question. `evaluate.mjs` sends those instead of the original
+bodies, so the measurement reflects how issues arrive now. Issues filed with
+the form need no entry: their real body is already a form. When rewriting one,
+restate only what the report says, and pick the area the reporter would have
+picked, not the right label.
+
 ## Procedure
 
 All commands run from the repository root and need `GITHUB_TOKEN` (for example
@@ -77,7 +85,9 @@ node .github/guts/evaluate.mjs --split all --save base.json
 node .github/guts/evaluate.mjs --split train --run base.json
 ```
 
-The first command asks Jev about every labelled issue and keeps the answers;
+The first command asks Jev about every labelled issue and keeps the answers
+(`--bodies original` sends the reports as written instead of their
+`forms.json` version, and `--split forms` keeps only the issues that have one);
 the second scores only the `train` split from those answers, without calling
 Jev again. Do not look at `holdout` yet.
 

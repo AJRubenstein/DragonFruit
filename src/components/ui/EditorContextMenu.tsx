@@ -10,6 +10,7 @@ import {
   Scissors,
   ClipboardPaste,
   RefreshCw,
+  Pyramid,
   Trash2,
   Split,
   LifeBuoy,
@@ -33,6 +34,7 @@ export type EditorMenuAction =
   | 'show-repair-report'
   | 'undo-repairs'
   | 'remesh'
+  | 'shrinkwrap'
   | 'split-supports'
   | 'merge-supports'
   | 'supports-toggle-curve'
@@ -116,7 +118,8 @@ export const MENU_ITEMS: MenuItemDef[] = [
     startsGroup: true,
     children: [
       { id: 'repair', label: msg`Auto-Repair`, icon: Wrench },
-      { id: 'remesh', label: msg`Remesh`, icon: RefreshCw },
+      { id: 'remesh', label: msg`Remesh`, icon: Pyramid },
+      { id: 'shrinkwrap', label: msg`Shrink-Wrap`, icon: RefreshCw },
     ],
   },
   // Support scaffolding and geometry designation, each fanned out into a flyout

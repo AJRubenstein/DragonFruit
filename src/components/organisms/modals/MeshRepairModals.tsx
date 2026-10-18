@@ -243,6 +243,7 @@ export function MeshRepairModals({
         <MeshRepairConfirmModal
           prompt={scene.meshRepairConfirmPrompt}
           onRepair={() => scene.resolveMeshRepairConfirmPrompt('repair')}
+          onRepairParts={() => scene.resolveMeshRepairConfirmPrompt('repair_parts')}
           onLoadAsIs={() => scene.resolveMeshRepairConfirmPrompt('load_as_is')}
           onCancelImport={() => scene.resolveMeshRepairConfirmPrompt('cancel_import')}
         />
@@ -343,13 +344,13 @@ export function MeshRepairModals({
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: '#d97706' }} />
                     <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                       {isMultiple
-                        ? <Trans><strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired results will replace these models in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>
-                        : <Trans><strong style={{ color: 'var(--text-strong)' }}>Heads up:</strong> The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>}
+                        ? <Trans>The repaired results will replace these models in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>
+                        : <Trans>The repaired result will replace this model in your current scene. Large or badly damaged meshes can take longer, and some files may still need manual cleanup afterward.</Trans>}
                     </p>
                   </div>
                 </div>
 
-                <div className={autoStartRepair ? 'pt-1' : 'grid grid-cols-2 gap-2 pt-1'}>
+                <div className={autoStartRepair || isManualRepairing ? 'pt-1' : 'grid grid-cols-2 gap-2 pt-1'}>
                   <Button
                     variant="secondary"
                     className="w-full inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
@@ -371,17 +372,15 @@ export function MeshRepairModals({
                       : isManualRepairing ? <Trans>Stop</Trans> : <Trans>Keep Original</Trans>
                     }
                   </Button>
-                  {!autoStartRepair && (
+                  {/* Once the run is under way Stop is the only thing to press: a second button
+                      announcing the repair it is already doing, disabled, is noise beside it. */}
+                  {!autoStartRepair && !isManualRepairing && (
                     <Button
                       variant="tinted-accent"
                       className="w-full inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
-                      disabled={isManualRepairing}
                       onClick={runRepair}
                     >
-                      {isManualRepairing
-                        ? <><Spinner size="sm" /><Trans>Repairing…</Trans></>
-                        : <><Wrench className="h-3.5 w-3.5" /><Trans>Repair</Trans></>
-                      }
+                      <Wrench className="h-3.5 w-3.5" /><Trans>Repair</Trans>
                     </Button>
                   )}
                 </div>

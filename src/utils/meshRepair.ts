@@ -71,18 +71,49 @@ export interface MeshHealthReport {
   /** Specific manifold_csg status string when `model_is_manifold` is false. */
   model_manifold_status?: string | null;
   residual_issues: string[];
+  /** Set when the mesh was repaired as a plate: one entry per part, each with its own verdict.
+   *  Empty for a single-object mesh, which is most of them. */
+  parts?: MeshRepairPartSummary[];
   fully_repaired: boolean;
+  /** True when the mesh in `post` came from the rebuild route rather than from the local pipeline:
+   *  the surface was resolved into a solid, which is a different object rather than the same one
+   *  repaired, so the before/after numbers describe two meshes rather than one mesh twice. */
+  rebuilt: boolean;
   /** True when the run stopped at a stage boundary because the caller asked. */
   cancelled: boolean;
   total_ms: number;
 }
 
+/** One part of a plate, and what repairing it on its own came to. */
+export interface MeshRepairPartSummary {
+  index: number;
+  triangles_before: number;
+  triangles_after: number;
+  fully_repaired: boolean;
+  residual_issues: string[];
+}
+
 export interface MeshRepairOptions {
-  weldEpsilon?: number;
+  weldToleranceMm?: number;
   fillHolesMaxEdges?: number;
   keepLargestNComponents?: number | null;
   repairOrientation?: boolean;
   resolveSelfIntersections?: boolean;
+  /**
+   * Cut the edges no winding assignment can satisfy, as a last resort after every other pass.
+   *
+   * Off by default: it settles the winding class with geometry — the region is one face from each
+   * unsatisfiable edge, and the vertices it shares with the rest of the surface are duplicated.
+   * Kept only when it helps. Measured on `Gusano_de_Dune_70%.stl`: winding 1,374 -> 0, non-manifold
+   * edges 196 -> 97, pinched vertices 338 -> 188.
+   */
+  cutUnsatisfiableEdges?: boolean;
+  /**
+   * Let the repair fall back to the surface-to-solid rebuild when the local pipeline cannot settle
+   * the mesh. On by default, and judged: kept only when it is fully repaired or strictly better.
+   * The surface moves when it runs, and the report says so.
+   */
+  allowRebuild?: boolean;
   assumeSupportGeometry?: boolean;
 }
 
@@ -136,6 +167,7 @@ interface RawMeshHealthReport extends UnknownRecord {
   model_is_manifold?: unknown;
   model_manifold_status?: unknown;
   residual_issues?: unknown;
+  rebuilt?: unknown;
   fully_repaired?: unknown;
   cancelled?: unknown;
   total_ms?: unknown;
@@ -217,7 +249,20 @@ function normalizeMeshHealthReport(input: unknown): MeshHealthReport {
       : null,
     model_is_manifold: typeof raw.model_is_manifold === 'boolean' ? raw.model_is_manifold : null,
     model_manifold_status: typeof raw.model_manifold_status === 'string' ? raw.model_manifold_status : null,
+    rebuilt: asBoolean(raw.rebuilt),
     residual_issues: asStringArray(raw.residual_issues),
+    parts: Array.isArray(raw.parts)
+      ? raw.parts.map((entry) => {
+        const part = asRecord(entry);
+        return {
+          index: asNumber(part.index),
+          triangles_before: asNumber(part.triangles_before),
+          triangles_after: asNumber(part.triangles_after),
+          fully_repaired: asBoolean(part.fully_repaired),
+          residual_issues: asStringArray(part.residual_issues),
+        };
+      })
+      : [],
     fully_repaired: asBoolean(raw.fully_repaired),
     cancelled: asBoolean(raw.cancelled),
     total_ms: asNumber(raw.total_ms),
@@ -254,6 +299,54 @@ export async function repairFromPath(
 
   try {
     const reportJson = await core.invoke<string>('mesh_repair_from_path', {
+      filePath,
+      optionsJson,
+      progressToken: token,
+    });
+    const report = normalizeMeshHealthReport(JSON.parse(reportJson));
+    const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+    return { report, positions };
+  } finally {
+    unlisten?.();
+  }
+}
+
+/**
+ * Repairs a plate part by part: the shells that meet stay together as one object, each object is
+ * repaired on its own, and the result comes back as one mesh with a verdict per object.
+ *
+ * The difference from {@link repairFromPath} is the unit. A file that is 25 objects gets one verdict
+ * for all of them from the whole-file pass, which says nothing about which object is the problem;
+ * this returns the same shape with `report.parts` filled in, so a caller can say "26 of 39 parts
+ * repaired" and name the ones that are not. Returns null outside Tauri, or when the mesh is one
+ * object (in which case `repairFromPath` is the right call).
+ */
+export async function repairPartsFromPath(
+  filePath: string,
+  options: MeshRepairOptions = {},
+  sink?: MeshRepairProgressSink,
+): Promise<MeshRepairResult | null> {
+  const core = await loadTauriCore();
+  if (!core) return null;
+  const optionsPayload = {
+    ...options,
+    assume_support_geometry: options.assumeSupportGeometry,
+  };
+  const optionsJson = JSON.stringify(optionsPayload);
+
+  const wantsProgress = Boolean(sink?.onProgress || sink?.onToken);
+  const token = wantsProgress ? crypto.randomUUID() : null;
+  let unlisten: (() => void) | null = null;
+  if (token && sink) {
+    sink.onToken?.(token);
+    unlisten = await core.listen<MeshRepairProgress>('mesh-repair-progress', (event) => {
+      const progress = event.payload;
+      if (progress && progress.token === token) sink.onProgress?.(progress);
+    });
+  }
+
+  try {
+    const reportJson = await core.invoke<string>('mesh_repair_parts_from_path', {
       filePath,
       optionsJson,
       progressToken: token,

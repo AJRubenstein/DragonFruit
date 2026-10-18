@@ -10,7 +10,13 @@
 
 use std::path::PathBuf;
 
-use dragonfruit_mesh_repair::{analyze, evaluate::evaluate, repair_path, RepairOptions};
+use dragonfruit_mesh_repair::{analyze, evaluate::evaluate, repair_path, RepairOptions, RepairOutcome};
+
+/// The automatic route, from a path — what the app's auto-repair calls.
+fn repair_path_auto(path: &std::path::Path) -> Result<RepairOutcome, dragonfruit_mesh_repair::MeshRepairError> {
+    let mesh = dragonfruit_mesh_repair::io::load_mesh_from_path(path)?;
+    Ok(dragonfruit_mesh_repair::repair_auto(mesh, &RepairOptions::default()))
+}
 
 fn reference(name: &str) -> Option<PathBuf> {
     let dir = std::env::var("MESH_REPAIR_REFERENCE_DIR")
@@ -87,5 +93,61 @@ fn benchy_is_kept_from_a_clean_verdict_by_a_real_defect() {
     assert!(
         analyze(&outcome.mesh).triangle_count > 0,
         "and the mesh is still there"
+    );
+}
+
+/// `Gusano_de_Dune_70%.stl` is the file the corpus sweep could not settle, and the automatic route
+/// settles it.
+///
+/// The local pipeline cannot: it arrives with 3,513 non-manifold edges inside 302 shells, and the
+/// winding residue is one no assignment satisfies — a cycle of faces whose parities sum to an odd
+/// number. The cut takes that class to zero and the mesh is still not clean, so the route falls back
+/// to the surface-to-solid rebuild, which comes out `fully_repaired` at the cost of a surface that
+/// moved. What is asserted is the verdict and the disclosure: a rebuild that moves the model has to
+/// say so.
+#[cfg(feature = "manifold")]
+#[test]
+fn the_automatic_route_settles_a_mesh_the_local_pipeline_cannot() {
+    let Some(path) = reference("Gusano_de_Dune_70%.stl") else {
+        return;
+    };
+    let outcome = repair_path_auto(&path).expect("Gusano_de_Dune_70%.stl should load");
+    assert!(
+        outcome.report.fully_repaired,
+        "the automatic route is for exactly this file: {:?}",
+        outcome.report.residual_issues
+    );
+    assert!(
+        outcome.report.residual_issues.iter().any(|n| n.contains("rebuilt rather than repaired")),
+        "and it says the surface moved: {:?}",
+        outcome.report.residual_issues
+    );
+}
+
+/// The same file with the rebuild forbidden: the local result is handed back with its residue, and
+/// nothing pretends otherwise.
+///
+/// Not gated on the manifold feature, unlike the test above: this is the route that runs whatever is
+/// compiled in.
+#[test]
+fn the_same_file_without_the_rebuild_keeps_its_residue_and_says_so() {
+    let Some(path) = reference("Gusano_de_Dune_70%.stl") else {
+        return;
+    };
+    let outcome = repair_path(
+        &path,
+        &RepairOptions {
+            allow_rebuild: false,
+            ..RepairOptions::default()
+        },
+    )
+    .expect("Gusano_de_Dune_70%.stl should load");
+    assert!(
+        !outcome.report.fully_repaired,
+        "the local pipeline cannot settle this one"
+    );
+    assert_eq!(
+        outcome.report.post.inconsistent_winding_edges, 0,
+        "the cut settles the class that flipping cannot"
     );
 }

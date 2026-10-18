@@ -33,7 +33,7 @@ function createDummyGeometry(): THREE.BufferGeometry {
   return geom;
 }
 
-test('splitSupports assigns isSupportGeometry: false to model and isSupportGeometry: true to support geometry', () => {
+test('splitSupports assigns isSupportGeometry: false to model and isSupportGeometry: true to support geometry', async () => {
   const geom = createDummyGeometry();
   const source: LoadedModel = {
     id: 'orig-model-1',
@@ -58,6 +58,7 @@ test('splitSupports assigns isSupportGeometry: false to model and isSupportGeome
           likely_support_geometry: false,
           residual_issues: [],
           fully_repaired: true,
+          rebuilt: false,
           cancelled: false,
           total_ms: 0,
           model_triangle_count: 1,
@@ -162,7 +163,7 @@ test('VOXL V2 binary round-trip persistence for split support model', async () =
   ]);
 
   const binary = await serializeVoxlDocumentV2(input, meshBytes);
-  const parsedResult = parseVoxlBinaryV2(binary);
+  const parsedResult = await parseVoxlBinaryV2(binary);
 
   assert.equal(parsedResult.document.models.length, 2);
   const parsedModel = parsedResult.document.models.find((m) => m.id === 'model-part-v2');

@@ -409,3 +409,10 @@
 - Careful: scope it to what knip says is reachable, and see the existing
   `src/hotkeys` entry — lint cannot go into CI until a scope reaches zero. The
   workable order is clear one scope, then gate that scope with `--max-warnings 0`.
+
+### [perf] Make the layer-preview cache LRU, not FIFO — S · low risk
+- Where: `cachePreview` and `layerPreview` reads in src/features/printing/slicedPlates.ts.
+- What: the per-plate cache (24 layers) evicts in read order; looking at a cached layer
+  again does not refresh it, so a layer you keep returning to can be dropped first.
+- Why: minor — the cache is small and a dropped layer is just read again from the archive.
+  Refreshing needs care: the snapshot's preview maps are read during render.

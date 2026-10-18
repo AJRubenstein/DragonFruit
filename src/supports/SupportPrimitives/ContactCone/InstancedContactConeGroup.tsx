@@ -9,6 +9,7 @@ import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
 import { writeInstanceColors } from '../instanceColorWriter';
 import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
+import { supportAnswersPointer } from '@/features/scene/plates/plateInteractivity';
 import { subscribeToProfileStore, getProfileStoreSnapshot, getProfileStoreServerSnapshot, getActiveMaterialProfile, getActivePrinterProfile } from '@/features/profiles/profileStore';
 import { calculateTipOffset } from '@/supports/rendering/calculateTipOffset';
 import { quantizeToScale } from '@/utils/math';
@@ -67,6 +68,8 @@ interface InstancedContactConeGroupProps {
      * few and large: the batch is keyed on the tip's shape ratio alone.
      */
     grabRadiusAt?: (distance: number) => number;
+    /** Models on another bed: their cones stay out of the hover index. See InstancedShaftGroup. */
+    pointerSceneryModelIds?: ReadonlySet<string>;
     /**
      * Raycast override, for a caller that wants to answer hover itself.
      */
@@ -191,6 +194,7 @@ function ConeBucketMesh({
     instanceColor,
     isHidden,
     grabRadiusAt,
+    pointerSceneryModelIds,
     raycast,
     onConeClick,
     onConePointerDown,
@@ -212,6 +216,8 @@ function ConeBucketMesh({
     instanceColor?: (cone: InstancedContactCone) => THREE.Color;
     isHidden?: (cone: InstancedContactCone) => boolean;
     grabRadiusAt?: (distance: number) => number;
+    /** Models on another bed: their cones stay out of the hover index. See InstancedShaftGroup. */
+    pointerSceneryModelIds?: ReadonlySet<string>;
     raycast?: THREE.Object3D['raycast'];
     onConeClick?: (cone: InstancedContactCone, event: ThreeEvent<MouseEvent>) => void;
     onConePointerDown?: (cone: InstancedContactCone, event: ThreeEvent<PointerEvent>) => void;
@@ -254,9 +260,10 @@ function ConeBucketMesh({
                 radius: Math.max(0.2, (cone.profile.contactDiameterMm ?? 1) / 2),
             };
         });
-        const index = buildProxyHoverIndex(targets);
+        const pickable = targets.filter((target) => supportAnswersPointer(target.modelId, pointerSceneryModelIds));
+        const index = buildProxyHoverIndex(pickable);
         return index ? createProxyHoverRaycast(index, grabRadiusAt) : undefined;
-    }, [grabRadiusAt, bucket.cones]);
+    }, [grabRadiusAt, bucket.cones, pointerSceneryModelIds]);
 
     const writeConeMatrices = React.useCallback((index: number, cone: InstancedContactCone, hidden: boolean) => {
         const meshes = [diskRef.current, bodyRef.current, tipSphereRef.current, overlayDiskRef.current, overlayBodyRef.current, overlayTipSphereRef.current];
@@ -553,6 +560,7 @@ export function InstancedContactConeGroup({
     instanceColor,
     isHidden,
     grabRadiusAt,
+    pointerSceneryModelIds,
     raycast,
     onConeClick,
     onConePointerDown,
@@ -641,6 +649,7 @@ export function InstancedContactConeGroup({
                     instanceColor={instanceColor}
                     isHidden={isHidden}
                     grabRadiusAt={grabRadiusAt}
+                    pointerSceneryModelIds={pointerSceneryModelIds}
                     raycast={raycast}
                     onConeClick={onConeClick}
                     onConePointerDown={onConePointerDown}

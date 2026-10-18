@@ -24,7 +24,7 @@ test('plates round-trip with their ids and names', async () => {
     plates: [{ id: 'plate-a', name: 'Left bed' }],
   };
 
-  const parsed = parseVoxlBinaryV2(await serializeVoxlDocumentV2(input, new Map()));
+  const parsed = await parseVoxlBinaryV2(await serializeVoxlDocumentV2(input, new Map()));
 
   assert.deepEqual(parsed.document.scene.plates, [{ id: 'plate-a', name: 'Left bed' }]);
 });
@@ -67,7 +67,7 @@ test('an unnamed plate writes no shorthand, and several plates cannot', async ()
   assert.equal(plates.length, 2);
 });
 
-test('readScenePlates takes a plate list at its word', () => {
+test('readScenePlates takes a plate list at its word', async () => {
   assert.deepEqual(
     readScenePlates({
       activeModelId: null,
@@ -80,7 +80,7 @@ test('readScenePlates takes a plate list at its word', () => {
   );
 });
 
-test('readScenePlates falls back to the shorthand and to a plate with no identity', () => {
+test('readScenePlates falls back to the shorthand and to a plate with no identity', async () => {
   // A file written before plates carries only the shorthand.
   assert.deepEqual(
     readScenePlates({ activeModelId: null, selectedModelIds: [], plateName: 'Bed' }),
@@ -94,7 +94,7 @@ test('readScenePlates falls back to the shorthand and to a plate with no identit
   );
 });
 
-test('readScenePlates ignores a cursor that names no plate, and drops empty names', () => {
+test('readScenePlates ignores a cursor that names no plate, and drops empty names', async () => {
   assert.deepEqual(
     readScenePlates({
       activeModelId: null,
@@ -115,7 +115,7 @@ test('plate membership and the active cursor round-trip', async () => {
   input.models[1].plateId = 'plate-b';
 
   const binary = await serializeVoxlDocumentV2(input, new Map());
-  const parsed = parseVoxlBinaryV2(binary);
+  const parsed = await parseVoxlBinaryV2(binary);
 
   assert.equal(parsed.document.scene.activePlateId, 'plate-b');
   assert.equal(parsed.document.models[1].plateId, 'plate-b');
@@ -152,7 +152,7 @@ test('the printer a scene was written for round-trips in the document meta', asy
     new Map(),
   );
 
-  assert.deepEqual(parseVoxlBinaryV2(binary).document.meta.printer, printer);
+  assert.deepEqual((await parseVoxlBinaryV2(binary)).document.meta.printer, printer);
   assert.deepEqual(chunkRecord(binary, 'META').printer, printer);
 });
 

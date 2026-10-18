@@ -8,6 +8,7 @@ import {
     splitBatchedShafts,
 } from '../../Curves/batchedBezierTubeGeometry';
 import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
+import { supportAnswersPointer } from '@/features/scene/plates/plateInteractivity';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
 import { noteActivity } from '@/utils/debug/heartbeatContext';
@@ -65,6 +66,13 @@ interface InstancedShaftGroupProps {
      * drawn - and every hit past it resolves to a neighbouring support.
      */
     grabRadiusAt?: (distance: number) => number;
+    /**
+     * Models whose supports answer no pointer — the ones standing on another bed. Their
+     * shafts are left out of the hover index rather than tested and discarded: the index
+     * is the whole per-move cost of this batch, so a bed nobody is working on costs
+     * nothing to sweep the cursor over.
+     */
+    pointerSceneryModelIds?: ReadonlySet<string>;
     onShaftClick?: (shaft: InstancedShaft, event: ThreeEvent<MouseEvent>) => void;
     onShaftPointerDown?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
     onShaftPointerMove?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
@@ -97,6 +105,7 @@ export function InstancedShaftGroup({
     instanceColor,
     isHidden,
     grabRadiusAt,
+    pointerSceneryModelIds,
     onShaftClick,
     onShaftPointerDown,
     onShaftPointerMove,
@@ -120,10 +129,10 @@ export function InstancedShaftGroup({
             start: shaft.start,
             end: shaft.end,
             radius: Math.max(0.2, shaft.diameter / 2),
-        }));
+        })).filter((target) => supportAnswersPointer(target.modelId, pointerSceneryModelIds));
         const index = buildProxyHoverIndex(targets);
         return index ? createProxyHoverRaycast(index, grabRadiusAt) : undefined;
-    }, [grabRadiusAt, straightShafts]);
+    }, [grabRadiusAt, straightShafts, pointerSceneryModelIds]);
 
     // A merged tube mesh has one material, so a caller that tints individual
     // shafts gets one merged mesh per colour rather than vertex colours: the

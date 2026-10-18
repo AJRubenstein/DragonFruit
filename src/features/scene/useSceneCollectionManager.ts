@@ -4,7 +4,9 @@ import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import * as THREE from 'three';
 import { loadTauriCore, refineCoarseFaces } from '@/utils/tauriMeshBridge';
-import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
+import { solidRemeshFromGeometry, tetSurfaceFromGeometry, type SolidRemeshProgressSink, type SolidRemeshOptions, type TetSurfaceProgressSink, type TetWrapOptions } from '@/utils/meshShrinkwrap';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import { loadMeshGeometry, loadMeshGeometryFromRange, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
 import { loadMeshFromPath } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
@@ -15,7 +17,7 @@ import {
   readPlateOrdering,
   type PlateOrdering,
 } from '@/features/scene/plates/plateCascade';
-import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef, type VoxlMeshRange } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, resetStore, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -29,6 +31,7 @@ import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginC
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
 import { runWithConcurrency } from '@/utils/runWithConcurrency';
+import { logToNativeFile } from '@/utils/nativeLog';
 import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, bumpBakedOcclusionVersion, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
 import { computeProjectedFootprintSize } from '@/utils/modelFootprint';
 import { shelfPack, type ShelfItem } from '@/features/scene/arrange/shelfPack';
@@ -67,9 +70,12 @@ import { duplicatedModelName, pastedModelName } from '@/features/scene/modelCopy
 import {
   repairCancelledMessage,
   repairedModelsMessage,
+  remeshedMessage,
   repairFailedForModelMessage,
   repairFailedMessage,
   repairStoppedMessage,
+  tetSurfacedMessage,
+  shrinkWrappedMessage,
 } from '@/features/scene/meshRepairMessages';
 import {
   addPlateLabel,
@@ -95,10 +101,13 @@ import {
   SCENE_CHANGE_LABEL,
   showModelLabel,
   SLICE_SCENE_LABEL,
+  shrinkWrapModelLabel,
   splitModelLabel,
   splitSupportsLabel,
   SWITCH_PRINTER_LABEL,
   switchPrinterLabel,
+  tetSurfaceModelLabel,
+  solidRemeshModelLabel,
   transformModelLabel,
   transformModelsLabel,
   unlinkModelsLabel,
@@ -191,12 +200,20 @@ type PersistedMeshAppearance = {
 const AO_BAKE_CONCURRENCY = 2;
 
 /**
- * VOXL meshes built at once. Same reasoning as the bake concurrency: each build is
- * a native round trip with serial phases (parse, refine, classify) around a parallel
- * one (the bake), and both commands share one rayon pool, so two is where one
- * model's serial phase starts running during another's.
+ * VOXL meshes built at once.
+ *
+ * Was two, on the reasoning that each build is a native round trip whose serial
+ * phases want overlapping. Measured on the 13-model scene, two left both workers
+ * stalled: the native load is only 0.17-0.25 s (`[load_mesh_bytes] parsed, refined
+ * and encoded in …`) while the round trip a build waits on is 1.4-2.3 s, because
+ * the wire (65-81 MB a model at ~125 MB/s) and the *single main thread* that
+ * decodes, accelerates and computes planes for each model are shared resources. A
+ * build's own work is ~1.2 s of that, so the rest is one worker waiting for the
+ * other's turn. Four in flight keeps the wire busy and gives the main thread a
+ * queue to work through instead of handing it one model at a time. The cost is
+ * memory: each in-flight build holds its payload (52-81 MB here) and its geometry.
  */
-const VOXL_BUILD_CONCURRENCY = 2;
+const VOXL_BUILD_CONCURRENCY = 4;
 
 /**
  * How many beds a paste will add for the copies that do not fit the plate being worked
@@ -1219,6 +1236,13 @@ function geometryPositionsAsSoup(geometry: THREE.BufferGeometry): Float32Array |
 export type MeshRepairConfirmPrompt = {
   fileName: string;
   analysis: MeshAnalysisJson;
+  /**
+   * Whether the file can be repaired part by part. A plate imports as one model with many
+   * components, and repairing it whole returns one verdict for all of them; the parts flow returns
+   * a verdict per object instead. Offered only when the import has a file behind it, since the
+   * parts flow reads the source.
+   */
+  canRepairParts: boolean;
 };
 
 /** A scene refused because it was saved by a VOXL generation we no longer read. */
@@ -1252,7 +1276,7 @@ export type PrinterMismatchPrompt = {
   currentIsSmaller: boolean;
 };
 
-type MeshRepairConfirmChoice = 'repair' | 'load_as_is' | 'cancel_import';
+type MeshRepairConfirmChoice = 'repair' | 'repair_parts' | 'load_as_is' | 'cancel_import';
 
 type ModelClipboardEntry = {
   sourceId: string;
@@ -1357,6 +1381,7 @@ export function useSceneCollectionManager(options?: {
   onBlockedByLock?: (plateId?: string) => void;
 }) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
 
   type ScenePluginImportEntry = {
     pluginId: string;
@@ -1587,6 +1612,8 @@ export function useSceneCollectionManager(options?: {
   // Models whose AO volume bake is queued or awaiting the native round trip.
   // Part of hasPendingBackgroundGeometryWork.
   const pendingAoBakeRef = useRef(0);
+  /** The AO sweep's remaining work, replaced wholesale on every run. */
+  const pendingAoQueueRef = useRef<string[]>([]);
   // Geometries with a bake in flight. The attribute lands only when the bake
   // resolves, so without this the queue rebuilt on a later `models` change would
   // send the same soup a second time — measured as 25 bakes of one mesh in three
@@ -2445,6 +2472,7 @@ export function useSceneCollectionManager(options?: {
     || deferredDisposalProcessingRef.current
     || pendingFlatteningPlanesRef.current > 0
     || pendingAoBakeRef.current > 0
+    || pendingAoQueueRef.current.length > 0
   ), []);
 
   const processDeferredDisposalQueue = useCallback(() => {
@@ -2815,9 +2843,25 @@ export function useSceneCollectionManager(options?: {
               }
             },
             onConfirmHeavyRepair: async (analysis: MeshAnalysisJson) => {
-              const choice = await requestMeshRepairConfirmation({ fileName: file.name, analysis });
+              const choice = await requestMeshRepairConfirmation({
+                fileName: file.name,
+                analysis,
+                canRepairParts: Boolean((file as File & { filePath?: string }).filePath),
+              });
               if (choice === 'cancel_import') {
                 throw new Error('MESH_IMPORT_CANCELLED_BY_USER');
+              }
+              if (choice === 'repair_parts') {
+                setImportProgress({
+                  active: true,
+                  type: 'mesh',
+                  label: importLabelAutoRepairing(files.length, _),
+                  detail: files.length > 1
+                    ? importDetailIndexedFile(i + 1, files.length, file.name, _)
+                    : importDetailAutoRepairingFile(file.name, _),
+                  progress: null,
+                });
+                return 'repair_parts';
               }
               if (choice === 'repair') {
                 setImportProgress({
@@ -2830,7 +2874,7 @@ export function useSceneCollectionManager(options?: {
                   progress: null,
                 });
               }
-              return choice === 'repair';
+              return choice === 'load_as_is' ? 'skip' : choice;
             },
           } satisfies ProcessGeometryOptions;
 
@@ -3891,6 +3935,12 @@ export function useSceneCollectionManager(options?: {
    * paid per frame afterwards.
    */
   useEffect(() => {
+    // Whatever the last run left, this one owns the queue from here: cleared
+    // before any early return, because a stale one keeps
+    // `hasPendingBackgroundGeometryWork()` true for work nobody will do (the
+    // modifier-apply overlay polls it to clear its spinner).
+    pendingAoQueueRef.current = [];
+
     // Zero intensity means off, so there is nothing to bake for: raising the
     // slider later re-runs this and the geometries that never got an attribute
     // are the ones that get baked.
@@ -3911,8 +3961,14 @@ export function useSceneCollectionManager(options?: {
       .map((model) => model.id);
     if (queue.length === 0) return;
 
+    // What this run still has to bake, as a ref as well as a local: the workers
+    // below shift the same array, so the ref is the live remainder and
+    // `hasPendingBackgroundGeometryWork` can read it without the run's own
+    // bookkeeping. Re-derived on every run, so a superseded run cannot leave
+    // anything counted.
+    pendingAoQueueRef.current = queue;
+
     let cancelled = false;
-    pendingAoBakeRef.current += queue.length;
 
     const scheduleIdle = (cb: () => void) => {
       if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -3926,6 +3982,14 @@ export function useSceneCollectionManager(options?: {
       if (cancelled) return;
       const id = queue.shift();
       if (!id) return;
+      // Taken, so in flight: the counter rides the take, not the whole queue. It
+      // used to be `+= queue.length` at the top of the run and decremented per
+      // bake, so the items a superseded run never took stayed counted — and every
+      // `models` change while a bake was queued (a hollowing apply patches them,
+      // the idle plane pass patches them again) leaked one. The "finalizing"
+      // overlay then waited out its 20 s cap after every hollow, with all the
+      // work done in the first 200 ms.
+      pendingAoBakeRef.current += 1;
       const model = modelsRef.current.find((m) => m.id === id);
       const geometry = model?.geometry.geometry;
       if (geometry) pendingAoGeometriesRef.current.add(geometry);
@@ -4289,6 +4353,7 @@ export function useSceneCollectionManager(options?: {
         likely_support_geometry: true,
         residual_issues: [],
         fully_repaired: true,
+        rebuilt: false,
         cancelled: false,
         total_ms: 0,
       },
@@ -4514,6 +4579,7 @@ export function useSceneCollectionManager(options?: {
           model_triangle_count: modelTriangleCount,
           residual_issues: [],
           fully_repaired: true,
+          rebuilt: false,
           cancelled: false,
           total_ms: 0,
         },
@@ -5764,8 +5830,8 @@ export function useSceneCollectionManager(options?: {
       for (const normalized of normalizedPayloads) {
         // The plugin built this geometry in the renderer, so it has not been
         // through the native loaders that refine coarse faces. Refine it here, and
-        // keep the normals the command returns: they are welded and split at
-        // creases, which `computeVertexNormals` would flatten again.
+        // keep the normals the command returns: it ships one per face, so there is
+        // nothing left for `computeVertexNormals` to derive.
         let geometry = normalized.geometry;
         // Bake the cavity in first, so refine, classification and the BVH all
         // describe the hollow solid rather than the shell that encloses it.
@@ -6255,7 +6321,22 @@ export function useSceneCollectionManager(options?: {
         throw new Error('Not a VOXL file: the VOXL binary header is missing.');
       }
 
-      const parsed = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
+      const importStarted = performance.now();
+      let committedAt = 0;
+      // The file's own path, when it has one: that is what lets the native loader
+      // read a mesh chunk by range instead of receiving its bytes. Same expression
+      // the sidecar resolution below uses.
+      const voxlPath = (file as File & { path?: string; filePath?: string }).path
+        || (file as File & { filePath?: string }).filePath
+        || options?.sourcePath
+        || undefined;
+      // With a path, the 13 mesh chunks (677 MB, ~2 s of inflate before any model
+      // work starts) stay where they are and the loader inflates each one itself.
+      // Without one — a zip entry, a synthesized file — nothing changes.
+      const parsed = await parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()), {
+        deferMeshChunks: Boolean(voxlPath),
+      });
+      const parsedAt = performance.now();
       const document: VoxlDocumentV1 = parsed.document;
       const resolvedMeshBytes: Map<string, Uint8Array> = parsed.meshBytes;
       const resolvedOriginalMeshBytes = parsed.originalMeshBytes;
@@ -6303,20 +6384,33 @@ export function useSceneCollectionManager(options?: {
       const hashByModelId = new Map<string, string>();
       const uniqueBuilds = new Map<
         string,
-        { bytes: Uint8Array; name: string; model: (typeof document.models)[number] }
+        {
+          bytes?: Uint8Array;
+          range?: VoxlMeshRange;
+          name: string;
+          model: (typeof document.models)[number];
+        }
       >();
-      for (const model of document.models) {
+      const meshRanges = parsed.meshRanges;
+      for (const [index, model] of document.models.entries()) {
         const meshRef = model.mesh;
         const bytes = resolvedMeshBytes.get(model.id);
-        if (!meshRef || meshRef.mode !== 'embedded-chunk' || !bytes) continue;
+        const range = meshRanges?.get(model.id);
+        if (!meshRef || meshRef.mode !== 'embedded-chunk' || (!bytes && !range)) continue;
         const declaredSha = typeof meshRef.sha256 === 'string' && meshRef.sha256.trim().length > 0
           ? meshRef.sha256.trim().toLowerCase()
           : undefined;
-        const contentHash = declaredSha ?? (await sha256Hex(bytes));
+        // A deferred chunk has no bytes to hash. Its identity inside the file is its
+        // chunk anyway — a V3 duplicate points at the owner's chunk — so the chunk
+        // index is the dedup key, and it is stable for the whole parse.
+        const contentHash = declaredSha
+          ?? (range
+            ? `chunk:${typeof meshRef.chunkIndex === 'number' ? meshRef.chunkIndex : index}`
+            : await sha256Hex(bytes!));
         hashByModelId.set(model.id, contentHash);
         if (builtGeometryByHash.has(contentHash) || uniqueBuilds.has(contentHash)) continue;
         uniqueBuilds.set(contentHash, {
-          bytes,
+          ...(bytes ? { bytes } : { range: range! }),
           name: meshRef.fileName?.trim() || `${model.name || 'model'}.stl`,
           model,
         });
@@ -6324,9 +6418,23 @@ export function useSceneCollectionManager(options?: {
       if (uniqueBuilds.size > 0) {
         let finished = 0;
         const buildCount = uniqueBuilds.size;
+        // Every mesh's occlusion bake is left in flight rather than awaited per
+        // model: it is the GPU's work (0.4-1.2 s a model on the scene this was
+        // measured against) while the remaining meshes are still being parsed,
+        // refined and classified, and running them one model at a time left the
+        // GPU idle for most of the load. They are all awaited below, before any
+        // model is placed, so each one's first frame still carries its occlusion
+        // — the pop-in that baking after the fact produced.
+        const pendingOcclusionBakes: Array<Promise<boolean>> = [];
         await runWithConcurrency([...uniqueBuilds], VOXL_BUILD_CONCURRENCY, async ([hash, spec]) => {
           try {
-            const built = await loadMeshGeometry(spec.bytes, spec.name, buildOptionsFor(spec.model));
+            const options = {
+              ...buildOptionsFor(spec.model),
+              _deferOcclusionBake: (bake: Promise<boolean>) => pendingOcclusionBakes.push(bake),
+            };
+            const built = spec.range && voxlPath
+              ? await loadMeshGeometryFromRange(voxlPath, spec.range, spec.name, options)
+              : await loadMeshGeometry(spec.bytes!, spec.name, options);
             builtGeometryByHash.set(hash, built);
           } catch (error) {
             // The loop below reports the model as skipped; one mesh that will not
@@ -6342,7 +6450,9 @@ export function useSceneCollectionManager(options?: {
             progress: null,
           });
         });
+        await Promise.all(pendingOcclusionBakes);
       }
+      const builtAt = performance.now();
 
       for (let i = 0; i < document.models.length; i += 1) {
         const model = document.models[i];
@@ -6368,9 +6478,12 @@ export function useSceneCollectionManager(options?: {
           continue;
         }
 
-        // Mesh bytes arrive pre-decoded from the container's MESH chunks.
+        // Mesh bytes arrive pre-decoded from the container's MESH chunks — unless
+        // the parse deferred them, in which case the location is what arrives and
+        // the native loader reads it.
         const meshDataBytes = resolvedMeshBytes.get(model.id);
-        if (!meshDataBytes) {
+        const meshRange = meshRanges?.get(model.id);
+        if (!meshDataBytes && !(meshRange && voxlPath)) {
           console.warn(`[SceneCollection] Skipping VOXL model "${model.name}": missing embedded mesh payload.`);
           skippedModels += 1;
           continue;
@@ -6386,7 +6499,9 @@ export function useSceneCollectionManager(options?: {
               ? meshRef.sha256.trim().toLowerCase()
               : undefined;
           // Computed by the build pass above; the fallback covers a model it skipped.
-          const contentHash = hashByModelId.get(model.id) ?? declaredSha ?? (await sha256Hex(bytes));
+          const contentHash = hashByModelId.get(model.id)
+            ?? declaredSha
+            ?? (bytes ? await sha256Hex(bytes) : `chunk:${typeof meshRef.chunkIndex === 'number' ? meshRef.chunkIndex : i}`);
 
           const cached = builtGeometryByHash.get(contentHash);
           let geometry: GeometryWithBounds;
@@ -6400,7 +6515,11 @@ export function useSceneCollectionManager(options?: {
             );
             geometry = cloneGeometryWithBounds(cached, { shared: true });
           } else {
-            if (declaredSha) {
+            // A deferred chunk has no bytes here to hash: its integrity is the
+            // container's own (the directory ranges are bounds-checked as the file
+            // is parsed) and the loader refuses a short read. The byte-source path
+            // below verifies the declared SHA as before.
+            if (declaredSha && bytes) {
               const actual = await sha256Hex(bytes);
               if (actual !== declaredSha) {
                 throw new Error('VOXL integrity check failed (SHA-256 mismatch).');
@@ -6509,6 +6628,8 @@ export function useSceneCollectionManager(options?: {
         );
       }
 
+      const placedAt = performance.now();
+
       const sourceTransformsByModelId = new Map<string, ModelTransform>();
       for (const imported of importedModels) {
         sourceTransformsByModelId.set(imported.id, cloneTransform(imported.transform));
@@ -6604,21 +6725,20 @@ export function useSceneCollectionManager(options?: {
         }));
 
         setModels((prev) => [...prev, ...importedModels]);
+        committedAt = performance.now();
 
+        // Everything this file brought in is selected, so a freshly opened scene acts
+        // on all of it at once. The file's own selection is deliberately not restored:
+        // a saved scene carries one model's worth in most files, and honouring it left
+        // an import acting on a single model and looking like the rest were not there.
+        // The active model still follows the file, because that is the one the panels
+        // read, and falls back to the first imported model when the file names none.
         const mappedActiveId = (document.scene.activeModelId && idMap.get(document.scene.activeModelId))
           || importedModels[0]?.id
           || null;
 
-        const mappedSelectedIds = document.scene.selectedModelIds
-          .map((id) => idMap.get(id))
-          .filter((id): id is string => typeof id === 'string' && id.length > 0);
-
-        const finalSelected = mappedSelectedIds.length > 0
-          ? mappedSelectedIds
-          : (mappedActiveId ? [mappedActiveId] : []);
-
         setActiveModelId(mappedActiveId);
-        setSelectedModelIds(finalSelected);
+        setSelectedModelIds(importedModels.map((model) => model.id));
 
         // The scene's plates: `plates` is canonical, the older `plateName` is the
         // single-plate shorthand a file written before plates carries. A file with
@@ -6678,6 +6798,21 @@ export function useSceneCollectionManager(options?: {
       const skippedNoun = skippedModels === 1 ? 'model' : 'models';
       const supportsClause = importedSupportCount > 0 ? `, ${importedSupportCount} supports` : '';
       const skippedClause = skippedModels > 0 ? `, skipped ${skippedModels} ${skippedNoun}` : '';
+
+      // Where a scene load went, in the app's own log next to the native timings:
+      // parse, the per-model build pass (native load + prep, with the bakes in
+      // flight), in-order placement, and the commit that hands the models to
+      // React. The frame that follows the commit — every geometry's upload and
+      // BVH reaching the GPU — is *after* this line, which is why the total here
+      // is not the user's wait.
+      const phaseTiming =
+        `[voxl] load: parse ${(parsedAt - importStarted).toFixed(0)}ms, ` +
+        `build ${(builtAt - parsedAt).toFixed(0)}ms, ` +
+        `place ${(placedAt - builtAt).toFixed(0)}ms, ` +
+        `commit ${(committedAt - placedAt).toFixed(0)}ms, ` +
+        `total ${(committedAt - importStarted).toFixed(0)}ms`;
+      console.log(phaseTiming);
+      void logToNativeFile('info', phaseTiming);
 
       if (importedModelCount > 0) {
         if (!options?.suppressReport) {
@@ -7214,6 +7349,112 @@ export function useSceneCollectionManager(options?: {
 
     return allRepaired;
   }, [_, clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
+
+  /**
+   * Rebuild one model's surface with the native tetrahedral surfacing pass and swap the result in
+   * as a single undo step.
+   *
+   * Unlike the shrinkwrap remesh, the decomposition follows the model's own points rather than a
+   * uniform lattice, so fine detail survives and the boundary is closed by construction. The swap
+   * lands in place, keeping the model's transform and its place in the scene. The outcome, with the
+   * before/after triangle counts, is reported as a toast.
+   */
+  const tetSurfaceModelInPlace = useCallback(async (
+    modelId: string,
+    options: TetWrapOptions,
+    progressSink?: TetSurfaceProgressSink,
+  ): Promise<boolean> => {
+    const model = modelsRef.current.find((entry) => entry.id === modelId);
+    if (!model) return false;
+
+    try {
+      const result = await tetSurfaceFromGeometry(model.geometry.geometry, options, progressSink);
+      if (!result) {
+        emitSceneImportReport(_(msg`Remesh needs the desktop app.`), 'warning');
+        return false;
+      }
+      // The pass awaited, so the scene it lands in may no longer hold the model.
+      if (!modelsRef.current.some((entry) => entry.id === modelId)) return false;
+
+      // The pass carries no mesh modifiers, so an empty before-state is what marks this as a
+      // single undo step: the swap is recorded only when a history option is given.
+      const swapped = replaceModelGeometry(modelId, result.geometry, tetSurfaceModelLabel(model.name), {
+        historyBefore: {},
+      });
+      if (!swapped) return false;
+
+      const { report } = result;
+      emitSceneImportReport(
+        tetSurfacedMessage(
+          fmt.number(report.input_triangles),
+          fmt.number(report.output_triangles),
+          fmt.quantity(Math.round(report.ms), 0, 'ms'),
+          _,
+        ),
+        'success',
+      );
+      return true;
+    } catch (error) {
+      console.error('[tetSurfaceModelInPlace] Remesh failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      emitSceneImportReport(_(msg`Remesh failed: ${message}`), 'error', { durationMs: 6_000 });
+      return false;
+    }
+  }, [_, emitSceneImportReport, fmt, replaceModelGeometry]);
+
+  /**
+   * Rebuild one model's surface by resolving it into a solid and swap the result in as a single
+   * undo step.
+   *
+   * This is the mode the reference implementation's shrinkwrap uses: close what is open, boolean the
+   * mesh with itself so the result is resolved and retriangulated, then drop scrap shells. Where the
+   * tetrahedral remesh conforms to the model's own points and hands the same surface back, this one
+   * moves it, so it is for a mesh that is not one solid. The swap lands in place, keeping the
+   * model's transform and its place in the scene. The outcome, with the before/after triangle
+   * counts, is reported as a toast.
+   */
+  const solidRemeshModelInPlace = useCallback(async (
+    modelId: string,
+    options: SolidRemeshOptions,
+    progressSink?: SolidRemeshProgressSink,
+  ): Promise<boolean> => {
+    const model = modelsRef.current.find((entry) => entry.id === modelId);
+    if (!model) return false;
+
+    try {
+      const result = await solidRemeshFromGeometry(model.geometry.geometry, options, progressSink);
+      if (!result) {
+        emitSceneImportReport(_(msg`Shrink-Wrap needs the desktop app.`), 'warning');
+        return false;
+      }
+      // The pass awaited, so the scene it lands in may no longer hold the model.
+      if (!modelsRef.current.some((entry) => entry.id === modelId)) return false;
+
+      // The pass carries no mesh modifiers, so an empty before-state is what marks this as a
+      // single undo step: the swap is recorded only when a history option is given.
+      const swapped = replaceModelGeometry(modelId, result.geometry, solidRemeshModelLabel(model.name), {
+        historyBefore: {},
+      });
+      if (!swapped) return false;
+
+      const { report } = result;
+      emitSceneImportReport(
+        shrinkWrappedMessage(
+          fmt.number(report.input_triangles),
+          fmt.number(report.output_triangles),
+          fmt.quantity(Math.round(report.ms), 0, 'ms'),
+          _,
+        ),
+        'success',
+      );
+      return true;
+    } catch (error) {
+      console.error('[solidRemeshModelInPlace] Shrink-Wrap failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      emitSceneImportReport(_(msg`Shrink-Wrap failed: ${message}`), 'error', { durationMs: 6_000 });
+      return false;
+    }
+  }, [_, emitSceneImportReport, fmt, replaceModelGeometry]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -7935,6 +8176,8 @@ export function useSceneCollectionManager(options?: {
     meshRepairConfirmPrompt,
     resolveMeshRepairConfirmPrompt,
     repairModelsInPlace,
+    tetSurfaceModelInPlace,
+    solidRemeshModelInPlace,
     recentOpenedFiles,
     reopenRecentOpenedFile,
     clearRecentOpenedFiles,

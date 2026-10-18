@@ -2,10 +2,11 @@ use std::collections::{BTreeMap, VecDeque};
 
 use ahash::{AHashMap, AHashSet};
 
+use crate::core::bvh::Bvh;
 use crate::core::halfedge::{edge_key, Topology};
-use crate::core::mesh::{IndexedMesh, Vec3};
+use crate::core::mesh::{Aabb, IndexedMesh, Vec3};
 
-const MIN_AREA_DP_MAX_LOOP: usize = 384;
+const MIN_AREA_DP_MAX_LOOP: usize = 1024;
 
 #[inline]
 fn d3(v: Vec3) -> [f64; 3] {
@@ -23,6 +24,10 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 #[inline]
+fn len3(a: [f64; 3]) -> f64 {
+    dot(a, a).sqrt()
+}
+
 fn cross_len(a: [f64; 3], b: [f64; 3]) -> f64 {
     let c = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
     dot(c, c).sqrt()
@@ -40,59 +45,6 @@ pub fn stitch_tolerance(mesh: &IndexedMesh) -> f32 {
 }
 
 /// Boundary loops ordered opposite to their bordering face edges, split at repeated vertices.
-pub fn directed_hole_loops(topo: &Topology) -> Vec<Vec<u32>> {
-    let mut out: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
-    for info in topo.edges.values() {
-        if info.faces.len() == 1 {
-            let (u, v, _) = info.directed[0];
-            out.entry(v).or_default().push(u);
-        }
-    }
-    for next in out.values_mut() {
-        next.sort_unstable_by(|a, b| b.cmp(a));
-    }
-    let starts: Vec<u32> = out.keys().copied().collect();
-    let mut loops = Vec::new();
-    for start in starts {
-        while let Some(first) = out.get_mut(&start).and_then(|l| l.pop()) {
-            let mut path = vec![start];
-            let mut cur = first;
-            let mut closed = false;
-            loop {
-                if cur == start {
-                    closed = true;
-                    break;
-                }
-                path.push(cur);
-                match out.get_mut(&cur).and_then(|l| l.pop()) {
-                    Some(n) => cur = n,
-                    None => break,
-                }
-            }
-            // A path that dead-ends can still pass through closed loops on the
-            // way, so those are kept and only the unclosed remainder is dropped.
-            let mut stack: Vec<u32> = Vec::with_capacity(path.len());
-            let mut pos: AHashMap<u32, usize> = AHashMap::with_capacity(path.len());
-            for v in path {
-                if let Some(&i) = pos.get(&v) {
-                    let sub_loop = stack.split_off(i);
-                    for w in &sub_loop {
-                        pos.remove(w);
-                    }
-                    if sub_loop.len() >= 3 {
-                        loops.push(sub_loop);
-                    }
-                }
-                pos.insert(v, stack.len());
-                stack.push(v);
-            }
-            if closed && stack.len() >= 3 {
-                loops.push(stack);
-            }
-        }
-    }
-    loops
-}
 
 /// Propagates winding across two-face edges; per patch the smaller-area side is flipped.
 pub fn unify_winding(mesh: &mut IndexedMesh) -> usize {
@@ -365,7 +317,7 @@ pub fn stitch_borders(mesh: &mut IndexedMesh, tol: f32, max_rounds: usize) -> us
 }
 
 /// `chord_taken[i * n + j]` marks loop chords that already exist as mesh edges.
-fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, penalty: f64) -> Option<Vec<[usize; 3]>> {
+fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, penalty: f64, weight: f64) -> Option<Vec<[usize; 3]>> {
     let n = pts.len();
     let mut w = vec![0.0f64; n * n];
     let mut k_of = vec![usize::MAX; n * n];
@@ -381,7 +333,19 @@ fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, p
                     continue;
                 }
                 let c = cross_len(sub(pts[k], pts[i]), sub(pts[j], pts[i]));
-                let tri = if c < sliver { penalty } else { 0.5 * c };
+                // Area alone is not the objective. On a *non-planar* band the fan's triangles lie across the
+                // opening and their total area is *less* than the strip's, so minimising area prefers the
+                // fan: measured on the reported model, a 937-edge rim came out of this plan as a fan with 937
+                // faces at one vertex, where the input's worst vertex carries 135. That is what a viewer shows
+                // as stray triangles.
+                //
+                // The two diagonals this step introduces are what distinguishes the two. A fan reaches across
+                // the band (diagonals about as long as the band), a strip spans its width, so adding their
+                // length to the cost is the classic minimum-weight objective and it is what makes a band come
+                // out as a strip. `weight` is the model's own diagonal, so the term is scale-free; the sliver
+                // penalty stays far larger than either, so nothing here reintroduces slivers.
+                let reach = len3(sub(pts[k], pts[i])) + len3(sub(pts[j], pts[k]));
+                let tri = if c < sliver { penalty } else { 0.5 * c + weight * reach };
                 let cost = w[idx(i, k)] + w[idx(k, j)] + tri;
                 if cost < best {
                     best = cost;
@@ -409,119 +373,571 @@ fn min_area_triangulation(pts: &[[f64; 3]], chord_taken: &[bool], sliver: f64, p
     Some(tris)
 }
 
-/// Keeps the loop's vertex order; a clockwise projection mirrors the 2D frame instead.
-fn ear_clip_preserving_order(pts: &[[f64; 3]]) -> Vec<[usize; 3]> {
-    let n = pts.len();
-    let mut nrm = [0.0f64; 3];
-    for i in 0..n {
-        let (a, b) = (pts[i], pts[(i + 1) % n]);
-        nrm[0] += (a[1] - b[1]) * (a[2] + b[2]);
-        nrm[1] += (a[2] - b[2]) * (a[0] + b[0]);
-        nrm[2] += (a[0] - b[0]) * (a[1] + b[1]);
+/// Whether a triangulation is fan-shaped: one vertex carrying a large share of its triangles.
+///
+/// A strip uses each of its loop's vertices two or three times; a fan uses one of them for most of the
+/// triangles. The share is what separates them, and a quarter is far above any strip and far below any fan.
+fn fan_shaped(tris: &[[usize; 3]], n: usize) -> bool {
+    if n < 8 {
+        return false;
     }
-    let up = if nrm[2].abs() < 0.9 * dot(nrm, nrm).sqrt() { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
-    let u = {
-        let c = [nrm[1] * up[2] - nrm[2] * up[1], nrm[2] * up[0] - nrm[0] * up[2], nrm[0] * up[1] - nrm[1] * up[0]];
-        let l = dot(c, c).sqrt().max(1e-30);
-        [c[0] / l, c[1] / l, c[2] / l]
-    };
-    let v = {
-        let c = [nrm[1] * u[2] - nrm[2] * u[1], nrm[2] * u[0] - nrm[0] * u[2], nrm[0] * u[1] - nrm[1] * u[0]];
-        let l = dot(c, c).sqrt().max(1e-30);
-        [c[0] / l, c[1] / l, c[2] / l]
-    };
-    let mut p2: Vec<(f64, f64)> = pts.iter().map(|p| (dot(*p, u), dot(*p, v))).collect();
-    let area: f64 = (0..n).map(|i| p2[i].0 * p2[(i + 1) % n].1 - p2[(i + 1) % n].0 * p2[i].1).sum();
-    if area < 0.0 {
-        for p in p2.iter_mut() {
-            p.0 = -p.0;
+    let mut count: ahash::AHashMap<usize, usize> = ahash::AHashMap::new();
+    for t in tris {
+        for &v in t.iter() {
+            *count.entry(v).or_insert(0) += 1;
         }
     }
-    let convex = |a: (f64, f64), b: (f64, f64), c: (f64, f64)| (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0) > 0.0;
-    let inside = |p: (f64, f64), a: (f64, f64), b: (f64, f64), c: (f64, f64)| {
-        let s = |p: (f64, f64), a: (f64, f64), b: (f64, f64)| (p.0 - b.0) * (a.1 - b.1) - (a.0 - b.0) * (p.1 - b.1);
-        let (d1, d2, d3) = (s(p, a, b), s(p, b, c), s(p, c, a));
-        !((d1 < 0.0 || d2 < 0.0 || d3 < 0.0) && (d1 > 0.0 || d2 > 0.0 || d3 > 0.0))
-    };
-    let mut rem: Vec<usize> = (0..n).collect();
-    let mut tris = Vec::with_capacity(n - 2);
-    while rem.len() > 3 {
-        let m = rem.len();
-        let mut found = false;
-        for i in 0..m {
-            let (ia, ib, ic) = (rem[(i + m - 1) % m], rem[i], rem[(i + 1) % m]);
-            if !convex(p2[ia], p2[ib], p2[ic]) {
-                continue;
-            }
-            if rem.iter().any(|&j| j != ia && j != ib && j != ic && inside(p2[j], p2[ia], p2[ib], p2[ic])) {
-                continue;
-            }
-            tris.push([ia, ib, ic]);
-            rem.remove(i);
-            found = true;
-            break;
-        }
-        if !found {
-            break;
-        }
-    }
-    for i in 1..rem.len().saturating_sub(1) {
-        tris.push([rem[0], rem[i], rem[i + 1]]);
-    }
-    tris
+    let worst = count.values().copied().max().unwrap_or(0);
+    worst * 4 > tris.len()
 }
 
-/// Patches are wound from the hole's half-edge order, not from surface normals.
-pub fn fill_holes_oriented(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
-    let topo = Topology::build(mesh);
-    let loops = directed_hole_loops(&topo);
+
+/// The normal of the face on each edge of `boundary`, in the order the loop traverses it.
+///
+/// A boundary edge has exactly one face, so this is the surface the loop is a hole *in* rather than an
+/// average over a neighbourhood that might belong to a different surface.
+fn loop_edge_normals(mesh: &IndexedMesh, topo: &Topology, boundary: &[u32]) -> Vec<Vec3> {
+    let n = boundary.len();
+    (0..n)
+        .map(|i| {
+            let key = edge_key(boundary[i], boundary[(i + 1) % n]);
+            match topo
+                .edges
+                .get(&key)
+                .and_then(|info| info.directed.first().map(|&(_, _, f)| f))
+            {
+                Some(f) => unit_vec(mesh.tri_normal(f)),
+                None => Vec3::ZERO,
+            }
+        })
+        .collect()
+}
+
+fn unit_vec(v: Vec3) -> Vec3 {
+    let len = v.length();
+    if len > 1e-12 {
+        v.scale(1.0 / len)
+    } else {
+        Vec3::ZERO
+    }
+}
+
+fn mean(pts: &[Vec3]) -> Vec3 {
+    if pts.is_empty() {
+        return Vec3::ZERO;
+    }
+    pts.iter()
+        .fold(Vec3::ZERO, |acc, p| acc.add(*p))
+        .scale(1.0 / pts.len() as f32)
+}
+
+/// The area a closed loop encloses, as the magnitude of its vector area.
+///
+/// This is what says whether a ring is closing the hole. A perimeter does not: a hole that is a band
+/// closes across its width first, which leaves its two long sides as long as they ever were.
+fn loop_area(pts: &[Vec3]) -> f32 {
+    let n = pts.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let sum = (0..n).fold(Vec3::ZERO, |acc, i| {
+        acc.add(pts[i].cross(pts[(i + 1) % n]))
+    });
+    sum.length() * 0.5
+}
+
+fn face_normal(mesh: &IndexedMesh, t: [u32; 3]) -> Vec3 {
+    let a = mesh.positions[t[0] as usize];
+    let b = mesh.positions[t[1] as usize];
+    let c = mesh.positions[t[2] as usize];
+    b.sub(a).cross(c.sub(a))
+}
+
+/// Cap a loop with a flat triangulation of its own vertices.
+///
+/// `topo` is the mesh the loop came from, when it came from one: a diagonal that is already an edge of
+/// the mesh cannot be used, because the patch would then fold the surface onto itself. A loop the patch
+/// itself made has no such edges and passes `None`.
+fn flat_cap(mesh: &mut IndexedMesh, topo: Option<&Topology>, lp: &[u32]) -> usize {
+    let n = lp.len();
+    if n < 3 {
+        return 0;
+    }
+    let pts: Vec<[f64; 3]> = lp.iter().map(|&v| d3(mesh.positions[v as usize])).collect();
     let diag = mesh.bbox().diag().max(1e-6) as f64;
     let sliver = 1e-12 * diag * diag;
     let penalty = 1e6 * diag * diag;
-    let mut added = 0usize;
-    for lp in loops.into_iter().filter(|l| l.len() >= 3 && l.len() <= max_edges) {
-        let pts: Vec<[f64; 3]> = lp.iter().map(|&v| d3(mesh.positions[v as usize])).collect();
-        let tris = if lp.len() <= MIN_AREA_DP_MAX_LOOP {
-            let n = lp.len();
-            let mut taken = vec![false; n * n];
-            for i in 0..n {
-                for j in i + 2..n {
-                    taken[i * n + j] = !(i == 0 && j == n - 1) && closed_edge(&topo, edge_key(lp[i], lp[j]));
-                }
-            }
-            match min_area_triangulation(&pts, &taken, sliver, penalty) {
-                Some(t) => t,
-                None => {
-                    // Every triangulation reuses an edge the mesh already has;
-                    // a fan from a new centre vertex reuses none.
-                    let n = lp.len();
-                    let c = pts.iter().fold([0.0; 3], |s, p| [s[0] + p[0], s[1] + p[1], s[2] + p[2]]);
-                    mesh.positions.push(Vec3::new(
-                        (c[0] / n as f64) as f32,
-                        (c[1] / n as f64) as f32,
-                        (c[2] / n as f64) as f32,
-                    ));
-                    let centre = (mesh.positions.len() - 1) as u32;
-                    for i in 0..n {
-                        mesh.triangles.push([lp[i], lp[(i + 1) % n], centre]);
-                        added += 1;
+
+    let plan = if n <= MIN_AREA_DP_MAX_LOOP {
+        let taken = match topo {
+            Some(topo) => {
+                let mut taken = vec![false; n * n];
+                for i in 0..n {
+                    for j in i + 2..n {
+                        taken[i * n + j] =
+                            !(i == 0 && j == n - 1) && closed_edge(topo, edge_key(lp[i], lp[j]));
                     }
-                    continue;
                 }
+                taken
             }
-        } else {
-            ear_clip_preserving_order(&pts)
+            None => vec![false; n * n],
         };
+        // Area alone first, because that is the plan every other model in the corpus was measured with.
+        // It is only when that plan comes out *fan-shaped* — one vertex carrying a large share of the loop's
+        // triangles — that the minimum-weight objective is asked for, and it is what turns a band into a
+        // strip. Asking for it always changes the plans of loops that were already fine, and that is a
+        // regression on a model whose rims are not bands at all.
+        match min_area_triangulation(&pts, &taken, sliver, penalty, 0.0) {
+            Some(plan) if !fan_shaped(&plan, n) => Some(plan),
+            _ => min_area_triangulation(&pts, &taken, sliver, penalty, diag),
+        }
+    } else {
+        None
+    };
+    if let Some(tris) = plan {
+        let added = tris.len();
         for [i, j, k] in tris {
             mesh.triangles.push([lp[i], lp[j], lp[k]]);
-            added += 1;
         }
+        return added;
+    }
+
+    // The zipper: the loop's two sides welded to each other.
+    //
+    // This is the closure the reference's own hole filler names when it logs `welding holes %d and %d` — two
+    // loops joined to each other — and for a break-through it is the only closure that is right. Such a rim
+    // is a wide band: its two long sides face each other across the opening, and the surface that belongs
+    // there is the strip between them. Every cap over it is wrong in the same way: a fan from a centre vertex
+    // (which is what this function used to fall back to) puts every triangle of the closure on one point,
+    // measured at 899 faces on the reported model where the input's worst vertex carries 135, and that fan is
+    // what a viewer shows as stray triangles.
+    //
+    // A minimum-area triangulation of a band *is* the strip across it, so the plan above is used when it can
+    // be built. This is for the loops it cannot: past `MIN_AREA_DP_MAX_LOOP` edges it is not attempted at
+    // all, and a rim that does not project to a simple polygon has no plan either.
+    if let Some(zipped) = zip_loop_sides(&pts, lp, topo) {
+        let added = zipped.len();
+        mesh.triangles.extend_from_slice(&zipped);
+        return added;
+    }
+
+    // Last resort, for a loop whose sides cannot be paired at all.
+    let centre_pt = mean(&pts.iter().map(|p| Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32)).collect::<Vec<_>>());
+    mesh.positions.push(centre_pt);
+    let centre = (mesh.positions.len() - 1) as u32;
+    for i in 0..n {
+        mesh.triangles.push([lp[i], lp[(i + 1) % n], centre]);
+    }
+    n
+}
+
+/// Close a loop by welding its two sides to each other.
+///
+/// The loop is split at its own narrowest crossing — the closest pair of vertices that are not neighbours —
+/// which for a band is the opening's width and for a round hole is any diameter. That leaves two arcs, the
+/// two sides, and they are stitched to each other the way a zip closes: at each step the side whose next
+/// vertex is nearer the other side advances, and one triangle is emitted for the step. Every vertex of the
+/// loop ends up used by two or three of the strip's triangles rather than all of them, which is what keeps
+/// the closure from becoming a fan.
+///
+/// `None` for a loop with fewer than four vertices, which is already a triangle.
+fn zip_loop_sides(pts: &[[f64; 3]], lp: &[u32], topo: Option<&Topology>) -> Option<Vec<[u32; 3]>> {
+    let n = pts.len();
+    if n < 4 || lp.len() != n {
+        return None;
+    }
+    let d2 = |a: [f64; 3], b: [f64; 3]| -> f64 {
+        let (x, y, z) = (a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+        x * x + y * y + z * z
+    };
+    // The narrowest crossing, and it has to leave both sides a real length.
+    //
+    // The closest non-adjacent pair on its own is a trap: on a long rim the two nearest vertices are often
+    // two apart, so the split leaves one side with two vertices and the other with the rest, and the zip
+    // between them degenerates into exactly the fan it was written to replace — measured on the reported
+    // model, a 958-edge rim zipped as 958 triangles with one vertex in most of them. The band's width is
+    // between vertices about *half the loop apart*, so each side is required to hold a quarter of it.
+    let quarter = (n / 4).max(1);
+    let mut best: Option<(f64, usize, usize)> = None;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if j == i + 1 || (i == 0 && j == n - 1) {
+                continue;
+            }
+            let (arc_a, arc_b) = (j - i, n - (j - i));
+            if arc_a < quarter || arc_b < quarter {
+                continue;
+            }
+            let d = d2(pts[i], pts[j]);
+            if best.as_ref().map_or(true, |(bd, _, _)| d < *bd) {
+                best = Some((d, i, j));
+            }
+        }
+    }
+    // Nothing balanced and close: any crossing is better than none, so fall back to the closest pair.
+    if best.is_none() {
+        for i in 0..n {
+            for j in (i + 2)..n.min(i + n - 1) {
+                let d = d2(pts[i], pts[j]);
+                if best.as_ref().map_or(true, |(bd, _, _)| d < *bd) {
+                    best = Some((d, i, j));
+                }
+            }
+        }
+    }
+    let (_, i0, j0) = best?;
+    // The two sides, both walked from the crossing back to it, in opposite senses along the loop.
+    let side_a: Vec<usize> = (i0..=j0).collect();
+    let mut side_b: Vec<usize> = (j0..n).chain(0..=i0).collect();
+    side_b.reverse();
+    if side_a.len() < 2 || side_b.len() < 2 {
+        return None;
+    }
+    let mut out: Vec<[u32; 3]> = Vec::with_capacity(n - 2);
+    let (mut p, mut q) = (0usize, 0usize);
+    let (na, nb) = (side_a.len(), side_b.len());
+    while p + 1 < na || q + 1 < nb {
+        // Advance the side that is *behind*, not the side whose next vertex is nearer.
+        //
+        // The nearer-vertex rule is what a zip does and it is right for a band whose sides face each other,
+        // but it has no bound: where the two sides run far apart, one of them is nearer at every step, so it
+        // advances alone and the strip becomes a fan — measured on the reported model, a 958-edge rim zipped
+        // with one vertex in 286 of its 958 triangles. Progress has no such failure mode: each side advances
+        // in proportion to its length, so the strip stays a strip whatever shape the loop is, and every
+        // vertex of the loop ends up in two or three of its triangles.
+        // Both sides exhausted: the strip ends here. The rule that decides which side advances is applied
+        // below, where each side is asked about its rung first.
+        if !(p + 1 < na) && !(q + 1 < nb) {
+            break;
+        }
+        // A rung that is *already an edge of the mesh* cannot be used: the strip would fold the surface onto
+        // itself and leave an edge with three faces. This is the check the minimum-area plan makes before it
+        // starts, and the zip needs it too — measured, a supported model came out of a zip with one
+        // non-manifold edge and two pinched vertices without it.
+        let taken = |a: u32, b: u32| -> bool {
+            topo.map_or(false, |t| closed_edge(t, edge_key(a, b)))
+        };
+        // Both sides can run out at different times, and the side that is ahead is not asked about its rung:
+        // reading `side_b[q + 1]` past the end is a panic, and it is reachable — a loop whose sides differ in
+        // length by one hits it as soon as one of them is exhausted.
+        let can_a = p + 1 < na && !taken(lp[side_a[p]], lp[side_b[q]]);
+        let can_b = q + 1 < nb && !taken(lp[side_a[p]], lp[side_b[q + 1]]);
+        let advance_a = match (can_a, can_b) {
+            (true, false) => true,
+            (false, true) => false,
+            _ => (p + 1) as f64 * nb as f64 <= (q + 1) as f64 * na as f64,
+        };
+        if advance_a && p + 1 < na {
+            out.push([lp[side_a[p]], lp[side_a[p + 1]], lp[side_b[q]]]);
+            p += 1;
+        } else if q + 1 < nb {
+            out.push([lp[side_a[p]], lp[side_b[q]], lp[side_b[q + 1]]]);
+            q += 1;
+        } else {
+            break;
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    // Only a *band* is zipped. The zip's rungs are what closes the opening, and on a band they are the
+    // band's width — short, and each one lands on the surface the rim already runs along. On a rim that is
+    // not a band they reach across the model, and a strip of long rungs folds onto surfaces it does not
+    // belong to: measured, a supported model came out with a non-manifold edge and two pinched vertices.
+    // A long-runged loop is left to the minimum-area plan, which refuses chords the mesh already has, and
+    // to the caller's fallback.
+    let diameter = {
+        let mut d = 0.0f64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                d = d.max(d2(pts[i], pts[j]));
+            }
+        }
+        d.sqrt()
+    };
+    let mut longest_rung = 0.0f64;
+    for t in &out {
+        // The rung is the edge whose two ends are not neighbours on the loop.
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let (ia, ib) = (
+                lp.iter().position(|&v| v == a).unwrap_or(0),
+                lp.iter().position(|&v| v == b).unwrap_or(0),
+            );
+            let gap = (ia as isize - ib as isize).abs() as usize;
+            if gap > 1 && gap < n - 1 {
+                longest_rung = longest_rung.max(len3(sub(pts[ia], pts[ib])));
+            }
+        }
+    }
+    if diameter > 0.0 && longest_rung > 0.25 * diameter {
+        return None;
+    }
+    // The strip has to be a strip: every edge of it either borders the rim (one triangle) or is shared by
+    // exactly two of its triangles. A rung the zip visits twice — which it can, when one side stalls — gives
+    // an edge three of them, and that is a non-manifold edge the caller would have to live with. Measured, a
+    // supported model came out of a zip with one. Refusing here leaves the loop to the plan and the caller's
+    // fallback, which is where it would have gone without the zip at all.
+    let mut uses: ahash::AHashMap<(u32, u32), u32> = ahash::AHashMap::new();
+    for t in &out {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            *uses.entry(edge_key(a, b)).or_insert(0) += 1;
+        }
+    }
+    if uses.values().any(|&c| c > 2) {
+        return None;
+    }
+    Some(out)
+}
+
+/// Loops at or above this many edges get the tangent-continuing patch instead of a flat cap.
+///
+/// A flat cap is right for a small hole in a surface that is locally flat, which is what the trivial
+/// pass deals in. A break-through is neither small nor flat.
+const PATCH_MIN_LOOP: usize = 7;
+
+/// How far in each ring of the patch sits, as a fraction of the local loop edge length.
+///
+/// Too small and a ring is too close to the one before it for its tangent planes to matter; too large
+/// and a ring turns faster than the surface beneath it does. Six tenths of an edge insets a loop in a
+/// handful of rings: a twenty-edge loop is under the flat-cap threshold in three.
+const PATCH_INSET_FRACTION: f32 = 0.6;
+
+/// The largest a ring's inset may be, as a share of the narrowest edge on the loop it comes from.
+///
+/// Without a bound, a ring from a hole that is a band crosses the band's own far side in a single pass
+/// and every face after it is nonsense.
+const PATCH_MAX_INSET_SHARE: f32 = 0.4;
+
+/// A ring has to shrink the loop by this share of its perimeter to be worth keeping.
+///
+/// A hole that is a band closes across its width in a ring or two and then has nothing left to give;
+/// carrying on folds the ring over itself.
+const PATCH_MIN_SHRINK: f32 = 0.95;
+
+/// How many rings the patch may grow before it caps whatever is left.
+const PATCH_MAX_RINGS: usize = 12;
+
+/// Fill one loop with a patch that leaves the rim along the surface it belongs to.
+///
+/// A flat triangulation of the loop's own vertices is what this engine did, and it is right when the
+/// rim lies in the surface around it. Where the rim is a break-through — a sheet meeting a wall, or a
+/// cavity that broke through the outer wall — the surrounding surface is not flat there, and the flat
+/// patch is a visible sheet spanning the opening, which is the first thing an eye finds in a repair.
+/// Measured against a reference repair of a model with an internal cavity that breaks through its outer
+/// wall, the reference's patch continues that surface and ours was a flat.
+///
+/// The patch is grown in rings. Each ring's vertices sit **in the plane of the surface at the ring
+/// before it**, a fraction of the local edge length inward, so every ring leaves the one it came from
+/// tangentially; each ring's own surface then becomes the plane the next ring follows, which is the
+/// discrete form of continuing the surface. When the loop is small enough for a flat cap to be right,
+/// it is capped. On a cylinder this walks the patch around the wall ring by ring and converges on the
+/// wall; on a flat wall every plane is that wall's, so the patch is flat — a generalisation of the flat
+/// cap, not a replacement for it.
+///
+/// The rim's own vertices are never moved and no rim edge is split. That is the mistake an earlier
+/// attempt at this made: it subdivided the patch in place, so it split the rim edges the model shares
+/// and left a T-junction on every one of them.
+fn fill_loop_with_patch(mesh: &mut IndexedMesh, topo: &Topology, lp: &[u32]) -> usize {
+    let mut boundary: Vec<u32> = lp.to_vec();
+    let mut edge_normal = loop_edge_normals(mesh, topo, &boundary);
+    let mut added = 0usize;
+
+    for _ in 0..PATCH_MAX_RINGS {
+        let n = boundary.len();
+        if n < PATCH_MIN_LOOP {
+            break;
+        }
+        let rim: Vec<Vec3> = boundary.iter().map(|&v| mesh.positions[v as usize]).collect();
+        let centroid = mean(&rim);
+        // The narrowest edge on the loop. An inset larger than a fraction of it turns the ring inside
+        // out: a hole that is a band closes across its width first, and a ring that crossed its own
+        // opposite side makes every face after it nonsense. Measured on a band spanning half a
+        // cylinder's circumference, an unbounded inset of up to 2.4 units across a band 1.0 unit wide
+        // collapsed the ring in one pass and the cap then spanned the whole hole.
+        let narrowest = (0..n)
+            .map(|i| {
+                rim[i]
+                    .sub(rim[(i + 1) % n])
+                    .length()
+                    .min(rim[i].sub(rim[(i + n - 1) % n]).length())
+            })
+            .fold(f32::INFINITY, f32::min)
+            .max(1e-9);
+        let area_before = loop_area(&rim);
+
+        let mut ring: Vec<Vec3> = Vec::with_capacity(n);
+        let mut inset = 0.0f32;
+        // Every vertex's inset direction first, then **one** sign for all of them.
+        //
+        // The direction into the hole is perpendicular to the rim and in the surface at it, and the
+        // cross product of those two gives it up to a sign. Taking that sign per vertex was the bug an
+        // earlier attempt had: at a corner of the loop the loop's centre is nearly perpendicular to the
+        // inset, so the test is a coin toss there, and one vertex landing the other way puts a sliver
+        // across the whole hole. The loop is wound one way round, so the sign is one property of the
+        // loop and is decided once, from which way the centre lies on average.
+        let mut inward: Vec<Vec3> = Vec::with_capacity(n);
+        let mut toward_centre = 0.0f32;
+        for i in 0..n {
+            let p = rim[i];
+            let normal = unit_vec(edge_normal[i].add(edge_normal[(i + n - 1) % n]));
+            let along = unit_vec(rim[(i + 1) % n].sub(rim[(i + n - 1) % n]));
+            let direction = unit_vec(normal.cross(along));
+            toward_centre += direction.dot(centroid.sub(p));
+            inward.push(direction);
+        }
+        let flip = toward_centre < 0.0;
+
+        for i in 0..n {
+            let p = rim[i];
+            let local = rim[i]
+                .sub(rim[(i + n - 1) % n])
+                .length()
+                .min(rim[i].sub(rim[(i + 1) % n]).length())
+                .max(1e-9);
+            let direction = inward[i];
+            if direction.length() <= 0.5 {
+                // No surface here to continue, so this vertex stays where it is.
+                ring.push(p);
+                continue;
+            }
+            let direction = if flip { direction.scale(-1.0) } else { direction };
+            let step = (PATCH_INSET_FRACTION * local).min(PATCH_MAX_INSET_SHARE * narrowest);
+            inset += step;
+            ring.push(p.add(direction.scale(step)));
+        }
+        if inset <= 0.0 {
+            // Nothing moved anywhere, so there is no surface here to continue: cap it flat.
+            break;
+        }
+        // The ring has to have proved it is closing the hole *before* it is kept. The loop has to be
+        // closing, and area is the measure that sees it: a perimeter does not, because a hole that is a
+        // band closes across its width first and leaves its two long sides as long as they ever were.
+        // Measured on a band spanning half a cylinder's circumference, one more ring after the loop's
+        // area reached zero inverted it, and having committed that ring the cap over it spanned the
+        // hole at a third of the wall's radius.
+        //
+        // An open end is the case this rejects: the loop at the end of an open tube has the tube's side
+        // as its surface, the direction into the hole there is along the tube, and a ring placed on it
+        // walks off the end of the model with the loop's area unchanged.
+        if loop_area(&ring) > area_before * PATCH_MIN_SHRINK {
+            break;
+        }
+
+        let base = mesh.positions.len() as u32;
+        for p in &ring {
+            mesh.positions.push(*p);
+        }
+        for i in 0..n {
+            let j = (i + 1) % n;
+            // The two faces between one rim edge and the ring edge inside it.
+            mesh.triangles.push([boundary[i], boundary[j], base + j as u32]);
+            mesh.triangles.push([boundary[i], base + j as u32, base + i as u32]);
+            added += 2;
+        }
+
+        let mut next_normal = Vec::with_capacity(n);
+        for i in 0..n {
+            let j = (i + 1) % n;
+            next_normal.push(unit_vec(face_normal(
+                mesh,
+                [boundary[i], base + j as u32, base + i as u32],
+            )));
+        }
+        boundary = (0..n).map(|i| base + i as u32).collect();
+        edge_normal = next_normal;
+    }
+
+    added + flat_cap(mesh, None, &boundary)
+}
+
+pub fn fill_holes_oriented(mesh: &mut IndexedMesh, max_edges: usize) -> usize {
+    let topo = Topology::build(mesh);
+    // Reversed: `boundary_loops` walks *with* the faces' winding, and the fill wants the cycle the other
+    // way round so that the triangles it adds face outwards. The walk it replaced produced the reversed
+    // order, which is why this is a reversal rather than a preference.
+    let loops: Vec<Vec<u32>> = topo
+        .boundary_loops()
+        .into_iter()
+        .map(|l| l.into_iter().rev().collect())
+        .collect();
+    let mut added = 0usize;
+    for lp in loops
+        .into_iter()
+        .filter(|l| l.len() >= 3 && l.len() <= max_edges)
+    {
+        // A hole big enough to be a break-through gets a patch that follows the surface. A small one
+        // gets the flat cap, which is what a flat cap is for: a hole of a few edges in a surface that
+        // is locally flat is capped correctly by triangulating it.
+        added += if lp.len() >= PATCH_MIN_LOOP {
+            fill_loop_with_patch(mesh, &topo, &lp)
+        } else {
+            flat_cap(mesh, Some(&topo), &lp)
+        };
     }
     added
 }
 
+/// The component pairs whose surfaces actually cross, by triangle, rather than whose boxes overlap.
+///
+/// This is the test the union's operand rule needed. It used to be "the bounding boxes overlap",
+/// with the note that a shared box may still be a disjoint pair, so the rule was conservative in the
+/// safe direction. It is not: a plate of parts laid out side by side — which is what a print plate
+/// is, and what `Untitled2.stl` in the corpus is, 25 parts of them — shares one bounding box across
+/// most of its pairs (measured on that file: 266 of 406), and `Manifold::batch_union` answers a set
+/// of separate solids with the union of them, which is one part where the user had dozens. The stage
+/// would then be *kept*, because its acceptance test is a falling part count.
+///
+/// A pair is an operand here when a triangle of one crosses a triangle of the other. Components that
+/// meet only at a vertex are left out: that is a pinch, and `split_pinched_vertices` owns it.
+/// Components that merely nest are left out too — their surfaces do not cross, and a union of a
+/// solid with a cavity would fill the cavity.
+///
+/// The walk is the one `arrangement::collect_face_segments` does, with the pair recorded instead of
+/// the segment: every triangle asks the BVH for its neighbours and tests the ones it has not already
+/// answered for.
+pub fn crossing_component_pairs(mesh: &IndexedMesh, components: &[u32]) -> AHashSet<(u32, u32)> {
+    let n = mesh.triangles.len();
+    let mut pairs: AHashSet<(u32, u32)> = AHashSet::new();
+    if n < 2 {
+        return pairs;
+    }
+    let bvh = Bvh::build(mesh);
+    for fi in 0..n as u32 {
+        let tri_a = mesh.tri_positions(fi);
+        let mut bb = Aabb::empty();
+        bb.expand(tri_a[0]);
+        bb.expand(tri_a[1]);
+        bb.expand(tri_a[2]);
+        let ca = components[fi as usize];
+        let va = mesh.triangles[fi as usize];
+        let mut candidates: Vec<u32> = Vec::new();
+        bvh.query_aabb(mesh, &bb, |other| candidates.push(other));
+        for fj in candidates {
+            if fj <= fi {
+                continue;
+            }
+            let cb = components[fj as usize];
+            if cb == ca {
+                continue;
+            }
+            let key = (ca.min(cb), ca.max(cb));
+            if pairs.contains(&key) {
+                continue;
+            }
+            let vb = mesh.triangles[fj as usize];
+            if va.iter().any(|v| vb.contains(v)) {
+                continue; // they meet at a vertex: a pinch, not a crossing
+            }
+            if crate::arrangement::tri_tri_segment(tri_a, mesh.tri_positions(fj)).is_some() {
+                pairs.insert(key);
+            }
+        }
+    }
+    pairs
+}
+
 #[cfg(feature = "manifold")]
-pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Option<(usize, usize)> {
+pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Option<(usize, usize, usize)> {
     use manifold_csg::Manifold;
 
     let n_comps = components.iter().copied().max().map_or(0, |m| m as usize + 1);
@@ -529,17 +945,28 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
     for (fi, tri) in mesh.triangles.iter().enumerate() {
         by_comp[components[fi] as usize].push(*tri);
     }
-    let mut solids = Vec::new();
+    // The boolean needs its input welded at *exact* positions: two surfaces that touch where their vertices
+    // are merely close read to it as separate shells, and it returns them fragmented instead of merged.
+    // Measured on the reported model, that is why the union there comes out of 8 parts as 12 with its bad
+    // edges 2,157 -> 5,567 and is refused. So each component is welded at the loader's own cell first —
+    // component by component, so nothing outside the union's input is re-indexed.
+    let weld_cell = (crate::io::DEFAULT_MERGE_EPSILON * mesh.bbox().diag().max(1e-6)).max(1e-7);
+    let mut solids: Vec<(u32, Manifold)> = Vec::new();
     let mut kept: Vec<[u32; 3]> = Vec::new();
-    for tris in by_comp {
-        let mut remap: AHashMap<u32, u32> = AHashMap::new();
+    for (ci, tris) in by_comp.into_iter().enumerate() {
+        let mut remap: AHashMap<(i32, i32, i32), u32> = AHashMap::new();
         let mut vp: Vec<f32> = Vec::new();
         let mut idx: Vec<u32> = Vec::with_capacity(tris.len() * 3);
         for tri in &tris {
             for &v in tri {
+                let p = mesh.positions[v as usize];
+                let key = (
+                    (p.x / weld_cell).round() as i32,
+                    (p.y / weld_cell).round() as i32,
+                    (p.z / weld_cell).round() as i32,
+                );
                 let next = remap.len() as u32;
-                let id = *remap.entry(v).or_insert_with(|| {
-                    let p = mesh.positions[v as usize];
+                let id = *remap.entry(key).or_insert_with(|| {
                     vp.extend_from_slice(&[p.x, p.y, p.z]);
                     next
                 });
@@ -547,17 +974,65 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
             }
         }
         match Manifold::from_mesh_f32(&vp, 3, &idx) {
-            Ok(m) if !m.is_empty() && m.num_tri() > 0 => solids.push(m),
+            Ok(m) if !m.is_empty() && m.num_tri() > 0 => solids.push((ci as u32, m)),
             _ => kept.extend_from_slice(&tris),
         }
     }
     if solids.len() < 2 {
-        return None;
+        // Nothing to union, and the count of separate solids is still worth reporting: it is one or
+        // none at this point.
+        return Some((0, 0, solids.len()));
     }
-    let unioned = solids.len();
-    let m = Manifold::batch_union(&solids);
+    // Only operands that actually cross each other go to the boolean.
+    //
+    // A boolean is for overlapping operands; feeding it a set of disjoint solids asks it to return them
+    // unchanged, and it answers with *more* shells than it was given — measured on the reported model, 7
+    // solids in and 12 shells out, which is why the union there is refused: the part count is one of the
+    // classes it is judged on, and it can only be kept when it drops.
+    //
+    // The rule used to be "the bounding boxes overlap", on the reasoning that a shared box may still be
+    // a disjoint pair, so the rule erred in the safe direction. It does not: on a plate of separate
+    // parts the boxes of most pairs overlap (266 of 406 on the reported plate), so that rule hands the
+    // boolean *everything* and the pass merges the user's parts into one — and is kept for it, because
+    // the acceptance test is a falling part count. What decides an operand now is surface contact:
+    // `crossing_component_pairs` below.
+    let crossing = crossing_component_pairs(mesh, components);
+    // How many distinct solids are in some crossing pair, and how many are in none: the latter are
+    // the separate parts of a plate, and saying so is the point of the rule.
+    let mut meeting: AHashSet<u32> = AHashSet::new();
+    for (a, b) in crossing.iter() {
+        meeting.insert(*a);
+        meeting.insert(*b);
+    }
+    let solid_ids: AHashSet<u32> = solids.iter().map(|(ci, _)| *ci).collect();
+    let separate = solid_ids.iter().filter(|ci| !meeting.contains(ci)).count();
+    let touching: Vec<usize> = (0..solids.len())
+        .filter(|&i| meeting.contains(&solids[i].0))
+        .collect();
+    if touching.len() < 2 {
+        // Several solids, none of them meeting: a plate of parts, and the boolean has no operands.
+        // This is the answer the caller needs — the old rule would have unioned every one of them.
+        return Some((0, 0, separate));
+    }
+    let operand_index: AHashMap<usize, usize> =
+        touching.iter().enumerate().map(|(k, &i)| (i, k)).collect();
+    let unioned = touching.len();
+    let operands: Vec<Manifold> = touching.iter().map(|&i| solids[i].1.clone()).collect();
+    let m = Manifold::batch_union(&operands);
     if m.is_empty() || m.num_tri() < 4 {
         return None;
+    }
+    for (i, (_, m)) in solids.iter().enumerate() {
+        if !operand_index.contains_key(&i) {
+            let (vp, np, ti) = m.to_mesh_f32();
+            let base = mesh.positions.len() as u32;
+            for c in vp.chunks_exact(np) {
+                mesh.positions.push(Vec3::new(c[0], c[1], c[2]));
+            }
+            for c in ti.chunks_exact(3) {
+                kept.push([c[0] + base, c[1] + base, c[2] + base]);
+            }
+        }
     }
     let (vp, np, ti) = m.to_mesh_f32();
     let base = mesh.positions.len() as u32;
@@ -568,7 +1043,7 @@ pub fn union_closed_components(mesh: &mut IndexedMesh, components: &[u32]) -> Op
     triangles.extend(ti.chunks_exact(3).map(|c| [c[0] + base, c[1] + base, c[2] + base]));
     mesh.positions = positions;
     mesh.triangles = triangles;
-    Some((unioned, kept_tris))
+    Some((unioned, kept_tris, separate))
 }
 
 /// Split vertices whose incident triangles form more than one fan.
@@ -1004,4 +1479,234 @@ pub fn flip_degenerate_caps(mesh: &mut IndexedMesh, area_eps: f32, max_rounds: u
         flips += round;
     }
     flips
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::mesh::IndexedMesh;
+
+    fn v(x: f32, y: f32, z: f32) -> Vec3 {
+        Vec3::new(x, y, z)
+    }
+
+    /// A closed box as twelve triangles, from `lo` to `hi`.
+    fn box_mesh(lo: Vec3, hi: Vec3) -> (Vec<Vec3>, Vec<[u32; 3]>) {
+        let p = [
+            v(lo.x, lo.y, lo.z),
+            v(hi.x, lo.y, lo.z),
+            v(hi.x, hi.y, lo.z),
+            v(lo.x, hi.y, lo.z),
+            v(lo.x, lo.y, hi.z),
+            v(hi.x, lo.y, hi.z),
+            v(hi.x, hi.y, hi.z),
+            v(lo.x, hi.y, hi.z),
+        ];
+        let quads: [[usize; 4]; 6] = [
+            [0, 3, 2, 1],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [2, 3, 7, 6],
+            [1, 2, 6, 5],
+            [0, 4, 7, 3],
+        ];
+        let mut tris = Vec::new();
+        for q in quads {
+            tris.push([q[0] as u32, q[1] as u32, q[2] as u32]);
+            tris.push([q[0] as u32, q[2] as u32, q[3] as u32]);
+        }
+        (p.to_vec(), tris)
+    }
+
+    /// Two solids at opposite corners of each other's bounding boxes are two parts, not one object.
+    ///
+    /// This is the plate: parts laid out side by side share one bounding box across most of their
+    /// pairs, and a union that took "the boxes overlap" as its operand rule handed every one of them
+    /// to the boolean, which answers a set of separate solids with the union of them. Two
+    /// axis-aligned boxes cannot stand in for it — boxes that share a box on all three axes do
+    /// intersect — so the fixture is two tetrahedra occupying opposite corners.
+    #[test]
+    fn solids_that_only_share_a_bounding_box_are_separate() {
+        let near = [
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 2.0],
+        ];
+        let far = [
+            [3.0, 3.0, 3.0],
+            [1.0, 3.0, 3.0],
+            [3.0, 1.0, 3.0],
+            [3.0, 3.0, 1.0],
+        ];
+        let mut positions: Vec<Vec3> = Vec::new();
+        let mut triangles: Vec<[u32; 3]> = Vec::new();
+        for tet in [near, far] {
+            let base = positions.len() as u32;
+            positions.extend(tet.iter().map(|p| v(p[0], p[1], p[2])));
+            for t in [
+                [0u32, 2, 1],
+                [0, 1, 3],
+                [0, 3, 2],
+                [1, 2, 3],
+            ] {
+                triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+            }
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let components = crate::repair::triangle_components(&mesh);
+        assert_eq!(components.iter().copied().max().unwrap_or(0) + 1, 2);
+        let crossing = crossing_component_pairs(&mesh, &components);
+        assert!(
+            crossing.is_empty(),
+            "sharing a bounding box is not meeting: {crossing:?}"
+        );
+    }
+
+    /// Two boxes standing apart are two parts, and each is repaired on its own.
+    ///
+    /// The unit matters: the plate in the corpus gets one verdict for all 25 of its objects when it
+    /// is repaired whole, which says nothing about which object is the problem. Per part it says
+    /// `26 of 39 repaired` and names the 13 that carry their own winding defect.
+    #[test]
+    fn separate_boxes_are_repaired_as_parts() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(1.0, 1.0, 1.0));
+        let (more_positions, more_triangles) = box_mesh(v(5.0, 5.0, 5.0), v(6.0, 6.0, 6.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let parts = crate::repair::repair_separate_parts(
+            &mesh,
+            &crate::repair::RepairOptions::default(),
+            None,
+        )
+        .expect("two boxes that do not meet are two parts");
+        assert_eq!(parts.parts.len(), 2);
+        assert_eq!(parts.joined, 0, "neither part is several shells");
+        for part in &parts.parts {
+            assert_eq!(part.before.triangle_count, 12);
+            assert!(
+                part.outcome.report.fully_repaired,
+                "a closed box needs no repair: {:?}",
+                part.outcome.report.residual_issues
+            );
+            assert_eq!(part.outcome.mesh.triangles.len(), 12);
+        }
+    }
+
+    /// Two boxes that cross are one object, and are not split: repairing them apart would separate
+    /// the surfaces the repair is supposed to join.
+    #[test]
+    fn crossing_boxes_are_not_split() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(2.0, 2.0, 2.0));
+        let (more_positions, more_triangles) = box_mesh(v(1.0, 1.0, 1.0), v(3.0, 3.0, 3.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        assert!(
+            crate::repair::repair_separate_parts(
+                &mesh,
+                &crate::repair::RepairOptions::default(),
+                None
+            )
+            .is_none(),
+            "one object between them, so there is nothing to separate"
+        );
+    }
+
+    /// The union's own answer on that fixture: nothing to union, and two separate solids reported.
+    #[cfg(feature = "manifold")]
+    #[test]
+    fn the_union_leaves_separate_solids_alone() {
+        let near = [
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 2.0],
+        ];
+        let far = [
+            [3.0, 3.0, 3.0],
+            [1.0, 3.0, 3.0],
+            [3.0, 1.0, 3.0],
+            [3.0, 3.0, 1.0],
+        ];
+        let mut positions: Vec<Vec3> = Vec::new();
+        let mut triangles: Vec<[u32; 3]> = Vec::new();
+        for tet in [near, far] {
+            let base = positions.len() as u32;
+            positions.extend(tet.iter().map(|p| v(p[0], p[1], p[2])));
+            for t in [[0u32, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] {
+                triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+            }
+        }
+        let mut mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let before = mesh.triangles.clone();
+        let components = crate::repair::triangle_components(&mesh);
+        let outcome = union_closed_components(&mut mesh, &components);
+        assert_eq!(
+            outcome,
+            Some((0, 0, 2)),
+            "two solids that share a bounding box and meet nowhere are two parts"
+        );
+        assert_eq!(mesh.triangles, before, "and nothing is rewritten to say so");
+    }
+
+    /// Two boxes that penetrate each other are one object, and are left in the operand set.
+    #[test]
+    fn boxes_that_penetrate_are_one_object() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(2.0, 2.0, 2.0));
+        let (more_positions, more_triangles) = box_mesh(v(1.0, 1.0, 1.0), v(3.0, 3.0, 3.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let components = crate::repair::triangle_components(&mesh);
+        let crossing = crossing_component_pairs(&mesh, &components);
+        assert_eq!(crossing.len(), 1, "the two boxes cross: {crossing:?}");
+    }
+
+    /// A shell inside another one, touching nothing, is not a crossing either: a union of a solid
+    /// with a solid inside it fills the void, and that is a different object, not a merged one.
+    #[test]
+    fn a_nested_shell_is_not_a_crossing() {
+        let (mut positions, mut triangles) = box_mesh(v(0.0, 0.0, 0.0), v(4.0, 4.0, 4.0));
+        let (more_positions, more_triangles) = box_mesh(v(1.0, 1.0, 1.0), v(2.0, 2.0, 2.0));
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&more_positions);
+        for t in more_triangles {
+            triangles.push([t[0] + base, t[1] + base, t[2] + base]);
+        }
+        let mesh = IndexedMesh {
+            positions,
+            triangles,
+        };
+        let components = crate::repair::triangle_components(&mesh);
+        assert!(
+            crossing_component_pairs(&mesh, &components).is_empty(),
+            "a shell inside another does not cross it"
+        );
+    }
 }

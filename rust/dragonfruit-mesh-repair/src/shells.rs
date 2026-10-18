@@ -23,6 +23,16 @@ use crate::repair::triangle_components;
 /// A shell with fewer triangles than this is noise.
 const NOISE_SHELL_MIN_TRIANGLES: usize = 4;
 
+/// A shell enclosing less than this many cubic millimetres is noise.
+///
+/// The unit is the point. A triangle count measures how finely a shell happens to be tessellated
+/// rather than how big it is, and a *relative* area measures a shell's share of a model that may
+/// carry thousands of legitimate support shells — that was this rule before it was narrowed, and it
+/// deleted 88,912 support faces on COOKIE_b4. An absolute volume is the measure that cannot do that:
+/// a tenth of a thousandth of a cubic millimetre is a cube 0.046mm on a side, smaller than any
+/// feature a user put there on purpose, so nothing meant to be kept can be under it.
+const NOISE_SHELL_MAX_VOLUME_MM3: f64 = 0.0001;
+
 /// Which shells are noise, by the reference engine's rule.
 pub fn noise_shells(mesh: &IndexedMesh) -> Vec<u32> {
     if mesh.triangles.is_empty() {
@@ -36,19 +46,24 @@ pub fn noise_shells(mesh: &IndexedMesh) -> Vec<u32> {
     }
 
     let mut triangles_per_shell = vec![0usize; shell_count];
-    let mut area_per_shell = vec![0.0f64; shell_count];
+    // Signed volume per shell, by the divergence theorem, taken as a magnitude at the end: a closed
+    // shell's winding decides its sign and not its size.
+    let mut volume_per_shell = vec![0.0f64; shell_count];
     for index in 0..mesh.triangles.len() {
         let shell = components[index] as usize;
         triangles_per_shell[shell] += 1;
         let [a, b, c] = mesh.tri_positions(index as u32);
-        area_per_shell[shell] += f64::from(b.sub(a).cross(c.sub(a)).length()) * 0.5;
+        volume_per_shell[shell] += (a.x as f64 * (b.y as f64 * c.z as f64 - b.z as f64 * c.y as f64)
+            - a.y as f64 * (b.x as f64 * c.z as f64 - b.z as f64 * c.x as f64)
+            + a.z as f64 * (b.x as f64 * c.y as f64 - b.y as f64 * c.x as f64))
+            / 6.0;
     }
-    let total_triangles = mesh.triangles.len();
-    let total_area: f64 = area_per_shell.iter().sum();
 
-    let _ = (area_per_shell, total_area, total_triangles);
     (0..shell_count)
-        .filter(|&shell| triangles_per_shell[shell] < NOISE_SHELL_MIN_TRIANGLES)
+        .filter(|&shell| {
+            triangles_per_shell[shell] < NOISE_SHELL_MIN_TRIANGLES
+                || volume_per_shell[shell].abs() < NOISE_SHELL_MAX_VOLUME_MM3
+        })
         .map(|shell| shell as u32)
         .collect()
 }

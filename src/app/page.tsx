@@ -4,12 +4,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSceneFileExtensionLabels } from '@/features/plugins/pluginFileTypeExtensions';
 import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { detectIsIOS } from '@/hooks/usePlatform';
 import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
-import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Pyramid, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
 import { SceneCanvas } from '@/components/scene/SceneCanvas';
 import { SceneOverlays } from '@/components/organisms/scene/SceneOverlays';
 import { FloatingPanelStack } from '@/components/layout/FloatingPanelStack';
@@ -76,7 +77,7 @@ import { resolveEntirePlateExportBaseName } from '@/features/export/logic/export
 import { SlicingPanel, type SliceIntent } from '@/features/slicing/components/SlicingPanel';
 import { joinSliceOutputPath } from '@/features/slicing/plateSliceNaming';
 import { PrintingPanel } from '@/features/printing/components/PrintingPanel';
-import { usePrintingPreviewManager, type PrintingPreviewManagerDeps } from '@/features/printing/usePrintingPreviewManager';
+import { usePrintingPreviewManager } from '@/features/printing/usePrintingPreviewManager';
 import { useEditorToasts, useTrailingMount } from '@/features/notifications/useEditorToasts';
 import { plateNumberPlaceholder } from '@/features/scene/plates/plateMessages';
 import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
@@ -250,7 +251,7 @@ import { computeHighPrecisionArrangeResultWorker } from '@/features/scene/arrang
 import { plateCascadeOffsetMm } from '@/features/scene/plates/plateCascade';
 
 // Domain Features
-import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useNativeSpaceMouseLifecycle } from '@/components/scene/camera/useNativeSpaceMouseLifecycle';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
@@ -331,6 +332,8 @@ import {
   subscribeToPrinterReachability,
 } from '@/features/network/printerReachabilityStore';
 import type { SliceExportArtifact, SliceExportResult } from '@/features/slicing/sliceExportOrchestrator';
+import { sliceProfileFingerprint } from '@/features/printing/slicedPlates';
+import { useSlicedPlatePreviewLoading, useSlicedPlates } from '@/features/printing/useSlicedPlates';
 import { resolveOutputFileExtension } from '@/features/slicing/formats/registry';
 import {
   cleanupStalePrintTempArtifacts,
@@ -338,8 +341,6 @@ import {
   launchExternalProcess,
   pickSavePathWithNativeDialog,
   pickOpenFilesWithNativeDialog,
-  readPrintLayerPreviewPngFromPath,
-  readPrintLayerPreviewPngsFromPath,
   readPrintArtifactBytesFromPath,
   savePrintArtifactPathWithNativeDialog,
   savePrintArtifactWithNativeDialog,
@@ -402,6 +403,13 @@ import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveReco
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
+import { TetrahedralRemeshConfirmModal } from '@/components/modals/TetrahedralRemeshConfirmModal';
+import { ShrinkWrapConfirmModal } from '@/components/modals/ShrinkWrapConfirmModal';
+import { SurfacingProgressModal, type SurfacingProgressState } from '@/components/scene/SurfacingProgressModal';
+import { tetSurfaceProgressFraction, translateTetSurfacePhase } from '@/components/scene/tetSurfaceProgressMessages';
+import { solidRemeshProgressFraction, translateSolidRemeshPhase } from '@/components/scene/solidRemeshProgressMessages';
+import type { SolidRemeshOptions, TetWrapOptions } from '@/utils/meshShrinkwrap';
+import { cancelMeshRepair } from '@/utils/meshRepair';
 
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
@@ -573,6 +581,44 @@ const HOLE_PUNCH_AUTO_DEPTH_RAY_START_OFFSET_MM = 0.3;
 const HOLE_PUNCH_AUTO_DEPTH_MIN_INSIDE_MM = 1;
 const HOLLOW_PREVIEW_DEBOUNCE_MS = 90;
 
+/**
+ * The remesh defaults: the pass measured on a ~600k-triangle model, which lands
+ * within a fraction of a percent of the input triangle count while closing the
+ * surface. The voxel is the detail floor — anything finer than it does not
+ * survive the rebuild.
+ */
+/**
+ * The tetrahedral remesh defaults.
+ *
+ * `pQ` reads the model as a piecewise linear complex, so the decomposition is constrained to contain
+ * the model's own triangles rather than only its points: on a clean 170k-triangle model that is
+ * 323,632 tetrahedra against 596,374, and the surface it returns keeps more of the model. `Q` keeps
+ * TetGen quiet. No triangle budget, which keeps every boundary face the decomposition produced.
+ *
+ * `tolerance_mm` simplifies the input before decomposing it, because point spacing is what the cell
+ * size follows. A hundredth of a millimetre is a light pass on a dense export and leaves a coarse
+ * one alone.
+ */
+/**
+ * The shrink-wrap defaults: close every boundary loop, then drop scrap shells. Both are what the
+ * reference does, and neither has a knob worth exposing yet — a caller who wants fewer loops closed
+ * is asking for a different result rather than the same one cheaper.
+ */
+const SOLID_REMESH_DEFAULT_OPTIONS: SolidRemeshOptions = {
+  fill_holes_max_edges: Number.MAX_SAFE_INTEGER,
+  remove_noise_shells: true,
+  // A quarter of a dense model gone: enough that a shrink-wrap visibly lowers the poly count, which
+  // is the point of it, and nowhere near the 0.05 that leaves 190 triangles of 170,790.
+  tolerance: 0.001,
+};
+
+const TET_SURFACE_DEFAULT_OPTIONS: TetWrapOptions = {
+  switches: 'pQ',
+  max_triangles: 0,
+  // Off: the decomposition constrains the model's own facets, and simplifying folds them.
+  tolerance: 0,
+};
+
 function getDefaultHolePunchDepthMm(shellThicknessMm: number): number {
   return Number(
     Math.min(120, Math.max(1, shellThicknessMm + HOLE_PUNCH_DEPTH_OFFSET_FROM_SHELL_MM)).toFixed(1),
@@ -725,12 +771,6 @@ function formatPlateLockedNotice(
     comment: '{plateName} is the locked build plate, named as the Models panel names it: its own name, or "Plate 1".',
   }), { plateName });
 }
-
-/** How many layers either side of the one on screen a plate's slice reads ahead. */
-const PRINTING_PREVIEW_PREFETCH_RADIUS = 2;
-
-/** How many layers of one bed are kept in memory before the oldest are dropped. */
-const PRINTING_PREVIEW_CACHE_LIMIT = 24;
 
 export default function Home() {
   const { _, i18n } = useLingui();
@@ -1360,6 +1400,18 @@ export default function Home() {
     point: { x: number; y: number; z: number };
   } | null>(null);
   const [manualRepairModelIds, setManualRepairModelIds] = React.useState<string[] | null>(null);
+  // Remesh is a decomposition, so it carries a confirm — it replaces the whole surface — and a
+  // progress dialog, because it takes tens of seconds on a large model.
+  const [tetSurfaceConfirmModelId, setTetSurfaceConfirmModelId] = React.useState<string | null>(null);
+  const [tetSurfaceProgress, setTetSurfaceProgress] = React.useState<SurfacingProgressState | null>(null);
+  const [tetSurfaceToken, setTetSurfaceToken] = React.useState<string | null>(null);
+  const [tetSurfaceCancelling, setTetSurfaceCancelling] = React.useState(false);
+  // Shrink-wrap: a confirm because it reworks the whole surface, and a progress dialog because the
+  // boolean takes seconds on a large model.
+  const [shrinkWrapConfirmModelId, setShrinkWrapConfirmModelId] = React.useState<string | null>(null);
+  const [shrinkWrapProgress, setShrinkWrapProgress] = React.useState<SurfacingProgressState | null>(null);
+  const [shrinkWrapToken, setShrinkWrapToken] = React.useState<string | null>(null);
+  const [shrinkWrapCancelling, setShrinkWrapCancelling] = React.useState(false);
   // `autoStartRepair` marks a repair that must begin on its own — the manifold warning's
   // Repair Now — instead of waiting in the Repair Mesh dialog for a second confirmation.
   const [autoStartRepair, setAutoStartRepair] = React.useState(false);
@@ -1376,40 +1428,17 @@ export default function Home() {
     segmentId: null,
     point: null,
   });
-  const [printingLayerPreviewUrls, setPrintingLayerPreviewUrls] = React.useState<Array<string | null>>([]);
-  /** Reads in flight, keyed `${plateId}:${layer}`, so one bed's read cannot block another's. */
-  const printingLayerPreviewLoadInFlightRef = React.useRef<Set<string>>(new Set());
-  /**
-   * Layer previews already read out of an artifact, by bed and layer, and the one owner of those
-   * object URLs.
-   *
-   * Reading a layer is a call into the native archive, and a bed switch empties the visible
-   * array and reads the layer again — that is the small lag on a bed switch. Every read lands
-   * here, and a read that is already here is served from memory instead.
-   */
-  const printingLayerPreviewCacheRef = React.useRef<Map<string, Map<number, string>>>(new Map());
 
-  const printingPreviewDepsRef = React.useRef<PrintingPreviewManagerDeps>({
-    printingPreviewTargetResolution: null,
+  const activeSliceProfileFingerprint = sliceProfileFingerprint(activePrinterProfile?.id, activeMaterialProfile?.id);
+  const slicedPlatesView = useSlicedPlates({
+    activePlateId: scene.activePlateId,
+    models: scene.models,
+    plateOf: scene.resolveModelPlateId,
+    profileFingerprint: activeSliceProfileFingerprint,
   });
-  /**
-   * The slice of each bed, by plate id: the printing workspace shows the slice of the bed being
-   * worked on, so a batch of beds is a set of slices rather than whichever finished last. An
-   * entry is made when a run starts, so the layer progress of a bed being sliced has somewhere
-   * to live before its artifact exists.
-   */
-  const [printingSlicesByPlateId, setPrintingSlicesByPlateId] = React.useState<Record<string, {
-    artifact: SliceExportArtifact | null;
-    totalLayers: number;
-  }>>({});
-  const activePrintingSlice = printingSlicesByPlateId[scene.activePlateId] ?? null;
-  const printingArtifact = activePrintingSlice?.artifact ?? null;
-  const printingPreviewTotalLayers = activePrintingSlice?.totalLayers ?? 0;
-  /** Whether any bed has been sliced: the workspace is enterable, the preview is per bed. */
-  const hasSlicedPlate = React.useMemo(
-    () => Object.values(printingSlicesByPlateId).some((entry) => entry.artifact !== null),
-    [printingSlicesByPlateId],
-  );
+  const { slicedPlates, activeSlice, isActiveSliceStale, hasSlicedPlate, layerPreviewUrlAt, layerPreviewCount } = slicedPlatesView;
+  const printingArtifact = activeSlice?.artifact ?? null;
+  const printingPreviewTotalLayers = activeSlice?.totalLayers ?? 0;
   const {
     printingSelectedLayer,
     setPrintingSelectedLayer,
@@ -1470,12 +1499,13 @@ export default function Home() {
     printingPreviewVisualTransform,
     printingPreviewCursor,
     usePrintingSettledHiResCanvas,
+    printingPreviewTargetResolution,
   } = usePrintingPreviewManager({
     scene,
     activePrinterProfile,
     printingPreviewTotalLayers,
-    printingLayerPreviewUrls,
-    deps: printingPreviewDepsRef,
+    layerPreviewUrlAt,
+    printingArtifact,
   });
 
   const defaultHolePunchState = React.useMemo<HolePunchPanelState>(() => ({
@@ -1503,8 +1533,6 @@ export default function Home() {
   const preSliceTargetPickerResolverRef = React.useRef<((selection: { deviceId: string; materialId?: string } | null) => void) | null>(null);
   const preSlicePrintConfirmResolverRef = React.useRef<((confirmed: boolean) => void) | null>(null);
   const [printingSlicingBenchmark, setPrintingSlicingBenchmark] = React.useState<SliceExportResult['benchmark'] | null>(null);
-  const [printingArtifactIsInvalid, setPrintingArtifactIsInvalid] = React.useState(false);
-  const slicedArtifactProfileFingerprintRef = React.useRef<string | null>(null);
   const [printingEstimatedResinMl, setPrintingEstimatedResinMl] = React.useState<number | null>(null);
   /** The same estimate over every plate, shown beside the per-plate one. */
   const [printingEstimatedResinTotalMl, setPrintingEstimatedResinTotalMl] = React.useState<number | null>(null);
@@ -1912,6 +1940,7 @@ export default function Home() {
     const seconds = total % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }, [modifierApplyOverlayElapsedSec]);
+
   const [supportRenderRefreshNonce, setSupportRenderRefreshNonce] = React.useState(0);
   const [gizmoResetNonce, setGizmoResetNonce] = React.useState(0);
   const [pendingDestructiveTransform, setPendingDestructiveTransform] = React.useState<{
@@ -2576,7 +2605,6 @@ export default function Home() {
             ...item,
             children: [
               { id: 'repair' as const, label: repaired ? msg`Repair Again` : msg`Auto-Repair`, icon: Wrench },
-              { id: 'remesh' as const, label: msg`Remesh`, icon: RefreshCw },
               // The second group only exists once there is a repair to undo or report on.
               ...(repaired
                 ? [
@@ -2623,159 +2651,18 @@ export default function Home() {
       ...(!scene.canPasteModel ? (['paste'] as const) : []),
       ...(!canSplitSupports ? (['split-supports'] as const) : []),
       ...(!canMergeSupports ? (['merge-supports'] as const) : []),
-      // Remesh is not wired yet. It sits in the flyout greyed out so the shape of the repair menu is
-      // settled before the pass behind it exists.
-      'remesh' as const,
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
-  /**
-   * Drops the visible array without revoking it: those URLs belong to the layer cache, which
-   * hands the same one back when the bed or layer is asked for again.
-   */
-  const clearPrintingLayerPreviewUrls = React.useCallback(() => {
-    printingLayerPreviewLoadInFlightRef.current.clear();
-    setPrintingLayerPreviewUrls([]);
-  }, []);
-
-  /**
-   * Puts one read layer in the cache, and returns its URL.
-   *
-   * The cache owns the URL; the visible array only borrows it, which is why nothing here revokes
-   * the previous one.
-   */
-  const cachePrintingLayerPreview = React.useCallback((
-    plateId: string,
-    layerNumber: number,
-    pngBytes: Uint8Array,
-  ): string => {
-    const bytes = new Uint8Array(pngBytes.length);
-    bytes.set(pngBytes);
-    const url = URL.createObjectURL(new Blob([bytes.buffer], { type: 'image/png' }));
-    const cache = printingLayerPreviewCacheRef.current;
-    const layersForPlate = cache.get(plateId) ?? new Map<number, string>();
-    layersForPlate.set(layerNumber, url);
-    cache.set(plateId, layersForPlate);
-
-    // Scrubbing a tall print would otherwise cache every layer it passes: the oldest go first,
-    // and a layer that is asked for again is simply read again.
-    while (layersForPlate.size > PRINTING_PREVIEW_CACHE_LIMIT) {
-      const oldestLayer = layersForPlate.keys().next();
-      if (oldestLayer.done) break;
-      const oldestUrl = layersForPlate.get(oldestLayer.value);
-      if (oldestUrl) URL.revokeObjectURL(oldestUrl);
-      layersForPlate.delete(oldestLayer.value);
-    }
-
-    return url;
-  }, []);
-
-  /** Forgets the cached previews of one bed — or of every bed — and revokes their URLs. */
-  const dropPrintingLayerPreviewCache = React.useCallback((plateId?: string) => {
-    const cache = printingLayerPreviewCacheRef.current;
-    if (plateId === undefined) {
-      for (const layers of cache.values()) {
-        for (const url of layers.values()) URL.revokeObjectURL(url);
-      }
-      cache.clear();
-      return;
-    }
-    const layers = cache.get(plateId);
-    if (!layers) return;
-    for (const url of layers.values()) URL.revokeObjectURL(url);
-    cache.delete(plateId);
-  }, []);
-
-  React.useEffect(() => {
-    return () => {
-      clearPrintingLayerPreviewUrls();
-      dropPrintingLayerPreviewCache();
-    };
-  }, [clearPrintingLayerPreviewUrls, dropPrintingLayerPreviewCache]);
-
-  // The streamed previews are of the bed that was sliced, and an entry left at the layer being
-  // shown stops the effect below from loading the new bed's own layer. So a change of bed drops
-  // them all: the preview then loads the bed being worked on from its artifact — the same read
-  // the slider uses — instead of waiting for the slider to be moved.
-  const printingPreviewPlateIdRef = React.useRef(scene.activePlateId);
-  React.useEffect(() => {
-    if (printingPreviewPlateIdRef.current === scene.activePlateId) return;
-    printingPreviewPlateIdRef.current = scene.activePlateId;
-    clearPrintingLayerPreviewUrls();
-
-    // If the bed's layer was read before, it goes up in the same tick: no frame with an empty
-    // preview, and no wait for the native archive.
-    const layerNumber = Math.max(1, Math.min(printingPreviewTotalLayers, printingDisplayedLayer));
-    const cachedUrl = printingLayerPreviewCacheRef.current.get(scene.activePlateId)?.get(layerNumber);
-    if (cachedUrl && layerNumber >= 1) {
-      setPrintingLayerPreviewUrls((previous) => {
-        const next = previous.slice();
-        if (next.length < printingPreviewTotalLayers) next.length = printingPreviewTotalLayers;
-        next[layerNumber - 1] = cachedUrl;
-        return next;
-      });
-    }
-  }, [
-    clearPrintingLayerPreviewUrls,
-    printingDisplayedLayer,
-    printingPreviewTotalLayers,
-    scene.activePlateId,
-  ]);
 
 
-  const handlePrintingLayerPreviewGenerated = React.useCallback((payload: {
-    layerIndex: number;
-    totalLayers: number;
-    pngBytes: Uint8Array;
-  }) => {
-    const previewBytes = new Uint8Array(payload.pngBytes.length);
-    previewBytes.set(payload.pngBytes);
-    const blob = new Blob([previewBytes.buffer], { type: 'image/png' });
-    const nextUrl = URL.createObjectURL(blob);
-
-    setPrintingLayerPreviewUrls((previous) => {
-      const next = previous.slice();
-      const requiredLength = Math.max(payload.totalLayers, payload.layerIndex + 1);
-      if (next.length < requiredLength) {
-        next.length = requiredLength;
-      }
-      const prevUrl = next[payload.layerIndex];
-      if (prevUrl) URL.revokeObjectURL(prevUrl);
-      next[payload.layerIndex] = nextUrl;
-      return next;
-    });
-
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[scene.activePlateId];
-      return {
-        ...previous,
-        [scene.activePlateId]: { artifact: current?.artifact ?? null, totalLayers: payload.totalLayers },
-      };
-    });
-    setPrintingSelectedLayer((previous) => {
-      const nextSelected = !Number.isFinite(previous) || previous <= 0
-        ? Math.max(1, Math.min(payload.totalLayers, payload.layerIndex + 1))
-        : Math.max(1, Math.min(payload.totalLayers, previous));
-
-      printingSelectedLayerRef.current = nextSelected;
-      setPrintingDisplayedLayer((current) => (current === nextSelected ? current : nextSelected));
-      return nextSelected;
-    });
-  }, []);
 
   const handleSlicingFinishedForPrinting = React.useCallback((payload: { totalLayers: number }) => {
-    const totalLayers = Math.max(1, payload.totalLayers);
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[scene.activePlateId];
-      return {
-        ...previous,
-        [scene.activePlateId]: { artifact: current?.artifact ?? null, totalLayers },
-      };
-    });
+    slicedPlates.runFinished(payload.totalLayers);
     setPrintingSelectedLayer(1);
     setPrintingDisplayedLayer(1);
     printingSelectedLayerRef.current = 1;
-  }, [scene.activePlateId]);
+  }, [slicedPlates]);
 
   const handleSliceRunStartedForPrinting = React.useCallback((context?: { plateId?: string }) => {
     // The bed being sliced, not the one being worked on: a batch slices one bed after another
@@ -2784,212 +2671,31 @@ export default function Home() {
     const slicedPlateId = context?.plateId ?? scene.activePlateId;
 
     setShouldAutoSliceOnExportEntry(false);
-    clearPrintingLayerPreviewUrls();
-    // This bed's slice is about to be replaced, so its cached layers are of a file that is
-    // going away.
-    dropPrintingLayerPreviewCache(slicedPlateId);
+    slicedPlates.runStarted(slicedPlateId);
     setPrintingSelectedLayer(1);
     setPrintingDisplayedLayer(1);
     printingSelectedLayerRef.current = 1;
-    // Only the bed being sliced loses its plate: a re-slice of one bed does not unslice the
-    // others, and the printing workspace shows whichever bed is being worked on.
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[slicedPlateId];
-      if (!current) return previous;
-      return { ...previous, [slicedPlateId]: { artifact: null, totalLayers: 0 } };
-    });
-    setPrintingArtifactIsInvalid(false);
-    slicedArtifactProfileFingerprintRef.current = null;
     setPrintingReadyPlateId(null);
-  }, [clearPrintingLayerPreviewUrls, dropPrintingLayerPreviewCache, scene.activePlateId]);
+  }, [scene.activePlateId, slicedPlates]);
 
-  React.useEffect(() => {
-    if (scene.mode !== 'printing') return;
-    if (!printingArtifact?.nativeTempPath) return;
-    if (printingPreviewTotalLayers <= 0) return;
-
-    const layerNumber = Math.max(1, Math.min(printingPreviewTotalLayers, printingDisplayedLayer));
-    const layerIndex = layerNumber - 1;
-    if (printingLayerPreviewUrls[layerIndex]) return;
-
-    const activePlateIdForPreview = scene.activePlateId;
-    const cachedLayerUrl = printingLayerPreviewCacheRef.current.get(activePlateIdForPreview)?.get(layerNumber);
-    if (cachedLayerUrl) {
-      setPrintingLayerPreviewUrls((previous) => {
-        const next = previous.slice();
-        if (next.length < printingPreviewTotalLayers) next.length = printingPreviewTotalLayers;
-        next[layerIndex] = cachedLayerUrl;
-        return next;
-      });
-      return;
-    }
-
-    // Keyed by the bed and layer, so a read already in flight for those is not started twice.
-    const inFlight = printingLayerPreviewLoadInFlightRef.current;
-    const inFlightKey = `${activePlateIdForPreview}:${layerNumber}`;
-    if (inFlight.has(inFlightKey)) return;
-    inFlight.add(inFlightKey);
-
-    let cancelled = false;
-    void readPrintLayerPreviewPngFromPath(printingArtifact.nativeTempPath, layerNumber, printingArtifact.outputFormat)
-      .then((pngBytes: Uint8Array) => {
-        if (cancelled) return;
-        const previewBytes = new Uint8Array(pngBytes.length);
-        previewBytes.set(pngBytes);
-        const blob = new Blob([previewBytes.buffer], { type: 'image/png' });
-        const nextUrl = cachePrintingLayerPreview(activePlateIdForPreview, layerNumber, pngBytes);
-
-        setPrintingLayerPreviewUrls((previous) => {
-          const next = previous.slice();
-          if (next.length < printingPreviewTotalLayers) {
-            next.length = printingPreviewTotalLayers;
-          }
-          next[layerIndex] = nextUrl;
-          return next;
-        });
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          console.warn(`[Printing] Failed loading layer ${layerNumber} preview PNG from archive.`, error);
-        }
-      })
-      .finally(() => {
-        inFlight.delete(inFlightKey);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    cachePrintingLayerPreview,
-    scene.activePlateId,
-    scene.mode,
-    printingArtifact?.nativeTempPath,
-    printingDisplayedLayer,
-    printingLayerPreviewUrls,
-    printingPreviewTotalLayers,
-  ]);
-
-
-  /**
-   * Reads the layers every bed would show, the moment that bed's slice lands.
-   *
-   * This runs while the batch is still slicing, not while anyone is scrubbing — the difference
-   * between a read-ahead that helps and one that competes with the drag. The workspace then opens
-   * with those layers already in memory instead of reading them as the app walks in.
-   */
-  const prefetchedPlatesRef = React.useRef<Map<string, SliceExportArtifact>>(new Map());
-  React.useEffect(() => {
-    let cancelled = false;
-
-    for (const [plateId, entry] of Object.entries(printingSlicesByPlateId)) {
-      const nativePath = entry.artifact?.nativeTempPath;
-      const outputFormat = entry.artifact?.outputFormat;
-      if (!nativePath || !outputFormat || !entry.artifact) continue;
-      // Once per slice: the artifact identity is what says this bed was sliced again.
-      if (prefetchedPlatesRef.current.get(plateId) === entry.artifact) continue;
-      prefetchedPlatesRef.current.set(plateId, entry.artifact);
-
-      const total = Math.max(1, entry.totalLayers);
-      const centre = Math.max(1, Math.min(total, printingDisplayedLayer));
-      const wantedLayers: number[] = [centre];
-      for (let offset = 1; offset <= PRINTING_PREVIEW_PREFETCH_RADIUS; offset += 1) {
-        if (centre + offset <= total) wantedLayers.push(centre + offset);
-        if (centre - offset >= 1) wantedLayers.push(centre - offset);
-      }
-
-      const missingLayers = wantedLayers.filter(
-        (layerNumber) => !printingLayerPreviewCacheRef.current.get(plateId)?.has(layerNumber),
-      );
-      if (missingLayers.length === 0) continue;
-
-      void readPrintLayerPreviewPngsFromPath(nativePath, missingLayers, outputFormat)
-        .then((layers: Uint8Array[]) => {
-          if (cancelled) return;
-          missingLayers.forEach((layerNumber, index) => {
-            const pngBytes = layers[index];
-            if (!pngBytes || pngBytes.length === 0) return;
-            cachePrintingLayerPreview(plateId, layerNumber, pngBytes);
-          });
-        })
-        .catch(() => {
-          // An older build without the batch command, or a file that would not decode: the loader
-          // reads the layer again when it is shown, one at a time as before.
-        });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cachePrintingLayerPreview, printingDisplayedLayer, printingSlicesByPlateId]);
-
-
-
-
-  const printingPreviewTargetResolution = React.useMemo(() => {
-    const printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
-    const printerHeight = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionY ?? 0));
-    const pixelSizeX = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.x ?? 1));
-    const pixelSizeY = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.y ?? 1));
-    const hasPrintableArtifact = (printingArtifact?.outputName ?? '').trim().length > 0;
-
-    if (!hasPrintableArtifact || printerWidth <= 0 || printerHeight <= 0) {
-      return null;
-    }
-
-    return {
-      widthPx: printerWidth,
-      heightPx: printerHeight,
-      viewportWidth: printerWidth * pixelSizeX,
-      viewportHeight: printerHeight * pixelSizeY,
-    };
-  }, [
-    activePrinterProfile?.display?.resolutionX,
-    activePrinterProfile?.display?.resolutionY,
-    activePrinterProfile?.pixelSize?.x,
-    activePrinterProfile?.pixelSize?.y,
-    printingArtifact?.outputName,
-  ]);
-
-  printingPreviewDepsRef.current.printingPreviewTargetResolution = printingPreviewTargetResolution;
+  useSlicedPlatePreviewLoading(slicedPlatesView, {
+    activePlateId: scene.activePlateId,
+    displayedLayer: printingDisplayedLayer,
+    isPrinting: scene.mode === 'printing',
+  });
 
   const hasPrintingWorkspaceData = printingPreviewTotalLayers > 0 && printingArtifact !== null;
-  const activeSliceProfileFingerprint = React.useMemo(() => {
-    const printerProfileId = String(activePrinterProfile?.id ?? '').trim();
-    const materialProfileId = String(activeMaterialProfile?.id ?? '').trim();
-    return `${printerProfileId}::${materialProfileId}`;
-  }, [activeMaterialProfile?.id, activePrinterProfile?.id]);
-
-  /** Which artifact each bed's recorded slice came from, so recording it twice is a no-op. */
-  const recordedSliceArtifactRef = React.useRef<Map<string, SliceExportArtifact>>(new Map());
 
   /** Records one bed's slice, which is what the workspace and its read-ahead are built from. */
   const recordPrintingSlice = React.useCallback((
     artifact: SliceExportArtifact,
     context?: { plateId?: string; totalLayers?: number },
   ) => {
-    const plateId = context?.plateId ?? scene.activePlateId;
-
-    // A batch records each plate as it lands and hands the same artifacts over again when it
-    // finishes. Only a different artifact means a different slice, and only then are the layers
-    // cached from the old one — and the read-ahead that has already run for this one — dropped.
-    if (recordedSliceArtifactRef.current.get(plateId) === artifact) return;
-    recordedSliceArtifactRef.current.set(plateId, artifact);
-    dropPrintingLayerPreviewCache(plateId);
-
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[plateId];
-      return {
-        ...previous,
-        [plateId]: {
-          artifact,
-          // A batch hands the totals over with the artifact; a single run streamed them as it
-          // sliced, so the entry already has them.
-          totalLayers: Math.max(1, context?.totalLayers ?? current?.totalLayers ?? 1),
-        },
-      };
+    slicedPlates.record(context?.plateId ?? scene.activePlateId, artifact, {
+      totalLayers: context?.totalLayers,
+      profileFingerprint: activeSliceProfileFingerprint,
     });
-  }, [dropPrintingLayerPreviewCache, scene.activePlateId]);
+  }, [activeSliceProfileFingerprint, scene.activePlateId, slicedPlates]);
 
   /**
    * A batch's plate, recorded as soon as it is sliced.
@@ -3011,7 +2717,6 @@ export default function Home() {
   ) => {
     const plateId = context?.plateId ?? scene.activePlateId;
     recordPrintingSlice(artifact, context);
-    setPrintingArtifactIsInvalid(false);
     setShowPrintingResliceModal(false);
     // Push a "Sliced Scene" marker to history so we can detect changes after this point
     pushSceneSlicedMarker();
@@ -7447,108 +7152,15 @@ export default function Home() {
     previousSceneModeRef.current = currentMode;
   }, [scene.mode, scene.activeModelId, scene.setSelectedModelIds, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
 
-  // Invalidate printing artifact if scene changed (detected via history events after the slice marker)
-  React.useEffect(() => {
-    if (!printingArtifact) return; // Nothing to invalidate
-    
-    const historyEvents = getHistoryDebugEvents();
-    if (historyEvents.length === 0) return;
-    
-    // Find the most recent "SCENE_SLICED" marker
-    let sliceMarkerIndex = -1;
-    for (let i = historyEvents.length - 1; i >= 0; i--) {
-      if (historyEvents[i].actionType === SCENE_SLICED) {
-        sliceMarkerIndex = i;
-        break;
-      }
-    }
-    
-    if (sliceMarkerIndex >= 0) {
-      // Check if there are any OTHER events (non-undo/redo) after the slice marker
-      const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
-      const hasModifications = eventsAfterSlice.some(
-        (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
-      );
-      
-      if (hasModifications) {
-        setPrintingArtifactIsInvalid(true);
-      }
-    }
-  }, [printingArtifact]);
-
-  // Re-check invalidation when history changes
-  React.useEffect(() => {
-    const checkInvalidation = () => {
-      if (!printingArtifact || printingArtifactIsInvalid) return; // Already invalid or no artifact
-      
-      const historyEvents = getHistoryDebugEvents();
-      if (historyEvents.length === 0) return;
-      
-      // Find the most recent "SCENE_SLICED" marker
-      let sliceMarkerIndex = -1;
-      for (let i = historyEvents.length - 1; i >= 0; i--) {
-        if (historyEvents[i].actionType === SCENE_SLICED) {
-          sliceMarkerIndex = i;
-          break;
-        }
-      }
-      
-      if (sliceMarkerIndex >= 0) {
-        // Check if there are any OTHER events (non-undo/redo) after the slice marker
-        const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
-        const hasModifications = eventsAfterSlice.some(
-          (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
-        );
-        
-        if (hasModifications) {
-          setPrintingArtifactIsInvalid(true);
-        }
-      }
-    };
-
-    const unsubscribe = subscribeHistoryDebug(checkInvalidation);
-    return () => {
-      void unsubscribe();
-    };
-  }, [printingArtifact, printingArtifactIsInvalid]);
-
-  // Bind slice artifact to active printer/material profile fingerprint.
-  React.useEffect(() => {
-    if (!printingArtifact) {
-      slicedArtifactProfileFingerprintRef.current = null;
-      return;
-    }
-
-    if (!slicedArtifactProfileFingerprintRef.current) {
-      slicedArtifactProfileFingerprintRef.current = activeSliceProfileFingerprint;
-    }
-  }, [activeSliceProfileFingerprint, printingArtifact]);
-
-  // Invalidate slicing output when printer and/or material profile changes.
-  React.useEffect(() => {
-    if (!printingArtifact || printingArtifactIsInvalid) return;
-
-    const baselineFingerprint = slicedArtifactProfileFingerprintRef.current;
-    if (!baselineFingerprint) {
-      slicedArtifactProfileFingerprintRef.current = activeSliceProfileFingerprint;
-      return;
-    }
-
-    if (baselineFingerprint !== activeSliceProfileFingerprint) {
-      setPrintingArtifactIsInvalid(true);
-    }
-  }, [activeSliceProfileFingerprint, printingArtifact, printingArtifactIsInvalid]);
 
   // Lock printing workspace when no models exist
   React.useEffect(() => {
     if (scene.models.length === 0 && scene.mode === 'printing') {
       // Reset to prepare mode if we delete the last model while in printing
       scene.setMode('prepare');
-      setPrintingSlicesByPlateId({});
-      dropPrintingLayerPreviewCache();
-      setPrintingArtifactIsInvalid(false);
+      slicedPlates.clear();
     }
-  }, [dropPrintingLayerPreviewCache, scene.models.length, scene.mode, scene]);
+  }, [scene.models.length, scene.mode, scene, slicedPlates]);
 
   // Track whether the profile settings modal is currently open so we can
   // defer the printing-workspace kick until after the user closes it.
@@ -7571,7 +7183,7 @@ export default function Home() {
   // If artifact becomes invalid while already in printing workspace, kick back and show modal.
   // If the profile settings modal is currently open, defer until it closes.
   React.useEffect(() => {
-    if (scene.mode === 'printing' && printingArtifactIsInvalid && printingArtifact) {
+    if (scene.mode === 'printing' && isActiveSliceStale) {
       if (isProfileModalOpenRef.current) {
         pendingPrintingKickRef.current = true;
       } else {
@@ -7579,7 +7191,7 @@ export default function Home() {
         setShowPrintingResliceModal(true);
       }
     }
-  }, [printingArtifactIsInvalid, printingArtifact, scene.mode, scene]);
+  }, [isActiveSliceStale, scene.mode, scene]);
 
   // Auto-trigger upload/print when entering printing workspace via a Slice & Upload / Slice & Print intent
   React.useEffect(() => {
@@ -7728,12 +7340,12 @@ export default function Home() {
     if (nextMode === 'printing' && !hasSlicedPlate) {
       return;
     }
-    if (nextMode === 'printing' && printingArtifactIsInvalid && printingArtifact) {
+    if (nextMode === 'printing' && isActiveSliceStale) {
       setShowPrintingResliceModal(true);
       return;
     }
     scene.setMode(nextMode);
-  }, [hasSlicedPlate, printingArtifact, printingArtifactIsInvalid, scene]);
+  }, [hasSlicedPlate, isActiveSliceStale, scene]);
 
   const handleAddPrinterFromOnboarding = React.useCallback(() => {
     openProfileSettingsModal('printer', { openPrinterLibrary: true });
@@ -10822,7 +10434,7 @@ export default function Home() {
         monitorButtonPaused={selectedPrinterHasPausedAlert}
         monitorButtonOffline={isTopbarSelectedPrinterOffline}
         printerReachabilityByDeviceId={printerReachabilityByDeviceId}
-        warnBeforeProfileSettingsOpen={Boolean(printingArtifact && !printingArtifactIsInvalid)}
+        warnBeforeProfileSettingsOpen={Boolean(printingArtifact && !isActiveSliceStale)}
         onOpenMonitor={() => setPrintingMonitorModalOpen(true)}
       />
 
@@ -10915,7 +10527,6 @@ export default function Home() {
               crossSectionLayerHeightMm: crossSectionLayerHeightMm,
               estimatedVolumeMlLabel: estimatedVolumeMlLabel,
               handleSliceRunStartedForPrinting: handleSliceRunStartedForPrinting,
-              handlePrintingLayerPreviewGenerated: handlePrintingLayerPreviewGenerated,
               handleSlicingFinishedForPrinting: handleSlicingFinishedForPrinting,
               handleSliceArtifactReady: handleSliceArtifactReady,
               handleSlicePlateSliced: handleSlicePlateSliced,
@@ -11086,7 +10697,8 @@ export default function Home() {
           printingSendProgress: printingSendProgress,
           printingSendBusy: printingSendBusy,
           printingSendStageText: printingSendStageText,
-          printingLayerPreviewUrls: printingLayerPreviewUrls,
+          printingLayerPreviewUrlAt: layerPreviewUrlAt,
+          printingLayerPreviewCount: layerPreviewCount,
           printingArtifact: printingArtifact,
           printingUploadDialogOpen: printingUploadDialogOpen,
           printingUploadDialogStage: printingUploadDialogStage,
@@ -11822,6 +11434,121 @@ export default function Home() {
           setManualRepairModelIds([manifoldWarningModelId]);
         }}
       />
+
+      <TetrahedralRemeshConfirmModal
+        isOpen={tetSurfaceConfirmModelId !== null}
+        onCancel={() => setTetSurfaceConfirmModelId(null)}
+        onConfirm={() => {
+          const targetId = tetSurfaceConfirmModelId;
+          setTetSurfaceConfirmModelId(null);
+          if (targetId) {
+            setTetSurfaceCancelling(false);
+            setTetSurfaceToken(null);
+            setTetSurfaceProgress({ startedAt: performance.now(), phase: null, phases: [] });
+            void scene.tetSurfaceModelInPlace(targetId, TET_SURFACE_DEFAULT_OPTIONS, {
+              onToken: setTetSurfaceToken,
+              onProgress: (progress) => setTetSurfaceProgress((previous) => (
+                previous
+                  ? { ...previous, phase: progress, phases: [...previous.phases, progress] }
+                  : previous
+              )),
+            }).finally(() => {
+              setTetSurfaceProgress(null);
+              setTetSurfaceToken(null);
+              setTetSurfaceCancelling(false);
+            });
+          }
+        }}
+      />
+
+      {tetSurfaceProgress && (
+        <SurfacingProgressModal
+          state={tetSurfaceProgress}
+          cancelling={tetSurfaceCancelling}
+          presentation={{
+            title: _(msg`Remesh`),
+            subtitle: _(msg`Rebuilding the surface.`),
+            ariaLabel: _(msg`Remesh`),
+            progressAriaLabel: _(msg`Remesh progress`),
+            icon: Pyramid,
+            accent: '#d97706',
+            phaseLabel: (name) => translateTetSurfacePhase(name, _),
+            progressFraction: tetSurfaceProgressFraction,
+            notices: [
+              {
+                tone: 'info',
+                body: (
+                  <Trans>The rebuilt surface will replace this model in your current scene. Large models take longer, and some models cannot be rebuilt at all and are left untouched. You can undo this afterwards.</Trans>
+                ),
+              },
+            ],
+          }}
+          onStop={() => {
+            if (tetSurfaceCancelling || !tetSurfaceToken) return;
+            // Stops at the next phase boundary, so the model is left exactly as it was.
+            setTetSurfaceCancelling(true);
+            void cancelMeshRepair(tetSurfaceToken);
+          }}
+        />
+      )}
+
+
+      <ShrinkWrapConfirmModal
+        isOpen={shrinkWrapConfirmModelId !== null}
+        onCancel={() => setShrinkWrapConfirmModelId(null)}
+        onConfirm={() => {
+          const targetId = shrinkWrapConfirmModelId;
+          setShrinkWrapConfirmModelId(null);
+          if (targetId) {
+            setShrinkWrapCancelling(false);
+            setShrinkWrapToken(null);
+            setShrinkWrapProgress({ startedAt: performance.now(), phase: null, phases: [] });
+            void scene.solidRemeshModelInPlace(targetId, SOLID_REMESH_DEFAULT_OPTIONS, {
+              onToken: setShrinkWrapToken,
+              onProgress: (progress) => setShrinkWrapProgress((previous) => (
+                previous
+                  ? { ...previous, phase: progress, phases: [...previous.phases, progress] }
+                  : previous
+              )),
+            }).finally(() => {
+              setShrinkWrapProgress(null);
+              setShrinkWrapToken(null);
+              setShrinkWrapCancelling(false);
+            });
+          }
+        }}
+      />
+
+      {shrinkWrapProgress && (
+        <SurfacingProgressModal
+          state={shrinkWrapProgress}
+          cancelling={shrinkWrapCancelling}
+          presentation={{
+            title: _(msg`Shrink-Wrap`),
+            subtitle: _(msg`Resolving the surface into a solid.`),
+            ariaLabel: _(msg`Shrink-Wrap`),
+            progressAriaLabel: _(msg`Shrink-Wrap progress`),
+            icon: RefreshCw,
+            accent: '#2563eb',
+            phaseLabel: (name) => translateSolidRemeshPhase(name, _),
+            progressFraction: solidRemeshProgressFraction,
+            notices: [
+              {
+                tone: 'info',
+                body: (
+                  <Trans>The rebuilt surface will replace this model in your current scene. Large models take longer, and some models cannot be rebuilt at all and are left untouched. You can undo this afterwards.</Trans>
+                ),
+              },
+            ],
+          }}
+          onStop={() => {
+            if (shrinkWrapCancelling || !shrinkWrapToken) return;
+            // Stops at the next phase boundary, so the model is left exactly as it was.
+            setShrinkWrapCancelling(true);
+            void cancelMeshRepair(shrinkWrapToken);
+          }}
+        />
+      )}
 
 
       <MeshRepairModals

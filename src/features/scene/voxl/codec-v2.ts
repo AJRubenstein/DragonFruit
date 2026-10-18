@@ -30,6 +30,8 @@
  */
 
 import { unzlibSync, zlib as zlibAsync } from 'fflate';
+import { runWithConcurrency } from '@/utils/runWithConcurrency';
+import { logToNativeFile } from '@/utils/nativeLog';
 import {
   VOXL_MAGIC,
   type BuildVoxlDocumentInput,
@@ -39,6 +41,7 @@ import {
   type VoxlModelEntry,
   type VoxlSceneState,
   type PrecompressedChunk,
+  type VoxlMeshRange,
 } from './types';
 import type { DragonfruitImportFormat } from '@/supports/types';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
@@ -986,6 +989,9 @@ export async function serializeVoxlDocumentV2Streaming(
 
 // ─── V2 Binary Reader ─────────────────────────────────────────────────────────
 
+/** Mesh chunks inflated at once while parsing (see `parseVoxlBinaryV2`). */
+const BULK_INFLATE_CONCURRENCY = 4;
+
 class LazyOriginalMeshBytesMap extends Map<string, Uint8Array> {
   private chunks: Map<string, PrecompressedChunk>;
   
@@ -1025,13 +1031,66 @@ class LazyOriginalMeshBytesMap extends Map<string, Uint8Array> {
 }
 
 /**
+ * Inflate one chunk with the platform's own decompressor.
+ *
+ * `DecompressionStream`, not `fflate`'s async pool: the app's webview reports
+ * `crossOriginIsolated`, and `fflate` then waits for its workers through
+ * `SharedArrayBuffer`/`Atomics` — blocking the very main thread the pool was
+ * supposed to free. Measured at scene open, that showed up as 2.8-10 s stalls and
+ * a wedged content process. The native stream is genuinely off-thread, streams its
+ * output instead of cloning one large buffer back, and is the faster of the two
+ * besides (70 ms against 93 ms for 24 MB in Node).
+ */
+async function inflateChunk(entry: ChunkDirEntry, raw: Uint8Array): Promise<Uint8Array> {
+  const source = new ReadableStream<BufferSource>({
+    start(controller) {
+      // `BufferSource` insists on an `ArrayBuffer`-backed view, which TS's
+      // typed-array generics cannot see through a `subarray`; the bytes are the
+      // same either way.
+      controller.enqueue(raw as BufferSource);
+      controller.close();
+    },
+  });
+  const stream = source.pipeThrough<Uint8Array>(new DecompressionStream('deflate'));
+  const inflated = new Uint8Array(await new Response(stream).arrayBuffer());
+  if (inflated.byteLength !== entry.uncompressedSize) {
+    throw new Error(
+      `VOXL V2: chunk ${entry.type}[${entry.index}] size mismatch after decompression ` +
+      `(${inflated.byteLength} of ${entry.uncompressedSize} bytes).`,
+    );
+  }
+  return inflated;
+}
+
+/**
  * Parse a VOXL V2 binary container into a `ParsedVoxlResult`.
  *
  * The returned `document` uses V1 schema shape so the rest of the app can
  * consume it uniformly.  Mesh bytes for `embedded-chunk` models are provided
  * separately in `meshBytes` to avoid base64 round-trips.
+ *
+ * **The mesh chunks are inflated in parallel, off the main thread.** A referenced
+ * MESH chunk is a whole STL payload — 782 MB across a 15-model scene, compressed
+ * in the container — and inflating them one after another was 4.6 s of that
+ * scene's load, all of it before any model work started. They are independent
+ * zlib streams, so they all go to `fflate`'s pool at once and the loops below read
+ * the resolved bytes; anything not pre-listed still inflates synchronously.
  */
-export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
+export async function parseVoxlBinaryV2(
+  data: Uint8Array,
+  options: {
+    /**
+     * Leave the MESH chunks where they are and report their locations instead of
+     * inflating them (default: inflate, which is what a caller holding only the
+     * bytes needs). The native loader reads and inflates a range itself, so a scene
+     * opened from a path pays neither the 677 MB of heap nor the ~2 s of inflate
+     * this parse used to do before any model work started. The V3.1 modifier
+     * snapshots (HSRC/CAVT/PSRC) are *document* state — they are base64-encoded into
+     * the document below — so those still inflate here.
+     */
+    deferMeshChunks?: boolean;
+  } = {},
+): Promise<ParsedVoxlResult> {
   if (data.length < HEADER_SIZE) {
     throw new Error('Invalid VOXL V2 file: too small.');
   }
@@ -1080,7 +1139,13 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
 
   // ── Chunk reader helpers ──────────────────────────────────────────────
 
+  /** Chunk bytes inflated ahead of the loops, keyed `type:index`. */
+  const preinflated = new Map<string, Uint8Array>();
+  const chunkKey = (type: string, index: number) => `${type}:${index}`;
+
   function readChunk(entry: ChunkDirEntry): Uint8Array {
+    const ready = preinflated.get(chunkKey(entry.type, entry.index));
+    if (ready) return ready;
     const raw = data.subarray(entry.offset, entry.offset + entry.compressedSize);
 
     if (entry.compression === COMPRESSION_ZLIB) {
@@ -1116,9 +1181,40 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
 
   const extensions = readJsonChunk<Record<string, unknown>>(CHUNK_EXTD) ?? {};
 
+  // ── Inflate the bulk chunks, in parallel ──────────────────────────────
+  // The JSON above is small and stays synchronous. Everything below it is mesh
+  // data: one STL per MESH chunk, plus the V3.1 position snapshots. Scheduling
+  // them together is what turns a serial 4.6 s into the pool's throughput; ORIG
+  // chunks stay packed on purpose (they are decompressed on demand, if at all).
+  const deferMeshChunks = options.deferMeshChunks === true;
+  const bulkChunks = entries.filter(
+    (entry) => entry.compression === COMPRESSION_ZLIB
+      && ((entry.type === CHUNK_MESH && !deferMeshChunks)
+        || entry.type === CHUNK_HSRC
+        || entry.type === CHUNK_CAVT
+        || entry.type === CHUNK_PSRC),
+  );
+  if (bulkChunks.length > 0) {
+    const started = performance.now();
+    // Four at a time: the chunks are 20-48 MB compressed and up to 129 MB
+    // inflated, so a whole scene in flight at once peaks at most of a gigabyte
+    // for no extra throughput.
+    await runWithConcurrency(bulkChunks, BULK_INFLATE_CONCURRENCY, async (entry) => {
+      const raw = data.subarray(entry.offset, entry.offset + entry.compressedSize);
+      preinflated.set(chunkKey(entry.type, entry.index), await inflateChunk(entry, raw));
+    });
+    const bulkBytes = bulkChunks.reduce((sum, entry) => sum + entry.uncompressedSize, 0);
+    const timing =
+      `[voxl] inflated ${bulkChunks.length} bulk chunks (${(bulkBytes / 1_000_000).toFixed(0)} MB) ` +
+      `in ${(performance.now() - started).toFixed(0)}ms`;
+    console.log(timing);
+    void logToNativeFile('info', timing);
+  }
+
   // ── Resolve MESH chunks ───────────────────────────────────────────────
 
   const meshBytesMap = new Map<string, Uint8Array>();
+  const meshRangesMap = new Map<string, VoxlMeshRange>();
   // Decompress each MESH chunk at most once even when many models share it
   // (dedup) — the shared bytes are handed to every referencing model.
   const chunkBytesByIndex = new Map<number, Uint8Array>();
@@ -1129,17 +1225,26 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
       // V3 duplicates point at an owner chunk via chunkIndex; V2/legacy files
       // map 1:1, so a missing chunkIndex means "my own model index".
       const chunkIdx = typeof model.mesh.chunkIndex === 'number' ? model.mesh.chunkIndex : i;
+      const meshEntry = entries.find((e) => e.type === CHUNK_MESH && e.index === chunkIdx);
+      if (!meshEntry) continue;
+      if (deferMeshChunks) {
+        // Where it is, not what it is: the native loader reads and inflates it.
+        // Dedup survives — a V3 duplicate points at the owner's chunk, so both
+        // report the same range.
+        meshRangesMap.set(model.id, {
+          offset: meshEntry.offset,
+          compressedSize: meshEntry.compressedSize,
+          uncompressedSize: meshEntry.uncompressedSize,
+          compression: meshEntry.compression,
+        });
+        continue;
+      }
       let bytes = chunkBytesByIndex.get(chunkIdx);
       if (!bytes) {
-        const meshEntry = entries.find((e) => e.type === CHUNK_MESH && e.index === chunkIdx);
-        if (meshEntry) {
-          bytes = readChunk(meshEntry);
-          chunkBytesByIndex.set(chunkIdx, bytes);
-        }
+        bytes = readChunk(meshEntry);
+        chunkBytesByIndex.set(chunkIdx, bytes);
       }
-      if (bytes) {
-        meshBytesMap.set(model.id, bytes);
-      }
+      meshBytesMap.set(model.id, bytes);
     }
   }
 
@@ -1238,6 +1343,7 @@ export function parseVoxlBinaryV2(data: Uint8Array): ParsedVoxlResult {
       extensions,
     },
     meshBytes: meshBytesMap,
+    ...(deferMeshChunks ? { meshRanges: meshRangesMap } : {}),
     ...(lazyOriginalMeshBytesMap ? { originalMeshBytes: lazyOriginalMeshBytesMap } : {}),
     ...(originalMeshChunksMap.size > 0 ? { originalMeshChunks: originalMeshChunksMap } : {}),
     sourceVersion: hasModifierChunks ? VOXL_V3_SEMANTIC_REVISION : VOXL_V2_INLINE_REVISION,

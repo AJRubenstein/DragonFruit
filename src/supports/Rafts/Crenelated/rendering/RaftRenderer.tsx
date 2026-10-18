@@ -2,6 +2,7 @@
 
 import React from 'react';
 import * as THREE from 'three';
+import { supportAnswersPointer, SCENERY_DIM } from '@/features/scene/plates/plateInteractivity';
 import { useSyncExternalStore } from 'react';
 import { subscribe, getSnapshot } from '@/supports/state';
 import { getRaftSettings, subscribeToRaftStore } from '../RaftState';
@@ -23,6 +24,8 @@ interface RaftRendererProps {
   clipUpper?: number | null;
   passive?: boolean;
   colorized?: boolean;
+  /** Models on another bed: their raft dims and answers no pointer, like the model itself. */
+  pointerSceneryModelIds?: ReadonlySet<string>;
   hoverized?: boolean;
   ghostOpacity?: number;
   ghostRenderOrder?: number;
@@ -45,6 +48,7 @@ export default function RaftRenderer({
   clipUpper = null,
   passive = false,
   colorized = true,
+  pointerSceneryModelIds,
   hoverized = false,
   ghostOpacity = 1,
   ghostRenderOrder = 0,
@@ -205,6 +209,7 @@ export default function RaftRenderer({
   const handleClick = React.useCallback((e: any) => {
     if (passive) return;
     const modelId = e?.object?.userData?.modelId;
+    if (!supportAnswersPointer(modelId, pointerSceneryModelIds)) return;
     if (!modelId || !onModelPointerSelect) return;
 
     e.stopPropagation();
@@ -214,7 +219,7 @@ export default function RaftRenderer({
     }
 
     onModelPointerSelect(modelId, e);
-  }, [onModelPointerSelect, passive]);
+  }, [onModelPointerSelect, passive, pointerSceneryModelIds]);
 
   const handlePointerMove = React.useCallback((e: any) => {
     if (passive) return;
@@ -284,6 +289,9 @@ export default function RaftRenderer({
         );
       const tintHex = isWall ? '#22c55e' : '#3b82f6';
       const nextColor = blendColor('#a3a3a3', tintHex, tintStrength);
+      if (!supportAnswersPointer(modelId ?? undefined, pointerSceneryModelIds)) {
+        nextColor.multiplyScalar(SCENERY_DIM);
+      }
       if (!material.color.equals(nextColor)) {
         material.color.copy(nextColor);
       }
@@ -310,7 +318,7 @@ export default function RaftRenderer({
         mesh.renderOrder = ghostRenderOrder;
       }
     }
-  }, [colorized, effectiveHoverModelId, effectiveVisualActiveModelId, hasSelectedModels, hoverized, raft.thickness, raftOpacity, raftTransparent, ghostRenderOrder, raftMeshes, selectedModelIdSet, clippingPlanes]);
+  }, [colorized, effectiveHoverModelId, effectiveVisualActiveModelId, hasSelectedModels, hoverized, raft.thickness, raftOpacity, raftTransparent, ghostRenderOrder, raftMeshes, selectedModelIdSet, clippingPlanes, pointerSceneryModelIds]);
 
   if (raft.bottomMode === 'off') return null;
   return <group ref={groupRef} position={[0, 0, 0]} onClick={navigationLodActive ? undefined : handleClick} onPointerMove={navigationLodActive ? undefined : handlePointerMove} onPointerOut={navigationLodActive ? undefined : handlePointerOut} />;

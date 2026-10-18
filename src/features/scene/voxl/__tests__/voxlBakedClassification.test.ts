@@ -49,6 +49,7 @@ function classification(modelTriangleCount: number | null): MeshHealthReport {
     model_manifold_status: null,
     residual_issues: [],
     fully_repaired: true,
+    rebuilt: false,
     cancelled: false,
     total_ms: 3.5,
   };
@@ -60,10 +61,10 @@ test('VOXL V2 binary round-trip preserves the baked classification', async () =>
   const meshBytes = new Map<number, Uint8Array>([[0, meshLike(7)]]);
 
   const binary = await serializeVoxlDocumentV2(input, meshBytes);
-  const parsed = parseVoxlBinaryV2(binary);
+  const parsed = await parseVoxlBinaryV2(binary);
 
   assert.deepEqual(parsed.document.models[0].classification, baked);
-  assert.deepEqual(parseVoxlAuto(binary).document.models[0].classification, baked);
+  assert.deepEqual((await parseVoxlAuto(binary)).document.models[0].classification, baked);
 });
 
 test('a classification with no split round-trips as such', async () => {
@@ -71,7 +72,7 @@ test('a classification with no split round-trips as such', async () => {
   const input = testInput([testModel('m1', { classification: baked })]);
   const meshBytes = new Map<number, Uint8Array>([[0, meshLike(8)]]);
 
-  const parsed = parseVoxlBinaryV2(await serializeVoxlDocumentV2(input, meshBytes));
+  const parsed = await parseVoxlBinaryV2(await serializeVoxlDocumentV2(input, meshBytes));
 
   // null means "the classifier found no model/support boundary" — a reader must
   // tell that apart from "never classified", which is `undefined`.
@@ -86,7 +87,7 @@ test('a model without a classification writes no classification key', async () =
   const binary = await serializeVoxlDocumentV2(input, meshBytes);
 
   assert.equal(readVoxlChunkText(binary, 'MODL').includes('"classification"'), false);
-  assert.equal(parseVoxlBinaryV2(binary).document.models[0].classification, undefined);
+  assert.equal((await parseVoxlBinaryV2(binary)).document.models[0].classification, undefined);
 });
 
 /** Minimal binary STL: 80-byte header + count, then 50 bytes per triangle. */
@@ -115,7 +116,7 @@ test('the classification a VOXL writes is the one its loader consumes', async ()
     testInput([testModel('m1', { classification: classification(3) })]),
     new Map<number, Uint8Array>([[0, mesh]]),
   );
-  const parsed = parseVoxlBinaryV2(binary);
+  const parsed = await parseVoxlBinaryV2(binary);
   const payload = parsed.meshBytes.get('m1');
   const baked = parsed.document.models[0].classification;
   assert.ok(payload);
