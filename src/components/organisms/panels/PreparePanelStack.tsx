@@ -245,27 +245,9 @@ export function PreparePanelStack({
             : transformMgr.transformHook.resetRotation}
           onRotationComplete={isMultiSelection ? handleSelectionTransformCommit : handleRotationComplete}
           scale={transformMgr.transform.scale}
-          onScaleChange={isMultiSelection ? handleScaleSelectedModels : (x, y, z) => {
-            const current = transformMgr.transform.scale;
-            const EPS = 1e-6;
-            const hasDestructiveScale = Math.abs(x - current.x) > EPS
-              || Math.abs(y - current.y) > EPS
-              || Math.abs(z - current.z) > EPS;
-
-            if (hasDestructiveScale) {
-              ensurePendingTransformHistoryForActiveModel('scale');
-            }
-
-            if (hasDestructiveScale) {
-              const proceed = requestDestructiveTransformSupportDeletion('Scale XYZ');
-              if (!proceed) return;
-            }
-
-            transformMgr.transformHook.setScale(x, y, z);
-          }}
-          onResetScale={isMultiSelection
-            ? () => handleResetSelectedModels('scale')
-            : transformMgr.transformHook.resetScale}
+          onScaleChange={handleScaleSelectedModels}
+          onResetScale={() => handleResetSelectedModels('scale')}
+          onScaleCommit={handleSelectionTransformCommit}
           uniformScaling={uniformScaling}
           onUniformScalingChange={setUniformScaling}
           localSpace={localTransformSpace}

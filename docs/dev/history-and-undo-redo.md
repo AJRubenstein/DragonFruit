@@ -187,6 +187,22 @@ edit to avoid drift. Multi-selection scaling keeps horizontal spacing changes
 but anchors each model independently. Do not apply plate/lift snapping to scaling
 previews or commits: that would overwrite the preserved height. Record the
 adjusted position and scale together in the existing single history step.
+
+`src/components/organisms/panels/PreparePanelStack.tsx` routes scale edits and
+Reset Scale through the shared selection handlers even when exactly one model
+is selected. Do not send that single-model branch directly to
+`transformHook.setScale` or `transformHook.resetScale`: those setters update only
+the scale, not the compensating position. `TransformControls` uses its required
+`onScaleCommit` callback for scale-field blur and Reset Scale, independently of
+the generic `onTransformCommit` callback. This keeps scale history in one scene
+step without changing the existing move/rotation commit paths:
+
+```tsx
+onScaleChange={handleScaleSelectedModels}
+onResetScale={() => handleResetSelectedModels('scale')}
+onScaleCommit={handleSelectionTransformCommit}
+```
+
 See [Transform and Positioning](../workflows/transform-and-positioning.md).
 
 Three payload patterns exist:

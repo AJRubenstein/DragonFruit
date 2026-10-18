@@ -82,6 +82,18 @@ selection, each change as a single undo step:
 - Keep orientation suitable for drainage and support access.
 - Re-check bounds before moving to support placement.
 
+### Panel scaling regression checks
+
+- Select exactly one model. Increase and decrease its scale using both the
+  percentage and millimetre fields; its bottom must stay at the same world Z
+  during typing and after leaving the field. Repeat with a tilted, raised model.
+- Use **Reset Scale** on that single model. The bottom must still stay fixed.
+- Undo and redo each completed edit. Position and scale must restore together
+  in one step, including the centre's compensating Z movement.
+- Repeat with several selected models at different heights. Each model must
+  retain its own bottom height.
+
+
 ## Related workflows
 
 - [Model Preparation](./model-preparation.md)
