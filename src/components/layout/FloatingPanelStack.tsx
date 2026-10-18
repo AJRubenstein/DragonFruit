@@ -1,5 +1,6 @@
 import { clamp } from '@/utils/math';
 import React from 'react';
+import { LayoutPanelTop, RotateCcw } from 'lucide-react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import windowLayouts from '@/config/window-layouts.json';
@@ -1805,8 +1806,8 @@ export function FloatingPanelStack({ children, leftInsetPx = 0, railIsColumn = t
       <ContextMenu
         position={windowContextMenu}
         entries={[
-          { id: 'reset-window', label: _(msg`Reset this window`) },
-          { id: 'reset-all-windows', label: _(msg`Reset all windows layout`) },
+          { id: 'reset-window', label: _(msg`Reset Window`), icon: RotateCcw },
+          { id: 'reset-all-windows', label: _(msg`Reset Layout`), icon: LayoutPanelTop },
         ]}
         onSelect={(id) => {
           if (!windowContextMenu) return;

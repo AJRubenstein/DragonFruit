@@ -1,7 +1,9 @@
+import type { MessageDescriptor } from '@lingui/core';
 import * as THREE from 'three';
 import { Knot, Segment, Vec3 } from '../../types';
 import type { SupportTypeId } from '../../supportTypeRegistry';
 import { getBezierPointAtT } from '../../Curves/BezierUtils';
+import { MOVE_SUPPORT_KNOT_LABEL, MOVE_TIP_KNOT_LABEL, moveHostKnotLabel } from '@/supports/history/supportHistoryLabels';
 
 export function projectOntoSegment(
     ray: THREE.Ray,
@@ -151,8 +153,8 @@ export type KnotHostType = SupportTypeId;
 export function knotMoveDescription(
     host: KnotHostType | null | undefined,
     ridesCone = false,
-): string {
-    if (!host) return 'Move support knot';
-    return ridesCone ? 'Move tip knot' : `Move ${host} knot`;
+): MessageDescriptor {
+    if (!host) return MOVE_SUPPORT_KNOT_LABEL;
+    return ridesCone ? MOVE_TIP_KNOT_LABEL : moveHostKnotLabel(host);
 }
 

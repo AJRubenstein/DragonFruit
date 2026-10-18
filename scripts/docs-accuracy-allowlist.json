@@ -1,6 +1,7 @@
 {
-      "_comment": "Deliberate exceptions for scripts/check-docs-accuracy.mjs. Every entry needs a reason — an unexplained entry is how a checker stops catching things.",
+      "_comment": "Deliberate exceptions for scripts/check-docs-accuracy.mjs. Every entry needs a reason \u2014 an unexplained entry is how a checker stops catching things.",
       "symbols": [
+            "CompressionStream",
             "registerX",
             "subscribeX",
             "getXSnapshot",
@@ -83,7 +84,15 @@
             "dragonfruit_desktop",
             "load_stl_file",
             "encode_stl_response",
-            "mockIPC"
+            "mockIPC",
+            "remove_non_manifold_faces",
+            "split_non_manifold_vertices",
+            "micro_topology_heal",
+            "cull_post_weld",
+            "extract_union_boundary_faces",
+            "resample_outer_surface",
+            "projectService",
+            "directed_hole_loops"
       ],
       "paths": [
             "src/supports/generatedSupportRegistrations.ts",
@@ -99,6 +108,7 @@
             "src/supports/PlacementLogic/Pathfinding/PotentialFieldSolver.ts"
       ],
       "_reasons": {
+            "CompressionStream": "a platform API, not an app symbol. docs/dev/backlog.md names it as the compressor the reverted soup-packing attempt used and the decomposer the shipped container parse uses, and docs/dev/performance-debugging.md names it in the same two places. It is deliberately absent from the tree.",
             "removed with DFST": "load_stl_file and encode_stl_response were deleted when the STL load path folded into load_mesh_file and the DFST payload was replaced by DFMX. ADR-0027 names them because the record IS their protocol and its supersession note says they are gone; rewriting the ADR's body to today's names would misstate what it decided.",
             "dragonfruit_desktop": "the Rust log target name (the crate is dragonfruit-desktop, so its module paths use an underscore), cited by performance-debugging.md for where the AO path's own log records appear. It is a log module path, not an identifier anywhere in the tree.",
             "tauri test mocks": "mockIPC is exported by @tauri-apps/api/mocks; docs/dev/dom-tests.md names it as the way a DOM test fakes the native bridge, and no test uses it yet.",
@@ -109,15 +119,17 @@
             "generated at build time": "the paths are produced by scripts/generate-plugin-registry.mjs (generatedBuiltinSimplePlugins.ts by scripts/generate-builtin-simple-plugins.mjs) and are gitignored (**/generated*), so they are absent from a clean checkout, which is what CI checks.",
             "proposed, not built": "island_replay is the name ADR-0025 proposes for a capability not yet folded in; pushToast is named in notifications.md precisely to state that no such API exists. format_info() is the trait method docs/internal/cli/new-format-plan.md proposes as one of two options.",
             "removed with the V3 routing": "SmartPlacementV2 is the multi-joint router that SmartPlacementV3 replaced; docs/adr/0028-potential-gradient-pathfinding.md names it because the ADR records the approach it chose and the engine it ran in, and an ADR is history rather than a description of the current code. applyTrunkReplacement is named by docs/internal/backlog.md in an unpublished finding about the trunk replacement flow, which was deleted with it.",
-      "unpublished plans against older code": "docs/internal/cli/gaps-plan.md and wont-do.md, and docs/internal/slicing-engine-v3.2-roadmap.md, are working plans written against the code of their day, kept as the record of what was planned and why. updateBranch, loadFromLychee, updateKickstand, setHoveredId, setHoveredCategory, transformAllKickstands and the rle_*_labels pair were removed or renamed since (kickstands joined the shared support state; islands::rle kept four operations), and z_aa_steps / z_anti_aliasing became the zaa_* fields. Rewriting the plans to today's names would misstate what they said. docs/reference/cli.md, which describes the current code, was corrected instead, so these entries must not be used to excuse a stale name there.",
-      "upstream windowing APIs": "PlatformWebview and cef_window_handle_t are tauri and CEF APIs; wl_surface and wl_subsurface are Wayland protocol objects; windowless_rendering_enabled and set_as_windowless belong to the cef crate. ADR-0005 and ADR-0040 cite them to explain why the Linux CEF build embeds through an X11 window id, so they name code we depend on but do not own.",
+            "unpublished plans against older code": "docs/internal/cli/gaps-plan.md and wont-do.md, and docs/internal/slicing-engine-v3.2-roadmap.md, are working plans written against the code of their day, kept as the record of what was planned and why. updateBranch, loadFromLychee, updateKickstand, setHoveredId, setHoveredCategory, transformAllKickstands and the rle_*_labels pair were removed or renamed since (kickstands joined the shared support state; islands::rle kept four operations), and z_aa_steps / z_anti_aliasing became the zaa_* fields. Rewriting the plans to today's names would misstate what they said. docs/reference/cli.md, which describes the current code, was corrected instead, so these entries must not be used to excuse a stale name there.",
+            "upstream windowing APIs": "PlatformWebview and cef_window_handle_t are tauri and CEF APIs; wl_surface and wl_subsurface are Wayland protocol objects; windowless_rendering_enabled and set_as_windowless belong to the cef crate. ADR-0005 and ADR-0040 cite them to explain why the Linux CEF build embeds through an X11 window id, so they name code we depend on but do not own.",
             "projectObject": "three.js WebGLRenderer internals, cited as the per-object frame cost in docs/dev/backlog.md; external API, not ours",
             "setProgram": "three.js WebGLRenderer internals, cited as the per-object frame cost in docs/dev/backlog.md; external API, not ours",
             "renderBufferDirect": "three.js WebGLRenderer internal, cited as the per-object frame cost in docs/dev/backlog.md; external API, not ours",
             "drawElements": "WebGL context method, cited as how draw calls were counted in docs/dev/performance-debugging.md; external API, not ours",
             "drawElementsInstanced": "WebGL context method, cited as how draw calls were counted in docs/dev/performance-debugging.md; external API, not ours",
             "VOXL_V2_SEMANTIC_REVISION": "The 2.2 modifier-chunk revision constant, renamed to VOXL_V3_SEMANTIC_REVISION (3.1) in ADR-0042's re-base. ADR-0042 names the old spelling because the record IS the rename.",
-            "removed with VOXL V1": "VoxlCompressedDocumentEnvelopeV1 / VoxlCompressionRef / VoxlDocumentCompressionEncoding / SerializeVoxlOptions / VoxlMeshEncoding, and the Rust CLI's load_voxl_v1_from_bytes: all deleted with VOXL V1 read support, and named by ADR-0043 because the record IS the removal. Reimplementing any of them should be a deliberate decision, not a re-import."
+            "removed with VOXL V1": "VoxlCompressedDocumentEnvelopeV1 / VoxlCompressionRef / VoxlDocumentCompressionEncoding / SerializeVoxlOptions / VoxlMeshEncoding, and the Rust CLI's load_voxl_v1_from_bytes: all deleted with VOXL V1 read support, and named by ADR-0043 because the record IS the removal. Reimplementing any of them should be a deliberate decision, not a re-import.",
+            "projectService": "typescript-eslint's parser option for type-aware linting. docs/internal/backlog.md names it because the finding IS its absence from eslint.config.mjs; it will appear in the tree once that entry is done.",
+            "directed_hole_loops": "deleted when the two boundary walks became one. repair-engine-winding-and-boundary.md names it because the record of that confusion IS the removed walk: the section explains what it returned and why that was wrong, and it also names `Topology::boundary_loops`, which survives as the single rotation walk. Rewriting the name to today's would misstate which walk was at fault."
       },
       "_comment_webkit_symbols": "The eight WebKit/JavaScriptCore internals above (javascript_gc_object_count through operationMapHash) are cited by docs/dev/performance-debugging.md as they appear in `sample` output and WebKit's own logs. They belong to the platform, not to this codebase, and will never be found here.",
       "_comment_anchor_constants": "ANCHOR_MIN_* / ANCHOR_SHAFT_MULTIPLIER: removed constants, cited by name in support-registry-findings.md because the finding IS their removal. The values live on the anchor descriptor's autoPlacement and are pinned by __tests__/autoPlacementPolicy.test.ts.",
@@ -125,5 +137,6 @@
       "_comment_removed_pathfinders": "gridAStar / fieldDeterministicSolver / potentialFieldSolver, and the PotentialFieldSolver.ts path: the trunk-routing engines replaced by SmartPlacementV3 (PlacementLogicV3/SmartPlacementV3.ts). ADR-0028 is the decision record for the A* replacement and necessarily names what it replaced; page-tsx-refactor-handoff.md names the two solvers whose pre-existing test failures it recorded. Both files are historical records, so they keep the names instead of being rewritten to pretend the removed code never existed.",
       "_comment_removed_kind_table": "SUPPORT_KINDS: the eight-entry per-panel table in Settings/supportKindState.ts, deleted when the sidebar's panel vocabulary was derived from the registry (Settings/sidebarPanels.ts). support-registry-findings.md cites it by name because the finding IS its removal, and its flags (hasContactCone/hasShaft/hasPlateRoot) are the drift the derived panels removed.",
       "_comment_rtsp_recovery_protocol_names": "TEARDOWN is the RTSP protocol method name; SO_LINGER, CAP_NET_RAW and TCP_INFO are socket API names, TCP_INFO being the Linux socket-diagnostics option with SIO_TCP_INFO as its Windows counterpart. All four are external to this repo, which drives ffmpeg rather than speaking RTSP itself and touches no raw sockets today. docs/internal/rtsp-session-recovery.md and docs/dev/rtsp-relay.md cite them while describing the printer-side failure mode and the proposed recovery design, so none of them will ever be found in the tree.",
-      "_comment_gpu_ray_query": "EXPERIMENTAL_RAY_QUERY is wgpu's own feature-flag name, an external API rather than anything in this tree. docs/dev/backlog.md cites it while recording which backends expose hardware ray tracing on the machine the AO bake was measured on, where the name is the thing an implementer would grep for."
+      "_comment_gpu_ray_query": "EXPERIMENTAL_RAY_QUERY is wgpu's own feature-flag name, an external API rather than anything in this tree. docs/dev/backlog.md cites it while recording which backends expose hardware ray tracing on the machine the AO bake was measured on, where the name is the thing an implementer would grep for.",
+      "_comment_removed_repair_passes": "remove_non_manifold_faces, split_non_manifold_vertices, micro_topology_heal, cull_post_weld, extract_union_boundary_faces and resample_outer_surface: the bespoke passes and the manifold batch union removed when the repair pipeline was rewritten to the surveyed engine's stage order. repair-engine-plan.md and repair-engine-reference.md cite them by name because the finding IS their removal, and what replaced them (the inner-face removal, the five-class verdict) only reads correctly against what went."
 }

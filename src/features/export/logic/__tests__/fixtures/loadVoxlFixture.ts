@@ -46,16 +46,16 @@ export function availableVoxlFixtures(): VoxlFixtureName[] {
 }
 
 /** The support payload a fixture carries, straight out of its SUPP chunk. */
-export function readVoxlSupportPayload(name: VoxlFixtureName): DragonfruitImportFormat {
+export async function readVoxlSupportPayload(name: VoxlFixtureName): Promise<DragonfruitImportFormat> {
     const bytes = new Uint8Array(readFileSync(voxlFixturePath(name)));
-    const parsed = parseVoxlBinaryV2(bytes);
+    const parsed = await parseVoxlBinaryV2(bytes);
     return parsed.document.supports as DragonfruitImportFormat;
 }
 
 /** A fixture loaded into the real store, as opening the file would leave it. */
-export function loadVoxlFixtureIntoStore(name: VoxlFixtureName): SupportState {
+export async function loadVoxlFixtureIntoStore(name: VoxlFixtureName): Promise<SupportState> {
     resetStore();
-    loadFromImportFormat(readVoxlSupportPayload(name));
+    loadFromImportFormat(await readVoxlSupportPayload(name));
     return getSnapshot();
 }
 

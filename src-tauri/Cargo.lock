@@ -1687,9 +1687,10 @@ dependencies = [
 
 [[package]]
 name = "dragonfruit-desktop"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "bytemuck",
  "dragonfruit-ao-gpu",
  "dragonfruit-islands",
@@ -1698,12 +1699,16 @@ dependencies = [
  "dragonfruit-organic-cut",
  "dragonfruit-rtsp-relay",
  "dragonfruit-slicing-engine",
+ "flate2",
  "futures-util",
  "if-addrs",
  "libloading 0.8.9",
  "log",
  "mdns-sd",
  "meshopt",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "percent-encoding",
  "rayon",
  "reqwest 0.12.28",
@@ -1741,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "dragonfruit-mesh-core"
-version = "0.8.3"
+version = "0.9.1"
 dependencies = [
  "ahash 0.8.12",
  "bytemuck",
@@ -1752,13 +1757,14 @@ dependencies = [
 
 [[package]]
 name = "dragonfruit-mesh-repair"
-version = "0.2.2"
+version = "0.6.0"
 dependencies = [
  "ahash 0.8.12",
  "bytemuck",
  "cdt",
  "clap",
  "dragonfruit-mesh-core",
+ "dragonfruit-tetgen",
  "manifold-csg",
  "meshopt",
  "rayon",
@@ -1817,6 +1823,13 @@ dependencies = [
  "time",
  "time-core",
  "zip 0.6.6",
+]
+
+[[package]]
+name = "dragonfruit-tetgen"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

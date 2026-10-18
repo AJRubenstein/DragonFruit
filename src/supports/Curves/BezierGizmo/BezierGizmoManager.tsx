@@ -12,6 +12,7 @@ import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../histor
 import { clearSupportDragPreview, emitSupportDragPreview } from '../../SupportPrimitives/Joint/jointDragRuntime';
 import { clearTwigDragPreview, computeTwigDragAttachmentUpdates, emitTwigDragPreview } from '../../SupportTypes/Twig/twigDragPreview';
 import { getSupportTypeBySelectionCategory, getSupportTypeDescriptor, parsePrefixedSegmentId, updateSupportEntity, type SupportTypeId } from '../../supportTypeRegistry';
+import { editCurveLabel } from '@/supports/history/supportHistoryLabels';
 
 /**
  * Whether the type carries its curve on the entity rather than on segments. A
@@ -136,7 +137,7 @@ export function BezierGizmoManager() {
                 updateSupportEntity(latestTrunk);
                 pushSupportHistory({
                     type: SUPPORT_UPDATE_TRUNK,
-                    description: `Edit ${ownEntryDescriptor.singular} curve`,
+                    description: editCurveLabel(ownEntryDescriptor.id),
                     payload: {
                         before: initialTrunkRef.current,
                         after: JSON.parse(JSON.stringify(latestTrunk)),
@@ -174,7 +175,7 @@ export function BezierGizmoManager() {
             livePreviewRef.current = null;
 
             pushSupportEditHistory(
-                `Edit ${descriptor.singular} curve`,
+                editCurveLabel(descriptor.id),
                 initialEditSnapshotRef.current,
                 captureSupportEditSnapshot(),
             );

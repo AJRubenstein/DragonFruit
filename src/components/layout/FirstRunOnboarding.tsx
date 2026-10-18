@@ -165,6 +165,7 @@ export function FirstRunOnboarding({ onExit }: FirstRunOnboardingProps) {
                   <div className="mt-2 max-w-[340px] text-base leading-relaxed text-pretty" />
                   <img
                     src="/dragonfruit_assets/branding/text_logo.svg"
+                    // i18n-ignore: product name
                     alt="DragonFruit"
                     className="h-11 w-auto object-contain"
                     draggable={false}

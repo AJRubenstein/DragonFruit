@@ -8,13 +8,12 @@ import {
   CloudOff,
   Download,
   ExternalLink,
-  Loader2,
   Package,
   RotateCcw,
 } from 'lucide-react';
 import { FLATPAK_APP_ID, LINUX_RELEASES_URL } from '@/features/updater/updateBridge';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
-import { Button } from '@/components/atoms';
+import { Button, Spinner } from '@/components/atoms';
 import { useUpdateChecker } from '@/features/updater/useUpdateChecker';
 import type { UpdateState } from '@/features/updater/useUpdateChecker';
 import { isAllowSameVersionEnabled, enableAllowSameVersionForSession } from '@/features/updater/debugForceSession';
@@ -27,14 +26,16 @@ import {
   formatUpdateVersionChip,
   formatUpdateVersionReady,
 } from '@/features/updater/updaterMessages';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import type { UnitFormat } from '@/utils/unitFormatting';
 
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function formatBytes(bytes: number, fmt: UnitFormat): string {
+  if (bytes < 1024) return fmt.quantity(bytes, 0, 'B');
+  if (bytes < 1024 * 1024) return fmt.quantity(bytes / 1024, 1, 'KB');
+  return fmt.quantity(bytes / (1024 * 1024), 1, 'MB');
 }
 
 async function openExternal(url: string): Promise<void> {
@@ -106,7 +107,7 @@ function CheckingState() {
             color: 'var(--accent)',
           }}
         >
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <Spinner size="xl" />
         </span>
         <span className="min-w-0">
           <span className="block text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
@@ -287,10 +288,10 @@ function DownloadingState({
   state: UpdateState & { status: 'downloading' };
 }) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
   const { contentLength, downloaded } = s.progress;
-  const pct = contentLength > 0
-    ? ((downloaded / contentLength) * 100).toFixed(1)
-    : '0.0';
+  const pctValue = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
+  const pct = fmt.fixed(pctValue, 1);
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16">
@@ -303,19 +304,19 @@ function DownloadingState({
             color: 'var(--accent)',
           }}
         >
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <Spinner size="xl" />
         </span>
         <span className="min-w-0">
           <span className="block text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
-            <Trans>Downloading Update</Trans>
+            <Trans>Downloading update</Trans>
           </span>
           <span className="block text-sm mt-1.5 font-medium" style={{ color: 'var(--text-muted)' }}>
-            {formatUpdateDownloadedBytes(formatBytes(downloaded), formatBytes(contentLength), pct, _)}
+            {formatUpdateDownloadedBytes(formatBytes(downloaded, fmt), formatBytes(contentLength, fmt), pct, _)}
           </span>
         </span>
       </div>
       <div className="w-full max-w-sm">
-        <ProgressBar pct={parseFloat(pct)} />
+        <ProgressBar pct={pctValue} />
       </div>
     </div>
   );
@@ -333,7 +334,7 @@ function InstallingState() {
             color: 'var(--accent)',
           }}
         >
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <Spinner size="xl" />
         </span>
         <span className="min-w-0">
           <span className="block text-lg font-bold" style={{ color: 'var(--text-strong)' }}>
@@ -460,7 +461,7 @@ function ErrorState({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold" style={{ color: 'var(--text-strong)' }}>
-            <Trans>Update Failed</Trans>
+            <Trans>Update failed</Trans>
           </span>
           <span className="block text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             {message}

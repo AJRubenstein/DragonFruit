@@ -21,7 +21,6 @@ export type ExportPanelStackProps = {
   crossSectionLayerHeightMm: number;
   estimatedVolumeMlLabel: string;
   handleSliceRunStartedForPrinting: (context?: { plateId?: string }) => void;
-  handlePrintingLayerPreviewGenerated: (payload: { layerIndex: number; totalLayers: number; pngBytes: Uint8Array }) => void;
   handleSlicingFinishedForPrinting: (payload: { totalLayers: number }) => void;
   /**
    * The sliced plate, handed on with the bed it came from: the printing workspace shows the
@@ -66,7 +65,6 @@ export function ExportPanelStack({
   crossSectionLayerHeightMm,
   estimatedVolumeMlLabel,
   handleSliceRunStartedForPrinting,
-  handlePrintingLayerPreviewGenerated,
   handleSlicingFinishedForPrinting,
   handleSliceArtifactReady,
   handleSlicePlateSliced,
@@ -157,7 +155,6 @@ export function ExportPanelStack({
         estimatedVolumeLabelOverride={estimatedVolumeMlLabel}
         captureSceneThumbnailPng={captureExportThumbnailPng}
         onSliceRunStarted={handleSliceRunStartedForPrinting}
-        onLayerPreviewGenerated={handlePrintingLayerPreviewGenerated}
         onSlicingFinished={handleSlicingFinishedForPrinting}
         onSliceArtifactReady={handleSliceArtifactReady}
         onSlicePlateSliced={handleSlicePlateSliced}

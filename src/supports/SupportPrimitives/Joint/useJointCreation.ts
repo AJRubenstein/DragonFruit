@@ -13,6 +13,7 @@ import { getJointDiameter } from '../../constants';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
 import { buildPrimarySnapTargetIndex, SHAFTED_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
 import { captureSupportEditSnapshot, pushSupportEditHistory } from '../../history/supportEditHistory';
+import { createJointLabel } from '@/supports/history/supportHistoryLabels';
 
 /**
  * Apply knot re-anchor patches from a segment split BEFORE the host update runs.
@@ -136,7 +137,7 @@ export function useJointCreation() {
 
                     applyKnotSplitRemaps(knotRemaps);
                     updateSupportEntity(owner.typeId, split);
-                    pushSupportEditHistory(`Create ${owner.typeId} joint`, beforeSnapshot, captureSupportEditSnapshot());
+                    pushSupportEditHistory(createJointLabel(owner.typeId), beforeSnapshot, captureSupportEditSnapshot());
 
                     e.stopPropagation();
                     e.preventDefault();

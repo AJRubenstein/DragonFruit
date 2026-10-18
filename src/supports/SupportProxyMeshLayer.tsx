@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useThree } from '@react-three/fiber';
 import { usePicking } from '@/components/picking';
+import { supportAnswersPointer, SCENERY_DIM } from '@/features/scene/plates/plateInteractivity';
 import { isCurvedBatchedShaft } from './Curves/batchedBezierTubeGeometry';
 import { subscribe, getSnapshot } from './state';
 // Loading the generated barrel runs every type's proxy geometry registration.
@@ -48,6 +49,13 @@ interface SupportProxyMeshLayerProps {
   outOfBoundsMax?: THREE.Vector3 | null;
   outOfBoundsStripeColor?: string;
   onModelPointerSelect?: (modelId: string) => void;
+  /**
+   * Models on another bed. Their supports are drawn dimmed and answer no pointer: hover,
+   * click and drag start all resolve a model, and a model that is scenery is not one the
+   * user is working on. Their shafts and cones also stay out of the hover index, which is
+   * what makes this a saving and not only a rule.
+   */
+  pointerSceneryModelIds?: ReadonlySet<string>;
   /** In Select mode, a pointer-down on a support proxy reports a potential
    *  model XY-drag start (model + screen coords). The scene owns the drag. */
   onModelPointerDragStart?: (modelId: string, clientX: number, clientY: number) => void;
@@ -108,6 +116,11 @@ const OUT_OF_BOUNDS_STENCIL_BIT = 0x40;
 
 export type ProxySupportTintInput = {
   selectedModelIds: ReadonlySet<string>;
+  /**
+   * Models standing on another bed, which are scenery: their supports take a dimmed
+   * base colour, and no hover or marquee tint — nothing can point at them.
+   */
+  sceneryModelIds?: ReadonlySet<string>;
   hoverModelId: string | null;
   marqueeCandidateModelIds: readonly string[];
   /** The colour an untouched support takes. */
@@ -155,9 +168,16 @@ export function createProxySupportTint(input: ProxySupportTintInput): (modelId?:
     return tinted;
   };
 
+  const dimmedBase = input.baseColor.clone().multiplyScalar(SCENERY_DIM);
+  let dimmed: THREE.Color | null = null;
+
   return (modelId?: string) => {
     if (!modelId) return input.baseColor;
     if (input.selectedModelIds.has(modelId)) return input.activeColor;
+    if (input.sceneryModelIds?.has(modelId)) {
+      dimmed ??= dimmedBase;
+      return dimmed;
+    }
     const strength = strengthByModelId.get(modelId);
     return strength === undefined ? input.baseColor : tintAt(strength);
   };
@@ -393,6 +413,7 @@ export function SupportProxyMeshLayer({
   outOfBoundsMax = null,
   outOfBoundsStripeColor,
   onModelPointerSelect,
+  pointerSceneryModelIds,
   onModelPointerDragStart,
   enablePointerSelection = true,
   includeDetailedPrimitives = true,
@@ -796,13 +817,14 @@ export function SupportProxyMeshLayer({
 
   const reportModelDragStart = React.useCallback((modelId: string | undefined, event: ThreeEvent<PointerEvent>) => {
     if (!pointerDragStartEnabled || !onModelPointerDragStart) return;
+    if (!supportAnswersPointer(modelId, pointerSceneryModelIds)) return;
     if (!modelId) return;
     if (hitCategoryRef.current === 'gizmo') return;
     const native = event.nativeEvent as PointerEvent | undefined;
     if (native?.ctrlKey || native?.metaKey || native?.shiftKey) return;
     if (event.button !== 0) return;
     onModelPointerDragStart(modelId, event.clientX, event.clientY);
-  }, [onModelPointerDragStart, pointerDragStartEnabled]);
+  }, [onModelPointerDragStart, pointerDragStartEnabled, pointerSceneryModelIds]);
 
   const setSupportHoverModel = React.useCallback((nextModelId: string | null) => {
     if (hoverClearRafRef.current !== null) {
@@ -858,15 +880,17 @@ export function SupportProxyMeshLayer({
   // instance was hit: the handler only reads its modelId, exactly as it did when
   // three walked the instances itself.
   const handleProxyInstanceMove = React.useCallback((primitive: { modelId?: string }) => {
+    if (!supportAnswersPointer(primitive.modelId, pointerSceneryModelIds)) return;
     setSupportHoverModel(primitive.modelId ?? null);
-  }, [setSupportHoverModel]);
+  }, [setSupportHoverModel, pointerSceneryModelIds]);
 
   const handleProxyInstanceClick = React.useCallback((primitive: { modelId?: string }) => {
     if (!pointerSelectionEnabled) return;
+    if (!supportAnswersPointer(primitive.modelId, pointerSceneryModelIds)) return;
     if (!primitive.modelId) return;
     if (hitCategoryRef.current === 'gizmo') return;
     onModelPointerSelect?.(primitive.modelId);
-  }, [onModelPointerSelect, pointerSelectionEnabled]);
+  }, [onModelPointerSelect, pointerSelectionEnabled, pointerSceneryModelIds]);
 
   const handleProxyPointerOut = React.useCallback(() => {
     scheduleSupportHoverClear();
@@ -884,6 +908,7 @@ export function SupportProxyMeshLayer({
   const supportColorFor = React.useMemo(
     () => createProxySupportTint({
       selectedModelIds: highlightedModelIdSet,
+      sceneryModelIds: pointerSceneryModelIds,
       hoverModelId: effectiveHoverModelId,
       marqueeCandidateModelIds,
       baseColor: supportColors.base,
@@ -896,6 +921,7 @@ export function SupportProxyMeshLayer({
       highlightedModelIdSet,
       supportColors,
       hoverOverlayStrength,
+      pointerSceneryModelIds,
     ],
   );
 
@@ -908,8 +934,20 @@ export function SupportProxyMeshLayer({
   // draws with a constant number of draw calls regardless of model count. This
   // restores the "singular mesh" performance characteristic that was lost when
   // per-model groups were introduced in the ZIP Import / Batch Export refactor.
-  const baseGeometry = React.useMemo(() => {
-    const base: FlatProxyGeometry = { straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] };
+  //
+  // Two sets, not one: the models the pointer can reach, and the ones standing on
+  // another bed. One batch per kind for the whole scene cannot be frustum culled —
+  // its bounds cover every plate, so three draws every bed's supports whenever any
+  // part of one is on screen. Split, the scenery set has its own bounds and falls
+  // out of the frustum the moment the camera is on the bed being worked on, which
+  // is the normal pose: the draw calls go from one set per kind to two, and the
+  // second one is usually not drawn at all.
+  const batches = React.useMemo(() => {
+    const empty = (): FlatProxyGeometry => ({ straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] });
+    const live = empty();
+    const scenery = empty();
+    const setFor = (modelId: string | undefined): FlatProxyGeometry =>
+      (supportAnswersPointer(modelId, pointerSceneryModelIds) ? live : scenery);
 
     const offsetShaft = (shaft: InstancedShaft, zOffset: number): InstancedShaft => {
       if (Math.abs(zOffset) < 1e-6) return shaft;
@@ -924,33 +962,36 @@ export function SupportProxyMeshLayer({
     };
 
     const appendRoot = (root: InstancedRoot, zOffset: number) => {
+      const target = setFor(root.modelId);
       if (Math.abs(zOffset) < 1e-6) {
-        base.roots.push(root);
+        target.roots.push(root);
         return;
       }
-      base.roots.push({
+      target.roots.push({
         ...root,
         basePos: { x: root.basePos.x, y: root.basePos.y, z: root.basePos.z + zOffset },
       });
     };
 
     const appendJoint = (joint: InstancedJoint, zOffset: number) => {
+      const target = setFor(joint.modelId);
       if (Math.abs(zOffset) < 1e-6) {
-        base.joints.push(joint);
+        target.joints.push(joint);
         return;
       }
-      base.joints.push({
+      target.joints.push({
         ...joint,
         pos: { x: joint.pos.x, y: joint.pos.y, z: joint.pos.z + zOffset },
       });
     };
 
     const appendCone = (cone: InstancedContactCone, zOffset: number) => {
+      const target = setFor(cone.modelId);
       if (Math.abs(zOffset) < 1e-6) {
-        base.cones.push(cone);
+        target.cones.push(cone);
         return;
       }
-      base.cones.push({
+      target.cones.push({
         ...cone,
         pos: { x: cone.pos.x, y: cone.pos.y, z: cone.pos.z + zOffset },
       });
@@ -967,7 +1008,8 @@ export function SupportProxyMeshLayer({
       for (const shaft of entry.geometry.shafts) {
         const curved = isCurvedBatchedShaft(shaft);
         if (hidesExcludedModels && curved) continue;
-        (curved ? base.curvedShafts : base.straightShafts).push(offsetShaft(shaft, zOffset));
+        const target = setFor(shaft.modelId);
+        (curved ? target.curvedShafts : target.straightShafts).push(offsetShaft(shaft, zOffset));
       }
       for (const root of entry.geometry.roots) appendRoot(root, zOffset);
       if (includeDetailedPrimitives) {
@@ -979,13 +1021,15 @@ export function SupportProxyMeshLayer({
     if (hidesExcludedModels) {
       for (const entry of visibleModelEntries) {
         for (const shaft of entry.geometry.shafts) {
-          if (isCurvedBatchedShaft(shaft)) base.curvedShafts.push(offsetShaft(shaft, entry.zOffset));
+          if (isCurvedBatchedShaft(shaft)) {
+            setFor(shaft.modelId).curvedShafts.push(offsetShaft(shaft, entry.zOffset));
+          }
         }
       }
     }
 
-    return base;
-  }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives]);
+    return { live, scenery };
+  }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives, pointerSceneryModelIds]);
 
   // A support a fraction of a pixel wide must still be grabbable, so the grab
   // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.
@@ -1013,18 +1057,25 @@ export function SupportProxyMeshLayer({
     return null;
   }
 
-  const hasBase = baseGeometry.straightShafts.length > 0
-    || baseGeometry.curvedShafts.length > 0
-    || baseGeometry.roots.length > 0
-    || (includeDetailedPrimitives && (baseGeometry.joints.length > 0 || baseGeometry.cones.length > 0));
+  // Two batch sets, each with bounds of its own: the live one and the scenery one.
+  // Separate is the point - see the memo above.
+  const batchSets = [
+    { key: 'live', geometry: batches.live },
+    { key: 'scenery', geometry: batches.scenery },
+  ];
+  const hasBatch = (geometry: FlatProxyGeometry) => geometry.straightShafts.length > 0
+    || geometry.curvedShafts.length > 0
+    || geometry.roots.length > 0
+    || (includeDetailedPrimitives && (geometry.joints.length > 0 || geometry.cones.length > 0));
 
   return (
     <group>
-      {hasBase && (
-        <group key="proxy-base-batch">
-          {baseGeometry.straightShafts.length > 0 && (
+      {batchSets.map(({ key, geometry }) => hasBatch(geometry) && (
+        <group key={`proxy-base-batch-${key}`}>
+          {geometry.straightShafts.length > 0 && (
             <InstancedShaftGroup
-              shafts={baseGeometry.straightShafts}
+              pointerSceneryModelIds={pointerSceneryModelIds}
+              shafts={geometry.straightShafts}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               isHidden={isHiddenPrimitive}
@@ -1040,9 +1091,10 @@ export function SupportProxyMeshLayer({
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {baseGeometry.curvedShafts.length > 0 && (
+          {geometry.curvedShafts.length > 0 && (
             <InstancedShaftGroup
-              shafts={baseGeometry.curvedShafts}
+              pointerSceneryModelIds={pointerSceneryModelIds}
+              shafts={geometry.curvedShafts}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               transparent={proxyTransparent}
@@ -1056,9 +1108,9 @@ export function SupportProxyMeshLayer({
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {baseGeometry.roots.length > 0 && (
+          {geometry.roots.length > 0 && (
             <InstancedRootsGroup
-              roots={baseGeometry.roots}
+              roots={geometry.roots}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
               isHidden={isHiddenPrimitive}
@@ -1072,9 +1124,9 @@ export function SupportProxyMeshLayer({
               onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {includeDetailedPrimitives && baseGeometry.joints.length > 0 && (
+          {includeDetailedPrimitives && geometry.joints.length > 0 && (
             <InstancedJointGroup
-              joints={baseGeometry.joints}
+              joints={geometry.joints}
               outOfBoundsMaterial={outOfBoundsMaterial}
               color={DEFAULT_SUPPORT_COLOR}
               instanceColor={selectionColorFor}
@@ -1088,9 +1140,10 @@ export function SupportProxyMeshLayer({
               onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
-          {includeDetailedPrimitives && baseGeometry.cones.length > 0 && (
+          {includeDetailedPrimitives && geometry.cones.length > 0 && (
             <InstancedContactConeGroup
-              cones={baseGeometry.cones}
+              pointerSceneryModelIds={pointerSceneryModelIds}
+              cones={geometry.cones}
               outOfBoundsMaterial={outOfBoundsMaterial}
               grabRadiusAt={grabRadiusAt}
               color={DEFAULT_SUPPORT_COLOR}
@@ -1106,7 +1159,7 @@ export function SupportProxyMeshLayer({
             />
           )}
         </group>
-      )}
+      ))}
 
     </group>
   );

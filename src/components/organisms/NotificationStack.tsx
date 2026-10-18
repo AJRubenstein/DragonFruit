@@ -29,7 +29,7 @@ export type NotificationStackProps = {
   isSaveToastAnimatedVisible: boolean;
   saveToastMode: 'saving' | 'autosaving';
 
-  historyActionToast: { id: number; text: string; direction: 'undo' | 'redo' } | null;
+  historyActionToast: { id: number; label: MessageDescriptor; direction: 'undo' | 'redo' } | null;
   isHistoryActionToastVisible: boolean;
 
   printingMonitorErrorToast: IdText | null;
@@ -93,7 +93,7 @@ export function NotificationStack({
             ) : (
               <Redo2 className="h-4 w-4 motion-safe:animate-pulse" />
             )}
-            {historyActionToast.text}
+            {_(historyActionToast.label)}
           </Toast>
         </ToastViewport>
       )}

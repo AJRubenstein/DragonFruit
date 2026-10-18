@@ -88,6 +88,7 @@ import { setSceneHoveredSupportId as setSharedSceneHoveredSupportId, useSceneHov
 import { useSupportRenderLookup } from './interaction/useSupportRenderLookup';
 import { setInteriorSupportInteractionActive } from './interaction/pointerOcclusion';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
+import { supportAnswersPointer, SCENERY_DIM } from '@/features/scene/plates/plateInteractivity';
 
 interface SupportRendererProps {
     mode?: SupportMode;
@@ -96,6 +97,12 @@ interface SupportRendererProps {
     clipLower?: number | null;
     clipUpper?: number | null;
     supportColorsByModelId?: Record<string, string>;
+    /**
+     * Models on another bed. Their supports are drawn dimmed and answer no pointer, the
+     * same rule the proxy batches follow, so a bed nobody is working on reads as scenery
+     * in the support workspace too.
+     */
+    pointerSceneryModelIds?: ReadonlySet<string>;
     hoverTintColor?: string;
     hoverTintStrength?: number;
     selectedTintStrength?: number;
@@ -554,7 +561,7 @@ function supportCollectionRefs(state: SupportState, ...extra: unknown[]): readon
     return [...SUPPORT_COLLECTION_KEYS.map((key) => state[key]), ...extra];
 }
 
-export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById }, ref) => {
+export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById, pointerSceneryModelIds }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
     noteActivity('support-mode:renderer');
     const resolvedSelection = useResolvedSelectionState();
@@ -629,6 +636,13 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const isInteractable = supportPointerInteractable && !supportInteractionSuppressed;
     const isPreparePointerInteractable = interactionHooksEnabled && mode === 'prepare' && !navigationLodActive;
     const isPointerInteractable = supportPointerInteractable || isPreparePointerInteractable;
+    // The pointer guards read the set through a ref: they are one-line early returns in
+    // handlers that already close over a dozen values, and what they ask ("is this model
+    // scenery?") is answered by the current render either way.
+    const pointerSceneryRef = React.useRef(pointerSceneryModelIds);
+    pointerSceneryRef.current = pointerSceneryModelIds;
+
+
     const ghostOpacityClamped = Math.max(0.05, Math.min(1, ghostOpacity));
     const ghostTransparent = ghostOpacityClamped < 0.999;
     const selectedModelIdSet = useMemo(() => new Set(selectedModelIds), [selectedModelIds]);
@@ -1261,9 +1275,12 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             .lerp(new THREE.Color(hoverTintHex), 0.35 * MARQUEE_CANDIDATE_TINT_FACTOR)
             .getStyle();
 
+        const sceneryColor = new THREE.Color(baseHex).multiplyScalar(SCENERY_DIM).getStyle();
+
         return (modelId?: string) => {
             const isSelectedModelSupport = !!modelId && selectedModelIdSet.has(modelId);
             if (isSelectedModelSupport) return selectedHex;
+            if (!supportAnswersPointer(modelId, pointerSceneryModelIds)) return sceneryColor;
 
             const isHoveredModelSupport = !!effectiveHoverModelId && !!modelId && modelId === effectiveHoverModelId;
             if (isHoveredModelSupport) return hoveredColor;
@@ -1275,7 +1292,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
             return baseHex;
         };
-    }, [effectiveHoverModelId, marqueeCandidateModelIdSet, selectedModelIdSet]);
+    }, [effectiveHoverModelId, marqueeCandidateModelIdSet, selectedModelIdSet, pointerSceneryModelIds]);
 
     // Support id → origin lookup for the debug origin coloring.
     const originById = useMemo(() => {
@@ -2703,6 +2720,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         });
 
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(shaft.modelId, pointerSceneryRef.current)) return;
         if (isPreparePointerInteractable) {
             emitSupportModelPointerSelect(shaft.modelId ?? null);
             return;
@@ -2741,6 +2759,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const handleSceneBatchedShaftPointerMove = React.useCallback((shaft: InstancedShaft, event: { point?: { x: number; y: number; z: number } | THREE.Vector3 } | null) => {
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(shaft.modelId, pointerSceneryRef.current)) return;
         if (orbitInteractionActiveRef.current) return;
 
         const jointDragInteractionActive = typeof window !== 'undefined' && !!(window as any).__jointGizmoDragging;
@@ -2974,6 +2993,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const handleSceneBatchedRootClick = React.useCallback((root: InstancedRoot, event: { nativeEvent?: Event }) => {
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(root.modelId, pointerSceneryRef.current)) return;
         if (isPreparePointerInteractable) {
             emitSupportModelPointerSelect(root.modelId ?? null);
             return;
@@ -2985,6 +3005,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const handleSceneBatchedRootPointerMove = React.useCallback((root: InstancedRoot) => {
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(root.modelId, pointerSceneryRef.current)) return;
         if (orbitInteractionActiveRef.current) return;
 
         applySceneHoverWriteDecision(
@@ -3006,6 +3027,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const handleSceneBatchedConeClick = React.useCallback((cone: InstancedContactCone, event: { nativeEvent?: Event }) => {
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(cone.modelId, pointerSceneryRef.current)) return;
         if (isPreparePointerInteractable) {
             emitSupportModelPointerSelect(cone.modelId ?? null);
             return;
@@ -3038,6 +3060,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const handleSceneBatchedConePointerMove = React.useCallback((cone: InstancedContactCone, event?: { point?: { x: number; y: number; z: number } | THREE.Vector3 } | null) => {
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(cone.modelId, pointerSceneryRef.current)) return;
         if (orbitInteractionActiveRef.current) return;
 
         // Brace tool: emit brace-leaf-hover for an unselected leaf's batched cone
@@ -3087,6 +3110,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const handleSceneBatchedJointClick = React.useCallback((joint: InstancedJoint, event: { nativeEvent?: Event }) => {
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(joint.modelId, pointerSceneryRef.current)) return;
         if (isPreparePointerInteractable) {
             emitSupportModelPointerSelect(joint.modelId ?? null);
             return;
@@ -3098,6 +3122,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
 
     const handleSceneBatchedJointPointerMove = React.useCallback((joint: InstancedJoint) => {
         if (!isPointerInteractable) return;
+        if (!supportAnswersPointer(joint.modelId, pointerSceneryRef.current)) return;
         if (orbitInteractionActiveRef.current) return;
 
         applySceneHoverWriteDecision(

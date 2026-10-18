@@ -334,7 +334,7 @@ test('Pointer/mouse events interception in placement modes on canvas', () => {
     cleanup();
 });
 
-test('Newly migrated configurations: GLOBAL, DEBUG, MESH, NAVIGATION, PRESETS, HOLE_PUNCH', () => {
+test('Newly migrated configurations: GLOBAL, DEBUG, SUPPORTS, NAVIGATION, PRESETS, HOLE_PUNCH', () => {
     hotkeyStore.getState().clearKeys();
 
     // 1. GLOBAL.SAVE (Ctrl+S)
@@ -379,10 +379,10 @@ test('Newly migrated configurations: GLOBAL, DEBUG, MESH, NAVIGATION, PRESETS, H
     hotkeyStore.getState().releaseKey('o');
     hotkeyStore.getState().clearKeys();
 
-    // 3. MESH.INVERT_NORMALS (Alt+N)
+    // 3. SUPPORTS.BRANCH_PLACEMENT (Alt) holds through a key nothing binds with Alt
     hotkeyStore.getState().pressKey('Alt');
     hotkeyStore.getState().pressKey('n');
-    assert.equal(isActionActiveSync('MESH', 'INVERT_NORMALS'), true);
+    assert.equal(isActionActiveSync('SUPPORTS', 'BRANCH_PLACEMENT'), true);
     hotkeyStore.getState().clearKeys();
 
     // 4. NAVIGATION.LAYER_UP/DOWN (ArrowUp/Down)

@@ -100,5 +100,11 @@
     "affiliation": "AJRubenstein",
     "role": "Contributor",
     "tone": "secondary"
+  },
+  {
+    "name": "CalvinSchulze",
+    "affiliation": "CalvinSchulze",
+    "role": "Contributor",
+    "tone": "secondary"
   }
 ]

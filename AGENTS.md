@@ -177,7 +177,8 @@ module scope for data. Build a sentence as one message with placeholders and
 `<0>…</0>` tags, never by concatenating fragments — word order differs per
 language. When the same English word means two things (the "Light" theme vs the
 "Light" preset), give the messages a `context`. After adding strings, run
-`npm run i18n:extract` and translate the new Spanish entries in `src/locales/es.po`.
+`npm run i18n:extract` and leave the new entries untranslated in every catalog:
+translations go through Crowdin, not through code changes.
 
 CI enforces this with `npm run check:i18n-literals`, which works like `check:lint`:
 it covers only the directories and files listed in `scripts/i18n-clean-dirs.json`
@@ -185,8 +186,13 @@ and fails on any unwrapped literal there. Coverage grows one path at a time —
 `node scripts/check-i18n-literals.mjs --suggest` lists clean directories not yet on
 the list, and `--report <path>` shows what is left to wrap in one. Never take a path
 off the list to turn a build green, and follow renames in it. Text that is genuinely
-not translatable (a unit, a brand) takes an `i18n-ignore` comment on its line or the
-line above.
+not translatable (a brand) takes an `i18n-ignore` comment on its line or the line
+above; a developer-only section (a debug overlay, raw protocol commands) sits
+between `i18n-ignore-start` and `i18n-ignore-end` comments and stays in English.
+Units are translatable — other scripts write them with their own glyphs
+("мм", "מ״מ") — so a displayed number, with or without a unit, goes through
+`useLocaleFormat()` (`fmt.fixed`, `fmt.quantity`, `fmt.unit`), never `toFixed`. See
+`docs/dev/localization.md`.
 
 ## i18n / Lingui — interpolation gotcha
 
@@ -225,14 +231,37 @@ root — consumed by the Tauri shell via path dependencies in
 `src-tauri/Cargo.toml`. Because path deps always resolve, a stale `version` is
 invisible locally but breaks the lock file, caches, and any versioned consumer.
 
-Whenever you change one of these crates, **bump its `version`** in that crate's
-`Cargo.toml`:
+**Bump each crate once per branch — one step above the base, not one step per
+commit that touches the crate.** A consumer reads the version as "how far past
+the release I have" and gets one answer per branch; a branch that bumps on every
+commit tells it nothing. Read the base before touching the field:
 
-- `patch` for bug fixes, `minor` for new features (semver).
+```bash
+git show origin/dev:rust/<crate>/Cargo.toml | sed -n '3p'
+```
+
+- The branch's version is that number plus **one** semver step: `minor` when the
+  branch adds features to that crate, `patch` when it only fixes bugs there.
+- Fourteen commits each bumping `dragonfruit-mesh-repair` left the branch at
+  `0.15.0` against `0.5.0` on the base. That is the failure this rule exists to
+  stop; if a branch would genuinely need two steps, it is two branches.
 - If another crate or the shell pins it by version, update that requirement to
   match.
-- Run `cargo check` (or `cargo build`) afterwards so `Cargo.lock` picks up the bump before committing.
+- Run `cargo check` (or `cargo build`) in that crate afterwards, then
+  `npm run check:cargo-locks` if you are unsure — a version bump alone leaves
+  **every** lockfile that records the crate stale, including other crates'
+  (`cargo update --workspace --manifest-path <crate>/Cargo.toml` refreshes one).
 
 ## App version — do not bump unprompted
 
 NEVER bump the DragonFruit main app version unprompted — `package.json` `version`, `src-tauri/tauri.conf.json` `version`, and `src-tauri/Cargo.toml` `[package] version` must stay on the current release (currently `0.1.15`) unless the user explicitly asks for a release/version bump. The `rust/*` crate bumps above are allowed; the main app version is release-driven and user-controlled.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

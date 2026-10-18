@@ -225,6 +225,24 @@ Requirements:
 - Readers that honour it must not re-run the classifier: the report is the answer for exactly
   these triangles. They must still build the model/support section split from
   `model_triangle_count`, since the sections are not stored separately.
+- A reader must *check* the report against the payload it just loaded before honouring it: compare
+  `pre.triangle_count` with the mesh it built. Refinement is deterministic but versioned, and a
+  section boundary is a triangle index, so a report written under a different refinement rule
+  describes a mesh this build does not produce. A report that fails the check is dropped and the
+  classifier runs, which is the pre-3.3 path. (`src/hooks/useStlGeometry.ts`,
+  `classificationForPayload`.)
+- The loaders must not be *asked* for a classification the caller already holds
+  (`wantsLoaderClassification`): a second pass over the same triangles costs the whole classify —
+  measured at 430 ms of a 550 ms native load of a 725k-triangle model, and 11.9 s across the
+  13-unique-mesh scene in `backlog.md` — to reproduce the stored answer.
+- A reader that has the *file's path* may leave the `MESH` chunks packed: the directory
+  already carries `(offset, compressedSize, uncompressedSize, compression)`, and
+  `load_mesh_range` reads and inflates a range natively, so a scene never holds its
+  meshes' bytes in the webview (`parseVoxlBinaryV2(bytes, { deferMeshChunks: true })`
+  returns those descriptors as `meshRanges`). A reader holding only bytes inflates them
+  itself, which is the default and stays supported — a file out of a zip has no range
+  to give. Reading a range and unpacking it must reproduce the eager bytes exactly,
+  which the dedup test pins.
 - Readers must accept a `MODL` entry without it and classify as before. `classification` is never
   required to interpret a file, and an auto-repair pass on load supersedes it.
 

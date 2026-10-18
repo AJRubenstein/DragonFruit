@@ -37,8 +37,7 @@ fn looks_binary(bytes: &[u8]) -> bool {
     // Fallback: look at first non-whitespace bytes.
     let head = &bytes[..bytes.len().min(256)];
     let lower = String::from_utf8_lossy(head).to_ascii_lowercase();
-    !lower.trim_start().starts_with("solid")
-        || !lower.contains("facet")
+    !lower.trim_start().starts_with("solid") || !lower.contains("facet")
 }
 
 fn parse_binary(bytes: &[u8]) -> Result<IndexedMesh, MeshRepairError> {
@@ -86,9 +85,9 @@ fn parse_ascii(bytes: &[u8]) -> Result<IndexedMesh, MeshRepairError> {
                 let s = parts
                     .next()
                     .ok_or_else(|| MeshRepairError::Parse("ASCII STL: missing coord".into()))?;
-                let v: f32 = s
-                    .parse()
-                    .map_err(|e| MeshRepairError::Parse(format!("ASCII STL: bad coord {s}: {e}")))?;
+                let v: f32 = s.parse().map_err(|e| {
+                    MeshRepairError::Parse(format!("ASCII STL: bad coord {s}: {e}"))
+                })?;
                 tri_pts.push(v);
             }
             if tri_pts.len() == 9 {

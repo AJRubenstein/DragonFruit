@@ -1,3 +1,5 @@
+import type { MessageDescriptor } from '@lingui/core';
+
 export type HistoryDirection = 'undo' | 'redo';
 
 /**
@@ -17,8 +19,13 @@ export interface HistoryOrigin {
 export interface HistoryAction<Type extends string = string, Payload = unknown> {
   /** Unique action identifier understood by the registered history handlers. */
   type: Type;
-  /** Optional human-readable description shown in undo/redo UI feedback. */
-  description?: string;
+  /**
+   * What the undo/redo toast names the entry by. A catalog message rather than a
+   * string, so the toast speaks the user's language; the store has no language of
+   * its own, so whoever shows it translates it. Interpolated values must be plain
+   * strings or numbers, since entries are structured-cloned.
+   */
+  description: MessageDescriptor;
   /** Serialized payload required to undo/redo the action. */
   payload: Payload;
   /**
@@ -32,6 +39,12 @@ export interface HistoryAction<Type extends string = string, Payload = unknown> 
 export type HistoryHandler = (action: HistoryAction, direction: HistoryDirection) => boolean | void;
 
 export type HistorySubscriber = () => void;
+
+/** One entry that changed the scene; see `subscribeHistoryChanges`. */
+export interface HistoryChange {
+  kind: 'push' | HistoryDirection;
+  actionType: string;
+}
 
 export type HistoryDebugEventKind =
   | 'push'
@@ -51,7 +64,7 @@ export interface HistoryDebugEvent {
   timestamp: number;
   kind: HistoryDebugEventKind;
   actionType?: string;
-  actionDescription?: string;
+  actionDescription?: MessageDescriptor;
   undoCount: number;
   redoCount: number;
   /** Payload bytes of the entry this event is about (absent for stack-wide events). */

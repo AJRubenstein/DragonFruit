@@ -566,8 +566,8 @@ function toPayloadBytes(payload: ArrayBuffer | ArrayBufferView | number[]): Uint
  * normals as 9 `f32` per triangle for each body. The layout is specified in
  * `docs/dev/mesh-wire-formats.md`.
  *
- * The native loader refines coarse faces and returns welded, crease-split
- * normals, so the geometry matches what every other import path sees. Desktop
+ * The native loader refines coarse faces and returns each triangle's own face
+ * normal, so the geometry matches what every other import path sees. Desktop
  * only — throws outside the Tauri runtime.
  */
 export async function loadMeshFileFromNativePath(filePath: string, classify?: boolean): Promise<Uint8Array> {

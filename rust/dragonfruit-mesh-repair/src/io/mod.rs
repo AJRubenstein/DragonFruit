@@ -6,27 +6,62 @@ use std::path::Path;
 use crate::core::mesh::IndexedMesh;
 use crate::MeshRepairError;
 
-pub mod stl;
 pub mod obj;
-pub mod three_mf;
 pub mod staged;
+pub mod stl;
+pub mod three_mf;
 
 /// Dispatch by extension. Caller is responsible for pointing at a real
 /// mesh file; for in-memory staged buffers, use [`staged::load_positions_le`].
 pub fn load_mesh_from_path(path: &Path) -> Result<IndexedMesh, MeshRepairError> {
+    Ok(refine_coarse_faces(load_mesh_unrefined_from_path(path)?))
+}
+
+/// Read a file exactly as written, without [`refine_coarse_faces`].
+///
+/// [`load_mesh_from_path`] refines because the renderer samples per vertex, and
+/// because triangle ids are what several features index — so everything that
+/// reaches the app has to agree with the geometry the app is holding. A caller
+/// measuring or rewriting the *file* wants what is on disk instead, and the
+/// difference is not small: on a coarse part the refinement may add up to
+/// `COARSE_GROWTH_HEADROOM` triangles before anything reads the mesh, so a
+/// 26,488-triangle pulley arrives at the repair pipeline as 276,488. A tool that
+/// reports the loaded count without saying which of the two it did is reporting
+/// a number that belongs to neither.
+pub fn load_mesh_unrefined_from_path(path: &Path) -> Result<IndexedMesh, MeshRepairError> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_default();
-    let mesh = match ext.as_str() {
+    match ext.as_str() {
         "stl" => stl::load(path),
         "obj" => obj::load(path),
         "3mf" => three_mf::load(path),
         "bin" | "positions" => staged::load_positions_file(path),
-        other => return Err(MeshRepairError::UnsupportedFormat(other.to_string())),
-    }?;
-    Ok(refine_coarse_faces(mesh))
+        other => Err(MeshRepairError::UnsupportedFormat(other.to_string())),
+    }
+}
+
+/// The file's own triangle count, before refinement.
+///
+/// For a caller that wants to say what a load changed, without holding both
+/// meshes: the STL header carries the count, which is the whole of what a coarse
+/// mesh's inflation is measured against.
+pub fn triangle_count_on_disk(path: &Path) -> Option<usize> {
+    let is_stl = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("stl"));
+    if !is_stl {
+        return None;
+    }
+    let head = std::fs::read(path).ok()?;
+    if head.len() < 84 {
+        return None;
+    }
+    let declared = u32::from_le_bytes([head[80], head[81], head[82], head[83]]) as usize;
+    (84 + declared * 50 == head.len()).then_some(declared)
 }
 
 /// Load every body a file declares, each refined.
@@ -98,14 +133,33 @@ pub fn refine_coarse_faces(mesh: IndexedMesh) -> IndexedMesh {
     )
 }
 
-/// Default merge epsilon used when reading unindexed soup (STL). Expressed
-/// as a fraction of the mesh bbox diagonal.
-pub const DEFAULT_MERGE_EPSILON: f32 = 1e-5;
+/// Default merge epsilon used when reading an unindexed soup. Relative to the bbox diagonal.
+///
+/// **This constant decides whether a repaired mesh survives being written and read back**, because every
+/// export path here produces a soup: an STL carries no vertex indices, and the staged `positions.bin` is
+/// nine floats per triangle. So the weld applied here is applied again to the repair's own output the
+/// moment a caller saves it, and a weld coarser than the repair's work undoes that work.
+///
+/// It was `1e-5`, and that was coarser than a dense mesh can take. On the reported 1.02M-triangle model
+/// the repair's output is `0/0/0/0` in memory and comes back from an STL with **177 winding edges** at
+/// `1e-5`: the weld joins vertices the repair had deliberately kept apart — a separated non-manifold
+/// junction, a patch rim — and the defects the repair resolved reappear in the file the user renders. At
+/// `1e-6` the same file round-trips as `0/0/0/0`.
+///
+/// The other side of the trade is that a sloppy export (one that writes the same position twice with
+/// different floats) now arrives less welded, so the repair sees more boundaries and does more work.
+/// That is the right way round: the repair's own stitch is what welds a mesh, at a tolerance derived from
+/// the mesh, and the loader welding coarser than that is the loader doing the repair's job badly. On the
+/// corpus this costs one extra component on one 952-part file and nothing else, and several files get
+/// faster because they have less to repair.
+pub const DEFAULT_MERGE_EPSILON: f32 = 1e-6;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dragonfruit_mesh_core::refine::{longest_edge, refinement_budget, MAX_EDGE_DIAGONAL_FRACTION};
+    use dragonfruit_mesh_core::refine::{
+        longest_edge, refinement_budget, MAX_EDGE_DIAGONAL_FRACTION,
+    };
 
     fn box_soup(min: [f32; 3], max: [f32; 3]) -> Vec<f32> {
         let c = [

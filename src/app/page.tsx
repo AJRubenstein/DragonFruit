@@ -2,14 +2,15 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useSceneFileExtensionLabels } from '@/features/plugins/pluginFileTypeExtensions';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { detectIsIOS } from '@/hooks/usePlatform';
 import { useUiScale } from '@/hooks/useUiScale';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
-import { AlertTriangle, CheckCircle2, ChevronDown, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Download, Gamepad2, LayoutGrid, Loader2, Lock, Maximize2, Minimize2, Play, Plus, Printer, Pyramid, Redo2, RefreshCw, Trash2, Undo2, Wrench, X } from 'lucide-react';
 import { SceneCanvas } from '@/components/scene/SceneCanvas';
 import { SceneOverlays } from '@/components/organisms/scene/SceneOverlays';
 import { FloatingPanelStack } from '@/components/layout/FloatingPanelStack';
@@ -76,7 +77,7 @@ import { resolveEntirePlateExportBaseName } from '@/features/export/logic/export
 import { SlicingPanel, type SliceIntent } from '@/features/slicing/components/SlicingPanel';
 import { joinSliceOutputPath } from '@/features/slicing/plateSliceNaming';
 import { PrintingPanel } from '@/features/printing/components/PrintingPanel';
-import { usePrintingPreviewManager, type PrintingPreviewManagerDeps } from '@/features/printing/usePrintingPreviewManager';
+import { usePrintingPreviewManager } from '@/features/printing/usePrintingPreviewManager';
 import { useEditorToasts, useTrailingMount } from '@/features/notifications/useEditorToasts';
 import { plateNumberPlaceholder } from '@/features/scene/plates/plateMessages';
 import { ScanProgressBar } from '@/components/scene/ScanProgressBar';
@@ -96,6 +97,12 @@ import {
   buildSelectionPositionUpdates,
   getSelectionPositionOrigin,
 } from '@/features/scene/selectionPosition';
+import {
+  resetSelectionTransforms,
+  rotateSelectionFromActive,
+  scaleSelectionFromActive,
+  type SelectionRotationMode,
+} from '@/features/scene/selectionTransform';
 import { HollowingPanel, type HollowingPanelState } from '../features/hollowing';
 import { HolePunchPanel, type HolePunchPanelState } from '../features/hole-punching/HolePunchPanel';
 import { PlaceOnFaceTool } from '@/features/placeOnFace/PlaceOnFaceTool';
@@ -112,9 +119,9 @@ import type { MirrorAxis } from '@/features/mirror/types';
 import type { GeometryWithBounds } from '@/hooks/useStlGeometry';
 import { RtspRelayCanvasPlayer } from '@/components/monitoring/RtspRelayCanvasPlayer';
 import { BlockingOverlay, Button, IconButton, Toast, ToastViewport } from '@/components/atoms';
-import { EditorContextMenu, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
+import { EditorContextMenu, MENU_ITEMS, type EditorMenuAction } from '@/components/ui/EditorContextMenu';
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
-import { quaternionFromGlobalEuler } from '@/utils/rotation';
+import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
 import { HistoryDebugModal } from '@/components/modals/HistoryDebugModal';
 import { ModelSupportsModal } from '@/components/modals/ModelSupportsModal';
@@ -134,6 +141,7 @@ import {
 } from '@/components/layout/floatingLayoutPreferences';
 
 import { initializeBVH } from '@/utils/bvh';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 import {
   computeApproxModelWorldBounds,
   computePreciseModelWorldBounds,
@@ -243,7 +251,7 @@ import { computeHighPrecisionArrangeResultWorker } from '@/features/scene/arrang
 import { plateCascadeOffsetMm } from '@/features/scene/plates/plateCascade';
 
 // Domain Features
-import { useSceneCollectionManager, SCENE_SLICED, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
+import { useSceneCollectionManager, pushSceneSlicedMarker, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
 import { useSupportHistoryHandlers } from '@/supports/history/useSupportHistoryHandlers';
 import { useNativeSpaceMouseLifecycle } from '@/components/scene/camera/useNativeSpaceMouseLifecycle';
 import { useSlicingManager } from '@/features/slicing/useSlicingManager';
@@ -286,7 +294,6 @@ import {
   undo,
 } from '@/history/historyStore';
 import type { HistoryDebugEvent, HistoryOrigin } from '@/history/types';
-import { formatHistoryLabel } from '@/history/formatHistoryLabel';
 import { getSavedCameraProjectionSettings, saveCameraProjectionSettings } from '@/components/settings/cameraProjectionPreferences';
 import {
   getSceneAutosaveSettingsServerSnapshot,
@@ -325,6 +332,8 @@ import {
   subscribeToPrinterReachability,
 } from '@/features/network/printerReachabilityStore';
 import type { SliceExportArtifact, SliceExportResult } from '@/features/slicing/sliceExportOrchestrator';
+import { sliceProfileFingerprint } from '@/features/printing/slicedPlates';
+import { useSlicedPlatePreviewLoading, useSlicedPlates } from '@/features/printing/useSlicedPlates';
 import { resolveOutputFileExtension } from '@/features/slicing/formats/registry';
 import {
   cleanupStalePrintTempArtifacts,
@@ -332,8 +341,6 @@ import {
   launchExternalProcess,
   pickSavePathWithNativeDialog,
   pickOpenFilesWithNativeDialog,
-  readPrintLayerPreviewPngFromPath,
-  readPrintLayerPreviewPngsFromPath,
   readPrintArtifactBytesFromPath,
   savePrintArtifactPathWithNativeDialog,
   savePrintArtifactWithNativeDialog,
@@ -396,6 +403,13 @@ import { SceneAutosaveRecoveryModal } from '@/components/scene/SceneAutosaveReco
 import { MeshRepairReportModal } from '@/components/scene/MeshRepairReportModal';
 import { MeshRepairConfirmModal } from '@/components/scene/MeshRepairConfirmModal';
 import { ManifoldWarningModal } from '@/components/modals/ManifoldWarningModal';
+import { TetrahedralRemeshConfirmModal } from '@/components/modals/TetrahedralRemeshConfirmModal';
+import { ShrinkWrapConfirmModal } from '@/components/modals/ShrinkWrapConfirmModal';
+import { SurfacingProgressModal, type SurfacingProgressState } from '@/components/scene/SurfacingProgressModal';
+import { tetSurfaceProgressFraction, translateTetSurfacePhase } from '@/components/scene/tetSurfaceProgressMessages';
+import { solidRemeshProgressFraction, translateSolidRemeshPhase } from '@/components/scene/solidRemeshProgressMessages';
+import type { SolidRemeshOptions, TetWrapOptions } from '@/utils/meshShrinkwrap';
+import { cancelMeshRepair } from '@/utils/meshRepair';
 
 import { IslandScanWorkflowCard } from '@/volumeAnalysis/IslandScan/workflow/IslandScanWorkflowCard';
 import { IslandVolumesHierarchyCard } from '@/volumeAnalysis/IslandVolumes/components/IslandVolumesHierarchyCard';
@@ -422,6 +436,18 @@ import type {
   ModelHollowingModifier,
   MeshModifierOpenFace,
 } from '@/features/mesh-modifiers/types';
+import { createJointLabel } from '@/supports/history/supportHistoryLabels';
+import {
+  APPLY_ORIENTATION_SUGGESTION_LABEL,
+  deleteSupportsForModelLabel,
+  deleteSupportsForModelsLabel,
+  HOLLOWING_SETTINGS_LABEL,
+  modelTransformLabel,
+  ORGANIC_CUT_LABEL,
+  rotateModelLabel,
+  selectionEditLabel,
+  type SelectionEditKind,
+} from '@/features/scene/sceneHistoryLabels';
 
 interface ShaftHoverDebugDetail {
   segmentId: string | null;
@@ -449,6 +475,11 @@ function areSortedNumberArraysEqual(a: readonly number[], b: readonly number[]):
     }
   }
   return true;
+}
+
+// Module scope for the same React Compiler reason as the duration formatters below.
+function formatSelectedModelCount(translate: (descriptor: MessageDescriptor) => string, count: number): string {
+  return translate(msg`${plural(count, { one: '# model', other: '# models' })}`);
 }
 
 function isKeyboardTargetEditable(target: EventTarget | null): boolean {
@@ -482,6 +513,59 @@ function formatProcessingElapsedLabel(translate: (descriptor: MessageDescriptor)
   return translate(msg`${minutes} min ${seconds} s`);
 }
 
+/** Module-scope helpers because they interpolate: React Compiler renames inline `msg` locals in production. */
+function formatApplyingToModelLabel(translate: (descriptor: MessageDescriptor) => string, current: number, total: number): string {
+  return translate(msg`Applying to model ${current} of ${total}`);
+}
+
+function formatCompressedModelSize(translate: (descriptor: MessageDescriptor) => string, name: string, megabytes: string): string {
+  return translate(msg({ message: `${name}: ${megabytes} MB compressed`, comment: 'One row of the per-model breakdown when a scene is too large to save.' }));
+}
+
+function formatElapsedLabel(translate: (descriptor: MessageDescriptor) => string, elapsed: string): string {
+  return translate(msg({ message: `Elapsed: ${elapsed}`, comment: 'Time a blocking task has been running, e.g. "Elapsed: 1 min 12 s".' }));
+}
+
+type Translate = (descriptor: MessageDescriptor) => string;
+
+function formatUploadToLabel(translate: Translate, printer: string): string {
+  return translate(msg({ message: `Upload to ${printer}`, comment: 'Send button label; {printer} is the target printer name, shortened when long.' }));
+}
+
+function formatLayerHeightMismatch(translate: Translate, layerHeight: string): string {
+  return translate(msg`Selected material on this printer does not match sliced layer height ${layerHeight} mm.`);
+}
+
+function formatUploadCompleteProcessing(translate: Translate, printer: string): string {
+  return translate(msg`Upload complete. ${printer} is processing file metadata…`);
+}
+
+function formatSendFailed(translate: Translate, reason: string): string {
+  return translate(msg`Send failed: ${reason}`);
+}
+
+function formatImportComplete(translate: Translate, plateId: string | number | null | undefined): string {
+  return plateId
+    ? translate(msg({ message: `Import complete • Plate #${plateId}. Click Print Now when ready.`, comment: 'Plate here is the file slot on the printer.' }))
+    : translate(msg`Import complete. Click Print Now when ready.`);
+}
+
+function formatUploadStillProcessing(translate: Translate, plateId: string | number | null | undefined): string {
+  return plateId
+    ? translate(msg({ message: `Upload complete • Plate #${plateId}. Device is still processing metadata after waiting.`, comment: 'Plate here is the file slot on the printer.' }))
+    : translate(msg`Upload complete. Device is still processing metadata after waiting.`);
+}
+
+function formatPrintStarted(translate: Translate, plateId: string | number | null | undefined): string {
+  return plateId
+    ? translate(msg({ message: `Print started successfully • Plate #${plateId}.`, comment: 'Plate here is the file slot on the printer.' }))
+    : translate(msg`Print started successfully.`);
+}
+
+function formatPrintStartFailed(translate: Translate, reason: string): string {
+  return translate(msg`Print start failed: ${reason}`);
+}
+
 function formatEstimatedPrintTimeLabel(translate: (descriptor: MessageDescriptor) => string, totalSec: number): string {
   const wholeSeconds = Math.max(0, Math.floor(totalSec));
   const hours = Math.floor(wholeSeconds / 3600);
@@ -496,6 +580,44 @@ const HOLE_PUNCH_DEPTH_OFFSET_FROM_SHELL_MM = 1;
 const HOLE_PUNCH_AUTO_DEPTH_RAY_START_OFFSET_MM = 0.3;
 const HOLE_PUNCH_AUTO_DEPTH_MIN_INSIDE_MM = 1;
 const HOLLOW_PREVIEW_DEBOUNCE_MS = 90;
+
+/**
+ * The remesh defaults: the pass measured on a ~600k-triangle model, which lands
+ * within a fraction of a percent of the input triangle count while closing the
+ * surface. The voxel is the detail floor — anything finer than it does not
+ * survive the rebuild.
+ */
+/**
+ * The tetrahedral remesh defaults.
+ *
+ * `pQ` reads the model as a piecewise linear complex, so the decomposition is constrained to contain
+ * the model's own triangles rather than only its points: on a clean 170k-triangle model that is
+ * 323,632 tetrahedra against 596,374, and the surface it returns keeps more of the model. `Q` keeps
+ * TetGen quiet. No triangle budget, which keeps every boundary face the decomposition produced.
+ *
+ * `tolerance_mm` simplifies the input before decomposing it, because point spacing is what the cell
+ * size follows. A hundredth of a millimetre is a light pass on a dense export and leaves a coarse
+ * one alone.
+ */
+/**
+ * The shrink-wrap defaults: close every boundary loop, then drop scrap shells. Both are what the
+ * reference does, and neither has a knob worth exposing yet — a caller who wants fewer loops closed
+ * is asking for a different result rather than the same one cheaper.
+ */
+const SOLID_REMESH_DEFAULT_OPTIONS: SolidRemeshOptions = {
+  fill_holes_max_edges: Number.MAX_SAFE_INTEGER,
+  remove_noise_shells: true,
+  // A quarter of a dense model gone: enough that a shrink-wrap visibly lowers the poly count, which
+  // is the point of it, and nowhere near the 0.05 that leaves 190 triangles of 170,790.
+  tolerance: 0.001,
+};
+
+const TET_SURFACE_DEFAULT_OPTIONS: TetWrapOptions = {
+  switches: 'pQ',
+  max_triangles: 0,
+  // Off: the decomposition constrains the model's own facets, and simplifying folds them.
+  tolerance: 0,
+};
 
 function getDefaultHolePunchDepthMm(shellThicknessMm: number): number {
   return Number(
@@ -650,14 +772,9 @@ function formatPlateLockedNotice(
   }), { plateName });
 }
 
-/** How many layers either side of the one on screen a plate's slice reads ahead. */
-const PRINTING_PREVIEW_PREFETCH_RADIUS = 2;
-
-/** How many layers of one bed are kept in memory before the oldest are dropped. */
-const PRINTING_PREVIEW_CACHE_LIMIT = 24;
-
 export default function Home() {
   const { _, i18n } = useLingui();
+  const fmt = useLocaleFormat();
   const { stage, sproutParentingLockHeld } = useLeafPlacementState();
   // Supports undo/redo handlers register for the lifetime of the app root, not
   // for the lifetime of a scene renderer. Otherwise Ctrl+Z depends on which
@@ -723,6 +840,8 @@ export default function Home() {
   // the batch does not pop additional modals.
   const warnedManifoldModelIdsRef = React.useRef<Set<string>>(new Set());
   const [showManifoldWarning, setShowManifoldWarning] = React.useState(false);
+  // The model the warning's Repair Now button repairs: the first flagged one.
+  const [manifoldWarningModelId, setManifoldWarningModelId] = React.useState<string | null>(null);
   // Restarting the timer on every refusal means holding the lock and clicking about
   // keeps one toast on screen rather than stacking them.
   notifyPlateLockedRef.current = (plateId) => {
@@ -750,6 +869,7 @@ export default function Home() {
     const hasUnwarned = flagged.some((model) => !warnedManifoldModelIdsRef.current.has(model.id));
     if (!hasUnwarned) return;
     for (const model of flagged) warnedManifoldModelIdsRef.current.add(model.id);
+    setManifoldWarningModelId(flagged[0].id);
     setShowManifoldWarning(true);
   }, [scene.models]);
 
@@ -801,6 +921,7 @@ export default function Home() {
   const [uniformScaling, setUniformScaling] = React.useState(true);
   // Gizmo frame: world axes, or the active model's own (issue #504).
   const [localTransformSpace, setLocalTransformSpace] = React.useState(false);
+  const [selectionRotationMode, setSelectionRotationMode] = React.useState<SelectionRotationMode>('group');
 
   // --- Hollowing manager: placed early so its state/setters are in scope for
   //     useHolePunchManager below. Late/cross deps supplied via a ref populated
@@ -940,7 +1061,7 @@ export default function Home() {
     modelId: string;
     before: ModelTransform;
     after?: ModelTransform;
-    description?: string;
+    description?: MessageDescriptor;
     supportBefore?: ReturnType<typeof getSupportSnapshot>;
     supportAfter?: ReturnType<typeof getSupportSnapshot>;
     /**
@@ -951,6 +1072,8 @@ export default function Home() {
   } | null>(null);
   const pendingSelectionPositionHistoryRef = React.useRef<{
     targetIdsKey: string;
+    targetCount: number;
+    kind: SelectionEditKind;
     beforeTransforms: Array<{ id: string; transform: ModelTransform }>;
     supportBefore: ReturnType<typeof getSupportSnapshot>;
   } | null>(null);
@@ -968,7 +1091,7 @@ export default function Home() {
     modelId: string;
     before: ModelTransform;
     after: ModelTransform;
-    description: string;
+    description: MessageDescriptor;
   } | null>(null);
   const transformHistoryDebugRef = React.useRef<{
     lastResult:
@@ -983,7 +1106,7 @@ export default function Home() {
       | 'skipped_model_missing';
     lastReason: string;
     lastModelId: string | null;
-    lastDescription: string | null;
+    lastDescription: MessageDescriptor | null;
     lastExpectedNonce: number | null;
     lastScheduledNonce: number | null;
     lastUndoCountBefore: number | null;
@@ -1253,7 +1376,7 @@ export default function Home() {
   // Column on the left edge or bar under the app bar; Settings and the rail's own
   // context menu both write the preference and announce it. The fold animation
   // itself lives in `ToolRail`, which measures the entries as the layout lands.
-  const [toolLayout, setToolLayoutState] = React.useState<ToolLayout>('vertical');
+  const [toolLayout, setToolLayoutState] = React.useState<ToolLayout>('horizontal');
   React.useEffect(() => {
     setToolLayoutState(getToolLayout());
 
@@ -1276,7 +1399,22 @@ export default function Home() {
     segmentId: string;
     point: { x: number; y: number; z: number };
   } | null>(null);
-  const [manualRepairModelId, setManualRepairModelId] = React.useState<string | null>(null);
+  const [manualRepairModelIds, setManualRepairModelIds] = React.useState<string[] | null>(null);
+  // Remesh is a decomposition, so it carries a confirm — it replaces the whole surface — and a
+  // progress dialog, because it takes tens of seconds on a large model.
+  const [tetSurfaceConfirmModelId, setTetSurfaceConfirmModelId] = React.useState<string | null>(null);
+  const [tetSurfaceProgress, setTetSurfaceProgress] = React.useState<SurfacingProgressState | null>(null);
+  const [tetSurfaceToken, setTetSurfaceToken] = React.useState<string | null>(null);
+  const [tetSurfaceCancelling, setTetSurfaceCancelling] = React.useState(false);
+  // Shrink-wrap: a confirm because it reworks the whole surface, and a progress dialog because the
+  // boolean takes seconds on a large model.
+  const [shrinkWrapConfirmModelId, setShrinkWrapConfirmModelId] = React.useState<string | null>(null);
+  const [shrinkWrapProgress, setShrinkWrapProgress] = React.useState<SurfacingProgressState | null>(null);
+  const [shrinkWrapToken, setShrinkWrapToken] = React.useState<string | null>(null);
+  const [shrinkWrapCancelling, setShrinkWrapCancelling] = React.useState(false);
+  // `autoStartRepair` marks a repair that must begin on its own — the manifold warning's
+  // Repair Now — instead of waiting in the Repair Mesh dialog for a second confirmation.
+  const [autoStartRepair, setAutoStartRepair] = React.useState(false);
   const [isManualRepairing, setIsManualRepairing] = React.useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = React.useState(false);
   const [isSliceMetricsDebugOpen, setIsSliceMetricsDebugOpen] = React.useState(false);
@@ -1290,40 +1428,17 @@ export default function Home() {
     segmentId: null,
     point: null,
   });
-  const [printingLayerPreviewUrls, setPrintingLayerPreviewUrls] = React.useState<Array<string | null>>([]);
-  /** Reads in flight, keyed `${plateId}:${layer}`, so one bed's read cannot block another's. */
-  const printingLayerPreviewLoadInFlightRef = React.useRef<Set<string>>(new Set());
-  /**
-   * Layer previews already read out of an artifact, by bed and layer, and the one owner of those
-   * object URLs.
-   *
-   * Reading a layer is a call into the native archive, and a bed switch empties the visible
-   * array and reads the layer again — that is the small lag on a bed switch. Every read lands
-   * here, and a read that is already here is served from memory instead.
-   */
-  const printingLayerPreviewCacheRef = React.useRef<Map<string, Map<number, string>>>(new Map());
 
-  const printingPreviewDepsRef = React.useRef<PrintingPreviewManagerDeps>({
-    printingPreviewTargetResolution: null,
+  const activeSliceProfileFingerprint = sliceProfileFingerprint(activePrinterProfile?.id, activeMaterialProfile?.id);
+  const slicedPlatesView = useSlicedPlates({
+    activePlateId: scene.activePlateId,
+    models: scene.models,
+    plateOf: scene.resolveModelPlateId,
+    profileFingerprint: activeSliceProfileFingerprint,
   });
-  /**
-   * The slice of each bed, by plate id: the printing workspace shows the slice of the bed being
-   * worked on, so a batch of beds is a set of slices rather than whichever finished last. An
-   * entry is made when a run starts, so the layer progress of a bed being sliced has somewhere
-   * to live before its artifact exists.
-   */
-  const [printingSlicesByPlateId, setPrintingSlicesByPlateId] = React.useState<Record<string, {
-    artifact: SliceExportArtifact | null;
-    totalLayers: number;
-  }>>({});
-  const activePrintingSlice = printingSlicesByPlateId[scene.activePlateId] ?? null;
-  const printingArtifact = activePrintingSlice?.artifact ?? null;
-  const printingPreviewTotalLayers = activePrintingSlice?.totalLayers ?? 0;
-  /** Whether any bed has been sliced: the workspace is enterable, the preview is per bed. */
-  const hasSlicedPlate = React.useMemo(
-    () => Object.values(printingSlicesByPlateId).some((entry) => entry.artifact !== null),
-    [printingSlicesByPlateId],
-  );
+  const { slicedPlates, activeSlice, isActiveSliceStale, hasSlicedPlate, layerPreviewUrlAt, layerPreviewCount } = slicedPlatesView;
+  const printingArtifact = activeSlice?.artifact ?? null;
+  const printingPreviewTotalLayers = activeSlice?.totalLayers ?? 0;
   const {
     printingSelectedLayer,
     setPrintingSelectedLayer,
@@ -1384,12 +1499,13 @@ export default function Home() {
     printingPreviewVisualTransform,
     printingPreviewCursor,
     usePrintingSettledHiResCanvas,
+    printingPreviewTargetResolution,
   } = usePrintingPreviewManager({
     scene,
     activePrinterProfile,
     printingPreviewTotalLayers,
-    printingLayerPreviewUrls,
-    deps: printingPreviewDepsRef,
+    layerPreviewUrlAt,
+    printingArtifact,
   });
 
   const defaultHolePunchState = React.useMemo<HolePunchPanelState>(() => ({
@@ -1417,8 +1533,6 @@ export default function Home() {
   const preSliceTargetPickerResolverRef = React.useRef<((selection: { deviceId: string; materialId?: string } | null) => void) | null>(null);
   const preSlicePrintConfirmResolverRef = React.useRef<((confirmed: boolean) => void) | null>(null);
   const [printingSlicingBenchmark, setPrintingSlicingBenchmark] = React.useState<SliceExportResult['benchmark'] | null>(null);
-  const [printingArtifactIsInvalid, setPrintingArtifactIsInvalid] = React.useState(false);
-  const slicedArtifactProfileFingerprintRef = React.useRef<string | null>(null);
   const [printingEstimatedResinMl, setPrintingEstimatedResinMl] = React.useState<number | null>(null);
   /** The same estimate over every plate, shown beside the per-plate one. */
   const [printingEstimatedResinTotalMl, setPrintingEstimatedResinTotalMl] = React.useState<number | null>(null);
@@ -1750,17 +1864,17 @@ export default function Home() {
   // Sub-line under the blocking-overlay title. During "Apply to All" it reports
   // sequence progress; otherwise it's the single-model default.
   const modifierApplyProcessingLabel = applyAllHolePunchProgress
-    ? `Applying to model ${Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total)} of ${applyAllHolePunchProgress.total}`
-    : 'Processing 1 model';
+    ? formatApplyingToModelLabel(_, Math.min(applyAllHolePunchProgress.done + 1, applyAllHolePunchProgress.total), applyAllHolePunchProgress.total)
+    : _(msg`Processing 1 model`);
   const [modifierApplyOverlayElapsedSec, setModifierApplyOverlayElapsedSec] = React.useState(0);
 
   const modifierApplyOverlayContent = React.useMemo(() => {
     if (isApplyingHollowing && pendingHolePunchAutoApplyModelId) {
       return {
-        title: 'Applying Hollowing and Hole Punches...',
+        title: _(msg`Applying Hollowing and Hole Punches...`),
         detailLines: [
-          'Updating the hollowed mesh and preserving your hole punches afterward.',
-          'Please be patient while we rebuild the model.',
+          _(msg`Updating the hollowed mesh and preserving your hole punches afterward.`),
+          _(msg`Please be patient while we rebuild the model.`),
         ],
       };
     }
@@ -1769,42 +1883,42 @@ export default function Home() {
 
     if (isApplyingHollowing) {
       return {
-        title: 'Applying Hollowing...',
+        title: _(msg`Applying Hollowing...`),
         detailLines: [
-          'Rebuilding the model geometry with the latest hollowing settings.',
-          'Please wait a moment.',
+          _(msg`Rebuilding the model geometry with the latest hollowing settings.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     if (isApplyingHolePunch || pendingHolePunchAutoApplyModelId) {
       return {
-        title: 'Applying Hole Punches...',
+        title: _(msg`Applying Hole Punches...`),
         detailLines: [
-          'Cutting hole punches into the current model geometry.',
-          'Please wait a moment.',
+          _(msg`Cutting hole punches into the current model geometry.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     if (isApplyingBlockersHollowing) {
       return {
-        title: 'Applying Solid Areas...',
+        title: _(msg`Applying Solid Areas...`),
         detailLines: [
-          'Updating the hollowing preview with your solid areas.',
-          'Please wait a moment.',
+          _(msg`Updating the hollowing preview with your solid areas.`),
+          _(msg`Please wait a moment.`),
         ],
       };
     }
 
     return {
-      title: 'Applying Model Changes...',
+      title: _(msg`Applying Model Changes...`),
       detailLines: [
-        'Updating model geometry.',
-        'Please wait a moment.',
+        _(msg`Updating model geometry.`),
+        _(msg`Please wait a moment.`),
       ],
     };
-  }, [finalizingOverlayContent, isApplyingBlockersHollowing, isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
+  }, [_, finalizingOverlayContent, isApplyingBlockersHollowing, isApplyingHolePunch, isApplyingHollowing, pendingHolePunchAutoApplyModelId]);
 
   React.useEffect(() => {
     if (!showModifierApplyBlockingOverlay) {
@@ -1826,10 +1940,11 @@ export default function Home() {
     const seconds = total % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }, [modifierApplyOverlayElapsedSec]);
+
   const [supportRenderRefreshNonce, setSupportRenderRefreshNonce] = React.useState(0);
   const [gizmoResetNonce, setGizmoResetNonce] = React.useState(0);
   const [pendingDestructiveTransform, setPendingDestructiveTransform] = React.useState<{
-    modelId: string;
+    modelIds: string[];
     modelName: string;
     supportCount: number;
     operationLabel: string;
@@ -2135,7 +2250,7 @@ export default function Home() {
       },
       historyCommit: {
         pendingModelId: pendingHistory?.modelId ?? null,
-        pendingDescription: pendingHistory?.description ?? null,
+        pendingDescription: pendingHistory?.description ? _(pendingHistory.description) : null,
         pendingHasAfter: Boolean(pendingHistory?.after),
         pendingBeforeRotation: pendingHistory
           ? {
@@ -2160,7 +2275,7 @@ export default function Home() {
         lastResult: historyDebug.lastResult,
         lastReason: historyDebug.lastReason,
         lastModelId: historyDebug.lastModelId,
-        lastDescription: historyDebug.lastDescription,
+        lastDescription: historyDebug.lastDescription ? _(historyDebug.lastDescription) : null,
         lastExpectedNonce: historyDebug.lastExpectedNonce,
         lastScheduledNonce: historyDebug.lastScheduledNonce,
         lastUndoCountBefore: historyDebug.lastUndoCountBefore,
@@ -2170,7 +2285,7 @@ export default function Home() {
       },
       supportCounts: countSupportCollections(supportStateSnapshot),
     };
-  }, [scene.activeModelId, scene.models, supportDragGroupRef, supportStateSnapshot, transformDebugTick, transformMgr.transform]);
+  }, [_, scene.activeModelId, scene.models, supportDragGroupRef, supportStateSnapshot, transformDebugTick, transformMgr.transform]);
 
   const supportDebugStats = React.useMemo(() => {
     const snapTarget = bracePlacementSnapshot.snapTarget;
@@ -2273,22 +2388,35 @@ export default function Home() {
     return MODEL_ID_COLLECTION_KEYS.reduce((total, key) => total + supportIds[key].length, 0);
   }, []);
 
-  const requestDestructiveTransformSupportDeletion = React.useCallback((operationLabel: string) => {
+  /**
+   * Asks before a transform that would invalidate supports. `modelIds` defaults to the active
+   * model; a selection edit passes the whole selection, so the prompt counts, and the
+   * confirmation deletes, the supports of every model it is about to change.
+   */
+  const requestDestructiveTransformSupportDeletion = React.useCallback((
+    operationLabel: string,
+    modelIds?: readonly string[],
+  ) => {
     if (scene.mode !== 'prepare') return true;
-    if (!scene.activeModelId) return true;
+    const targetIds = modelIds ?? (scene.activeModelId ? [scene.activeModelId] : []);
+    if (targetIds.length === 0) return true;
     if (pendingDestructiveTransform) return false;
 
-    const supportCount = getSupportPrimitiveCountForModel(scene.activeModelId);
-    if (supportCount <= 0) return true;
+    const supportedIds = targetIds.filter((modelId) => getSupportPrimitiveCountForModel(modelId) > 0);
+    if (supportedIds.length === 0) return true;
+    const supportCount = supportedIds.reduce((total, modelId) => total + getSupportPrimitiveCountForModel(modelId), 0);
 
+    const firstModel = scene.models.find((model) => model.id === supportedIds[0]);
     setPendingDestructiveTransform({
-      modelId: scene.activeModelId,
-      modelName: (scene.activeModel?.name ?? scene.activeModelId).trim(),
+      modelIds: supportedIds,
+      modelName: supportedIds.length === 1
+        ? (firstModel?.name ?? supportedIds[0]).trim()
+        : formatSelectedModelCount(_, supportedIds.length),
       supportCount,
       operationLabel,
     });
     return false;
-  }, [getSupportPrimitiveCountForModel, pendingDestructiveTransform, scene]);
+  }, [_, getSupportPrimitiveCountForModel, pendingDestructiveTransform, scene.activeModelId, scene.mode, scene.models]);
 
   const requestDestructiveTransformSupportDeletionWithContinuation = React.useCallback((
     operationLabel: string,
@@ -2312,7 +2440,7 @@ export default function Home() {
     const supportCount = getSupportPrimitiveCountForModel(scene.activeModelId);
     if (supportCount <= 0) return true;
     setPendingDestructiveTransform({
-      modelId: scene.activeModelId,
+      modelIds: [scene.activeModelId],
       modelName: (scene.activeModel?.name ?? scene.activeModelId).trim(),
       supportCount,
       operationLabel: 'Auto Orient',
@@ -2347,7 +2475,7 @@ export default function Home() {
       after.position.z += transformMgr.liftDistance - lowestWorldZ;
     }
     scene.updateModelTransform(modelId, after);
-    scene.commitModelTransformHistory(modelId, before, after, 'Apply Orientation Suggestion');
+    scene.commitModelTransformHistory(modelId, before, after, APPLY_ORIENTATION_SUGGESTION_LABEL);
   }, [scene, transformMgr.liftDistance]);
 
   const handleConfirmDestructiveTransform = React.useCallback(() => {
@@ -2355,8 +2483,10 @@ export default function Home() {
     if (!pending) return;
 
     scene.deleteSupportsForModels(
-      [pending.modelId],
-      `Delete Supports Before ${pending.operationLabel} ${pending.modelName}`,
+      pending.modelIds,
+      pending.modelIds.length === 1
+        ? deleteSupportsForModelLabel(pending.modelName)
+        : deleteSupportsForModelsLabel(pending.modelIds.length),
     );
 
     setSupportRenderRefreshNonce((value) => value + 1);
@@ -2461,7 +2591,32 @@ export default function Home() {
   }, []);
 
   const editorContextMenuTitle = scene.mode === 'support' ? _(msg`Supports`) : _(msg`Editor`);
-  const editorContextMenuItems = scene.mode === 'support' ? supportContextMenuItems : undefined;
+  // Only a repair run from this menu offers "Auto-Repair Again" and the report: the import pass
+  // repairs every model at load, so the report it leaves behind cannot be the signal.
+  const editorContextMenuItems = React.useMemo(() => {
+    if (scene.mode === 'support') {
+      return supportContextMenuItems;
+    }
+    const repaired = !!scene.activeModelId
+      && scene.manuallyRepairedModelIds.includes(scene.activeModelId);
+    return MENU_ITEMS.map((item) =>
+      item.id === 'repair-menu' && 'children' in item
+        ? {
+            ...item,
+            children: [
+              { id: 'repair' as const, label: repaired ? msg`Repair Again` : msg`Auto-Repair`, icon: Wrench },
+              // The second group only exists once there is a repair to undo or report on.
+              ...(repaired
+                ? [
+                    { id: 'undo-repairs' as const, label: msg`Undo Repairs`, icon: Undo2, startsGroup: true },
+                    { id: 'show-repair-report' as const, label: msg`Show Report`, icon: ClipboardList },
+                  ]
+                : []),
+            ],
+          }
+        : item,
+    );
+  }, [scene.mode, scene.activeModelId, scene.manuallyRepairedModelIds, supportContextMenuItems]);
   const editorContextMenuDisabledActions = React.useMemo(() => {
     if (scene.mode === 'support') {
       return [
@@ -2499,153 +2654,15 @@ export default function Home() {
     ];
   }, [scene.activeModelId, scene.canPasteModel, scene.mode, scene.models, scene.selectedModelIds, supportsCanAddJoint, supportsCanToggleCurve]);
 
-  /**
-   * Drops the visible array without revoking it: those URLs belong to the layer cache, which
-   * hands the same one back when the bed or layer is asked for again.
-   */
-  const clearPrintingLayerPreviewUrls = React.useCallback(() => {
-    printingLayerPreviewLoadInFlightRef.current.clear();
-    setPrintingLayerPreviewUrls([]);
-  }, []);
-
-  /**
-   * Puts one read layer in the cache, and returns its URL.
-   *
-   * The cache owns the URL; the visible array only borrows it, which is why nothing here revokes
-   * the previous one.
-   */
-  const cachePrintingLayerPreview = React.useCallback((
-    plateId: string,
-    layerNumber: number,
-    pngBytes: Uint8Array,
-  ): string => {
-    const bytes = new Uint8Array(pngBytes.length);
-    bytes.set(pngBytes);
-    const url = URL.createObjectURL(new Blob([bytes.buffer], { type: 'image/png' }));
-    const cache = printingLayerPreviewCacheRef.current;
-    const layersForPlate = cache.get(plateId) ?? new Map<number, string>();
-    layersForPlate.set(layerNumber, url);
-    cache.set(plateId, layersForPlate);
-
-    // Scrubbing a tall print would otherwise cache every layer it passes: the oldest go first,
-    // and a layer that is asked for again is simply read again.
-    while (layersForPlate.size > PRINTING_PREVIEW_CACHE_LIMIT) {
-      const oldestLayer = layersForPlate.keys().next();
-      if (oldestLayer.done) break;
-      const oldestUrl = layersForPlate.get(oldestLayer.value);
-      if (oldestUrl) URL.revokeObjectURL(oldestUrl);
-      layersForPlate.delete(oldestLayer.value);
-    }
-
-    return url;
-  }, []);
-
-  /** Forgets the cached previews of one bed — or of every bed — and revokes their URLs. */
-  const dropPrintingLayerPreviewCache = React.useCallback((plateId?: string) => {
-    const cache = printingLayerPreviewCacheRef.current;
-    if (plateId === undefined) {
-      for (const layers of cache.values()) {
-        for (const url of layers.values()) URL.revokeObjectURL(url);
-      }
-      cache.clear();
-      return;
-    }
-    const layers = cache.get(plateId);
-    if (!layers) return;
-    for (const url of layers.values()) URL.revokeObjectURL(url);
-    cache.delete(plateId);
-  }, []);
-
-  React.useEffect(() => {
-    return () => {
-      clearPrintingLayerPreviewUrls();
-      dropPrintingLayerPreviewCache();
-    };
-  }, [clearPrintingLayerPreviewUrls, dropPrintingLayerPreviewCache]);
-
-  // The streamed previews are of the bed that was sliced, and an entry left at the layer being
-  // shown stops the effect below from loading the new bed's own layer. So a change of bed drops
-  // them all: the preview then loads the bed being worked on from its artifact — the same read
-  // the slider uses — instead of waiting for the slider to be moved.
-  const printingPreviewPlateIdRef = React.useRef(scene.activePlateId);
-  React.useEffect(() => {
-    if (printingPreviewPlateIdRef.current === scene.activePlateId) return;
-    printingPreviewPlateIdRef.current = scene.activePlateId;
-    clearPrintingLayerPreviewUrls();
-
-    // If the bed's layer was read before, it goes up in the same tick: no frame with an empty
-    // preview, and no wait for the native archive.
-    const layerNumber = Math.max(1, Math.min(printingPreviewTotalLayers, printingDisplayedLayer));
-    const cachedUrl = printingLayerPreviewCacheRef.current.get(scene.activePlateId)?.get(layerNumber);
-    if (cachedUrl && layerNumber >= 1) {
-      setPrintingLayerPreviewUrls((previous) => {
-        const next = previous.slice();
-        if (next.length < printingPreviewTotalLayers) next.length = printingPreviewTotalLayers;
-        next[layerNumber - 1] = cachedUrl;
-        return next;
-      });
-    }
-  }, [
-    clearPrintingLayerPreviewUrls,
-    printingDisplayedLayer,
-    printingPreviewTotalLayers,
-    scene.activePlateId,
-  ]);
 
 
-  const handlePrintingLayerPreviewGenerated = React.useCallback((payload: {
-    layerIndex: number;
-    totalLayers: number;
-    pngBytes: Uint8Array;
-  }) => {
-    const previewBytes = new Uint8Array(payload.pngBytes.length);
-    previewBytes.set(payload.pngBytes);
-    const blob = new Blob([previewBytes.buffer], { type: 'image/png' });
-    const nextUrl = URL.createObjectURL(blob);
-
-    setPrintingLayerPreviewUrls((previous) => {
-      const next = previous.slice();
-      const requiredLength = Math.max(payload.totalLayers, payload.layerIndex + 1);
-      if (next.length < requiredLength) {
-        next.length = requiredLength;
-      }
-      const prevUrl = next[payload.layerIndex];
-      if (prevUrl) URL.revokeObjectURL(prevUrl);
-      next[payload.layerIndex] = nextUrl;
-      return next;
-    });
-
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[scene.activePlateId];
-      return {
-        ...previous,
-        [scene.activePlateId]: { artifact: current?.artifact ?? null, totalLayers: payload.totalLayers },
-      };
-    });
-    setPrintingSelectedLayer((previous) => {
-      const nextSelected = !Number.isFinite(previous) || previous <= 0
-        ? Math.max(1, Math.min(payload.totalLayers, payload.layerIndex + 1))
-        : Math.max(1, Math.min(payload.totalLayers, previous));
-
-      printingSelectedLayerRef.current = nextSelected;
-      setPrintingDisplayedLayer((current) => (current === nextSelected ? current : nextSelected));
-      return nextSelected;
-    });
-  }, []);
 
   const handleSlicingFinishedForPrinting = React.useCallback((payload: { totalLayers: number }) => {
-    const totalLayers = Math.max(1, payload.totalLayers);
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[scene.activePlateId];
-      return {
-        ...previous,
-        [scene.activePlateId]: { artifact: current?.artifact ?? null, totalLayers },
-      };
-    });
+    slicedPlates.runFinished(payload.totalLayers);
     setPrintingSelectedLayer(1);
     setPrintingDisplayedLayer(1);
     printingSelectedLayerRef.current = 1;
-  }, [scene.activePlateId]);
+  }, [slicedPlates]);
 
   const handleSliceRunStartedForPrinting = React.useCallback((context?: { plateId?: string }) => {
     // The bed being sliced, not the one being worked on: a batch slices one bed after another
@@ -2654,212 +2671,31 @@ export default function Home() {
     const slicedPlateId = context?.plateId ?? scene.activePlateId;
 
     setShouldAutoSliceOnExportEntry(false);
-    clearPrintingLayerPreviewUrls();
-    // This bed's slice is about to be replaced, so its cached layers are of a file that is
-    // going away.
-    dropPrintingLayerPreviewCache(slicedPlateId);
+    slicedPlates.runStarted(slicedPlateId);
     setPrintingSelectedLayer(1);
     setPrintingDisplayedLayer(1);
     printingSelectedLayerRef.current = 1;
-    // Only the bed being sliced loses its plate: a re-slice of one bed does not unslice the
-    // others, and the printing workspace shows whichever bed is being worked on.
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[slicedPlateId];
-      if (!current) return previous;
-      return { ...previous, [slicedPlateId]: { artifact: null, totalLayers: 0 } };
-    });
-    setPrintingArtifactIsInvalid(false);
-    slicedArtifactProfileFingerprintRef.current = null;
     setPrintingReadyPlateId(null);
-  }, [clearPrintingLayerPreviewUrls, dropPrintingLayerPreviewCache, scene.activePlateId]);
+  }, [scene.activePlateId, slicedPlates]);
 
-  React.useEffect(() => {
-    if (scene.mode !== 'printing') return;
-    if (!printingArtifact?.nativeTempPath) return;
-    if (printingPreviewTotalLayers <= 0) return;
-
-    const layerNumber = Math.max(1, Math.min(printingPreviewTotalLayers, printingDisplayedLayer));
-    const layerIndex = layerNumber - 1;
-    if (printingLayerPreviewUrls[layerIndex]) return;
-
-    const activePlateIdForPreview = scene.activePlateId;
-    const cachedLayerUrl = printingLayerPreviewCacheRef.current.get(activePlateIdForPreview)?.get(layerNumber);
-    if (cachedLayerUrl) {
-      setPrintingLayerPreviewUrls((previous) => {
-        const next = previous.slice();
-        if (next.length < printingPreviewTotalLayers) next.length = printingPreviewTotalLayers;
-        next[layerIndex] = cachedLayerUrl;
-        return next;
-      });
-      return;
-    }
-
-    // Keyed by the bed and layer, so a read already in flight for those is not started twice.
-    const inFlight = printingLayerPreviewLoadInFlightRef.current;
-    const inFlightKey = `${activePlateIdForPreview}:${layerNumber}`;
-    if (inFlight.has(inFlightKey)) return;
-    inFlight.add(inFlightKey);
-
-    let cancelled = false;
-    void readPrintLayerPreviewPngFromPath(printingArtifact.nativeTempPath, layerNumber, printingArtifact.outputFormat)
-      .then((pngBytes: Uint8Array) => {
-        if (cancelled) return;
-        const previewBytes = new Uint8Array(pngBytes.length);
-        previewBytes.set(pngBytes);
-        const blob = new Blob([previewBytes.buffer], { type: 'image/png' });
-        const nextUrl = cachePrintingLayerPreview(activePlateIdForPreview, layerNumber, pngBytes);
-
-        setPrintingLayerPreviewUrls((previous) => {
-          const next = previous.slice();
-          if (next.length < printingPreviewTotalLayers) {
-            next.length = printingPreviewTotalLayers;
-          }
-          next[layerIndex] = nextUrl;
-          return next;
-        });
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          console.warn(`[Printing] Failed loading layer ${layerNumber} preview PNG from archive.`, error);
-        }
-      })
-      .finally(() => {
-        inFlight.delete(inFlightKey);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    cachePrintingLayerPreview,
-    scene.activePlateId,
-    scene.mode,
-    printingArtifact?.nativeTempPath,
-    printingDisplayedLayer,
-    printingLayerPreviewUrls,
-    printingPreviewTotalLayers,
-  ]);
-
-
-  /**
-   * Reads the layers every bed would show, the moment that bed's slice lands.
-   *
-   * This runs while the batch is still slicing, not while anyone is scrubbing — the difference
-   * between a read-ahead that helps and one that competes with the drag. The workspace then opens
-   * with those layers already in memory instead of reading them as the app walks in.
-   */
-  const prefetchedPlatesRef = React.useRef<Map<string, SliceExportArtifact>>(new Map());
-  React.useEffect(() => {
-    let cancelled = false;
-
-    for (const [plateId, entry] of Object.entries(printingSlicesByPlateId)) {
-      const nativePath = entry.artifact?.nativeTempPath;
-      const outputFormat = entry.artifact?.outputFormat;
-      if (!nativePath || !outputFormat || !entry.artifact) continue;
-      // Once per slice: the artifact identity is what says this bed was sliced again.
-      if (prefetchedPlatesRef.current.get(plateId) === entry.artifact) continue;
-      prefetchedPlatesRef.current.set(plateId, entry.artifact);
-
-      const total = Math.max(1, entry.totalLayers);
-      const centre = Math.max(1, Math.min(total, printingDisplayedLayer));
-      const wantedLayers: number[] = [centre];
-      for (let offset = 1; offset <= PRINTING_PREVIEW_PREFETCH_RADIUS; offset += 1) {
-        if (centre + offset <= total) wantedLayers.push(centre + offset);
-        if (centre - offset >= 1) wantedLayers.push(centre - offset);
-      }
-
-      const missingLayers = wantedLayers.filter(
-        (layerNumber) => !printingLayerPreviewCacheRef.current.get(plateId)?.has(layerNumber),
-      );
-      if (missingLayers.length === 0) continue;
-
-      void readPrintLayerPreviewPngsFromPath(nativePath, missingLayers, outputFormat)
-        .then((layers: Uint8Array[]) => {
-          if (cancelled) return;
-          missingLayers.forEach((layerNumber, index) => {
-            const pngBytes = layers[index];
-            if (!pngBytes || pngBytes.length === 0) return;
-            cachePrintingLayerPreview(plateId, layerNumber, pngBytes);
-          });
-        })
-        .catch(() => {
-          // An older build without the batch command, or a file that would not decode: the loader
-          // reads the layer again when it is shown, one at a time as before.
-        });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cachePrintingLayerPreview, printingDisplayedLayer, printingSlicesByPlateId]);
-
-
-
-
-  const printingPreviewTargetResolution = React.useMemo(() => {
-    const printerWidth = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionX ?? 0));
-    const printerHeight = Math.max(1, Math.round(activePrinterProfile?.display?.resolutionY ?? 0));
-    const pixelSizeX = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.x ?? 1));
-    const pixelSizeY = Math.max(0.0001, Number(activePrinterProfile?.pixelSize?.y ?? 1));
-    const hasPrintableArtifact = (printingArtifact?.outputName ?? '').trim().length > 0;
-
-    if (!hasPrintableArtifact || printerWidth <= 0 || printerHeight <= 0) {
-      return null;
-    }
-
-    return {
-      widthPx: printerWidth,
-      heightPx: printerHeight,
-      viewportWidth: printerWidth * pixelSizeX,
-      viewportHeight: printerHeight * pixelSizeY,
-    };
-  }, [
-    activePrinterProfile?.display?.resolutionX,
-    activePrinterProfile?.display?.resolutionY,
-    activePrinterProfile?.pixelSize?.x,
-    activePrinterProfile?.pixelSize?.y,
-    printingArtifact?.outputName,
-  ]);
-
-  printingPreviewDepsRef.current.printingPreviewTargetResolution = printingPreviewTargetResolution;
+  useSlicedPlatePreviewLoading(slicedPlatesView, {
+    activePlateId: scene.activePlateId,
+    displayedLayer: printingDisplayedLayer,
+    isPrinting: scene.mode === 'printing',
+  });
 
   const hasPrintingWorkspaceData = printingPreviewTotalLayers > 0 && printingArtifact !== null;
-  const activeSliceProfileFingerprint = React.useMemo(() => {
-    const printerProfileId = String(activePrinterProfile?.id ?? '').trim();
-    const materialProfileId = String(activeMaterialProfile?.id ?? '').trim();
-    return `${printerProfileId}::${materialProfileId}`;
-  }, [activeMaterialProfile?.id, activePrinterProfile?.id]);
-
-  /** Which artifact each bed's recorded slice came from, so recording it twice is a no-op. */
-  const recordedSliceArtifactRef = React.useRef<Map<string, SliceExportArtifact>>(new Map());
 
   /** Records one bed's slice, which is what the workspace and its read-ahead are built from. */
   const recordPrintingSlice = React.useCallback((
     artifact: SliceExportArtifact,
     context?: { plateId?: string; totalLayers?: number },
   ) => {
-    const plateId = context?.plateId ?? scene.activePlateId;
-
-    // A batch records each plate as it lands and hands the same artifacts over again when it
-    // finishes. Only a different artifact means a different slice, and only then are the layers
-    // cached from the old one — and the read-ahead that has already run for this one — dropped.
-    if (recordedSliceArtifactRef.current.get(plateId) === artifact) return;
-    recordedSliceArtifactRef.current.set(plateId, artifact);
-    dropPrintingLayerPreviewCache(plateId);
-
-    setPrintingSlicesByPlateId((previous) => {
-      const current = previous[plateId];
-      return {
-        ...previous,
-        [plateId]: {
-          artifact,
-          // A batch hands the totals over with the artifact; a single run streamed them as it
-          // sliced, so the entry already has them.
-          totalLayers: Math.max(1, context?.totalLayers ?? current?.totalLayers ?? 1),
-        },
-      };
+    slicedPlates.record(context?.plateId ?? scene.activePlateId, artifact, {
+      totalLayers: context?.totalLayers,
+      profileFingerprint: activeSliceProfileFingerprint,
     });
-  }, [dropPrintingLayerPreviewCache, scene.activePlateId]);
+  }, [activeSliceProfileFingerprint, scene.activePlateId, slicedPlates]);
 
   /**
    * A batch's plate, recorded as soon as it is sliced.
@@ -2881,7 +2717,6 @@ export default function Home() {
   ) => {
     const plateId = context?.plateId ?? scene.activePlateId;
     recordPrintingSlice(artifact, context);
-    setPrintingArtifactIsInvalid(false);
     setShowPrintingResliceModal(false);
     // Push a "Sliced Scene" marker to history so we can detect changes after this point
     pushSceneSlicedMarker();
@@ -3121,10 +2956,10 @@ export default function Home() {
   const printingOutputSizeLabel = React.useMemo(() => {
     if (!printingArtifact) return '—';
     const bytes = Math.max(0, printingArtifact.byteSize);
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  }, [printingArtifact]);
+    if (bytes < 1024) return fmt.quantity(bytes, 0, 'B');
+    if (bytes < 1024 * 1024) return fmt.quantity(bytes / 1024, 1, 'KB');
+    return fmt.quantity(bytes / (1024 * 1024), 2, 'MB');
+  }, [printingArtifact, fmt]);
 
   const yieldResinEstimateToMainThread = React.useCallback(async () => {
     await new Promise<void>((resolve) => {
@@ -3739,11 +3574,11 @@ export default function Home() {
     if (visible.length === 0) return '—';
     // An empty plate is a real answer, not an unknown: it holds no resin. The
     // scene-wide row beside it still carries the whole figure.
-    if (visibleResinModels.length === 0) return '0.00 ml';
+    if (visibleResinModels.length === 0) return fmt.quantity(0, 2, 'ml');
     if (isPrintingEstimatedResinBusy && printingEstimatedResinMl == null) return 'Calculating…';
     if (printingEstimatedResinMl == null) return '—';
-    return `${printingEstimatedResinMl.toFixed(2)} ml`;
-  }, [isPrintingEstimatedResinBusy, printingEstimatedResinMl, scene.models, visibleResinModels.length]);
+    return fmt.quantity(printingEstimatedResinMl, 2, 'ml');
+  }, [isPrintingEstimatedResinBusy, printingEstimatedResinMl, scene.models, visibleResinModels.length, fmt]);
 
 
 
@@ -3751,8 +3586,8 @@ export default function Home() {
   const estimatedResinTotalLabel = React.useMemo(() => {
     if (sceneResinModels.length === 0) return null;
     if (printingEstimatedResinTotalMl == null) return null;
-    return `${printingEstimatedResinTotalMl.toFixed(2)} ml`;
-  }, [printingEstimatedResinTotalMl, sceneResinModels.length]);
+    return fmt.quantity(printingEstimatedResinTotalMl, 2, 'ml');
+  }, [printingEstimatedResinTotalMl, sceneResinModels.length, fmt]);
 
   const estimatedPrintTimeLabel = React.useMemo(() => {
     if (!activeMaterialProfile || printingPreviewTotalLayers <= 0) return '—';
@@ -4277,8 +4112,9 @@ export default function Home() {
 
     const compositeLocalMaterialName = resolveCompositeMaterialLabel(activeMaterialProfile);
 
-    return compositeLocalMaterialName ?? activeMaterialProfile?.name ?? 'No resin selected';
+    return compositeLocalMaterialName ?? activeMaterialProfile?.name ?? _(msg`No resin selected`);
   }, [
+    _,
     activeMaterialProfile,
     activeNetworkUiAdapter,
     activePrinterProfile?.networkConnection?.connected,
@@ -4287,8 +4123,8 @@ export default function Home() {
     shouldShowOfflineRemoteMaterialName,
   ]);
   const sendToPrinterButtonLabel = sendToPrinterTargetName
-    ? `Upload to ${sendToPrinterTargetName.length > 26 ? `${sendToPrinterTargetName.slice(0, 24)}…` : sendToPrinterTargetName}`
-    : 'Send to Printer';
+    ? formatUploadToLabel(_, sendToPrinterTargetName.length > 26 ? `${sendToPrinterTargetName.slice(0, 24)}…` : sendToPrinterTargetName)
+    : _(msg`Send to Printer`);
   const canSendToPrinter = Boolean(
     printingArtifact
     && activeNetworkUiAdapter
@@ -4374,7 +4210,7 @@ export default function Home() {
     }
 
     if (!activeNetworkUiAdapter || reachablePrintableConnectedPrinterFleet.length === 0) {
-      setPrintingSendStatusText('No online printer is available for upload.');
+      setPrintingSendStatusText(_(msg`No online printer is available for upload.`));
       return false;
     }
 
@@ -4398,7 +4234,7 @@ export default function Home() {
           : reachablePrintableConnectedPrinterFleet[0]
       ) ?? null;
       if (!selectedTarget) {
-        setPrintingSendStatusText('No online printer is available for upload.');
+        setPrintingSendStatusText(_(msg`No online printer is available for upload.`));
         return false;
       }
       preSliceUploadSelectionRef.current = {
@@ -4423,6 +4259,7 @@ export default function Home() {
 
     return true;
   }, [
+    _,
     activeNetworkUiAdapter,
     reachablePrintableConnectedPrinterFleet,
     printerReachabilityByDeviceId,
@@ -4437,15 +4274,15 @@ export default function Home() {
     }
 
     switch (printingUploadDialogStage) {
-      case 'uploading': return 'Uploading to printer';
-      case 'processing': return 'Processing on device';
-      case 'ready': return 'Ready to print';
-      case 'starting': return 'Starting print';
-      case 'started': return 'Print started';
-      case 'failed': return 'Upload failed';
-      default: return 'Processing';
+      case 'uploading': return _(msg`Uploading to printer`);
+      case 'processing': return _(msg`Processing on device`);
+      case 'ready': return _(msg`Ready to print`);
+      case 'starting': return _(msg`Starting print`);
+      case 'started': return _(msg`Print started`);
+      case 'failed': return _(msg`Upload failed`);
+      default: return _(msg`Processing`);
     }
-  }, [printingSendStageText, printingUploadDialogStage]);
+  }, [_, printingSendStageText, printingUploadDialogStage]);
 
   const printingDialogIsIndeterminate = printingUploadDialogStage === 'processing';
   const printingDialogProgressPercent = Math.max(0, Math.min(100, printingUploadDisplayProgress * 100));
@@ -4932,15 +4769,15 @@ export default function Home() {
           setSceneSaveError(
             error instanceof VoxlSizeLimitError
               ? {
-                  title: 'Scene is too large to save',
+                  title: _(msg`Scene is too large to save`),
                   message: error.userMessage,
                   detail: error.perModelBreakdown
                     .slice(0, 5)
-                    .map((row) => `${row.name}: ${(row.compressedBytes / (1024 * 1024)).toFixed(0)} MB compressed`)
+                    .map((row) => formatCompressedModelSize(_, row.name, (row.compressedBytes / (1024 * 1024)).toFixed(0)))
                     .join('\n'),
                 }
               : {
-                  title: 'Could not save the scene',
+                  title: _(msg`Could not save the scene`),
                   message: error instanceof Error ? error.message : String(error),
                   detail: null,
                 },
@@ -4973,7 +4810,7 @@ export default function Home() {
     }
 
     queueKickoff();
-  }, [performTopBarSaveScene]);
+  }, [_, performTopBarSaveScene]);
 
   const resolveSceneSaveNativePath = React.useCallback(async (): Promise<{
     cancelled: boolean;
@@ -5400,15 +5237,15 @@ export default function Home() {
       ? (selectedMaterialIdOverride ?? targetDevice.selectedMaterialId ?? '').trim()
       : ((selectedMaterialIdOverride ?? targetDevice.selectedMaterialId ?? '').trim() || '__local_profile__');
     if (!host) {
-      setPrintingSendStatusText('No printer IP address available for send operation.');
+      setPrintingSendStatusText(_(msg`No printer IP address available for send operation.`));
       return;
     }
     if (requiresRemoteMaterialSelection && !selectedMaterialId) {
-      setPrintingSendStatusText('Select a matching material profile before upload.');
+      setPrintingSendStatusText(_(msg`Select a matching material profile before upload.`));
       return;
     }
     if (requiresRemoteMaterialSelection && !selectedMaterialIdOverride && !isLayerHeightMatch(targetDevice.selectedMaterialLayerHeightMm ?? null)) {
-      setPrintingSendStatusText(`Selected material on this printer does not match sliced layer height ${slicedLayerHeightMm.toFixed(3)} mm.`);
+      setPrintingSendStatusText(formatLayerHeightMismatch(_, slicedLayerHeightMm.toFixed(3)));
       return;
     }
 
@@ -5442,8 +5279,8 @@ export default function Home() {
     setPrintingSendBusy(true);
     setPrintingSendProgress(0.01);
     setPrintingUploadDisplayProgress(0.01);
-    setPrintingSendStageText('Uploading Print Job…');
-    setPrintingSendStatusText('Uploading Print Job to Printer…');
+    setPrintingSendStageText(_(msg`Uploading Print Job…`));
+    setPrintingSendStatusText(_(msg`Uploading Print Job to Printer…`));
     setPrintingUploadTelemetry(null);
     setPrintingUploadDialogStage('uploading');
     setPrintingUploadDialogOpen(true);
@@ -5509,8 +5346,8 @@ export default function Home() {
               printingUploadProcessingHandoffTimeoutRef.current = window.setTimeout(() => {
                 printingUploadProcessingHandoffTimeoutRef.current = null;
                 setPrintingUploadDialogStage('processing');
-                setPrintingSendStageText('Processing on device…');
-                setPrintingSendStatusText(`Upload complete. ${activeNetworkUiAdapter.displayName} is processing file metadata…`);
+                setPrintingSendStageText(_(msg`Processing on device…`));
+                setPrintingSendStatusText(formatUploadCompleteProcessing(_, activeNetworkUiAdapter.displayName));
                 setPrintingUploadTelemetry(null);
                 setPrintingDeviceProcessingStartedAtMs(Date.now());
               }, 220);
@@ -5519,8 +5356,8 @@ export default function Home() {
                 window.clearTimeout(printingUploadProcessingHandoffTimeoutRef.current);
                 printingUploadProcessingHandoffTimeoutRef.current = null;
               }
-              setPrintingSendStatusText(`Send failed: ${update.error || update.message}`);
-              setPrintingSendStageText('Upload failed');
+              setPrintingSendStatusText(formatSendFailed(_, update.error || update.message));
+              setPrintingSendStageText(_(msg`Upload failed`));
               setPrintingUploadDialogStage('failed');
               setPrintingUploadTelemetry(null);
               setPrintingSendProgress(0);
@@ -5604,37 +5441,33 @@ export default function Home() {
       if (metadataReady) {
         setPrintingSendProgress(1);
         setPrintingUploadDisplayProgress(1);
-        setPrintingSendStageText('Ready to print');
+        setPrintingSendStageText(_(msg`Ready to print`));
         setPrintingUploadDialogStage('ready');
         setPrintingDeviceProcessingStartedAtMs(null);
         setPrintingUploadTelemetry(null);
-        setPrintingSendStatusText(
-          `Import complete${resolvedPlateId ? ` • Plate #${resolvedPlateId}` : ''}. Click Print Now when ready.`,
-        );
+        setPrintingSendStatusText(formatImportComplete(_, resolvedPlateId));
       } else {
         setPrintingSendProgress(1);
         setPrintingUploadDisplayProgress(1);
-        setPrintingSendStageText('Device still processing');
+        setPrintingSendStageText(_(msg`Device still processing`));
         setPrintingUploadDialogStage('failed');
         setPrintingDeviceProcessingStartedAtMs(null);
         setPrintingUploadTelemetry(null);
-        setPrintingSendStatusText(
-          `Upload complete${resolvedPlateId ? ` • Plate #${resolvedPlateId}` : ''}. Device is still processing metadata after waiting.`,
-        );
+        setPrintingSendStatusText(formatUploadStillProcessing(_, resolvedPlateId));
       }
     } catch (error) {
       if (printingUploadProcessingHandoffTimeoutRef.current !== null) {
         window.clearTimeout(printingUploadProcessingHandoffTimeoutRef.current);
         printingUploadProcessingHandoffTimeoutRef.current = null;
       }
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = error instanceof Error ? error.message : _(msg`Unknown error`);
       const canceled = printingSendCancelRequestedRef.current || /cancel|abort/i.test(message);
       if (canceled) {
-        setPrintingSendStatusText('Upload canceled. You can retry when ready.');
-        setPrintingSendStageText('Upload canceled');
+        setPrintingSendStatusText(_(msg`Upload canceled. You can retry when ready.`));
+        setPrintingSendStageText(_(msg`Upload canceled`));
       } else {
-        setPrintingSendStatusText(`Send failed: ${message}`);
-        setPrintingSendStageText('Upload failed');
+        setPrintingSendStatusText(formatSendFailed(_, message));
+        setPrintingSendStageText(_(msg`Upload failed`));
       }
       setPrintingUploadDialogStage('failed');
       setPrintingDeviceProcessingStartedAtMs(null);
@@ -5646,6 +5479,7 @@ export default function Home() {
       printingSendCancelRequestedRef.current = false;
     }
   }, [
+    _,
     activeNetworkUiAdapter,
     activePrinterProfile,
     isLayerHeightMatch,
@@ -5660,13 +5494,13 @@ export default function Home() {
     if (!printingArtifact || !activePrinterProfile) return;
     if (!activeNetworkUiAdapter) return;
     if (printableConnectedPrinterFleet.length === 0) {
-      setPrintingSendStatusText('No connected printer is available for upload.');
+      setPrintingSendStatusText(_(msg`No connected printer is available for upload.`));
       return;
     }
 
     const selectedTarget = printingTargetDevice ?? printableConnectedPrinterFleet[0] ?? null;
     if (!selectedTarget) {
-      setPrintingSendStatusText('No connected printer is available for upload.');
+      setPrintingSendStatusText(_(msg`No connected printer is available for upload.`));
       return;
     }
 
@@ -5678,6 +5512,7 @@ export default function Home() {
 
     await performSendToPrinter(selectedTarget);
   }, [
+    _,
     activeNetworkUiAdapter,
     activePrinterProfile,
     isLayerHeightMatch,
@@ -5692,8 +5527,8 @@ export default function Home() {
     if (!printingSendBusy) return;
 
     printingSendCancelRequestedRef.current = true;
-    setPrintingSendStageText('Canceling upload…');
-    setPrintingSendStatusText('Canceling upload…');
+    setPrintingSendStageText(_(msg`Canceling upload…`));
+    setPrintingSendStatusText(_(msg`Canceling upload…`));
 
     if (activeNetworkUiAdapter?.pluginId === 'athena') {
       void import('../../plugins/athena/network')
@@ -5706,7 +5541,7 @@ export default function Home() {
           // Ignore; cooperative cancellation checks still stop follow-up work.
         });
     }
-  }, [activeNetworkUiAdapter?.pluginId, printingSendBusy]);
+  }, [_, activeNetworkUiAdapter?.pluginId, printingSendBusy]);
 
   const handlePrintNow = React.useCallback(async () => {
     if (!activePrinterProfile || !printingTargetDevice) return;
@@ -5717,12 +5552,12 @@ export default function Home() {
     const host = (printingTargetDevice.ipAddress || activePrinterProfile.network?.ipAddress || '').trim();
     const port = printingTargetDevice.port || 80;
     if (!host) {
-      setPrintingSendStatusText('No printer IP address available for Print Now.');
+      setPrintingSendStatusText(_(msg`No printer IP address available for Print Now.`));
       return;
     }
 
     setPrintingPrintNowBusy(true);
-    setPrintingSendStageText('Starting print…');
+    setPrintingSendStageText(_(msg`Starting print…`));
     setPrintingUploadDialogStage('starting');
     setPrintingDeviceProcessingStartedAtMs(null);
 
@@ -5737,26 +5572,26 @@ export default function Home() {
 
       const payload = await readJsonObject(response);
       if (response.ok && payload?.ok === true) {
-        setPrintingSendStageText('Print started');
+        setPrintingSendStageText(_(msg`Print started`));
         setPrintingUploadDialogStage('started');
-        setPrintingSendStatusText(`Print started successfully${printingReadyPlateId ? ` • Plate #${printingReadyPlateId}` : ''}.`);
+        setPrintingSendStatusText(formatPrintStarted(_, printingReadyPlateId));
         setPrintingUploadDialogOpen(false);
         openPrintingMonitorForTargetDevice(printingTargetDevice.id);
       } else {
         const reason = typeof payload?.error === 'string' ? payload.error : `HTTP ${response.status}`;
-        setPrintingSendStageText('Start print failed');
+        setPrintingSendStageText(_(msg`Start print failed`));
         setPrintingUploadDialogStage('failed');
-        setPrintingSendStatusText(`Print start failed: ${reason}`);
+        setPrintingSendStatusText(formatPrintStartFailed(_, reason));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setPrintingSendStageText('Start print failed');
+      const message = error instanceof Error ? error.message : _(msg`Unknown error`);
+      setPrintingSendStageText(_(msg`Start print failed`));
       setPrintingUploadDialogStage('failed');
-      setPrintingSendStatusText(`Print start failed: ${message}`);
+      setPrintingSendStatusText(formatPrintStartFailed(_, message));
     } finally {
       setPrintingPrintNowBusy(false);
     }
-  }, [activePrinterProfile, openPrintingMonitorForTargetDevice, printingMonitoringAdapter.operations, printingMonitoringAdapter.pluginId, printingReadyPlateId, printingTargetDevice]);
+  }, [_, activePrinterProfile, openPrintingMonitorForTargetDevice, printingMonitoringAdapter.operations, printingMonitoringAdapter.pluginId, printingReadyPlateId, printingTargetDevice]);
 
 
 
@@ -5786,9 +5621,15 @@ export default function Home() {
     setEditorContextMenuPos(position);
   }, [scene]);
 
+  /** A row's repair button repairs the whole selection when that row is part of it. */
   const handleRepairModel = React.useCallback((modelId: string) => {
-    setManualRepairModelId(modelId);
-  }, []);
+    setAutoStartRepair(false);
+    setManualRepairModelIds(
+      scene.selectedModelIds.length > 1 && scene.selectedModelIds.includes(modelId)
+        ? [...scene.selectedModelIds]
+        : [modelId],
+    );
+  }, [scene.selectedModelIds]);
 
   const handleOpenModelSupportsInfo = React.useCallback((modelId: string) => {
     setSupportsInfoModelId(modelId);
@@ -6107,14 +5948,7 @@ export default function Home() {
   React.useEffect(() => setHistoryOriginProvider(() => historyOriginRef.current), []);
 
   React.useEffect(() => {
-    const fallbackDescription = (type: string) => {
-      if (type === 'scene_models_snapshot_apply') return 'Scene Change';
-      return formatHistoryLabel(type);
-    };
-
     const unsubscribe = subscribeHistoryOperations(({ direction, action }) => {
-      const sourceDescription = action.description?.trim() || fallbackDescription(action.type);
-      const description = formatHistoryLabel(sourceDescription);
 
       // Follow the stack back to where the edit was made: undoing a cut while the
       // Transform gizmo is up should put the Cut tool back, not silently reshape
@@ -6126,7 +5960,7 @@ export default function Home() {
       setGizmoResetNonce((value) => value + 1);
       setHistoryTransformResyncTick((value) => value + 1);
 
-      setHistoryActionToast({ id: Date.now(), text: description, direction });
+      setHistoryActionToast({ id: Date.now(), label: action.description, direction });
       setIsHistoryActionToastVisible(true);
 
       if (historyActionToastFadeTimeoutRef.current !== null) {
@@ -6427,7 +6261,7 @@ export default function Home() {
               );
               applyJointSplitKnotRemaps(knotRemaps);
               updateSupportEntity(owner.typeId, updated);
-              pushSupportEditHistory(`Create ${descriptor.singular} joint`, beforeSnapshot, captureSupportEditSnapshot());
+              pushSupportEditHistory(createJointLabel(descriptor.id), beforeSnapshot, captureSupportEditSnapshot());
             }
           }
         }
@@ -6495,11 +6329,34 @@ export default function Home() {
         }
         break;
       }
-      case 'repair': {
+      case 'undo-repairs': {
         const targetId = scene.activeModelId;
         if (targetId) {
           closeEditorContextMenu();
-          setManualRepairModelId(targetId);
+          void scene.undoRepairsInPlace(targetId);
+          return;
+        }
+        break;
+      }
+      case 'show-repair-report': {
+        const targetId = scene.activeModelId;
+        if (targetId) {
+          closeEditorContextMenu();
+          scene.openMeshRepairReportForModel(targetId);
+          return;
+        }
+        break;
+      }
+      case 'repair': {
+        const targetIds = resolveModelActionTargetIds({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        });
+        if (targetIds.length > 0) {
+          closeEditorContextMenu();
+          setAutoStartRepair(false);
+          setManualRepairModelIds(targetIds);
           return;
         }
         break;
@@ -6697,13 +6554,13 @@ export default function Home() {
 
   const formatDebugVec3 = React.useCallback((v: THREE.Vector3 | null | undefined) => {
     if (!v) return 'n/a';
-    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN');
+    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN'); // i18n-ignore: debug readout
     return `${f(v.x)}, ${f(v.y)}, ${f(v.z)}`;
   }, []);
 
   const formatDebugVec3Like = React.useCallback((v: { x: number; y: number; z: number } | null | undefined) => {
     if (!v) return 'n/a';
-    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN');
+    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'NaN'); // i18n-ignore: debug readout
     return `${f(v.x)}, ${f(v.y)}, ${f(v.z)}`;
   }, []);
 
@@ -7295,108 +7152,15 @@ export default function Home() {
     previousSceneModeRef.current = currentMode;
   }, [scene.mode, scene.activeModelId, scene.setSelectedModelIds, slicing.layerIndex, slicing.numLayers, slicing.setLayerIndex]);
 
-  // Invalidate printing artifact if scene changed (detected via history events after the slice marker)
-  React.useEffect(() => {
-    if (!printingArtifact) return; // Nothing to invalidate
-    
-    const historyEvents = getHistoryDebugEvents();
-    if (historyEvents.length === 0) return;
-    
-    // Find the most recent "SCENE_SLICED" marker
-    let sliceMarkerIndex = -1;
-    for (let i = historyEvents.length - 1; i >= 0; i--) {
-      if (historyEvents[i].actionType === SCENE_SLICED) {
-        sliceMarkerIndex = i;
-        break;
-      }
-    }
-    
-    if (sliceMarkerIndex >= 0) {
-      // Check if there are any OTHER events (non-undo/redo) after the slice marker
-      const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
-      const hasModifications = eventsAfterSlice.some(
-        (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
-      );
-      
-      if (hasModifications) {
-        setPrintingArtifactIsInvalid(true);
-      }
-    }
-  }, [printingArtifact]);
-
-  // Re-check invalidation when history changes
-  React.useEffect(() => {
-    const checkInvalidation = () => {
-      if (!printingArtifact || printingArtifactIsInvalid) return; // Already invalid or no artifact
-      
-      const historyEvents = getHistoryDebugEvents();
-      if (historyEvents.length === 0) return;
-      
-      // Find the most recent "SCENE_SLICED" marker
-      let sliceMarkerIndex = -1;
-      for (let i = historyEvents.length - 1; i >= 0; i--) {
-        if (historyEvents[i].actionType === SCENE_SLICED) {
-          sliceMarkerIndex = i;
-          break;
-        }
-      }
-      
-      if (sliceMarkerIndex >= 0) {
-        // Check if there are any OTHER events (non-undo/redo) after the slice marker
-        const eventsAfterSlice = historyEvents.slice(sliceMarkerIndex + 1);
-        const hasModifications = eventsAfterSlice.some(
-          (e) => e.kind === 'push' && e.actionType !== SCENE_SLICED
-        );
-        
-        if (hasModifications) {
-          setPrintingArtifactIsInvalid(true);
-        }
-      }
-    };
-
-    const unsubscribe = subscribeHistoryDebug(checkInvalidation);
-    return () => {
-      void unsubscribe();
-    };
-  }, [printingArtifact, printingArtifactIsInvalid]);
-
-  // Bind slice artifact to active printer/material profile fingerprint.
-  React.useEffect(() => {
-    if (!printingArtifact) {
-      slicedArtifactProfileFingerprintRef.current = null;
-      return;
-    }
-
-    if (!slicedArtifactProfileFingerprintRef.current) {
-      slicedArtifactProfileFingerprintRef.current = activeSliceProfileFingerprint;
-    }
-  }, [activeSliceProfileFingerprint, printingArtifact]);
-
-  // Invalidate slicing output when printer and/or material profile changes.
-  React.useEffect(() => {
-    if (!printingArtifact || printingArtifactIsInvalid) return;
-
-    const baselineFingerprint = slicedArtifactProfileFingerprintRef.current;
-    if (!baselineFingerprint) {
-      slicedArtifactProfileFingerprintRef.current = activeSliceProfileFingerprint;
-      return;
-    }
-
-    if (baselineFingerprint !== activeSliceProfileFingerprint) {
-      setPrintingArtifactIsInvalid(true);
-    }
-  }, [activeSliceProfileFingerprint, printingArtifact, printingArtifactIsInvalid]);
 
   // Lock printing workspace when no models exist
   React.useEffect(() => {
     if (scene.models.length === 0 && scene.mode === 'printing') {
       // Reset to prepare mode if we delete the last model while in printing
       scene.setMode('prepare');
-      setPrintingSlicesByPlateId({});
-      dropPrintingLayerPreviewCache();
-      setPrintingArtifactIsInvalid(false);
+      slicedPlates.clear();
     }
-  }, [dropPrintingLayerPreviewCache, scene.models.length, scene.mode, scene]);
+  }, [scene.models.length, scene.mode, scene, slicedPlates]);
 
   // Track whether the profile settings modal is currently open so we can
   // defer the printing-workspace kick until after the user closes it.
@@ -7419,7 +7183,7 @@ export default function Home() {
   // If artifact becomes invalid while already in printing workspace, kick back and show modal.
   // If the profile settings modal is currently open, defer until it closes.
   React.useEffect(() => {
-    if (scene.mode === 'printing' && printingArtifactIsInvalid && printingArtifact) {
+    if (scene.mode === 'printing' && isActiveSliceStale) {
       if (isProfileModalOpenRef.current) {
         pendingPrintingKickRef.current = true;
       } else {
@@ -7427,7 +7191,7 @@ export default function Home() {
         setShowPrintingResliceModal(true);
       }
     }
-  }, [printingArtifactIsInvalid, printingArtifact, scene.mode, scene]);
+  }, [isActiveSliceStale, scene.mode, scene]);
 
   // Auto-trigger upload/print when entering printing workspace via a Slice & Upload / Slice & Print intent
   React.useEffect(() => {
@@ -7576,12 +7340,12 @@ export default function Home() {
     if (nextMode === 'printing' && !hasSlicedPlate) {
       return;
     }
-    if (nextMode === 'printing' && printingArtifactIsInvalid && printingArtifact) {
+    if (nextMode === 'printing' && isActiveSliceStale) {
       setShowPrintingResliceModal(true);
       return;
     }
     scene.setMode(nextMode);
-  }, [hasSlicedPlate, printingArtifact, printingArtifactIsInvalid, scene]);
+  }, [hasSlicedPlate, isActiveSliceStale, scene]);
 
   const handleAddPrinterFromOnboarding = React.useCallback(() => {
     openProfileSettingsModal('printer', { openPrinterLibrary: true });
@@ -8326,34 +8090,37 @@ export default function Home() {
     const hasHoles = holeIds.length > 0;
     const hasHollowing = hollowIds.length > 0;
     if (unappliedModifierPromptPurpose === 'supports') {
-      const what = hasHoles && hasHollowing
-        ? 'hole punches and hollowing'
-        : (hasHoles ? 'hole punches' : 'hollowing');
-      const verb = hasHoles && !hasHollowing
-        ? 'Hole punches are'
-        : (hasHollowing && !hasHoles ? 'Hollowing is' : 'Holes and hollowing are');
+      // Whole sentences per case: spliced fragments cannot be reordered by a translation.
+      const subtitle = hasHoles && hasHollowing
+        ? _(msg`Some models have unapplied hole punches and hollowing`)
+        : (hasHoles ? _(msg`Some models have unapplied hole punches`) : _(msg`Some models have unapplied hollowing`));
+      const bakedLater = hasHoles && !hasHollowing
+        ? _(msg`Supports are generated against the mesh as it stands. Hole punches are only baked in later, so a support generated now can land inside a hole that does not exist yet.`)
+        : (hasHollowing && !hasHoles
+          ? _(msg`Supports are generated against the mesh as it stands. Hollowing is only baked in later, so a support generated now can land inside a cavity that does not exist yet.`)
+          : _(msg`Supports are generated against the mesh as it stands. Holes and hollowing are only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet.`));
       return {
-        title: 'Unapplied Changes',
-        subtitle: `Some models have unapplied ${what}`,
+        title: _(msg`Unapplied Changes`),
+        subtitle,
         paragraphs: [
-          `Supports are generated against the mesh as it stands. ${verb} only baked in later, so a support generated now can land inside a hole or a cavity that does not exist yet.`,
+          bakedLater,
           hasHoles
-            ? 'Apply the holes to every visible model, or open the Hollow tool to review and apply them per model.'
-            : 'Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh.',
+            ? _(msg`Apply the holes to every visible model, or open the Hollow tool to review and apply them per model.`)
+            : _(msg`Open the Hollow tool to apply the hollowing, or continue and supports will follow the current mesh.`),
         ],
         showApplyAll: hasHoles,
       };
     }
     return {
-      title: 'Unapplied Holes',
-      subtitle: 'Some models have unapplied hole punches',
+      title: _(msg`Unapplied Holes`),
+      subtitle: _(msg`Some models have unapplied hole punches`),
       paragraphs: [
-        'One or more models have hole punches that haven\u2019t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output.',
-        'Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually.',
+        _(msg`One or more models have hole punches that haven’t been applied. Hole punches must be baked into the geometry before slicing or they will not appear in the output.`),
+        _(msg`Apply to All bakes the holes into every visible model when applicable. Or open the Hollow tool to review and apply holes individually.`),
       ],
       showApplyAll: true,
     };
-  }, [getVisibleModelIdsWithUnappliedModifiers, unappliedModifierPromptPurpose]);
+  }, [_, getVisibleModelIdsWithUnappliedModifiers, unappliedModifierPromptPurpose]);
 
   // Generate Supports: stop for unapplied holes / hollowing first, then run
   // against whatever the user chose.
@@ -8672,6 +8439,24 @@ export default function Home() {
     ? _(msg`Letting DragonFruit finish its startup animation before loading your scene.`)
     : importOverlayState.detail;
 
+  // An empty scene has nothing to list, so the list is hidden outright. Otherwise
+  // the bar always shows it — there is no room beside it for the list to hide into
+  // and no tile to bring it back — and only the column can hide it.
+  const modelsPanelShown = !showEmptySceneDialog && (modelsPanelVisible || toolLayout === 'horizontal');
+  // The bar passes no toggle, so the rail builds no Models entry there. The stored
+  // preference is left untouched, so switching back to the column restores whatever
+  // the user last chose.
+  const modelsRailToggle = toolLayout === 'vertical'
+    ? {
+      modelsPanelVisible,
+      onToggleModelsPanel: () => {
+        const next = !modelsPanelVisible;
+        setModelsPanelVisible(next);
+        setModelsPanelVisibleEnabled(next);
+      },
+    }
+    : {};
+
   const renderId = useRef(0);
   const postRotateLiftScheduledRef = useRef(false);
   renderId.current++;
@@ -8879,7 +8664,7 @@ export default function Home() {
     }
 
     if (pendingTransformHistoryRef.current && targetModelId && pendingTransformHistoryRef.current.modelId === targetModelId) {
-      pendingTransformHistoryRef.current.description = `transform:${operation} ${targetModelName}`;
+      pendingTransformHistoryRef.current.description = modelTransformLabel(operation, targetModelName);
     }
 
     transformMgr.setIsTransforming(false);
@@ -8986,7 +8771,7 @@ export default function Home() {
           rotation: payload.after.rotation.clone(),
           scale: payload.after.scale.clone(),
         },
-        description: `transform:${payload.operation} ${targetModelName}`,
+        description: modelTransformLabel(payload.operation, targetModelName),
       };
       skipNextTransformEndCommitRef.current = null;
       return;
@@ -9007,7 +8792,7 @@ export default function Home() {
         rotation: payload.after.rotation.clone(),
         scale: payload.after.scale.clone(),
       };
-      existing.description = `transform:${payload.operation} ${targetModelName}`;
+      existing.description = modelTransformLabel(payload.operation, targetModelName);
     } else {
       const beforeSupportSnapshot = captureTransformSupportSnapshot();
       pendingTransformHistoryRef.current = {
@@ -9022,13 +8807,34 @@ export default function Home() {
           rotation: payload.after.rotation.clone(),
           scale: payload.after.scale.clone(),
         },
-        description: `transform:${payload.operation} ${targetModelName}`,
+        description: modelTransformLabel(payload.operation, targetModelName),
         supportBefore: beforeSupportSnapshot.support,
       };
     }
 
     skipNextTransformEndCommitRef.current = null;
   }, [captureTransformSupportSnapshot, scene]);
+
+  /**
+   * Seats the models the way a single model is seated after a rotation: lowest point at the lift
+   * distance with Auto on, on the plate with it off. A model whose Z was set by hand (or that came
+   * in from a project with its own Z) is left where it is, as it would be on its own. A group
+   * scale needs it too, since it spreads the models along Z from their centre.
+   */
+  const seatSelectionOnPlate = React.useCallback((
+    entries: Array<{ id: string; transform: ModelTransform }>,
+  ) => {
+    const targetZ = transformMgr.autoLift ? transformMgr.liftDistance : 0;
+    const modelById = new Map(scene.models.map((model) => [model.id, model]));
+    const seatable = entries.flatMap((entry) => {
+      const model = modelById.get(entry.id);
+      return model && model.manualZMoveOverride !== true ? [{ ...entry, geometry: model.geometry }] : [];
+    });
+    const seated = new Map(
+      buildLiftDropUpdates(seatable, seatable.map((entry) => entry.id), targetZ).map((entry) => [entry.id, entry]),
+    );
+    return entries.map((entry) => seated.get(entry.id) ?? entry);
+  }, [scene.models, transformMgr.autoLift, transformMgr.liftDistance]);
 
   const handleGizmoTransformGroupCommit = React.useCallback((payload: {
     operation: 'move' | 'rotate' | 'scale';
@@ -9051,7 +8857,7 @@ export default function Home() {
       );
     };
 
-    const updates = payload.entries
+    const changedEntries = payload.entries
       .filter((entry) => isFiniteTransform(entry.after) && hasMeaningfulChange(entry.before, entry.after))
       .map((entry) => ({
         id: entry.modelId,
@@ -9061,6 +8867,9 @@ export default function Home() {
           scale: entry.after.scale.clone(),
         },
       }));
+    // A turned or scaled selection is seated as a single model is, in the same undo step.
+    if (payload.operation === 'rotate' && changedEntries.length > 0) islands.clearScanData();
+    const updates = payload.operation === 'move' ? changedEntries : seatSelectionOnPlate(changedEntries);
 
     if (updates.length === 0) {
       beginSupportDragSyncTransaction([], {
@@ -9098,14 +8907,7 @@ export default function Home() {
 
     setSupportRenderRefreshNonce((value) => value + 1);
     skipNextTransformEndCommitRef.current = null;
-  }, [beginSupportDragSyncTransaction, isFiniteTransform, scene, transformMgr.transformHook]);
-
-  const handleAutoLiftChange = React.useCallback((enabled: boolean) => {
-    if (scene.activeModelId) {
-      scene.setModelManualZMoveOverride(scene.activeModelId, false);
-    }
-    transformMgr.setAutoLift(enabled);
-  }, [scene, transformMgr]);
+  }, [beginSupportDragSyncTransaction, isFiniteTransform, islands, scene, seatSelectionOnPlate, transformMgr.transformHook]);
 
   const commitPendingSelectionPositionHistory = React.useCallback(() => {
     const pending = pendingSelectionPositionHistoryRef.current;
@@ -9115,7 +8917,7 @@ export default function Home() {
     const afterSupportSnapshot = captureTransformSupportSnapshot();
     scene.commitModelTransformsHistory(
       pending.beforeTransforms,
-      'Move Selected Models',
+      selectionEditLabel(pending.kind, pending.targetCount),
       {
         includeSupportState: true,
         supportBefore: pending.supportBefore,
@@ -9160,51 +8962,170 @@ export default function Home() {
     setSupportRenderRefreshNonce((value) => value + 1);
   }, [invalidatePendingTransformHistory, scene, suppressTransformPersistenceCycles, transformMgr.transformHook]);
 
-  const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
-    const targetIds = resolveModelActionTargetIds({
-      modelIds: scene.models.map((model) => model.id),
-      selectedModelIds: scene.selectedModelIds,
-      activeModelId: scene.activeModelId,
-    });
-    if (targetIds.length === 0) return;
-
+  /**
+   * Opens one undo step for a run of panel edits on the selection: every keystroke updates the
+   * models without history, and the step closes on blur. A different selection or a different
+   * kind of edit closes the open step first.
+   */
+  const ensurePendingSelectionHistory = React.useCallback((targetIds: readonly string[], kind: SelectionEditKind) => {
     const targetIdsKey = targetIds.join('\0');
-    if (
-      pendingSelectionPositionHistoryRef.current
-      && pendingSelectionPositionHistoryRef.current.targetIdsKey !== targetIdsKey
-    ) {
+    const pending = pendingSelectionPositionHistoryRef.current;
+    if (pending && (pending.targetIdsKey !== targetIdsKey || pending.kind !== kind)) {
       commitPendingSelectionPositionHistory();
     }
-    if (!pendingSelectionPositionHistoryRef.current) {
-      invalidatePendingTransformHistory();
-      const beforeSupportSnapshot = captureTransformSupportSnapshot();
-      pendingSelectionPositionHistoryRef.current = {
-        targetIdsKey,
-        beforeTransforms: scene.models.map((model) => ({
-          id: model.id,
-          transform: {
-            position: model.transform.position.clone(),
-            rotation: model.transform.rotation.clone(),
-            scale: model.transform.scale.clone(),
-          },
-        })),
-        supportBefore: beforeSupportSnapshot.support,
-      };
-    }
+    if (pendingSelectionPositionHistoryRef.current) return;
 
+    invalidatePendingTransformHistory();
+    const beforeSupportSnapshot = captureTransformSupportSnapshot();
+    pendingSelectionPositionHistoryRef.current = {
+      targetIdsKey,
+      targetCount: targetIds.length,
+      kind,
+      beforeTransforms: scene.models.map((model) => ({
+        id: model.id,
+        transform: {
+          position: model.transform.position.clone(),
+          rotation: model.transform.rotation.clone(),
+          scale: model.transform.scale.clone(),
+        },
+      })),
+      supportBefore: beforeSupportSnapshot.support,
+    };
+  }, [captureTransformSupportSnapshot, commitPendingSelectionPositionHistory, invalidatePendingTransformHistory, scene.models]);
+
+  const getSelectionTargetIds = React.useCallback(() => resolveModelActionTargetIds({
+    modelIds: scene.models.map((model) => model.id),
+    selectedModelIds: scene.selectedModelIds,
+    activeModelId: scene.activeModelId,
+  }), [scene.activeModelId, scene.models, scene.selectedModelIds]);
+
+  const getSelectionTransformEntries = React.useCallback((targetIds: readonly string[]) => {
+    const targetIdSet = new Set(targetIds);
+    return scene.models
+      .filter((model) => targetIdSet.has(model.id))
+      .map((model) => ({ id: model.id, transform: model.transform }));
+  }, [scene.models]);
+
+  /**
+   * The selection as it stood when the open panel edit began. Each keystroke is applied from
+   * here rather than on top of the previous one, so typing "0.5" through a transient "0" cannot
+   * leave a scale of zero that no later factor can recover from.
+   */
+  const getPendingSelectionStartEntries = React.useCallback((targetIds: readonly string[]) => {
+    const targetIdSet = new Set(targetIds);
+    return (pendingSelectionPositionHistoryRef.current?.beforeTransforms ?? [])
+      .filter((entry) => targetIdSet.has(entry.id));
+  }, []);
+
+  const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const targetIds = getSelectionTargetIds();
+    if (targetIds.length === 0) return;
+
+    ensurePendingSelectionHistory(targetIds, 'move');
     applySelectionPositionUpdates(buildSelectionPositionUpdates(
       scene.models,
       targetIds,
       new THREE.Vector3(x, y, z),
     ), { pushHistory: false });
+  }, [applySelectionPositionUpdates, ensurePendingSelectionHistory, getSelectionTargetIds, scene.models]);
+
+  const handleRotateSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const activeModel = scene.activeModel;
+    const targetIds = getSelectionTargetIds();
+    if (!activeModel || !targetIds.includes(activeModel.id)) return;
+
+    const current = activeModel.transform.rotation;
+    const EPS = 1e-6;
+    const hasDestructiveRotate = Math.abs(x - current.x) > EPS || Math.abs(y - current.y) > EPS;
+    if (hasDestructiveRotate && !requestDestructiveTransformSupportDeletion('Rotate X/Y', targetIds)) return;
+
+    ensurePendingSelectionHistory(targetIds, 'rotate');
+    applySelectionPositionUpdates(rotateSelectionFromActive(
+      getPendingSelectionStartEntries(targetIds),
+      activeModel.id,
+      eulerFromGlobalEuler({ x, y, z }),
+      selectionRotationMode,
+    ), { pushHistory: false });
   }, [
     applySelectionPositionUpdates,
-    captureTransformSupportSnapshot,
+    ensurePendingSelectionHistory,
+    getPendingSelectionStartEntries,
+    getSelectionTargetIds,
+    requestDestructiveTransformSupportDeletion,
+    scene.activeModel,
+    selectionRotationMode,
+  ]);
+
+  /** Closes the panel's open undo step, seating the models first after a rotation or a scale. */
+  const handleSelectionTransformCommit = React.useCallback(() => {
+    const kind = pendingSelectionPositionHistoryRef.current?.kind;
+    if (kind !== 'rotate' && kind !== 'scale') {
+      commitPendingSelectionPositionHistory();
+      return;
+    }
+    if (kind === 'rotate') islands.clearScanData();
+    const targetIds = getSelectionTargetIds();
+    applySelectionPositionUpdates(
+      seatSelectionOnPlate(getSelectionTransformEntries(targetIds)),
+      { pushHistory: false },
+    );
+    commitPendingSelectionPositionHistory();
+  }, [
+    applySelectionPositionUpdates,
     commitPendingSelectionPositionHistory,
-    invalidatePendingTransformHistory,
-    scene.activeModelId,
-    scene.models,
-    scene.selectedModelIds,
+    getSelectionTargetIds,
+    getSelectionTransformEntries,
+    islands,
+    seatSelectionOnPlate,
+  ]);
+
+  const handleScaleSelectedModels = React.useCallback((x: number, y: number, z: number) => {
+    const activeModel = scene.activeModel;
+    const targetIds = getSelectionTargetIds();
+    if (!activeModel || !targetIds.includes(activeModel.id)) return;
+
+    const current = activeModel.transform.scale;
+    const EPS = 1e-6;
+    const hasScaleChange = Math.abs(x - current.x) > EPS
+      || Math.abs(y - current.y) > EPS
+      || Math.abs(z - current.z) > EPS;
+    if (!hasScaleChange || x <= 0 || y <= 0 || z <= 0) return;
+    if (!requestDestructiveTransformSupportDeletion('Scale XYZ', targetIds)) return;
+
+    ensurePendingSelectionHistory(targetIds, 'scale');
+    applySelectionPositionUpdates(scaleSelectionFromActive(
+      getPendingSelectionStartEntries(targetIds),
+      activeModel.id,
+      new THREE.Vector3(x, y, z),
+    ), { pushHistory: false });
+  }, [
+    applySelectionPositionUpdates,
+    ensurePendingSelectionHistory,
+    getPendingSelectionStartEntries,
+    getSelectionTargetIds,
+    requestDestructiveTransformSupportDeletion,
+    scene.activeModel,
+  ]);
+
+  const handleResetSelectedModels = React.useCallback((reset: 'rotation' | 'scale') => {
+    const targetIds = getSelectionTargetIds();
+    if (targetIds.length === 0) return;
+    const operationLabel = reset === 'rotation' ? _(msg`Reset Rotation`) : _(msg`Reset Scale`);
+    if (!requestDestructiveTransformSupportDeletion(operationLabel, targetIds)) return;
+
+    commitPendingSelectionPositionHistory();
+    const resetEntries = resetSelectionTransforms(getSelectionTransformEntries(targetIds), { [reset]: true });
+    if (reset === 'rotation') islands.clearScanData();
+    applySelectionPositionUpdates(seatSelectionOnPlate(resetEntries));
+  }, [
+    _,
+    applySelectionPositionUpdates,
+    commitPendingSelectionPositionHistory,
+    getSelectionTargetIds,
+    getSelectionTransformEntries,
+    islands,
+    requestDestructiveTransformSupportDeletion,
+    seatSelectionOnPlate,
   ]);
 
   const selectionPositionOrigin = React.useMemo(() => {
@@ -9274,9 +9195,26 @@ export default function Home() {
 
   const disableAutoLiftForManualZMove = React.useCallback(() => {
     if (!scene.activeModelId) return;
-    scene.setModelManualZMoveOverride(scene.activeModelId, true);
+    for (const modelId of getSelectionTargetIds()) {
+      scene.setModelManualZMoveOverride(modelId, true);
+    }
     transformMgr.disableAutoLiftForManualZMove();
-  }, [scene, transformMgr]);
+  }, [getSelectionTargetIds, scene, transformMgr]);
+
+  // Auto applies to the whole selection: every selected model is snapped again, and with
+  // several selected they are lifted or dropped together, as a single model is on its own.
+  const handleAutoLiftChange = React.useCallback((enabled: boolean) => {
+    const targetIds = getSelectionTargetIds();
+    // Placed before the overrides are cleared: the placement writes from the models as they
+    // stand, which would put the overrides back.
+    if (targetIds.length > 1) {
+      placeSelectedModelsAtWorldZ(enabled ? transformMgr.liftDistance : 0);
+    }
+    for (const modelId of targetIds) {
+      scene.setModelManualZMoveOverride(modelId, false);
+    }
+    transformMgr.setAutoLift(enabled);
+  }, [getSelectionTargetIds, placeSelectedModelsAtWorldZ, scene, transformMgr]);
 
   /** Whether the bed a model stands on refuses edits. */
   const isModelPlateLocked = React.useCallback((modelId: string) => {
@@ -9314,13 +9252,21 @@ export default function Home() {
       supportDragResetSecondRafRef.current = null;
     }
 
+    // The gizmo moves the whole selection, so it asks about every selected model's supports.
+    const destructiveTargetIds = scene.selectedModelIds.length > 1
+      ? resolveModelActionTargetIds({
+          modelIds: scene.models.map((model) => model.id),
+          selectedModelIds: scene.selectedModelIds,
+          activeModelId: scene.activeModelId,
+        })
+      : undefined;
     if (operation === 'rotate' && (details?.axis === 'x' || details?.axis === 'y')) {
-      const proceed = requestDestructiveTransformSupportDeletion('Rotate X/Y');
+      const proceed = requestDestructiveTransformSupportDeletion('Rotate X/Y', destructiveTargetIds);
       if (!proceed) return false;
     }
 
     if (operation === 'scale') {
-      const proceed = requestDestructiveTransformSupportDeletion('Scale XYZ');
+      const proceed = requestDestructiveTransformSupportDeletion('Scale XYZ', destructiveTargetIds);
       if (!proceed) return false;
     }
 
@@ -9339,7 +9285,7 @@ export default function Home() {
           rotation: scene.activeModel.transform.rotation.clone(),
           scale: scene.activeModel.transform.scale.clone(),
         },
-        description: `transform:${operation} ${targetModelName}`,
+        description: modelTransformLabel(operation, targetModelName),
         supportBefore: captureTransformSupportSnapshot().support,
       };
     }
@@ -9349,7 +9295,7 @@ export default function Home() {
     }
 
     return true;
-  }, [captureTransformSupportSnapshot, disableAutoLiftForManualZMove, requestDestructiveTransformSupportDeletion, scene.activeModel, scene.activeModelId]);
+  }, [captureTransformSupportSnapshot, disableAutoLiftForManualZMove, requestDestructiveTransformSupportDeletion, scene.activeModel, scene.activeModelId, scene.models, scene.selectedModelIds]);
 
   const ensurePendingTransformHistoryForActiveModel = React.useCallback((operation: 'move' | 'rotate' | 'scale') => {
     if (!scene.activeModelId || !scene.activeModel) return;
@@ -9371,13 +9317,13 @@ export default function Home() {
               scale: transformMgr.transform.scale.clone(),
             }
           : undefined,
-        description: `transform:${operation} ${targetModelName}`,
+        description: modelTransformLabel(operation, targetModelName),
         supportBefore: beforeSupportSnapshot.support,
       };
       return;
     }
 
-    pendingTransformHistoryRef.current.description = `transform:${operation} ${targetModelName}`;
+    pendingTransformHistoryRef.current.description = modelTransformLabel(operation, targetModelName);
     if (isFiniteTransform(transformMgr.transform)) {
       pendingTransformHistoryRef.current.after = {
         position: transformMgr.transform.position.clone(),
@@ -9408,7 +9354,7 @@ export default function Home() {
     const targetModelId = scene.activeModelId;
     const targetModelName = (scene.activeModel?.name ?? targetModelId ?? 'Model').trim();
     if (pendingTransformHistoryRef.current && targetModelId && pendingTransformHistoryRef.current.modelId === targetModelId) {
-      pendingTransformHistoryRef.current.description = `transform:rotate ${targetModelName}`;
+      pendingTransformHistoryRef.current.description = rotateModelLabel(targetModelName);
       if (isFiniteTransform(transformMgr.transform)) {
         pendingTransformHistoryRef.current.after = {
           position: transformMgr.transform.position.clone(),
@@ -10120,7 +10066,7 @@ export default function Home() {
         openFace: next.openFace,
         openFaceSelected: next.mode === 'shell_open_face' ? false : true,
       },
-    }, { historyDescription: 'Hollowing Settings' });
+    }, { historyDescription: HOLLOWING_SETTINGS_LABEL });
   }, [defaultHollowingState, hollowingState, pendingBlockerResetState, persistActiveModelModifiers, scene.activeModel]);
 
 
@@ -10397,7 +10343,7 @@ export default function Home() {
       }
       // ONE atomic split — replacing + adding as separate calls races on stale
       // state and deletes a piece. A multi-loop cut may hand us >2 parts.
-      const newIds = scene.splitModelIntoParts(target.id, parts, 'Organic Cut');
+      const newIds = scene.splitModelIntoParts(target.id, parts, ORGANIC_CUT_LABEL);
       console.info(`[organicCut] commitParts OK | parts=${parts.length} newModelIds=${newIds?.join(',') ?? 'null'}`);
       return newIds != null;
     }, [scene]),
@@ -10488,7 +10434,7 @@ export default function Home() {
         monitorButtonPaused={selectedPrinterHasPausedAlert}
         monitorButtonOffline={isTopbarSelectedPrinterOffline}
         printerReachabilityByDeviceId={printerReachabilityByDeviceId}
-        warnBeforeProfileSettingsOpen={Boolean(printingArtifact && !printingArtifactIsInvalid)}
+        warnBeforeProfileSettingsOpen={Boolean(printingArtifact && !isActiveSliceStale)}
         onOpenMonitor={() => setPrintingMonitorModalOpen(true)}
       />
 
@@ -10506,7 +10452,7 @@ export default function Home() {
               arrange: arrange,
               organicCut: organicCut,
               outsidePlateModelIds: outsidePlateModelIds,
-              modelsPanelVisible: modelsPanelVisible,
+              modelsPanelVisible: modelsPanelShown,
               modelsPanelCollapsible: toolLayout === 'horizontal',
               handleModelSelection: handleModelSelection,
               handleModelRangeSelection: handleModelRangeSelection,
@@ -10534,6 +10480,12 @@ export default function Home() {
               handleCenterSelectedModels: handleCenterSelectedModels,
               handleLiftSelectedModels: handleLiftSelectedModels,
               handleDropSelectedModels: handleDropSelectedModels,
+              handleRotateSelectedModels: handleRotateSelectedModels,
+              handleSelectionTransformCommit: handleSelectionTransformCommit,
+              handleScaleSelectedModels: handleScaleSelectedModels,
+              handleResetSelectedModels: handleResetSelectedModels,
+              selectionRotationMode: selectionRotationMode,
+              setSelectionRotationMode: setSelectionRotationMode,
               scheduleCommitPendingTransformHistory: scheduleCommitPendingTransformHistory,
               uniformScaling: uniformScaling,
               setUniformScaling: setUniformScaling,
@@ -10575,7 +10527,6 @@ export default function Home() {
               crossSectionLayerHeightMm: crossSectionLayerHeightMm,
               estimatedVolumeMlLabel: estimatedVolumeMlLabel,
               handleSliceRunStartedForPrinting: handleSliceRunStartedForPrinting,
-              handlePrintingLayerPreviewGenerated: handlePrintingLayerPreviewGenerated,
               handleSlicingFinishedForPrinting: handleSlicingFinishedForPrinting,
               handleSliceArtifactReady: handleSliceArtifactReady,
               handleSlicePlateSliced: handleSlicePlateSliced,
@@ -10618,7 +10569,7 @@ export default function Home() {
               handleOpenModelSupportsInfo={handleOpenModelSupportsInfo}
               handleAddModels={() => { void handleOpenMeshDialog(); }}
               dimmed={showEmptySceneDialog || importOverlayState.active}
-              hidden={!modelsPanelVisible}
+              hidden={!modelsPanelShown}
               collapsible={toolLayout === 'horizontal'}
               bottomClearancePx={modelStatsBottomClearancePx}
             />
@@ -10746,7 +10697,8 @@ export default function Home() {
           printingSendProgress: printingSendProgress,
           printingSendBusy: printingSendBusy,
           printingSendStageText: printingSendStageText,
-          printingLayerPreviewUrls: printingLayerPreviewUrls,
+          printingLayerPreviewUrlAt: layerPreviewUrlAt,
+          printingLayerPreviewCount: layerPreviewCount,
           printingArtifact: printingArtifact,
           printingUploadDialogOpen: printingUploadDialogOpen,
           printingUploadDialogStage: printingUploadDialogStage,
@@ -10926,6 +10878,7 @@ export default function Home() {
             transform={transformMgr.transform}
             uniformScaling={uniformScaling}
             localTransformSpace={localTransformSpace}
+            selectionRotationMode={selectionRotationMode}
             autoLift={transformMgr.autoLift}
             liftDistance={transformMgr.liftDistance}
             autoSnapEnabled={transformMgr.autoSnapEnabled}
@@ -11189,12 +11142,7 @@ export default function Home() {
                   setTransformModeWithMirrorFinalize('select');
                 }
               },
-              modelsPanelVisible,
-              onToggleModelsPanel: () => {
-                const next = !modelsPanelVisible;
-                setModelsPanelVisible(next);
-                setModelsPanelVisibleEnabled(next);
-              },
+              ...modelsRailToggle,
               hollowingActive: transformMgr.transformMode === 'hollowing',
               onSelectHollowing: () => setTransformModeWithMirrorFinalize('hollowing'),
               viewMode: supportDisplaySettings.navigationDiscsOnly ? 'lines' : 'full',
@@ -11209,12 +11157,7 @@ export default function Home() {
               mode: transformMgr.transformMode,
               onModeChange: setTransformModeWithMirrorFinalize,
               onModeHover: handleToolRailHover,
-              modelsPanelVisible,
-              onToggleModelsPanel: () => {
-                const next = !modelsPanelVisible;
-                setModelsPanelVisible(next);
-                setModelsPanelVisibleEnabled(next);
-              },
+              ...modelsRailToggle,
             })}
           layout={toolLayout}
           onLayoutChange={setToolLayout}
@@ -11482,16 +11425,140 @@ export default function Home() {
 
       <ManifoldWarningModal
         isOpen={showManifoldWarning}
-        onAcknowledge={() => setShowManifoldWarning(false)}
+        onDismiss={() => setShowManifoldWarning(false)}
+        onRepairNow={() => {
+          setShowManifoldWarning(false);
+          if (!manifoldWarningModelId) return;
+          // Straight into the repair: the Repair Mesh dialog opens already running.
+          setAutoStartRepair(true);
+          setManualRepairModelIds([manifoldWarningModelId]);
+        }}
       />
+
+      <TetrahedralRemeshConfirmModal
+        isOpen={tetSurfaceConfirmModelId !== null}
+        onCancel={() => setTetSurfaceConfirmModelId(null)}
+        onConfirm={() => {
+          const targetId = tetSurfaceConfirmModelId;
+          setTetSurfaceConfirmModelId(null);
+          if (targetId) {
+            setTetSurfaceCancelling(false);
+            setTetSurfaceToken(null);
+            setTetSurfaceProgress({ startedAt: performance.now(), phase: null, phases: [] });
+            void scene.tetSurfaceModelInPlace(targetId, TET_SURFACE_DEFAULT_OPTIONS, {
+              onToken: setTetSurfaceToken,
+              onProgress: (progress) => setTetSurfaceProgress((previous) => (
+                previous
+                  ? { ...previous, phase: progress, phases: [...previous.phases, progress] }
+                  : previous
+              )),
+            }).finally(() => {
+              setTetSurfaceProgress(null);
+              setTetSurfaceToken(null);
+              setTetSurfaceCancelling(false);
+            });
+          }
+        }}
+      />
+
+      {tetSurfaceProgress && (
+        <SurfacingProgressModal
+          state={tetSurfaceProgress}
+          cancelling={tetSurfaceCancelling}
+          presentation={{
+            title: _(msg`Remesh`),
+            subtitle: _(msg`Rebuilding the surface.`),
+            ariaLabel: _(msg`Remesh`),
+            progressAriaLabel: _(msg`Remesh progress`),
+            icon: Pyramid,
+            accent: '#d97706',
+            phaseLabel: (name) => translateTetSurfacePhase(name, _),
+            progressFraction: tetSurfaceProgressFraction,
+            notices: [
+              {
+                tone: 'info',
+                body: (
+                  <Trans>The rebuilt surface will replace this model in your current scene. Large models take longer, and some models cannot be rebuilt at all and are left untouched. You can undo this afterwards.</Trans>
+                ),
+              },
+            ],
+          }}
+          onStop={() => {
+            if (tetSurfaceCancelling || !tetSurfaceToken) return;
+            // Stops at the next phase boundary, so the model is left exactly as it was.
+            setTetSurfaceCancelling(true);
+            void cancelMeshRepair(tetSurfaceToken);
+          }}
+        />
+      )}
+
+
+      <ShrinkWrapConfirmModal
+        isOpen={shrinkWrapConfirmModelId !== null}
+        onCancel={() => setShrinkWrapConfirmModelId(null)}
+        onConfirm={() => {
+          const targetId = shrinkWrapConfirmModelId;
+          setShrinkWrapConfirmModelId(null);
+          if (targetId) {
+            setShrinkWrapCancelling(false);
+            setShrinkWrapToken(null);
+            setShrinkWrapProgress({ startedAt: performance.now(), phase: null, phases: [] });
+            void scene.solidRemeshModelInPlace(targetId, SOLID_REMESH_DEFAULT_OPTIONS, {
+              onToken: setShrinkWrapToken,
+              onProgress: (progress) => setShrinkWrapProgress((previous) => (
+                previous
+                  ? { ...previous, phase: progress, phases: [...previous.phases, progress] }
+                  : previous
+              )),
+            }).finally(() => {
+              setShrinkWrapProgress(null);
+              setShrinkWrapToken(null);
+              setShrinkWrapCancelling(false);
+            });
+          }
+        }}
+      />
+
+      {shrinkWrapProgress && (
+        <SurfacingProgressModal
+          state={shrinkWrapProgress}
+          cancelling={shrinkWrapCancelling}
+          presentation={{
+            title: _(msg`Shrink-Wrap`),
+            subtitle: _(msg`Resolving the surface into a solid.`),
+            ariaLabel: _(msg`Shrink-Wrap`),
+            progressAriaLabel: _(msg`Shrink-Wrap progress`),
+            icon: RefreshCw,
+            accent: '#2563eb',
+            phaseLabel: (name) => translateSolidRemeshPhase(name, _),
+            progressFraction: solidRemeshProgressFraction,
+            notices: [
+              {
+                tone: 'info',
+                body: (
+                  <Trans>The rebuilt surface will replace this model in your current scene. Large models take longer, and some models cannot be rebuilt at all and are left untouched. You can undo this afterwards.</Trans>
+                ),
+              },
+            ],
+          }}
+          onStop={() => {
+            if (shrinkWrapCancelling || !shrinkWrapToken) return;
+            // Stops at the next phase boundary, so the model is left exactly as it was.
+            setShrinkWrapCancelling(true);
+            void cancelMeshRepair(shrinkWrapToken);
+          }}
+        />
+      )}
 
 
       <MeshRepairModals
         isManualRepairing={isManualRepairing}
-        manualRepairModelId={manualRepairModelId}
+        manualRepairModelIds={manualRepairModelIds}
+        autoStartRepair={autoStartRepair}
+        setAutoStartRepair={setAutoStartRepair}
         scene={scene}
         setIsManualRepairing={setIsManualRepairing}
-        setManualRepairModelId={setManualRepairModelId}
+        setManualRepairModelIds={setManualRepairModelIds}
         setShowDamagedModelDialog={setShowDamagedModelDialog}
         showDamagedModelDialog={showDamagedModelDialog}
       />
@@ -11519,10 +11586,10 @@ export default function Home() {
 
       {islandsPoc.scanning && !autoSupportDrivingScan && (
         <BlockingOverlay
-          title="Analyzing Model Islands & Minima"
-          details={['Slicing and analysis in progress...']}
-          elapsed={<>Elapsed: {islandsPoc.elapsedLabel}</>}
-          footnote="Processing 1 model"
+          title={_(msg`Analyzing Model Islands & Minima`)}
+          details={[_(msg`Slicing and analysis in progress...`)]}
+          elapsed={formatElapsedLabel(_, islandsPoc.elapsedLabel)}
+          footnote={_(msg`Processing 1 model`)}
           zIndexClassName="z-[121]"
         >
           <ScanProgressBar progress={islandsPoc.scanProgress} />
@@ -11531,10 +11598,10 @@ export default function Home() {
 
       {autoSupportBusy && (
         <BlockingOverlay
-          title="Generating Supports"
-          details={[islandsPoc.scanning ? 'Scanning islands & minima…' : 'Placing and bracing supports…']}
-          elapsed={islandsPoc.scanning ? <>Elapsed: {islandsPoc.elapsedLabel}</> : <OrientElapsed />}
-          footnote="Processing 1 model"
+          title={_(msg`Generating Supports`)}
+          details={[islandsPoc.scanning ? _(msg`Scanning islands & minima…`) : _(msg`Placing and bracing supports…`)]}
+          elapsed={islandsPoc.scanning ? formatElapsedLabel(_, islandsPoc.elapsedLabel) : <OrientElapsed />}
+          footnote={_(msg`Processing 1 model`)}
           zIndexClassName="z-[122]"
         >
           <ScanProgressBar progress={islandsPoc.scanning ? islandsPoc.scanProgress : autoSupportProgress} />
@@ -11542,8 +11609,8 @@ export default function Home() {
       )}
       {orientationBusy && (
         <BlockingOverlay
-          title="Orienting Model"
-          details={['Sweeping orientations…']}
+          title={_(msg`Orienting Model`)}
+          details={[_(msg`Sweeping orientations…`)]}
           elapsed={<OrientElapsed />}
           progress={null}
           zIndexClassName="z-[123]"
@@ -11552,8 +11619,8 @@ export default function Home() {
 
       {isExporting && (
         <BlockingOverlay
-          title="Exporting…"
-          details={['Writing mesh geometry and support data to file…']}
+          title={_(msg`Exporting…`)}
+          details={[_(msg`Writing mesh geometry and support data to file…`)]}
           progress={null}
           zIndexClassName="z-[120]"
         />
@@ -11653,8 +11720,8 @@ export default function Home() {
           >
             <Gamepad2 className="h-4 w-4 flex-shrink-0" />
             <span className="flex-1 leading-snug">
-              New input device detected.<br />
-              <span style={{ fontWeight: 400, opacity: 0.8 }}>Go to Settings → 3D Mouse to configure or block it.</span>
+              {_(msg`New input device detected.`)}<br />
+              <span style={{ fontWeight: 400, opacity: 0.8 }}>{_(msg`Go to Settings → 3D Mouse to configure or block it.`)}</span>
             </span>
             <button
               type="button"
@@ -11662,7 +11729,7 @@ export default function Home() {
               className="flex-shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold"
               style={{ background: 'color-mix(in srgb, #f59e0b, transparent 80%)', color: 'var(--text-strong)' }}
             >
-              Dismiss
+              {_(msg`Dismiss`)}
             </button>
           </Toast>
         </ToastViewport>
@@ -11672,8 +11739,8 @@ export default function Home() {
         <ToastViewport zIndex={125} offset="1.25rem">
           <Toast tone="info" visible={true} className="flex items-center gap-2">
             {stage === 'awaitingSproutTip'
-              ? "Leaf Fanning Active: Click model to sprout leaf"
-              : "Leaf Fanning: Click a support shaft to lock anchor knot"}
+              ? _(msg`Leaf Fanning Active: Click model to sprout leaf`)
+              : _(msg`Leaf Fanning: Click a support shaft to lock anchor knot`)}
           </Toast>
         </ToastViewport>
       )}

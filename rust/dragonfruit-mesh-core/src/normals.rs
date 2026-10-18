@@ -1,118 +1,62 @@
-//! Shading normals for a welded mesh.
+//! Shading normals for a mesh the viewport draws.
 //!
 //! A file format that carries one normal per triangle (an STL, and the geometry a
-//! plugin builds from one) has no vertex normals to give, and writing the face
-//! normal onto all three corners makes the model shade as a stack of facets.
-//! Averaging over the welded mesh fixes that, and then goes too far the other way
-//! on hard-edged geometry: where an organic shape meets a flat base, the shared
-//! vertex averages the base's normal with the wall's into a forty-five degree
-//! ramp, the rest of the base does not, and the jump between them reads as a
-//! faceted band around every shape that touches it.
+//! plugin builds from one) has no vertex normals to give. The renderer shades the
+//! facets the mesh actually has: each corner carries its own triangle's geometric
+//! normal, so a flat face stays flat, an edge stays sharp, and the surface on
+//! screen is the surface in the file.
 //!
-//! So a corner averages only the faces within [`CREASE_ANGLE_DEG`] of its own.
-//! A crease keeps two normals and shades crisp; a curved surface still averages,
-//! because neighbouring faces there are within the threshold of each other.
+//! This used to average the faces incident to a welded vertex, then — once that
+//! drew a forty-five degree ramp across every ninety degree crease — only the
+//! faces within a crease angle of the corner's own. Both are gone. The viewport is
+//! where a user checks what the mesh *is*, and an averaged normal paints a
+//! different surface over the triangulation: a scan's facets and an imported CAD
+//! edge both come out soft. It also disagreed with the geometry a repair pass
+//! hands back, which the renderer recomputes per face, so a model changed its
+//! shading the moment it was repaired (issue #797).
+//!
+//! The ambient-occlusion bake is the one consumer that wants an averaged normal —
+//! it is the axis of each vertex's probe fan — and it derives its own from the
+//! faces it probes (`vertex_occlusion`), never from this module.
 
 use crate::mesh::{IndexedMesh, Vec3};
 use rayon::prelude::*;
 
-/// Faces further apart than this at a shared vertex get separate normals.
+/// One normal per triangle, in triangle order.
 ///
-/// Sixty degrees leaves a scanned or organic surface smooth while splitting the
-/// corners where a shape meets a plane. Raising it does not help where it hurts:
-/// measured on a dense hard-surface model, going from 60 to 80 degrees moved the
-/// share of split corners from 24.8% to 24.0%, because what splits them are faces
-/// folded back on each other, not a marginal angle.
-pub const CREASE_ANGLE_DEG: f32 = 60.0;
-
-/// One normal per triangle corner, in triangle order.
-pub fn corner_normals(mesh: &IndexedMesh) -> Vec<Vec3> {
-    let crease_cosine = CREASE_ANGLE_DEG.to_radians().cos();
-    // The raw cross product is twice the triangle's area times its normal, so
-    // accumulating these weights each face by its area while the crease test below
-    // divides it out. That weighting is not a refinement: a mesh that has been
-    // subdivided by the longest edge is full of thin slivers whose normals are
-    // meaningless, and with one vote each they outvote the real surfaces around
-    // them, which shows up as a quarter of a dense model's corners splitting at
-    // angles up to 180 degrees and rendering as speckle.
-    let raw: Vec<Vec3> = mesh
-        .triangles
+/// Right-handed with the triangle's winding, so a counter-clockwise face normal
+/// points out of it. A degenerate triangle (no area, and no orientation to
+/// report) gets a zero normal, which is what the renderer's own
+/// `computeVertexNormals` yields for one.
+pub fn face_normals(mesh: &IndexedMesh) -> Vec<Vec3> {
+    mesh.triangles
         .par_iter()
         .map(|triangle| {
             let a = mesh.positions[triangle[0] as usize];
             let b = mesh.positions[triangle[1] as usize];
             let c = mesh.positions[triangle[2] as usize];
-            b.sub(a).cross(c.sub(a))
-        })
-        .collect();
-    let unit = |face: Vec3| -> Vec3 {
-        let length = face.length();
-        if length > 1e-20 {
-            face.scale(1.0 / length)
-        } else {
-            Vec3::ZERO
-        }
-    };
-    let face_normals: Vec<Vec3> = raw.par_iter().map(|face| unit(*face)).collect();
-
-    // Incident faces per vertex, as one flat CSR pair rather than a `Vec` per
-    // vertex. The per-vertex form is ~420k allocations on a dense model, and it
-    // dominated the encode: a 960k-triangle payload spent 8 s in this function
-    // against 0.5 s for the classifier. The fill walks faces in order, so a
-    // vertex's slice is still ascending by face index and every sum below
-    // accumulates in the same order as before — the output is unchanged bit for
-    // bit, which the crease tests pin.
-    let vertex_count = mesh.positions.len();
-    let mut incident_offsets = vec![0u32; vertex_count + 1];
-    for triangle in &mesh.triangles {
-        for vertex in triangle {
-            incident_offsets[*vertex as usize + 1] += 1;
-        }
-    }
-    for index in 1..incident_offsets.len() {
-        incident_offsets[index] += incident_offsets[index - 1];
-    }
-    let mut fill = incident_offsets.clone();
-    let mut incident = vec![0u32; incident_offsets[vertex_count] as usize];
-    for (face, triangle) in mesh.triangles.iter().enumerate() {
-        for vertex in triangle {
-            let slot = &mut fill[*vertex as usize];
-            incident[*slot as usize] = face as u32;
-            *slot += 1;
-        }
-    }
-
-    let mut out = vec![Vec3::ZERO; mesh.triangles.len() * 3];
-    out.par_chunks_mut(3)
-        .zip(mesh.triangles.par_iter().enumerate())
-        .for_each(|(corner_output, (face, triangle))| {
-            let own = face_normals[face];
-            for (corner, vertex) in triangle.iter().enumerate() {
-                let vertex = *vertex as usize;
-                let start = incident_offsets[vertex] as usize;
-                let end = incident_offsets[vertex + 1] as usize;
-                let mut sum = Vec3::ZERO;
-                for &other in &incident[start..end] {
-                    let other_normal = face_normals[other as usize];
-                    if own.dot(other_normal) < crease_cosine {
-                        continue;
-                    }
-                    sum = sum.add(other_normal);
-                }
-                let length = sum.length();
-                corner_output[corner] = if length > 1e-12 {
-                    sum.scale(1.0 / length)
-                } else {
-                    own
-                };
+            let face = b.sub(a).cross(c.sub(a));
+            let length = face.length();
+            if length > 1e-20 {
+                face.scale(1.0 / length)
+            } else {
+                Vec3::ZERO
             }
-        });
-    out
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dot(a: Vec3, b: Vec3) -> f32 {
+        a.x * b.x + a.y * b.y + a.z * b.z
+    }
+
+    fn triangle(positions: Vec<Vec3>) -> IndexedMesh {
+        IndexedMesh { positions, triangles: vec![[0, 1, 2]] }
+    }
 
     /// Two quads sharing an edge, folded by `fold_deg` about it.
     fn folded(fold_deg: f32) -> IndexedMesh {
@@ -131,35 +75,54 @@ mod tests {
         }
     }
 
-    fn dot(a: Vec3, b: Vec3) -> f32 {
-        a.x * b.x + a.y * b.y + a.z * b.z
+    #[test]
+    fn a_counter_clockwise_face_points_out_of_its_plane() {
+        let normals = face_normals(&triangle(vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        ]));
+        assert!(normals[0].z > 0.99, "expected +Z, got {:?}", normals[0]);
     }
 
     #[test]
-    fn a_hard_crease_keeps_both_normals() {
-        let normals = corner_normals(&folded(90.0));
-        let floor_corner = normals[0];
-        let wall_corner = normals[2 * 3];
-        assert!(floor_corner.z.abs() > 0.9, "floor corner: {floor_corner:?}");
+    fn a_crease_keeps_both_faces_normals() {
+        let normals = face_normals(&folded(90.0));
+        let floor = normals[0];
+        let wall = normals[2];
+        assert!(floor.z.abs() > 0.9, "floor normal: {floor:?}");
         assert!(
-            dot(floor_corner, wall_corner).abs() < 0.5,
-            "a ninety degree crease must not average into a ramp"
+            dot(floor, wall).abs() < 0.5,
+            "a ninety degree crease must not average into a ramp, got {floor:?} and {wall:?}"
         );
     }
 
+    /// The fold angle is irrelevant now: nothing averages, however shallow.
     #[test]
-    fn a_shallow_fold_still_averages() {
-        let normals = corner_normals(&folded(20.0));
+    fn a_shallow_fold_keeps_both_faces_normals_too() {
+        let normals = face_normals(&folded(20.0));
+        let floor = normals[0];
+        let fold = normals[2];
         assert!(
-            dot(normals[0], normals[2 * 3]) > 0.8,
-            "a twenty degree fold should still smooth"
+            dot(floor, fold) < 0.999,
+            "a twenty degree fold must keep its two normals, got {floor:?} and {fold:?}"
         );
     }
 
     #[test]
     fn every_corner_gets_a_unit_normal() {
-        for normal in corner_normals(&folded(90.0)) {
+        for normal in face_normals(&folded(90.0)) {
             assert!((normal.length() - 1.0).abs() < 1e-4, "not unit: {normal:?}");
         }
+    }
+
+    #[test]
+    fn a_degenerate_triangle_gets_a_zero_normal() {
+        let normals = face_normals(&triangle(vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(2.0, 0.0, 0.0),
+        ]));
+        assert_eq!(normals[0].length(), 0.0);
     }
 }

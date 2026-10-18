@@ -182,19 +182,23 @@ function SubmenuFlyout({ entries, onSelect, onMouseEnter, onMouseLeave, onPlaced
       onMouseLeave={onMouseLeave}
     >
       <div className="space-y-0.5">
-        {entries.map((entry) => (
-          <MenuRow
-            key={entry.id}
-            label={entry.label}
-            icon={entry.icon}
-            iconNode={entry.iconNode}
-            checked={entry.checked}
-            disabled={entry.disabled}
-            danger={entry.danger}
-            trailing={entry.trailing}
-            onClick={() => onSelect(entry.id)}
-            onMouseEnter={onMouseEnter}
-          />
+        {entries.map((entry, index) => (
+          <React.Fragment key={entry.id}>
+            {entry.startsGroup && index > 0 && (
+              <div role="separator" className="my-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+            )}
+            <MenuRow
+              label={entry.label}
+              icon={entry.icon}
+              iconNode={entry.iconNode}
+              checked={entry.checked}
+              disabled={entry.disabled}
+              danger={entry.danger}
+              trailing={entry.trailing}
+              onClick={() => onSelect(entry.id)}
+              onMouseEnter={onMouseEnter}
+            />
+          </React.Fragment>
         ))}
       </div>
     </div>

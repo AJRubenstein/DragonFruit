@@ -110,7 +110,7 @@ test('a settings edit changes every Shift-click-selected support in one undo ste
         applySettingsToSelectedSupports(settings);
 
         const after = captureSupportEditSnapshot();
-        pushSupportEditHistory('Adjust selected support settings', before, after);
+        pushSupportEditHistory({ id: 'Adjust selected support settings' }, before, after);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         assert.equal(getSnapshot().trunks['trunk-a'].baseDiameterMm, 2.75);

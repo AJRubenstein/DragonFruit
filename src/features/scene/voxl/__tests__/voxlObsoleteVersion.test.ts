@@ -16,13 +16,13 @@ function binaryHeader(version: number, length = 16): Uint8Array {
   return out;
 }
 
-test('detectObsoleteVoxlVersion recognises both V1 shapes', () => {
+test('detectObsoleteVoxlVersion recognises both V1 shapes', async () => {
   assert.equal(detectObsoleteVoxlVersion(bytes('{"magic":"VOXL","version":1}')), 'v1-json');
   assert.equal(detectObsoleteVoxlVersion(bytes('\n\t {"magic":"VOXL"}')), 'v1-json');
   assert.equal(detectObsoleteVoxlVersion(binaryHeader(1)), 'v1-binary');
 });
 
-test('detectObsoleteVoxlVersion leaves live formats and foreign bytes alone', () => {
+test('detectObsoleteVoxlVersion leaves live formats and foreign bytes alone', async () => {
   assert.equal(detectObsoleteVoxlVersion(binaryHeader(2)), null);
   assert.equal(detectObsoleteVoxlVersion(binaryHeader(3)), null);
   assert.equal(detectObsoleteVoxlVersion(bytes('solid cube\n')), null);
@@ -31,9 +31,9 @@ test('detectObsoleteVoxlVersion leaves live formats and foreign bytes alone', ()
   assert.equal(detectObsoleteVoxlVersion(bytes('VOXL')), null);
 });
 
-test('parseVoxlAuto refuses a V1 scene by name instead of failing as a parse error', () => {
-  assert.throws(
-    () => parseVoxlAuto(bytes('{"magic":"VOXL","version":1,"meta":{}}')),
+test('parseVoxlAuto refuses a V1 scene by name instead of failing as a parse error', async () => {
+  await assert.rejects(
+    parseVoxlAuto(bytes('{"magic":"VOXL","version":1,"meta":{}}')),
     (error: unknown) => {
       assert.ok(error instanceof VoxlObsoleteVersionError);
       assert.equal(error.detected, 'v1-json');
@@ -41,8 +41,8 @@ test('parseVoxlAuto refuses a V1 scene by name instead of failing as a parse err
     },
   );
 
-  assert.throws(
-    () => parseVoxlAuto(binaryHeader(1)),
+  await assert.rejects(
+    parseVoxlAuto(binaryHeader(1)),
     (error: unknown) => {
       assert.ok(error instanceof VoxlObsoleteVersionError);
       assert.equal(error.detected, 'v1-binary');
@@ -59,11 +59,11 @@ test('parseVoxlAuto still reads a binary container and rejects a non-VOXL file',
     supports: EMPTY_SUPPORTS,
   };
 
-  const parsed = parseVoxlAuto(await serializeVoxlDocumentV2(input, new Map()));
+  const parsed = await parseVoxlAuto(await serializeVoxlDocumentV2(input, new Map()));
   assert.equal(parsed.document.models.length, 0);
 
-  assert.throws(
-    () => parseVoxlAuto(bytes('solid cube\n')),
+  await assert.rejects(
+    parseVoxlAuto(bytes('solid cube\n')),
     (error: unknown) => {
       assert.equal(error instanceof VoxlObsoleteVersionError, false);
       assert.match((error as Error).message, /Not a VOXL file/);

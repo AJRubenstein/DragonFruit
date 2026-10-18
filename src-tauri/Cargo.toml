@@ -1,6 +1,6 @@
 [package]
 name = "dragonfruit-desktop"
-version = "0.1.16"
+version = "0.1.17"
 edition = "2021"
 
 [build-dependencies]
@@ -30,6 +30,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 rfd = "0.15"
+flate2 = "1"
 rayon = "1.10"
 zip = "2"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
@@ -59,6 +60,22 @@ meshopt = "0.6.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-macos-fps = { path = "../rust/tauri-plugin-macos-fps" }
 libloading = "0.8"
+# The webview watchdog's reload prompt: a sheet it can close itself, which
+# rfd's blocking modal cannot do.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "NSAlert",
+  "NSApplication",
+  "NSButton",
+  "NSControl",
+  "NSResponder",
+  "NSView",
+  "NSWindow",
+] }
+block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 libloading = "0.8"

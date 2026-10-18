@@ -8,6 +8,7 @@
 //! without pulling in repair/cut logic.
 
 pub mod vertex_occlusion;
+pub mod winding;
 pub mod bvh;
 pub mod halfedge;
 pub mod normals;

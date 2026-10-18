@@ -31,6 +31,12 @@ export type ModelAttachedSupportLayerProps = {
   modelDropOffsetsById?: Record<string, number>;
   navigationLodActive?: boolean;
   disableSelectionAndHover?: boolean;
+  /**
+   * Models standing on another bed. Their supports and raft are drawn dimmed and answer no
+   * pointer — the same rule the model itself follows — while the model's own layer is
+   * otherwise untouched (it is still drawn, and an active model is never scenery).
+   */
+  pointerSceneryModelIds?: ReadonlySet<string>;
   passive?: boolean;
   raftColorized?: boolean;
   raftHoverized?: boolean;
@@ -84,6 +90,7 @@ export function ModelAttachedSupportLayer({
   modelDropOffsetsById,
   navigationLodActive = false,
   disableSelectionAndHover = false,
+  pointerSceneryModelIds,
   passive = false,
   raftColorized = true,
   raftHoverized = false,
@@ -150,6 +157,7 @@ export function ModelAttachedSupportLayer({
           hoverized={raftHoverized}
           navigationLodActive={navigationLodActive}
           passive={passive}
+          pointerSceneryModelIds={pointerSceneryModelIds}
           plateClearanceTargets={plateClearanceTargets}
         />
       )}
@@ -171,6 +179,7 @@ export function ModelAttachedSupportLayer({
             excludeModelIds={excludeModelIds}
             navigationLodActive={navigationLodActive}
             onModelPointerSelect={onModelPointerSelect}
+            pointerSceneryModelIds={pointerSceneryModelIds}
             plateClearanceTargets={plateClearanceTargets}
           />
           <LineRaftRenderer
@@ -188,6 +197,7 @@ export function ModelAttachedSupportLayer({
             excludeModelIds={excludeModelIds}
             navigationLodActive={navigationLodActive}
             onModelPointerSelect={onModelPointerSelect}
+            pointerSceneryModelIds={pointerSceneryModelIds}
             plateClearanceTargets={plateClearanceTargets}
           />
         </>
@@ -218,6 +228,7 @@ export function ModelAttachedSupportLayer({
             onModelPointerSelect={onModelPointerSelect}
             onModelPointerDragStart={onModelPointerDragStart}
             enablePointerSelection={proxyPointerSelectionEnabled}
+            pointerSceneryModelIds={pointerSceneryModelIds}
             includeDetailedPrimitives={proxyIncludeDetailedPrimitives}
             interiorView={interiorView}
             cavityGeometryByModelId={cavityGeometryByModelId}
@@ -244,6 +255,7 @@ export function ModelAttachedSupportLayer({
             excludeModelId={excludeModelId}
             excludeModelIds={excludeModelIds}
             disableSelectionAndHover={disableSelectionAndHover}
+            pointerSceneryModelIds={pointerSceneryModelIds}
             ghostOpacity={ghostOpacity}
             ghostRenderOrder={ghostRenderOrder}
             passive={passive}

@@ -1,9 +1,14 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import * as THREE from 'three';
-import { refineCoarseFaces, shouldRefineCoarseFaces } from '@/utils/tauriMeshBridge';
-import { loadMeshGeometry, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
-import type { MeshHealthReport, MeshAnalysisJson } from '@/utils/meshRepair';
+import { loadTauriCore, refineCoarseFaces, shouldRefineCoarseFaces } from '@/utils/tauriMeshBridge';
+import { solidRemeshFromGeometry, tetSurfaceFromGeometry, type SolidRemeshProgressSink, type SolidRemeshOptions, type TetSurfaceProgressSink, type TetWrapOptions } from '@/utils/meshShrinkwrap';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
+import { loadMeshGeometry, loadMeshGeometryFromRange, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
+import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
+import { loadMeshFromPath } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
 import {
   DYNAMIC_PLATE_ORDERING,
@@ -12,7 +17,7 @@ import {
   readPlateOrdering,
   type PlateOrdering,
 } from '@/features/scene/plates/plateCascade';
-import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef } from '@/features/scene/voxl';
+import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef, type VoxlMeshRange } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
@@ -26,6 +31,7 @@ import type { PluginFileTypeDefinition } from '@/features/plugins/complexPluginC
 import type { PluginFileTypeHandler } from '@/features/plugins/pluginFileTypeBridge';
 import { accelerateGeometry, disposeGeometryBVH } from '@/utils/bvh';
 import { runWithConcurrency } from '@/utils/runWithConcurrency';
+import { logToNativeFile } from '@/utils/nativeLog';
 import { BAKED_OCCLUSION_ATTRIBUTE, DEFAULT_BAKED_OCCLUSION_INTENSITY, bakeOcclusionForGeometry, bumpBakedOcclusionVersion, canBakeOcclusion, setBakedOcclusionIntensity } from '@/features/scene/bakedOcclusion';
 import { computeProjectedFootprintSize } from '@/utils/modelFootprint';
 import { shelfPack, type ShelfItem } from '@/features/scene/arrange/shelfPack';
@@ -58,7 +64,54 @@ import {
   importLabelScenes,
   importLabelSplittingSupports,
   importLabelVoxlScene,
+  reportRestoredModel,
 } from '@/features/scene/sceneImportMessages';
+import { duplicatedModelName, pastedModelName } from '@/features/scene/modelCopyNames';
+import {
+  repairCancelledMessage,
+  repairedModelsMessage,
+  remeshedMessage,
+  repairFailedForModelMessage,
+  repairFailedMessage,
+  repairStoppedMessage,
+  tetSurfacedMessage,
+  shrinkWrappedMessage,
+} from '@/features/scene/meshRepairMessages';
+import {
+  addPlateLabel,
+  colorModelLabel,
+  DELETE_MODELS_AND_PLATES_LABEL,
+  deleteModelLabel,
+  deleteModelsLabel,
+  deletePlateLabel,
+  deleteSupportsForModelLabel,
+  deleteSupportsForModelsLabel,
+  duplicateModelLabel,
+  duplicateModelsLabel,
+  hideModelLabel,
+  linkModelsLabel,
+  MARK_AS_MODEL_LABEL,
+  MARK_AS_SUPPORT_LABEL,
+  mergeSupportsLabel,
+  pasteModelLabel,
+  pasteModelsLabel,
+  renameLabel,
+  repairModelLabel,
+  repairModelsLabel,
+  SCENE_CHANGE_LABEL,
+  showModelLabel,
+  SLICE_SCENE_LABEL,
+  shrinkWrapModelLabel,
+  splitModelLabel,
+  splitSupportsLabel,
+  SWITCH_PRINTER_LABEL,
+  switchPrinterLabel,
+  tetSurfaceModelLabel,
+  solidRemeshModelLabel,
+  transformModelLabel,
+  transformModelsLabel,
+  unlinkModelsLabel,
+} from '@/features/scene/sceneHistoryLabels';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
 import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
 import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
@@ -100,6 +153,7 @@ import type { VoxlPrinterBundle } from '@/features/scene/voxl/types';
 import { base64ToBytes } from '@/utils/base64';
 import { snapshotGeometryPositions } from '@/utils/geometrySnapshot';
 import type { ModelMeshModifiers, ModelMeshModifiersHistoryOptions } from '@/features/mesh-modifiers/types';
+import { countTriangles } from '@/utils/geometry';
 import {
   deleteStoredMeshModifiers,
   getStoredMeshModifiers,
@@ -146,12 +200,20 @@ type PersistedMeshAppearance = {
 const AO_BAKE_CONCURRENCY = 2;
 
 /**
- * VOXL meshes built at once. Same reasoning as the bake concurrency: each build is
- * a native round trip with serial phases (parse, refine, classify) around a parallel
- * one (the bake), and both commands share one rayon pool, so two is where one
- * model's serial phase starts running during another's.
+ * VOXL meshes built at once.
+ *
+ * Was two, on the reasoning that each build is a native round trip whose serial
+ * phases want overlapping. Measured on the 13-model scene, two left both workers
+ * stalled: the native load is only 0.17-0.25 s (`[load_mesh_bytes] parsed, refined
+ * and encoded in …`) while the round trip a build waits on is 1.4-2.3 s, because
+ * the wire (65-81 MB a model at ~125 MB/s) and the *single main thread* that
+ * decodes, accelerates and computes planes for each model are shared resources. A
+ * build's own work is ~1.2 s of that, so the rest is one worker waiting for the
+ * other's turn. Four in flight keeps the wire busy and gives the main thread a
+ * queue to work through instead of handing it one model at a time. The cost is
+ * memory: each in-flight build holds its payload (52-81 MB here) and its geometry.
  */
-const VOXL_BUILD_CONCURRENCY = 2;
+const VOXL_BUILD_CONCURRENCY = 4;
 
 /**
  * How many beds a paste will add for the copies that do not fit the plate being worked
@@ -213,11 +275,14 @@ type SceneHistoryPayloadMap = {
   [SCENE_MODELS_SNAPSHOT_APPLY]: SceneSnapshotPayload;
   [SCENE_SLICED]: Record<string, never>;
 };
-const sceneHistory = createTypedHistory<SceneHistoryPayloadMap>();
+const sceneHistory = createTypedHistory<SceneHistoryPayloadMap>({
+  [SCENE_MODELS_SNAPSHOT_APPLY]: SCENE_CHANGE_LABEL,
+  [SCENE_SLICED]: SLICE_SCENE_LABEL,
+});
 
 /** Push the post-slice marker used to detect edits made after a slice. */
 export function pushSceneSlicedMarker(): void {
-  sceneHistory.push({ type: SCENE_SLICED, description: 'Scene sliced for printing', payload: {} });
+  sceneHistory.push({ type: SCENE_SLICED, payload: {} });
 }
 
 type SceneSnapshot = {
@@ -1059,6 +1124,11 @@ export type MeshRepairReportEntry = {
   report: MeshHealthReport;
 };
 
+/** A repair run's progress sink, told also when each model of the run starts. */
+export interface ModelsRepairProgressSink extends MeshRepairProgressSink {
+  onModelStart?: (modelId: string, index: number, total: number) => void;
+}
+
 type MeshRepairReportPresentation = 'default' | 'optimistic';
 
 function repairReportNeedsAttention(report: MeshHealthReport): boolean {
@@ -1170,6 +1240,13 @@ function geometryPositionsAsSoup(geometry: THREE.BufferGeometry): Float32Array |
 export type MeshRepairConfirmPrompt = {
   fileName: string;
   analysis: MeshAnalysisJson;
+  /**
+   * Whether the file can be repaired part by part. A plate imports as one model with many
+   * components, and repairing it whole returns one verdict for all of them; the parts flow returns
+   * a verdict per object instead. Offered only when the import has a file behind it, since the
+   * parts flow reads the source.
+   */
+  canRepairParts: boolean;
 };
 
 /** A scene refused because it was saved by a VOXL generation we no longer read. */
@@ -1203,7 +1280,7 @@ export type PrinterMismatchPrompt = {
   currentIsSmaller: boolean;
 };
 
-type MeshRepairConfirmChoice = 'repair' | 'load_as_is' | 'cancel_import';
+type MeshRepairConfirmChoice = 'repair' | 'repair_parts' | 'load_as_is' | 'cancel_import';
 
 type ModelClipboardEntry = {
   sourceId: string;
@@ -1308,6 +1385,7 @@ export function useSceneCollectionManager(options?: {
   onBlockedByLock?: (plateId?: string) => void;
 }) {
   const { _ } = useLingui();
+  const fmt = useLocaleFormat();
 
   type ScenePluginImportEntry = {
     pluginId: string;
@@ -1516,6 +1594,10 @@ export function useSceneCollectionManager(options?: {
   const [sceneImportHollowingPrompt, setSceneImportHollowingPrompt] = useState<SceneImportHollowingPrompt | null>(null);
   const [meshRepairConfirmPrompt, setMeshRepairConfirmPrompt] = useState<MeshRepairConfirmPrompt | null>(null);
   const [meshRepairReports, setMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
+  // Which models the user repaired here, as opposed to the import pass repairing them at load.
+  // Every imported model carries a `nativeRepairReport`, so that field alone cannot say whether the
+  // repair menu should offer "Auto-Repair Again" and the report.
+  const [manuallyRepairedModelIds, setManuallyRepairedModelIds] = useState<string[]>([]);
   const [meshRepairReportPresentation, setMeshRepairReportPresentation] = useState<MeshRepairReportPresentation>('default');
   const [pendingMeshRepairReports, setPendingMeshRepairReports] = useState<MeshRepairReportEntry[]>([]);
   const sceneImportReportTimeoutRef = useRef<number | null>(null);
@@ -1534,6 +1616,8 @@ export function useSceneCollectionManager(options?: {
   // Models whose AO volume bake is queued or awaiting the native round trip.
   // Part of hasPendingBackgroundGeometryWork.
   const pendingAoBakeRef = useRef(0);
+  /** The AO sweep's remaining work, replaced wholesale on every run. */
+  const pendingAoQueueRef = useRef<string[]>([]);
   // Geometries with a bake in flight. The attribute lands only when the bake
   // resolves, so without this the queue rebuilt on a later `models` change would
   // send the same soup a second time — measured as 25 bakes of one mesh in three
@@ -1611,6 +1695,21 @@ export function useSceneCollectionManager(options?: {
     }
     setPrinterMismatch(null);
   }, [printerMismatch]);
+
+  /**
+   * Show the report a model already carries, from its recorded repair.
+   *
+   * The record lives on the model (`meshDefects.nativeRepairReport`) and survives everything the
+   * scene does to it, so a model repaired earlier in the session can still say what was done.
+   */
+  const openMeshRepairReportForModel = useCallback((modelId: string) => {
+    const model = models.find((entry) => entry.id === modelId);
+    const report = model?.geometry.meshDefects?.nativeRepairReport;
+    if (!model || !report) return;
+    // The same dialog a repair just showed: the wins, the follow-up notes and the technical details.
+    setMeshRepairReportPresentation('optimistic');
+    setMeshRepairReports([{ id: `model-${modelId}`, modelName: model.name, report }]);
+  }, [models]);
 
   const openPendingMeshRepairReports = useCallback(() => {
     if (pendingMeshRepairReports.length === 0) {
@@ -2240,7 +2339,7 @@ export function useSceneCollectionManager(options?: {
     };
   }, [applySceneSnapshot]);
 
-  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: string, modelId?: string) => {
+  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: MessageDescriptor, modelId?: string) => {
     const key = storeSceneSnapshotPair({ before, after });
     sceneHistory.push({
       type: SCENE_MODELS_SNAPSHOT_APPLY,
@@ -2372,6 +2471,7 @@ export function useSceneCollectionManager(options?: {
     || deferredDisposalProcessingRef.current
     || pendingFlatteningPlanesRef.current > 0
     || pendingAoBakeRef.current > 0
+    || pendingAoQueueRef.current.length > 0
   ), []);
 
   const processDeferredDisposalQueue = useCallback(() => {
@@ -2742,9 +2842,25 @@ export function useSceneCollectionManager(options?: {
               }
             },
             onConfirmHeavyRepair: async (analysis: MeshAnalysisJson) => {
-              const choice = await requestMeshRepairConfirmation({ fileName: file.name, analysis });
+              const choice = await requestMeshRepairConfirmation({
+                fileName: file.name,
+                analysis,
+                canRepairParts: Boolean((file as File & { filePath?: string }).filePath),
+              });
               if (choice === 'cancel_import') {
                 throw new Error('MESH_IMPORT_CANCELLED_BY_USER');
+              }
+              if (choice === 'repair_parts') {
+                setImportProgress({
+                  active: true,
+                  type: 'mesh',
+                  label: importLabelAutoRepairing(files.length, _),
+                  detail: files.length > 1
+                    ? importDetailIndexedFile(i + 1, files.length, file.name, _)
+                    : importDetailAutoRepairingFile(file.name, _),
+                  progress: null,
+                });
+                return 'repair_parts';
               }
               if (choice === 'repair') {
                 setImportProgress({
@@ -2757,7 +2873,7 @@ export function useSceneCollectionManager(options?: {
                   progress: null,
                 });
               }
-              return choice === 'repair';
+              return choice === 'load_as_is' ? 'skip' : choice;
             },
           } satisfies ProcessGeometryOptions;
 
@@ -2796,7 +2912,7 @@ export function useSceneCollectionManager(options?: {
               visible: true,
               color,
               polygonCount: merged.nativePreview?.originalTriangleCount
-                ?? merged.geometry.getAttribute('position').count / 3,
+                ?? countTriangles(merged.geometry),
             };
 
             const assignedCenter = findFreeSpotCentersForModels([...stagedNewModels, model], 5).at(-1);
@@ -2839,7 +2955,7 @@ export function useSceneCollectionManager(options?: {
               visible: true,
               color,
               polygonCount: geom.nativePreview?.originalTriangleCount
-                ?? geom.geometry.getAttribute('position').count / 3,
+                ?? countTriangles(geom.geometry),
             };
 
             const assignedCenter = findFreeSpotCentersForModels([...stagedNewModels, model], 5).at(-1);
@@ -3104,7 +3220,7 @@ export function useSceneCollectionManager(options?: {
     id: string,
     beforeTransform: ModelTransform,
     afterTransform: ModelTransform,
-    description?: string,
+    description?: MessageDescriptor,
     supportSnapshotOptions?: TransformHistorySupportSnapshotOptions & {
       /**
        * Set when the same gesture created the plate the model landed on. The bed
@@ -3181,13 +3297,13 @@ export function useSceneCollectionManager(options?: {
       ...(spawn ? { plates: platesRef.current, activePlateId: activePlateIdRef.current } : {}),
     });
     const targetModelName = targetModel.name ?? id;
-    pushSceneSnapshotHistory(before, after, description ?? `Transform Model ${targetModelName}`);
+    pushSceneSnapshotHistory(before, after, description ?? transformModelLabel(targetModelName));
     return true;
   }, [pushSceneSnapshotHistory]);
 
   const commitModelTransformsHistory = useCallback((
     beforeTransforms: Array<{ id: string; transform: ModelTransform }>,
-    description?: string,
+    description?: MessageDescriptor,
     supportSnapshotOptions?: TransformHistorySupportSnapshotOptions,
   ) => {
     const currentModels = modelsRef.current;
@@ -3223,7 +3339,7 @@ export function useSceneCollectionManager(options?: {
       includeSupportState: includeSupportHistory,
       supportStateOverride: supportSnapshotOptions?.supportAfter,
     });
-    pushSceneSnapshotHistory(before, after, description ?? 'Update Model Transforms');
+    pushSceneSnapshotHistory(before, after, description ?? transformModelsLabel(beforeTransforms.length));
     return true;
   }, [pushSceneSnapshotHistory]);
 
@@ -3386,7 +3502,7 @@ export function useSceneCollectionManager(options?: {
             }
           : {}),
       });
-      pushSceneSnapshotHistory(before, after, updates.length === 1 ? 'Update Model Transform' : 'Update Model Transforms');
+      pushSceneSnapshotHistory(before, after, transformModelsLabel(updates.length));
     }
 
     return {
@@ -3399,7 +3515,7 @@ export function useSceneCollectionManager(options?: {
   const replaceModelGeometry = useCallback((
     id: string,
     nextBufferGeometry: THREE.BufferGeometry,
-    historyDescription: string,
+    historyDescription: MessageDescriptor,
     options?: {
       includeSupportState?: boolean;
       deferPostProcessing?: boolean;
@@ -3469,12 +3585,9 @@ export function useSceneCollectionManager(options?: {
       });
     }
 
-    const polygonCount = (() => {
-      const idx = nextBufferGeometry.getIndex();
-      if (idx) return Math.floor(idx.count / 3);
-      const pos = nextBufferGeometry.getAttribute('position');
-      return pos ? Math.floor(pos.count / 3) : target.polygonCount;
-    })();
+    const polygonCount = nextBufferGeometry.getAttribute('position')
+      ? countTriangles(nextBufferGeometry)
+      : target.polygonCount;
 
     const modifierAfter = options?.meshModifiersAfter;
     const historyBefore = options?.historyBefore;
@@ -3548,7 +3661,7 @@ export function useSceneCollectionManager(options?: {
     bufferGeometry: THREE.BufferGeometry,
     baseModelId: string,
     name: string,
-    historyDescription: string,
+    historyDescription: MessageDescriptor,
   ): string | null => {
     const currentModels = modelsRef.current;
     const base = currentModels.find((m) => m.id === baseModelId);
@@ -3569,12 +3682,7 @@ export function useSceneCollectionManager(options?: {
       flatteningPlanes: [],
     };
 
-    const polygonCount = (() => {
-      const idx = bufferGeometry.getIndex();
-      if (idx) return Math.floor(idx.count / 3);
-      const pos = bufferGeometry.getAttribute('position');
-      return pos ? Math.floor(pos.count / 3) : 0;
-    })();
+    const polygonCount = countTriangles(bufferGeometry);
 
     const id = uuidv4();
     const newModel: LoadedModel = {
@@ -3633,7 +3741,7 @@ export function useSceneCollectionManager(options?: {
   const splitModelIntoParts = useCallback((
     sourceId: string,
     partGeometries: THREE.BufferGeometry[],
-    historyDescription: string,
+    historyDescription: MessageDescriptor,
   ): string[] | null => {
     const currentModels = modelsRef.current;
     const source = currentModels.find((m) => m.id === sourceId);
@@ -3685,12 +3793,6 @@ export function useSceneCollectionManager(options?: {
       return { geometry: g, bbox, center, size, flatteningPlanes: [] };
     };
 
-    const polyCount = (g: THREE.BufferGeometry): number => {
-      const idx = g.getIndex();
-      if (idx) return Math.floor(idx.count / 3);
-      const pos = g.getAttribute('position');
-      return pos ? Math.floor(pos.count / 3) : 0;
-    };
 
     // The source becomes the FIRST part; every other part is appended as a new
     // model. (A multi-loop cut can free several pieces, so there may be >2 parts.)
@@ -3719,7 +3821,7 @@ export function useSceneCollectionManager(options?: {
       },
       visible: true,
       color: source.color,
-      polygonCount: polyCount(pg.geometry),
+      polygonCount: countTriangles(pg.geometry),
       meshModifiers: source.meshModifiers ? clonePlainData(source.meshModifiers) : undefined,
     }));
 
@@ -3731,7 +3833,7 @@ export function useSceneCollectionManager(options?: {
           ? {
               ...m,
               geometry: part0,
-              polygonCount: polyCount(part0.geometry),
+              polygonCount: countTriangles(part0.geometry),
               transform: {
                 position: part0Position,
                 rotation: m.transform.rotation.clone(),
@@ -3832,6 +3934,12 @@ export function useSceneCollectionManager(options?: {
    * paid per frame afterwards.
    */
   useEffect(() => {
+    // Whatever the last run left, this one owns the queue from here: cleared
+    // before any early return, because a stale one keeps
+    // `hasPendingBackgroundGeometryWork()` true for work nobody will do (the
+    // modifier-apply overlay polls it to clear its spinner).
+    pendingAoQueueRef.current = [];
+
     // Zero intensity means off, so there is nothing to bake for: raising the
     // slider later re-runs this and the geometries that never got an attribute
     // are the ones that get baked.
@@ -3852,8 +3960,14 @@ export function useSceneCollectionManager(options?: {
       .map((model) => model.id);
     if (queue.length === 0) return;
 
+    // What this run still has to bake, as a ref as well as a local: the workers
+    // below shift the same array, so the ref is the live remainder and
+    // `hasPendingBackgroundGeometryWork` can read it without the run's own
+    // bookkeeping. Re-derived on every run, so a superseded run cannot leave
+    // anything counted.
+    pendingAoQueueRef.current = queue;
+
     let cancelled = false;
-    pendingAoBakeRef.current += queue.length;
 
     const scheduleIdle = (cb: () => void) => {
       if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -3867,6 +3981,14 @@ export function useSceneCollectionManager(options?: {
       if (cancelled) return;
       const id = queue.shift();
       if (!id) return;
+      // Taken, so in flight: the counter rides the take, not the whole queue. It
+      // used to be `+= queue.length` at the top of the run and decremented per
+      // bake, so the items a superseded run never took stayed counted — and every
+      // `models` change while a bake was queued (a hollowing apply patches them,
+      // the idle plane pass patches them again) leaked one. The "finalizing"
+      // overlay then waited out its 20 s cap after every hollow, with all the
+      // work done in the first 200 ms.
+      pendingAoBakeRef.current += 1;
       const model = modelsRef.current.find((m) => m.id === id);
       const geometry = model?.geometry.geometry;
       if (geometry) pendingAoGeometriesRef.current.add(geometry);
@@ -3956,10 +4078,10 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `${visible ? 'Show' : 'Hide'} ${target.name}`);
+    pushSceneSnapshotHistory(before, after, visible ? showModelLabel(target.name) : hideModelLabel(target.name));
   }, [pushSceneSnapshotHistory]);
 
-  const lastModifierHistoryRef = useRef<{ key: string; modelId: string; description: string; at: number } | null>(null);
+  const lastModifierHistoryRef = useRef<{ key: string; modelId: string; description: MessageDescriptor; at: number } | null>(null);
 
   /**
    * Stores a model's mesh modifiers. With `historyDescription` the change is an undo step: the
@@ -3985,7 +4107,7 @@ export function useSceneCollectionManager(options?: {
       const mergeInto = options?.merge
         && last
         && last.modelId === id
-        && last.description === description
+        && last.description.id === description.id
         && now - last.at <= MODIFIER_HISTORY_MERGE_WINDOW_MS
         && top?.type === SCENE_MODELS_SNAPSHOT_APPLY
         && (top.payload as SceneSnapshotPayload | undefined)?.key === last.key
@@ -4040,7 +4162,7 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `Rename ${target.name}`);
+    pushSceneSnapshotHistory(before, after, renameLabel(target.name));
   }, [pushSceneSnapshotHistory]);
 
   const groupModels = useCallback((modelIds: string[], groupName?: string) => {
@@ -4127,7 +4249,7 @@ export function useSceneCollectionManager(options?: {
       visible: source.visible,
       color: source.color,
       polygonCount: bodyGeom.nativePreview?.originalTriangleCount
-        ?? bodyGeom.geometry.getAttribute('position').count / 3,
+        ?? countTriangles(bodyGeom.geometry),
     }));
 
     const currentModels = modelsRef.current;
@@ -4146,7 +4268,7 @@ export function useSceneCollectionManager(options?: {
     setSelectedModelIds(newIds);
 
     const after = captureSceneSnapshot(nextModels, newIds[0], newIds);
-    pushSceneSnapshotHistory(before, after, `Split ${source.name}`);
+    pushSceneSnapshotHistory(before, after, splitModelLabel(source.name));
   }, [pushSceneSnapshotHistory]);
 
   /** Splits a model that has a classified model/support triangle split
@@ -4230,6 +4352,8 @@ export function useSceneCollectionManager(options?: {
         likely_support_geometry: true,
         residual_issues: [],
         fully_repaired: true,
+        rebuilt: false,
+        cancelled: false,
         total_ms: 0,
       },
     };
@@ -4305,7 +4429,7 @@ export function useSceneCollectionManager(options?: {
       [modelModel.id, supportModel.id],
       { includeSupportState: true },
     );
-    pushSceneSnapshotHistory(before, after, `Split Supports from ${source.name}`);
+    pushSceneSnapshotHistory(before, after, splitSupportsLabel(source.name));
     } catch (e) {
       console.error(e);
       emitSceneImportReport('Failed to split supports', 'error');
@@ -4454,6 +4578,8 @@ export function useSceneCollectionManager(options?: {
           model_triangle_count: modelTriangleCount,
           residual_issues: [],
           fully_repaired: true,
+          rebuilt: false,
+          cancelled: false,
           total_ms: 0,
         },
       };
@@ -4506,7 +4632,7 @@ export function useSceneCollectionManager(options?: {
         [mergedModel.id],
         { includeSupportState: true },
       );
-      pushSceneSnapshotHistory(before, after, `Merge Supports for ${mergedModel.name}`);
+      pushSceneSnapshotHistory(before, after, mergeSupportsLabel(mergedModel.name));
     } catch (e) {
       console.error(e);
       emitSceneImportReport('Failed to merge supports', 'error');
@@ -4535,8 +4661,9 @@ export function useSceneCollectionManager(options?: {
         assumeSupportGeometry: undefined,
         _nativeModelTriangleCount: model.geometry.meshDefects?.nativeRepairReport?.model_triangle_count ?? undefined,
       });
-      const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
-      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      const polygonCount = processed.geometry.getAttribute('position')
+        ? countTriangles(processed.geometry)
+        : model.polygonCount;
       const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
 
       setModels(prev => prev.map(m =>
@@ -4586,7 +4713,7 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `Rename ${members[0].groupName ?? trimmed}`);
+    pushSceneSnapshotHistory(before, after, renameLabel(members[0].groupName ?? trimmed));
   }, [pushSceneSnapshotHistory]);
 
   const selectGroup = useCallback((groupId: string, mode: 'single' | 'add' = 'single') => {
@@ -4746,8 +4873,8 @@ export function useSceneCollectionManager(options?: {
         includeSupportState: includeSupportHistory,
       });
       const deletedLabel = existing.length === 1
-        ? `Delete Model ${existing[0].name}`
-        : `Delete ${existing.length} Models`;
+        ? deleteModelLabel(existing[0].name)
+        : deleteModelsLabel(existing.length);
       pushSceneSnapshotHistory(before, after, deletedLabel);
     }
 
@@ -4758,7 +4885,7 @@ export function useSceneCollectionManager(options?: {
     void deleteModels([id]);
   }, [deleteModels]);
 
-  const deleteSupportsForModels = useCallback((idsInput: string[], description?: string) => {
+  const deleteSupportsForModels = useCallback((idsInput: string[], description?: MessageDescriptor) => {
     const ids = new Set(idsInput);
     if (ids.size === 0) return 0;
 
@@ -4789,8 +4916,8 @@ export function useSceneCollectionManager(options?: {
 
     const after = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, { includeSupportState: true });
     const defaultDescription = targetIds.length === 1
-      ? `Delete Supports for Model ${currentModels.find((m) => m.id === targetIds[0])?.name ?? targetIds[0]}`
-      : `Delete Supports for ${targetIds.length} Models`;
+      ? deleteSupportsForModelLabel(currentModels.find((m) => m.id === targetIds[0])?.name ?? targetIds[0])
+      : deleteSupportsForModelsLabel(targetIds.length);
 
     pushSceneSnapshotHistory(before, after, description ?? defaultDescription);
     return totalRemovedSupports;
@@ -4878,7 +5005,7 @@ export function useSceneCollectionManager(options?: {
     const id = uuidv4();
     const pastedModel: LoadedModel = {
       id,
-      name: `${first.name} Copy`,
+      name: pastedModelName(first.name, _),
       fileUrl: '',
       fileSizeBytes: first.fileSizeBytes,
       geometry: pastedGeometry,
@@ -4921,11 +5048,11 @@ export function useSceneCollectionManager(options?: {
         supportStateOverride: supportStateBefore,
       });
       const after = captureSceneSnapshot(nextModels, id, [id], { includeSupportState: true });
-      pushSceneSnapshotHistory(before, after, `Paste Model ${first.name}`);
+      pushSceneSnapshotHistory(before, after, pasteModelLabel(first.name));
     });
 
     return id;
-  }, [activeModelId, cloneGeometryWithBounds, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [_, activeModelId, cloneGeometryWithBounds, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   const pasteCopiedModelsAutoArrange = useCallback((spacingMm = 5) => {
     if (modelClipboard.length === 0) return [] as string[];
@@ -5387,7 +5514,7 @@ export function useSceneCollectionManager(options?: {
 
       return {
         id,
-        name: `${entry.name} Copy`,
+        name: pastedModelName(entry.name, _),
         fileUrl: '',
         fileSizeBytes: entry.fileSizeBytes,
         geometry,
@@ -5455,12 +5582,12 @@ export function useSceneCollectionManager(options?: {
             ? { plates: reserved.plates, activePlateId: activePlateIdRef.current }
             : {}),
         });
-        pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? 'Paste Model' : `Paste ${createdIds.length} Models`);
+        pushSceneSnapshotHistory(before, after, pasteModelsLabel(createdIds.length));
       });
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
+  }, [_, activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
 
   const duplicateModelWithTransforms = useCallback((
     sourceId: string,
@@ -5501,7 +5628,7 @@ export function useSceneCollectionManager(options?: {
 
       return {
         id,
-        name: `${source.name} Copy ${index + 1}`,
+        name: duplicatedModelName(source.name, index + 1, _),
         groupId: resolvedGroupId,
         groupName: resolvedGroupName,
         fileUrl: source.fileUrl,
@@ -5585,7 +5712,7 @@ export function useSceneCollectionManager(options?: {
               }
             : {}),
         });
-        pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? `Duplicate Model ${source.name}` : `Duplicate ${createdIds.length} Models`);
+        pushSceneSnapshotHistory(before, after, createdIds.length === 1 ? duplicateModelLabel(source.name) : duplicateModelsLabel(createdIds.length));
       }
     } finally {
       endSupportStateBatch();
@@ -5593,7 +5720,7 @@ export function useSceneCollectionManager(options?: {
     }
 
     return createdIds;
-  }, [activeModelId, cloneGeometryWithBounds, models, pushSceneSnapshotHistory, selectedModelIds]);
+  }, [_, activeModelId, cloneGeometryWithBounds, models, pushSceneSnapshotHistory, selectedModelIds]);
 
   // LYS Import (1-step) — dispatched via plugin registry
 
@@ -5702,8 +5829,8 @@ export function useSceneCollectionManager(options?: {
       for (const normalized of normalizedPayloads) {
         // The plugin built this geometry in the renderer, so it has not been
         // through the native loaders that refine coarse faces. Refine it here, and
-        // keep the normals the command returns: they are welded and split at
-        // creases, which `computeVertexNormals` would flatten again.
+        // keep the normals the command returns: it ships one per face, so there is
+        // nothing left for `computeVertexNormals` to derive.
         let geometry = normalized.geometry;
         // Bake the cavity in first, so refine, classification and the BVH all
         // describe the hollow solid rather than the shell that encloses it.
@@ -5863,7 +5990,7 @@ export function useSceneCollectionManager(options?: {
           },
           visible: true,
           color: '#a3a3a3',
-          polygonCount: processed.geometry.getAttribute('position').count / 3,
+          polygonCount: countTriangles(processed.geometry),
           ignoreAutoLift: true,
           meshModifiers: undefined,
           manualZMoveOverride: true,
@@ -6199,7 +6326,22 @@ export function useSceneCollectionManager(options?: {
         throw new Error('Not a VOXL file: the VOXL binary header is missing.');
       }
 
-      const parsed = parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()));
+      const importStarted = performance.now();
+      let committedAt = 0;
+      // The file's own path, when it has one: that is what lets the native loader
+      // read a mesh chunk by range instead of receiving its bytes. Same expression
+      // the sidecar resolution below uses.
+      const voxlPath = (file as File & { path?: string; filePath?: string }).path
+        || (file as File & { filePath?: string }).filePath
+        || options?.sourcePath
+        || undefined;
+      // With a path, the 13 mesh chunks (677 MB, ~2 s of inflate before any model
+      // work starts) stay where they are and the loader inflates each one itself.
+      // Without one — a zip entry, a synthesized file — nothing changes.
+      const parsed = await parseVoxlBinaryV2(new Uint8Array(await file.arrayBuffer()), {
+        deferMeshChunks: Boolean(voxlPath),
+      });
+      const parsedAt = performance.now();
       const document: VoxlDocumentV1 = parsed.document;
       const resolvedMeshBytes: Map<string, Uint8Array> = parsed.meshBytes;
       const resolvedOriginalMeshBytes = parsed.originalMeshBytes;
@@ -6247,20 +6389,33 @@ export function useSceneCollectionManager(options?: {
       const hashByModelId = new Map<string, string>();
       const uniqueBuilds = new Map<
         string,
-        { bytes: Uint8Array; name: string; model: (typeof document.models)[number] }
+        {
+          bytes?: Uint8Array;
+          range?: VoxlMeshRange;
+          name: string;
+          model: (typeof document.models)[number];
+        }
       >();
-      for (const model of document.models) {
+      const meshRanges = parsed.meshRanges;
+      for (const [index, model] of document.models.entries()) {
         const meshRef = model.mesh;
         const bytes = resolvedMeshBytes.get(model.id);
-        if (!meshRef || meshRef.mode !== 'embedded-chunk' || !bytes) continue;
+        const range = meshRanges?.get(model.id);
+        if (!meshRef || meshRef.mode !== 'embedded-chunk' || (!bytes && !range)) continue;
         const declaredSha = typeof meshRef.sha256 === 'string' && meshRef.sha256.trim().length > 0
           ? meshRef.sha256.trim().toLowerCase()
           : undefined;
-        const contentHash = declaredSha ?? (await sha256Hex(bytes));
+        // A deferred chunk has no bytes to hash. Its identity inside the file is its
+        // chunk anyway — a V3 duplicate points at the owner's chunk — so the chunk
+        // index is the dedup key, and it is stable for the whole parse.
+        const contentHash = declaredSha
+          ?? (range
+            ? `chunk:${typeof meshRef.chunkIndex === 'number' ? meshRef.chunkIndex : index}`
+            : await sha256Hex(bytes!));
         hashByModelId.set(model.id, contentHash);
         if (builtGeometryByHash.has(contentHash) || uniqueBuilds.has(contentHash)) continue;
         uniqueBuilds.set(contentHash, {
-          bytes,
+          ...(bytes ? { bytes } : { range: range! }),
           name: meshRef.fileName?.trim() || `${model.name || 'model'}.stl`,
           model,
         });
@@ -6268,9 +6423,23 @@ export function useSceneCollectionManager(options?: {
       if (uniqueBuilds.size > 0) {
         let finished = 0;
         const buildCount = uniqueBuilds.size;
+        // Every mesh's occlusion bake is left in flight rather than awaited per
+        // model: it is the GPU's work (0.4-1.2 s a model on the scene this was
+        // measured against) while the remaining meshes are still being parsed,
+        // refined and classified, and running them one model at a time left the
+        // GPU idle for most of the load. They are all awaited below, before any
+        // model is placed, so each one's first frame still carries its occlusion
+        // — the pop-in that baking after the fact produced.
+        const pendingOcclusionBakes: Array<Promise<boolean>> = [];
         await runWithConcurrency([...uniqueBuilds], VOXL_BUILD_CONCURRENCY, async ([hash, spec]) => {
           try {
-            const built = await loadMeshGeometry(spec.bytes, spec.name, buildOptionsFor(spec.model));
+            const options = {
+              ...buildOptionsFor(spec.model),
+              _deferOcclusionBake: (bake: Promise<boolean>) => pendingOcclusionBakes.push(bake),
+            };
+            const built = spec.range && voxlPath
+              ? await loadMeshGeometryFromRange(voxlPath, spec.range, spec.name, options)
+              : await loadMeshGeometry(spec.bytes!, spec.name, options);
             builtGeometryByHash.set(hash, built);
           } catch (error) {
             // The loop below reports the model as skipped; one mesh that will not
@@ -6286,7 +6455,9 @@ export function useSceneCollectionManager(options?: {
             progress: null,
           });
         });
+        await Promise.all(pendingOcclusionBakes);
       }
+      const builtAt = performance.now();
 
       for (let i = 0; i < document.models.length; i += 1) {
         const model = document.models[i];
@@ -6312,9 +6483,12 @@ export function useSceneCollectionManager(options?: {
           continue;
         }
 
-        // Mesh bytes arrive pre-decoded from the container's MESH chunks.
+        // Mesh bytes arrive pre-decoded from the container's MESH chunks — unless
+        // the parse deferred them, in which case the location is what arrives and
+        // the native loader reads it.
         const meshDataBytes = resolvedMeshBytes.get(model.id);
-        if (!meshDataBytes) {
+        const meshRange = meshRanges?.get(model.id);
+        if (!meshDataBytes && !(meshRange && voxlPath)) {
           console.warn(`[SceneCollection] Skipping VOXL model "${model.name}": missing embedded mesh payload.`);
           skippedModels += 1;
           continue;
@@ -6330,7 +6504,9 @@ export function useSceneCollectionManager(options?: {
               ? meshRef.sha256.trim().toLowerCase()
               : undefined;
           // Computed by the build pass above; the fallback covers a model it skipped.
-          const contentHash = hashByModelId.get(model.id) ?? declaredSha ?? (await sha256Hex(bytes));
+          const contentHash = hashByModelId.get(model.id)
+            ?? declaredSha
+            ?? (bytes ? await sha256Hex(bytes) : `chunk:${typeof meshRef.chunkIndex === 'number' ? meshRef.chunkIndex : i}`);
 
           const cached = builtGeometryByHash.get(contentHash);
           let geometry: GeometryWithBounds;
@@ -6344,7 +6520,11 @@ export function useSceneCollectionManager(options?: {
             );
             geometry = cloneGeometryWithBounds(cached, { shared: true });
           } else {
-            if (declaredSha) {
+            // A deferred chunk has no bytes here to hash: its integrity is the
+            // container's own (the directory ranges are bounds-checked as the file
+            // is parsed) and the loader refuses a short read. The byte-source path
+            // below verifies the declared SHA as before.
+            if (declaredSha && bytes) {
               const actual = await sha256Hex(bytes);
               if (actual !== declaredSha) {
                 throw new Error('VOXL integrity check failed (SHA-256 mismatch).');
@@ -6408,7 +6588,7 @@ export function useSceneCollectionManager(options?: {
             }
           }
 
-          const polygonCount = geometry.geometry.getAttribute('position').count / 3;
+          const polygonCount = countTriangles(geometry.geometry);
           const color = clampHexColor(model.color, DEFAULT_MESH_COLOR);
           const importedPlateId = plateIdForImport(model.plateId);
 
@@ -6452,6 +6632,8 @@ export function useSceneCollectionManager(options?: {
           `${dedupHits} duplicate(s) reused (skipped decode + native repair).`,
         );
       }
+
+      const placedAt = performance.now();
 
       const sourceTransformsByModelId = new Map<string, ModelTransform>();
       for (const imported of importedModels) {
@@ -6548,21 +6730,20 @@ export function useSceneCollectionManager(options?: {
         }));
 
         setModels((prev) => [...prev, ...importedModels]);
+        committedAt = performance.now();
 
+        // Everything this file brought in is selected, so a freshly opened scene acts
+        // on all of it at once. The file's own selection is deliberately not restored:
+        // a saved scene carries one model's worth in most files, and honouring it left
+        // an import acting on a single model and looking like the rest were not there.
+        // The active model still follows the file, because that is the one the panels
+        // read, and falls back to the first imported model when the file names none.
         const mappedActiveId = (document.scene.activeModelId && idMap.get(document.scene.activeModelId))
           || importedModels[0]?.id
           || null;
 
-        const mappedSelectedIds = document.scene.selectedModelIds
-          .map((id) => idMap.get(id))
-          .filter((id): id is string => typeof id === 'string' && id.length > 0);
-
-        const finalSelected = mappedSelectedIds.length > 0
-          ? mappedSelectedIds
-          : (mappedActiveId ? [mappedActiveId] : []);
-
         setActiveModelId(mappedActiveId);
-        setSelectedModelIds(finalSelected);
+        setSelectedModelIds(importedModels.map((model) => model.id));
 
         // The scene's plates: `plates` is canonical, the older `plateName` is the
         // single-plate shorthand a file written before plates carries. A file with
@@ -6622,6 +6803,21 @@ export function useSceneCollectionManager(options?: {
       const skippedNoun = skippedModels === 1 ? 'model' : 'models';
       const supportsClause = importedSupportCount > 0 ? `, ${importedSupportCount} supports` : '';
       const skippedClause = skippedModels > 0 ? `, skipped ${skippedModels} ${skippedNoun}` : '';
+
+      // Where a scene load went, in the app's own log next to the native timings:
+      // parse, the per-model build pass (native load + prep, with the bakes in
+      // flight), in-order placement, and the commit that hands the models to
+      // React. The frame that follows the commit — every geometry's upload and
+      // BVH reaching the GPU — is *after* this line, which is why the total here
+      // is not the user's wait.
+      const phaseTiming =
+        `[voxl] load: parse ${(parsedAt - importStarted).toFixed(0)}ms, ` +
+        `build ${(builtAt - parsedAt).toFixed(0)}ms, ` +
+        `place ${(placedAt - builtAt).toFixed(0)}ms, ` +
+        `commit ${(committedAt - placedAt).toFixed(0)}ms, ` +
+        `total ${(committedAt - importStarted).toFixed(0)}ms`;
+      console.log(phaseTiming);
+      void logToNativeFile('info', phaseTiming);
 
       if (importedModelCount > 0) {
         if (!options?.suppressReport) {
@@ -6768,8 +6964,17 @@ export function useSceneCollectionManager(options?: {
     // create a path-backed file so the Rust sideload reads from disk directly.
     // IndexedDB blobs for these files were stored empty (0 bytes) because
     // createPathBackedStlFile builds the File object with an empty blob.
+    //
+    // Only an STL goes without its bytes, as from the native picker: an OBJ or 3MF
+    // the native loader cannot read falls back to the renderer's loaders, which
+    // parse the File itself. Given an empty one, the 3MF unzip worker failed
+    // without answering and the import hung.
     if (entry.kind === 'mesh' && entry.sourcePath) {
-      const pathFile = new File([], entry.name, {
+      const core = entry.name.toLowerCase().endsWith('.stl') ? null : await loadTauriCore();
+      const bytes = core
+        ? await core.invoke<ArrayBuffer>('read_print_file_bytes', { sourcePath: entry.sourcePath })
+        : null;
+      const pathFile = new File(bytes ? [new Uint8Array(bytes)] : [], entry.name, {
         type: 'application/octet-stream',
         lastModified: Date.now(),
       });
@@ -6897,7 +7102,7 @@ export function useSceneCollectionManager(options?: {
     const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-    pushSceneSnapshotHistory(before, after, `Color ${target.name}`);
+    pushSceneSnapshotHistory(before, after, colorModelLabel(target.name));
   }, [activeModelId, pushSceneSnapshotHistory]);
 
   const setMeshVisible = useCallback((visible: boolean) => {
@@ -6927,7 +7132,7 @@ export function useSceneCollectionManager(options?: {
     pushSceneSnapshotHistory(
       before,
       after,
-      isSupport ? 'Mark as Support' : 'Mark as Model',
+      isSupport ? MARK_AS_SUPPORT_LABEL : MARK_AS_MODEL_LABEL,
     );
   }, [activeModelId, models, pushSceneSnapshotHistory, selectedModelIds]);
 
@@ -6954,7 +7159,7 @@ export function useSceneCollectionManager(options?: {
 
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
-    pushSceneSnapshotHistory(before, after, `Link ${targetModels.length} Models`);
+    pushSceneSnapshotHistory(before, after, linkModelsLabel(targetModels.length));
   }, [pushSceneSnapshotHistory]);
 
   const unlinkModels = useCallback((idsInput: string[]) => {
@@ -6992,61 +7197,269 @@ export function useSceneCollectionManager(options?: {
 
     setModels(nextModels);
     const after = captureSceneSnapshot(nextModels, currentActiveModelId, currentSelectedModelIds);
-    pushSceneSnapshotHistory(before, after, `Unlink ${targetModels.length} Models`);
+    pushSceneSnapshotHistory(before, after, unlinkModelsLabel(targetModels.length));
   }, [pushSceneSnapshotHistory]);
 
   /**
-   * Re-runs the full native repair pipeline on an already-loaded model's
-   * geometry and swaps the result back in-place.  Intended for the manual
-   * "Repair Mesh" context-menu action.
+   * Put a model back to how it arrived, by loading its file again.
+   *
+   * A repair leaves no copy of what it replaced, so undo re-reads the source and lets the import
+   * path do what it did the first time. The file goes through Rust: the webview refuses a `file://`
+   * fetch. Only the geometry is swapped, so the model keeps its transform and does not move.
    */
-  const repairModelInPlace = useCallback(async (modelId: string): Promise<boolean> => {
-    const model = modelsRef.current.find(m => m.id === modelId);
-    if (!model) return false;
-    try {
-      const processed = await processGeometry(model.geometry.geometry, {
-        center: false,
-        nativeProcessingMode: 'repair',
-        assumeSupportGeometry: model.isSupportGeometry,
-      });
-      const posAttr = processed.geometry.getAttribute('position') as THREE.BufferAttribute | null;
-      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
-      const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
-
-      // The repair awaited, so the scene it lands in is the current one, not the one it started from.
-      const currentModels = modelsRef.current;
-      const nextModels = currentModels.map(m =>
-        m.id === modelId ? { ...m, geometry: processed, polygonCount } : m
-      );
-      const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
-      setModels(nextModels);
-      const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
-      pushSceneSnapshotHistory(before, after, `Repair ${model.name}`, modelId);
-
-      if (repairReport) {
-        const reportEntry: MeshRepairReportEntry = {
-          id: modelId,
-          modelName: model.name,
-          report: repairReport,
-        };
-        setPendingMeshRepairReports([]);
-        clearSceneImportReport();
-        setMeshRepairReportPresentation('optimistic');
-        setMeshRepairReports([reportEntry]);
-      } else {
-        setPendingMeshRepairReports([]);
-        emitSceneImportReport(`Repaired ${model.name}.`, 'success');
-      }
-
-      return true;
-    } catch (err) {
-      console.error('[repairModelInPlace] Repair failed:', err);
-      setPendingMeshRepairReports([]);
-      const message = err instanceof Error ? err.message : String(err);
-      emitSceneImportReport(`Repair failed: ${message}`, 'error', { durationMs: 6_000 });
+  const undoRepairsInPlace = useCallback(async (modelId: string) => {
+    const model = models.find((entry) => entry.id === modelId);
+    const sourcePath = model?.sourcePath?.trim();
+    if (!model || !sourcePath) {
+      emitSceneImportReport(_(msg`No source file to restore this model from.`), 'warning');
       return false;
     }
-  }, [clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
+    try {
+      const positions = await loadMeshFromPath(sourcePath);
+      if (!positions || positions.length === 0) {
+        throw new Error('the file produced no geometry');
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const reloaded = await processGeometry(geometry, {
+        center: false,
+        nativeProcessingMode: shouldAutoRepairSceneImports() ? 'auto' : 'none',
+      });
+      const posAttr = reloaded.geometry.getAttribute('position') as THREE.BufferAttribute | null;
+      const polygonCount = posAttr ? Math.floor(posAttr.count / 3) : model.polygonCount;
+      setModels(prev => prev.map(entry =>
+        entry.id === modelId ? { ...entry, geometry: reloaded, polygonCount } : entry
+      ));
+      // The repair is gone, so the menu must stop offering it and the report it left.
+      setManuallyRepairedModelIds(prev => prev.filter((id) => id !== modelId));
+      setMeshRepairReports([]);
+      setPendingMeshRepairReports([]);
+      emitSceneImportReport(reportRestoredModel(model.name, _), 'success');
+      return true;
+    } catch (error) {
+      console.error('[undoRepairsInPlace] Reload failed:', error);
+      emitSceneImportReport(_(msg`Could not restore the model.`), 'error');
+      return false;
+    }
+  }, [_, emitSceneImportReport, models, shouldAutoRepairSceneImports]);
+
+  /**
+   * Re-runs the full native repair pipeline on each model in turn and swaps every result in as
+   * one undo step. Intended for the manual "Repair Mesh" action, on one model or a selection.
+   * The reports of every model that had one are shown together; a model that fails is reported
+   * and the rest still run. A cancel stops the run on the model it lands on: the models already
+   * finished keep their repair, the one in progress is left alone. Resolves true when every
+   * model was repaired.
+   */
+  const repairModelsInPlace = useCallback(async (
+    modelIds: readonly string[],
+    repairProgressSink?: ModelsRepairProgressSink,
+  ): Promise<boolean> => {
+    const repaired = new Map<string, { geometry: GeometryWithBounds; polygonCount: number }>();
+    const reportEntries: MeshRepairReportEntry[] = [];
+    const repairedNames: string[] = [];
+    let allRepaired = true;
+    let cancelled = false;
+
+    for (const [index, modelId] of modelIds.entries()) {
+      const model = modelsRef.current.find(m => m.id === modelId);
+      if (!model) {
+        allRepaired = false;
+        continue;
+      }
+      repairProgressSink?.onModelStart?.(modelId, index, modelIds.length);
+      try {
+        const processed = await processGeometry(model.geometry.geometry, {
+          center: false,
+          nativeProcessingMode: 'repair',
+          assumeSupportGeometry: model.isSupportGeometry,
+          repairProgressSink,
+          // The file it came from, so the repair reads it through the same loader the
+          // import did instead of uploading a triangle soup and re-deriving every vertex.
+          sourcePath: model.sourcePath ?? undefined,
+        });
+
+        // A cancelled repair stopped where it was asked to, and the mesh it hands back
+        // is a partly repaired one. Applying it would replace the model with something
+        // the caller did not ask for, so the model is left alone and the run ends here.
+        if (processed.meshDefects?.nativeRepairReport?.cancelled) {
+          cancelled = true;
+          allRepaired = false;
+          break;
+        }
+
+        const polygonCount = processed.geometry.getAttribute('position')
+          ? countTriangles(processed.geometry)
+          : model.polygonCount;
+        const repairReport = processed.meshDefects?.nativeRepairReport ?? null;
+
+        repaired.set(modelId, { geometry: processed, polygonCount });
+        repairedNames.push(model.name);
+        if (repairReport) {
+          reportEntries.push({ id: modelId, modelName: model.name, report: repairReport });
+        }
+      } catch (err) {
+        console.error('[repairModelsInPlace] Repair failed:', err);
+        allRepaired = false;
+        const message = err instanceof Error ? err.message : String(err);
+        emitSceneImportReport(
+          modelIds.length === 1
+            ? repairFailedMessage(message, _)
+            : repairFailedForModelMessage(model.name, message, _),
+          'error',
+          { durationMs: 6_000 },
+        );
+      }
+    }
+
+    setPendingMeshRepairReports([]);
+    if (repaired.size === 0) {
+      if (cancelled) {
+        emitSceneImportReport(
+          repairCancelledMessage(modelIds.length, _),
+          'warning',
+        );
+      }
+      return false;
+    }
+
+    // The repairs awaited, so the scene they land in is the current one, not the one they started from.
+    const currentModels = modelsRef.current;
+    const nextModels = currentModels.map(m => {
+      const result = repaired.get(m.id);
+      return result ? { ...m, geometry: result.geometry, polygonCount: result.polygonCount } : m;
+    });
+    const before = captureSceneSnapshot(currentModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    setModels(nextModels);
+    const after = captureSceneSnapshot(nextModels, activeModelIdRef.current, selectedModelIdsRef.current);
+    const [onlyRepairedId] = repaired.keys();
+    pushSceneSnapshotHistory(
+      before,
+      after,
+      repaired.size === 1 ? repairModelLabel(repairedNames[0]) : repairModelsLabel(repaired.size),
+      repaired.size === 1 ? onlyRepairedId : undefined,
+    );
+    setManuallyRepairedModelIds(prev => [...prev, ...[...repaired.keys()].filter(id => !prev.includes(id))]);
+
+    if (reportEntries.length > 0) {
+      clearSceneImportReport();
+      setMeshRepairReportPresentation('optimistic');
+      setMeshRepairReports(reportEntries);
+    }
+    if (cancelled) {
+      emitSceneImportReport(repairStoppedMessage(repaired.size, modelIds.length, _), 'warning');
+    } else if (reportEntries.length === 0 && allRepaired) {
+      emitSceneImportReport(repairedModelsMessage(repairedNames, _), 'success');
+    }
+
+    return allRepaired;
+  }, [_, clearSceneImportReport, emitSceneImportReport, pushSceneSnapshotHistory]);
+
+  /**
+   * Rebuild one model's surface with the native tetrahedral surfacing pass and swap the result in
+   * as a single undo step.
+   *
+   * Unlike the shrinkwrap remesh, the decomposition follows the model's own points rather than a
+   * uniform lattice, so fine detail survives and the boundary is closed by construction. The swap
+   * lands in place, keeping the model's transform and its place in the scene. The outcome, with the
+   * before/after triangle counts, is reported as a toast.
+   */
+  const tetSurfaceModelInPlace = useCallback(async (
+    modelId: string,
+    options: TetWrapOptions,
+    progressSink?: TetSurfaceProgressSink,
+  ): Promise<boolean> => {
+    const model = modelsRef.current.find((entry) => entry.id === modelId);
+    if (!model) return false;
+
+    try {
+      const result = await tetSurfaceFromGeometry(model.geometry.geometry, options, progressSink);
+      if (!result) {
+        emitSceneImportReport(_(msg`Remesh needs the desktop app.`), 'warning');
+        return false;
+      }
+      // The pass awaited, so the scene it lands in may no longer hold the model.
+      if (!modelsRef.current.some((entry) => entry.id === modelId)) return false;
+
+      // The pass carries no mesh modifiers, so an empty before-state is what marks this as a
+      // single undo step: the swap is recorded only when a history option is given.
+      const swapped = replaceModelGeometry(modelId, result.geometry, tetSurfaceModelLabel(model.name), {
+        historyBefore: {},
+      });
+      if (!swapped) return false;
+
+      const { report } = result;
+      emitSceneImportReport(
+        tetSurfacedMessage(
+          fmt.number(report.input_triangles),
+          fmt.number(report.output_triangles),
+          fmt.quantity(Math.round(report.ms), 0, 'ms'),
+          _,
+        ),
+        'success',
+      );
+      return true;
+    } catch (error) {
+      console.error('[tetSurfaceModelInPlace] Remesh failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      emitSceneImportReport(_(msg`Remesh failed: ${message}`), 'error', { durationMs: 6_000 });
+      return false;
+    }
+  }, [_, emitSceneImportReport, fmt, replaceModelGeometry]);
+
+  /**
+   * Rebuild one model's surface by resolving it into a solid and swap the result in as a single
+   * undo step.
+   *
+   * This is the mode the reference implementation's shrinkwrap uses: close what is open, boolean the
+   * mesh with itself so the result is resolved and retriangulated, then drop scrap shells. Where the
+   * tetrahedral remesh conforms to the model's own points and hands the same surface back, this one
+   * moves it, so it is for a mesh that is not one solid. The swap lands in place, keeping the
+   * model's transform and its place in the scene. The outcome, with the before/after triangle
+   * counts, is reported as a toast.
+   */
+  const solidRemeshModelInPlace = useCallback(async (
+    modelId: string,
+    options: SolidRemeshOptions,
+    progressSink?: SolidRemeshProgressSink,
+  ): Promise<boolean> => {
+    const model = modelsRef.current.find((entry) => entry.id === modelId);
+    if (!model) return false;
+
+    try {
+      const result = await solidRemeshFromGeometry(model.geometry.geometry, options, progressSink);
+      if (!result) {
+        emitSceneImportReport(_(msg`Shrink-Wrap needs the desktop app.`), 'warning');
+        return false;
+      }
+      // The pass awaited, so the scene it lands in may no longer hold the model.
+      if (!modelsRef.current.some((entry) => entry.id === modelId)) return false;
+
+      // The pass carries no mesh modifiers, so an empty before-state is what marks this as a
+      // single undo step: the swap is recorded only when a history option is given.
+      const swapped = replaceModelGeometry(modelId, result.geometry, solidRemeshModelLabel(model.name), {
+        historyBefore: {},
+      });
+      if (!swapped) return false;
+
+      const { report } = result;
+      emitSceneImportReport(
+        shrinkWrappedMessage(
+          fmt.number(report.input_triangles),
+          fmt.number(report.output_triangles),
+          fmt.quantity(Math.round(report.ms), 0, 'ms'),
+          _,
+        ),
+        'success',
+      );
+      return true;
+    } catch (error) {
+      console.error('[solidRemeshModelInPlace] Shrink-Wrap failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      emitSceneImportReport(_(msg`Shrink-Wrap failed: ${message}`), 'error', { durationMs: 6_000 });
+      return false;
+    }
+  }, [_, emitSceneImportReport, fmt, replaceModelGeometry]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -7332,7 +7745,7 @@ export function useSceneCollectionManager(options?: {
         activePlateId: activePlateIdRef.current,
         printerProfileId: current.printerId,
       }),
-      activePrinterProfile ? `Switch to ${activePrinterProfile.name}` : 'Switch Printer',
+      activePrinterProfile ? switchPrinterLabel(activePrinterProfile.name) : SWITCH_PRINTER_LABEL,
     );
   }, [
     activePrinterProfile,
@@ -7397,7 +7810,7 @@ export function useSceneCollectionManager(options?: {
       plates: next,
       activePlateId: activePlateIdRef.current,
     });
-    pushSceneSnapshotHistory(before, after, `Add Plate ${next.length}`);
+    pushSceneSnapshotHistory(before, after, addPlateLabel(next.length));
     return plate.id;
   }, [modelsShiftedForRelaidPlates, pushSceneSnapshotHistory]);
 
@@ -7603,7 +8016,7 @@ export function useSceneCollectionManager(options?: {
         plates: remaining,
         activePlateId: nextActivePlateId,
       });
-      pushSceneSnapshotHistory(before, after, `Delete Plate ${current.findIndex((plate) => plate.id === plateId) + 1}`);
+      pushSceneSnapshotHistory(before, after, deletePlateLabel(current.findIndex((plate) => plate.id === plateId) + 1));
     });
 
     return true;
@@ -7659,7 +8072,7 @@ export function useSceneCollectionManager(options?: {
       plates: remaining,
       activePlateId: firstPlateId,
     });
-    pushSceneSnapshotHistory(before, after, 'Delete Models and Plates');
+    pushSceneSnapshotHistory(before, after, DELETE_MODELS_AND_PLATES_LABEL);
   }, [deleteModels, pushSceneSnapshotHistory, waitForUiYield]);
 
   /**
@@ -7751,6 +8164,9 @@ export function useSceneCollectionManager(options?: {
     meshRepairReports,
     meshRepairReportPresentation,
     openPendingMeshRepairReports,
+    openMeshRepairReportForModel,
+    undoRepairsInPlace,
+    manuallyRepairedModelIds,
     dismissMeshRepairReports,
     sceneImportPlacementPrompt,
     resolveSceneImportPlacementPrompt,
@@ -7760,7 +8176,9 @@ export function useSceneCollectionManager(options?: {
     resolveSceneImportHollowingPrompt,
     meshRepairConfirmPrompt,
     resolveMeshRepairConfirmPrompt,
-    repairModelInPlace,
+    repairModelsInPlace,
+    tetSurfaceModelInPlace,
+    solidRemeshModelInPlace,
     recentOpenedFiles,
     reopenRecentOpenedFile,
     clearRecentOpenedFiles,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg, plural } from '@lingui/core/macro';
 import { Plural, Trans } from '@lingui/react/macro';
 import { AlertTriangle, CheckCircle2, CircleDashed, LayoutGrid, Trash2, X } from 'lucide-react';
 import { BlockingOverlay, Button, IconButton, IconChip } from '@/components/atoms';
@@ -14,7 +15,7 @@ import { ZipFilePickerModal } from '@/components/modals/ZipFilePickerModal';
 import { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
 
 export type SceneFileModalsProps = {
-  arrangeOverlayContent: { title: string; detailLines: string[]; };
+  arrangeOverlayContent: { title: MessageDescriptor; detailLines: MessageDescriptor[]; };
   arrangeOverlayElapsedLabel: string;
   arrangeOverlayModelCount: number | null;
   autosaveRecovery: { savedAt: string; voxlPath: string; origin: string } | null;
@@ -69,6 +70,22 @@ type UnsavedChangesDialogProps = {
  * starting a new scene. Both offer the same three ways out (cancel, discard,
  * save first); only the body copy and the primary button's label differ.
  */
+type Translate = (descriptor: MessageDescriptor) => string;
+
+// Module level on purpose: React Compiler renames locals inside components
+// before the Lingui macro derives the message id.
+function formatArrangeElapsed(elapsed: string, translate: Translate): string {
+  return translate(msg`Elapsed: ${elapsed}`);
+}
+
+function formatExperimentalTitle(feature: string, translate: Translate): string {
+  return translate(msg`${feature} is Experimental`);
+}
+
+function formatArrangeFootnote(count: number, translate: Translate): string {
+  return translate(msg`Processing ${plural(count, { one: '# model', other: '# models' })}`);
+}
+
 function UnsavedChangesDialog({
   open,
   busy,
@@ -79,16 +96,17 @@ function UnsavedChangesDialog({
   onDiscard,
   onSave,
 }: UnsavedChangesDialogProps) {
+  const { _ } = useLingui();
   return (
     <StructuredDialogModal
       open={open}
-      ariaLabel="Unsaved changes"
-      title="Unsaved Scene Changes"
+      ariaLabel={_(msg`Unsaved changes`)}
+      title={_(msg`Unsaved Scene Changes`)}
       subtitle={subtitle}
       icon={<AlertTriangle className="h-4 w-4" />}
       iconTone="warning"
       zIndexClassName="z-[220]"
-      closeAriaLabel="Close unsaved changes modal"
+      closeAriaLabel={_(msg`Close unsaved changes modal`)}
       closeDisabled={busy}
       onClose={() => {
         if (busy) return;
@@ -107,7 +125,7 @@ function UnsavedChangesDialog({
             onClick={onDiscard}
           >
             <Trash2 className="w-3.5 h-3.5" />
-            Discard Changes
+            <Trans>Discard Changes</Trans>
           </Button>
           <Button
             variant="secondary"
@@ -179,7 +197,7 @@ export function SceneFileModals({
       <StructuredDialogModal
         open={sceneSaveError !== null}
         onClose={() => dismissSceneSaveError?.()}
-        ariaLabel="Save Error"
+        ariaLabel={_(msg`Save Error`)}
         icon={<AlertTriangle className="h-5 w-5 text-amber-400" />}
         title={sceneSaveError?.title ?? 'Save error'}
         actions={
@@ -227,7 +245,7 @@ export function SceneFileModals({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label="Scene import placement decision"
+            aria-label={_(msg`Scene import placement decision`)}
           >
             <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="flex min-w-0 items-center gap-3">
@@ -243,10 +261,10 @@ export function SceneFileModals({
 
                 <div className="min-w-0 pr-2">
                   <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                    Scene may be off-plate
+                    <Trans>Scene may be off-plate</Trans>
                   </h2>
                   <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                    Choose how to place imported models.
+                    <Trans>Choose how to place imported models.</Trans>
                   </p>
                 </div>
               </div>
@@ -254,7 +272,7 @@ export function SceneFileModals({
               <IconButton
                 variant="surface"
                 size="md"
-                aria-label="Close scene import placement prompt"
+                aria-label={_(msg`Close scene import placement prompt`)}
                 onClick={() => scene.resolveSceneImportPlacementPrompt('load_as_is')}
               >
                 <X className="w-4 h-4" />
@@ -263,7 +281,7 @@ export function SceneFileModals({
 
             <div className="space-y-4 p-5">
               <div className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Imported scene</div>
+                <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}><Trans>Imported scene</Trans></div>
                 <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-strong)' }} title={scene.sceneImportPlacementPrompt.fileName}>
                   {scene.sceneImportPlacementPrompt.fileName}
                 </div>
@@ -273,9 +291,9 @@ export function SceneFileModals({
               </div>
 
               <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                <strong style={{ color: 'var(--text-strong)' }}>Auto-Arrange</strong> will reposition imported models onto free space on the plate.
+                <strong style={{ color: 'var(--text-strong)' }}><Trans>Auto-Arrange</Trans></strong> will reposition imported models onto free space on the plate.
                 <span className="mt-1 block">
-                  <strong style={{ color: 'var(--text-strong)' }}>Load As-Is</strong> keeps scene coordinates exactly as stored in the file.
+                  <strong style={{ color: 'var(--text-strong)' }}><Trans>Load As-Is</Trans></strong> keeps scene coordinates exactly as stored in the file.
                 </span>
               </p>
 
@@ -285,14 +303,14 @@ export function SceneFileModals({
                   className="w-full"
                   onClick={() => scene.resolveSceneImportPlacementPrompt('load_as_is')}
                 >
-                  Load As-Is
+                  <Trans>Load As-Is</Trans>
                 </Button>
                 <Button
                   variant="tinted-accent"
                   className="w-full inline-flex items-center justify-center gap-1.5"
                   onClick={() => scene.resolveSceneImportPlacementPrompt('auto_arrange')}
                 >
-                  Auto-Arrange
+                  <Trans>Auto-Arrange</Trans>
                 </Button>
               </div>
             </div>
@@ -439,16 +457,16 @@ export function SceneFileModals({
         <StructuredDialogModal
           open
           zIndexClassName="z-[220]"
-          ariaLabel="Plugin import experimental warning"
+          ariaLabel={_(msg`Plugin import experimental warning`)}
           title={
             pluginImportWarningTitle
-              ? `${pluginImportWarningTitle} is Experimental`
-              : 'Plugin Import is Experimental'
+              ? formatExperimentalTitle(pluginImportWarningTitle, _)
+              : _(msg`Plugin Import is Experimental`)
           }
-          subtitle="This feature is still under development."
+          subtitle={_(msg`This feature is still under development.`)}
           icon={<AlertTriangle className="h-4 w-4" />}
           iconTone="warning"
-          closeAriaLabel="Close plugin import warning"
+          closeAriaLabel={_(msg`Close plugin import warning`)}
           onClose={handleCancelPluginImportWarning}
           onBackdropClick={handleCancelPluginImportWarning}
         >
@@ -466,7 +484,7 @@ export function SceneFileModals({
                     className="h-3.5 w-3.5 rounded border"
                     style={{ accentColor: '#f59e0b' }}
                   />
-                  <span>Do not remind again</span>
+                  <span><Trans>Do not remind again</Trans></span>
                 </label>
 
                 <div className="flex shrink-0 items-center gap-2">
@@ -474,7 +492,7 @@ export function SceneFileModals({
                     variant="secondary"
                     onClick={handleCancelPluginImportWarning}
                   >
-                    Cancel
+                    <Trans>Cancel</Trans>
                   </Button>
                   <Button
                     variant="secondary"
@@ -486,7 +504,7 @@ export function SceneFileModals({
                     }}
                     onClick={handleContinuePluginImportWarning}
                   >
-                    Continue
+                    <Trans>Continue</Trans>
                   </Button>
                 </div>
               </div>
@@ -518,9 +536,9 @@ export function SceneFileModals({
         open={showCloseUnsavedChangesModal}
         busy={closeUnsavedChangesBusy !== 'none'}
         subtitle={hasUnsavedSceneChanges
-          ? 'You have unsaved edits in this scene.'
-          : 'This scene is already saved.'}
-        confirmLabel="Save & Close"
+          ? _(msg`You have unsaved edits in this scene.`)
+          : _(msg`This scene is already saved.`)}
+        confirmLabel={_(msg`Save & Close`)}
         onCancel={() => setShowCloseUnsavedChangesModal(false)}
         onDiscard={handleDiscardAndCloseProgram}
         onSave={handleSaveAndCloseProgram}
@@ -528,11 +546,11 @@ export function SceneFileModals({
           <>
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               {hasUnsavedSceneChanges
-                ? 'You’re about to close DragonFruit with unsaved scene changes.'
-                : 'Close DragonFruit now?'}
+                ? <Trans>You’re about to close DragonFruit with unsaved scene changes.</Trans>
+                : <Trans>Close DragonFruit now?</Trans>}
             </p>
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              <strong>Please ensure you have saved any important work.</strong>
+              <strong><Trans>Please ensure you have saved any important work.</Trans></strong>
             </p>
           </>
         )}
@@ -542,9 +560,9 @@ export function SceneFileModals({
         open={showNewSceneUnsavedChangesModal}
         busy={newSceneBusy !== 'none'}
         subtitle={hasUnsavedSceneChanges
-          ? 'You have unsaved edits in this scene.'
-          : 'This scene is already saved.'}
-        confirmLabel="Save & New Scene"
+          ? _(msg`You have unsaved edits in this scene.`)
+          : _(msg`This scene is already saved.`)}
+        confirmLabel={_(msg`Save & New Scene`)}
         onCancel={() => setShowNewSceneUnsavedChangesModal(false)}
         onDiscard={handleDiscardAndNewScene}
         onSave={handleSaveAndNewScene}
@@ -552,11 +570,11 @@ export function SceneFileModals({
           <>
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               {hasUnsavedSceneChanges
-                ? 'You’re about to start a new scene with unsaved edits in this one.'
-                : 'Start a new scene now?'}
+                ? <Trans>You’re about to start a new scene with unsaved edits in this one.</Trans>
+                : <Trans>Start a new scene now?</Trans>}
             </p>
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              <strong>Please ensure you have saved any important work.</strong>
+              <strong><Trans>Please ensure you have saved any important work.</Trans></strong>
             </p>
           </>
         )}
@@ -580,7 +598,7 @@ export function SceneFileModals({
             }}
             role="dialog"
             aria-modal="true"
-            aria-label="Save scene options"
+            aria-label={_(msg`Save scene options`)}
           >
             <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="flex min-w-0 items-center gap-3">
@@ -596,10 +614,10 @@ export function SceneFileModals({
 
                 <div className="min-w-0 pr-2">
                   <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-strong)' }}>
-                    Save Loaded Scene
+                    <Trans>Save Loaded Scene</Trans>
                   </h2>
                   <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-                    Choose where Ctrl+S should save this imported `.voxl` scene.
+                    <Trans>Choose where Ctrl+S should save this imported `.voxl` scene.</Trans>
                   </p>
                 </div>
               </div>
@@ -607,7 +625,7 @@ export function SceneFileModals({
               <IconButton
                 variant="surface"
                 size="md"
-                aria-label="Close save scene options"
+                aria-label={_(msg`Close save scene options`)}
                 onClick={() => resolveSceneSaveChoice('cancel')}
               >
                 <X className="w-4 h-4" />
@@ -623,7 +641,7 @@ export function SceneFileModals({
                 }}
               >
                 <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                  Loaded file
+                  <Trans>Loaded file</Trans>
                 </div>
                 <div className="mt-1 text-sm font-semibold leading-tight" style={{ color: 'var(--text-strong)' }} title={sceneSaveChoiceFileName ?? ''}>
                   {sceneSaveChoiceFileName ?? 'Loaded scene'}
@@ -647,7 +665,7 @@ export function SceneFileModals({
                   disabled={!sceneSaveChoicePath}
                   onClick={() => resolveSceneSaveChoice('overwrite')}
                 >
-                  Overwrite Loaded Scene
+                  <Trans>Overwrite Loaded Scene</Trans>
                 </Button>
               </div>
             </div>
@@ -658,12 +676,12 @@ export function SceneFileModals({
       {showArrangeBlockingOverlay && (
         <BlockingOverlay
           zIndexClassName="z-[120]"
-          title={arrangeOverlayContent.title}
-          details={arrangeOverlayContent.detailLines}
-          elapsed={`Elapsed: ${arrangeOverlayElapsedLabel}`}
-          footnote={`Processing ${arrangeOverlayModelCount ?? 0} ${arrangeOverlayModelCount === 1 ? 'model' : 'models'}`}
+          title={_(arrangeOverlayContent.title)}
+          details={arrangeOverlayContent.detailLines.map((line) => _(line))}
+          elapsed={formatArrangeElapsed(arrangeOverlayElapsedLabel, _)}
+          footnote={formatArrangeFootnote(arrangeOverlayModelCount ?? 0, _)}
           progress={null}
-          progressLabel={arrangeOverlayContent.title}
+          progressLabel={_(arrangeOverlayContent.title)}
         />
       )}
     </>

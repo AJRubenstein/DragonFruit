@@ -134,7 +134,7 @@ export function ModelSupportsModal({ isOpen, onClose, model }: ModelSupportsModa
         }}
         role="dialog"
         aria-modal="true"
-        aria-label={_(msg`Model supports`)}
+        aria-label={_(msg`Model Supports`)}
       >
         <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: 'var(--border-subtle)' }}>
           <div>
