@@ -6722,20 +6722,18 @@ export function useSceneCollectionManager(options?: {
         setModels((prev) => [...prev, ...importedModels]);
         committedAt = performance.now();
 
+        // Everything this file brought in is selected, so a freshly opened scene acts
+        // on all of it at once. The file's own selection is deliberately not restored:
+        // a saved scene carries one model's worth in most files, and honouring it left
+        // an import acting on a single model and looking like the rest were not there.
+        // The active model still follows the file, because that is the one the panels
+        // read, and falls back to the first imported model when the file names none.
         const mappedActiveId = (document.scene.activeModelId && idMap.get(document.scene.activeModelId))
           || importedModels[0]?.id
           || null;
 
-        const mappedSelectedIds = document.scene.selectedModelIds
-          .map((id) => idMap.get(id))
-          .filter((id): id is string => typeof id === 'string' && id.length > 0);
-
-        const finalSelected = mappedSelectedIds.length > 0
-          ? mappedSelectedIds
-          : (mappedActiveId ? [mappedActiveId] : []);
-
         setActiveModelId(mappedActiveId);
-        setSelectedModelIds(finalSelected);
+        setSelectedModelIds(importedModels.map((model) => model.id));
 
         // The scene's plates: `plates` is canonical, the older `plateName` is the
         // single-plate shorthand a file written before plates carries. A file with
