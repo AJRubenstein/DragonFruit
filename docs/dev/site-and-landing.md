@@ -18,6 +18,8 @@ constraints are, and what to run before pushing.
 | `website/src/assets/wordmark.svg` | The wordmark, inlined by `Wordmark.astro` so the part of it drawn in white can follow the theme. |
 | `website/public/brand/` | The emblem (`simple_icon.svg`) and the social card. MkDocs serves its own copy of the emblem from `docs/assets/branding/`, so a change to it belongs in both. |
 | `website/public/media/` | The five screenshots in the strip, re-encoded from the marketing renders. |
+| `website/src/og/` | The social cards: a build hook, the renderer, the fonts and the emblem PNG. |
+| `website/src/lib/og.ts` | Where a card lives, and the digest its URL carries. |
 | `docs/` | The documentation source, unchanged: one Markdown file per page, `docs/internal/` excluded from the build. |
 | `mkdocs.yml` | The documentation build: nav, theme, Markdown extensions, `site_url`. |
 | `scripts/generate-doc-redirects.mjs` | Writes the redirect pages that keep the old root-level document URLs working. |
@@ -115,6 +117,29 @@ than the problem deserves, so the copy is kept in step by hand. When you change 
 primitive here, check the other repository; when you change it there, check here. What is
 *not* copied is the part of that stylesheet which is about that site: its rail navigation
 and its `.prose` block.
+
+## Open Graph cards
+
+Every page gets one, generated at build time by `website/src/og/`. A build hook
+(`integration.mjs`) walks the pages that were just written, reads the `card:title`,
+`card:summary` and `card:meta` metas that `Base.astro` puts in their head, and renders
+`/og/<page>.png` with satori and resvg (`render.mjs`). Nothing registers a page: a page has
+a card the moment it has a URL. The URL in the markup comes from `ogImagePath()` plus a
+digest of the card's own words (`cardFingerprint()`), so a crawler fetches a new image when
+the text changes while the URL a share already points at keeps resolving.
+
+- The home page's card carries the project tagline (`SITE.motto`) rather than its title. That
+  is the `cardSummary` prop in `Base.astro`; a page can override the summary and add a corner
+  label (`cardMeta`).
+- The background is computed in floating point and dithered by hand (`diffuseBase`), because
+  the wash spans about sixteen levels across the card and an 8-bit rasteriser would show every
+  step of it. The rule, the type and the emblem are drawn over that by satori.
+- `src/og/fonts/` holds static TTFs of the two families the site uses: satori reads neither
+  woff2 nor a variable font's `fvar` table. `website/src/og/brand/mark.png` is the emblem rasterised
+  from `public/brand/simple_icon.svg`; regenerate it at 256 px with `sharp` if the emblem
+  changes.
+- The documentation half is not part of this: MkDocs renders its own cards with Material's
+  `social` plugin, with the theme's `cards_layout`.
 
 ## The screenshots
 
