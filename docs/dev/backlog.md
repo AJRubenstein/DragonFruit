@@ -596,10 +596,16 @@ structure rather than for work:
   into one integer key and produce the same cells: measured on the file's own
   meshes, 240 ms -> 50 ms there and 500 ms -> 108 ms on a 1.8M-triangle model.
 - **`three-mesh-bvh`'s default leaf of 10 triangles costs a third more build time
-  than it needs.** On the same two meshes, a leaf of 32 builds in 287 ms against
-  466 ms, and 508 ms against 835 ms, with an identical hit set; query cost moves a
-  few milliseconds either way, and what the app casts at a model is a handful of
-  picking rays. `accelerateGeometry` asks for 32 now.
+  than it needs** — 287 ms against 466 ms, and 508 ms against 835 ms on the same
+  two meshes — and asking for 32 was in this branch until `npm run
+  bench:auto-supports -- --check` refused it. The build win is real, but a leaf is
+  not a rendering detail: with a leaf of 32 the overhang-slab forest moves
+  (entities 1754 -> 1757, roots 208 -> 209, probes 3671 -> 291) and the sloped
+  cantilever spends 56 more probes. The router reads raycast results, and a coarser
+  leaf hands it a different answer out of the same set of hits, so the forest
+  follows the data structure. Reverted; the change that makes the forest
+  independent of the tree is the one to land it with, and until then the build
+  time stays. The plane grid's integer key above is unrelated and stays.
 
 What that run did not account for was the gap between a model's native load
 finishing and its prep starting: 0.2-1.8 s, scaling with the payload. Two phases are
