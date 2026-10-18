@@ -80,6 +80,11 @@ Hole punches create cylindrical openings through the shell for drainage, venting
 3. Adjust radius and depth in the hole punch panel.
 4. Click and drag the hole punch handles to reposition.
 
+Click an existing hole punch to select it rather than place another hole. This also
+works from inside the cavity, including when the slice viewer clips away the front
+of the model. In interior view, click a cavity surface away from existing punches
+to place a new hole.
+
 ### Oval holes
 
 - By default, hole punches are circular (linked X/Y radius).
