@@ -174,6 +174,20 @@ function hasVisibleNonModelIntersection(
   return false;
 }
 
+function hasVisibleHolePunchIntersection(
+  intersections: THREE.Intersection[],
+  clipLower: number | null | undefined,
+  clipUpper: number | null | undefined,
+): boolean {
+  for (const hit of intersections) {
+    if (hit.object.userData.isHolePunch !== true) continue;
+    if (clipUpper != null && hit.point.z > clipUpper) continue;
+    if (clipLower != null && hit.point.z < clipLower) continue;
+    return true;
+  }
+  return false;
+}
+
 function StlMeshComponent({
   geometry,
   clipLower,
@@ -1057,16 +1071,15 @@ if (uDitherAmount > 0.0) {
               return;
             }
 
-            // In interior view, if a non-model object (placed hole punch) is behind
-            // the X-Ray front face, let the click propagate to it for selection.
-            if ((interiorView && cavityGeometry) && hasVisibleNonModelIntersection(e.intersections, e.object, null, null)) {
-              return;
-            }
-
             let clickHit: THREE.Intersection = e as unknown as THREE.Intersection;
             const isClippedHit =
               (clipUpper != null && e.point.z > clipUpper) ||
               (clipLower != null && e.point.z < clipLower);
+            // A placed punch behind a clipped or X-Ray front face owns the click.
+            // Other scene geometry must not prevent placement on the cavity wall.
+            if ((isClippedHit || (interiorView && cavityGeometry)) && hasVisibleHolePunchIntersection(e.intersections, clipLower, clipUpper)) {
+              return;
+            }
             if (isClippedHit || (interiorView && cavityGeometry)) {
               const fallback = interiorView && cavityGeometry
                 ? findInteriorCavityHit(e.ray, e.object, cavityGeometry, modelId)
@@ -1407,7 +1420,11 @@ if (uDitherAmount > 0.0) {
               return;
             }
 
-            if (!(interiorView && cavityGeometry)) e.stopPropagation();
+            const isClippedHollowingHit = transformMode === 'hollowing' && (
+              (clipUpper != null && e.point.z > clipUpper) ||
+              (clipLower != null && e.point.z < clipLower)
+            );
+            if (!isClippedHollowingHit && !(interiorView && cavityGeometry)) e.stopPropagation();
             window.__modelClickGuardUntil = performance.now() + 48;
             window.__modelClickedThisFrame = true;
             window.setTimeout(() => {
