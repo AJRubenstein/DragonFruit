@@ -112,7 +112,7 @@ and both live here:
 
 Neither half can serve the other, so a `/docs/` link is a 404 under `astro dev` and
 under `mkdocs serve`. `npm run serve:site` builds both, composes `site/` exactly as
-CI does and serves it at http://127.0.0.1:8123; that is the only local check for a
+CI does and serves it at http://localhost:8123; that is the only local check for a
 `/docs/` link, a redirect, or a documentation page whose relative links assume the
 prefix.
 

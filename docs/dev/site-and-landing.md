@@ -64,7 +64,7 @@ node scripts/generate-doc-redirects.mjs site
 and every other directory is a redirect to its `/docs/` equivalent.
 
 `npm run serve:site` (`scripts/serve-site.mjs`) is those five steps in one command,
-followed by a static server over the composed `site/` at http://127.0.0.1:8123 —
+followed by a static server over the composed `site/` at http://localhost:8123 —
 `--port` moves it. It is the way to check anything that only exists once the two halves
 sit together: the landing page's `/docs/` links, a redirect from an old URL, or a
 documentation page whose relative links assume the `/docs/` prefix. Neither `astro dev`

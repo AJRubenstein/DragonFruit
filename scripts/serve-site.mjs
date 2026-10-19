@@ -179,9 +179,11 @@ const server = createServer(async (request, response) => {
   console.log(`200 ${pathname}`);
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`\nServing ${path.relative(projectRoot, siteDir)} at http://127.0.0.1:${port}/`);
-  console.log(`  landing page   http://127.0.0.1:${port}/`);
-  console.log(`  documentation  http://127.0.0.1:${port}/docs/`);
+// `localhost` rather than a literal address, so the name the banner prints and the
+// address the socket is on resolve the same way on a machine that prefers `::1`.
+server.listen(port, 'localhost', () => {
+  console.log(`\nServing ${path.relative(projectRoot, siteDir)} at http://localhost:${port}/`);
+  console.log(`  landing page   http://localhost:${port}/`);
+  console.log(`  documentation  http://localhost:${port}/docs/`);
   console.log('\nCtrl+C to stop.');
 });
