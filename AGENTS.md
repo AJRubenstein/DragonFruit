@@ -219,9 +219,10 @@ Two invariants that mimicry won't teach — get either wrong and undo breaks **s
   Handlers gated on a mesh being on screen mean Ctrl+Z stops working depending on the render
   tree (the bug this seam fixed). Supports register via `useSupportHistoryHandlers()` at the
   app root; scene/mesh-smoothing register in always-mounted hooks.
-- **Everything pushed to the stack needs a handler** — even a marker with no undo behaviour
-  needs a pass-through (`() => true`), or an unhandled entry strands the stack (see
-  `SCENE_SLICED`). A handler returning `false` means "unrecoverable"; the entry is discarded.
+- **Everything pushed to the stack needs a handler**, or an unhandled entry strands the stack.
+  A handler returning `false` means "unrecoverable"; the entry is discarded.
+- **Don't push markers**: an entry with no undo behaviour is a Ctrl+Z that does nothing
+  visible. To detect edits since some point, use `subscribeHistoryChanges` (see `useSlicedPlates`).
 
 ## Rust crate version bumps
 
