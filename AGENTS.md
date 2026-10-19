@@ -97,6 +97,35 @@ CI, on a clean checkout, failed on it. Deliberate exceptions — schematic names
 precisely because they were removed — go in
 `scripts/docs-accuracy-allowlist.json` **with a reason**.
 
+## The published site
+
+`dragonfruit-slicer.com` is two builds published as one GitHub Pages artifact,
+and both live here:
+
+- **The landing page** is the Astro project in `website/` and owns the site root.
+  `cd website && npm run dev` to work on it; `npm run check` plus `npm run build`
+  is its gate (there is no test suite).
+- **The documentation** is the `docs/` Markdown built by MkDocs into `/docs/`.
+  `mkdocs serve` / `mkdocs build --strict` as before — the old root-level document
+  URLs forward to their `/docs/` equivalents, and `scripts/generate-doc-redirects.mjs`
+  writes those forwarding pages at deploy time.
+
+Neither half can serve the other, so a `/docs/` link is a 404 under `astro dev` and
+under `mkdocs serve`. `npm run serve:site` builds both, composes `site/` exactly as
+CI does and serves it at http://localhost:8123; that is the only local check for a
+`/docs/` link, a redirect, or a documentation page whose relative links assume the
+prefix.
+
+The landing page's stylesheet is openresin.org's design language, copied into
+`website/src/styles/ora.css`; the two repositories share no package, so a change
+to a token or a primitive belongs in both by hand. The site's colours are
+DragonFruit's own (the app's `src/app/globals.css`), not the alliance's.
+
+`docs/dev/site-and-landing.md` is the long version: what each build owns, the
+commands, the two-halves-one-artifact constraint, and how the updater feeds
+(`latest.json`, `latest-dev.json`) reach the artifact root. Read it before
+changing anything under `website/`, `mkdocs.yml` or `.github/workflows/docs-pages.yml`.
+
 ## Lint
 
 The repo still carries thousands of pre-existing ESLint problems, so

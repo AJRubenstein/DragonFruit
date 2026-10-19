@@ -71,6 +71,34 @@ jobs:
       - name: Check docs against the codebase
         run: npm run check:docs
 
+  site:
+    name: Landing page
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      # The page that lists branch previews reads the GitHub API at build time and
+      # falls back to a note when it cannot, so a build here needs no token.
+      - name: Check types and templates
+        working-directory: website
+        run: npm run check
+
+      - name: Build the site
+        working-directory: website
+        run: npm run build
+
   lint:
     name: Lint (clean directories)
     runs-on: ubuntu-latest

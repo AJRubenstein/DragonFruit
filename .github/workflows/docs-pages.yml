@@ -8,6 +8,8 @@ on:
     paths:
       - docs/**
       - mkdocs.yml
+      - website/**
+      - scripts/generate-doc-redirects.mjs
       - .github/workflows/docs-pages.yml
       - docs/requirements.txt
   workflow_run:
@@ -54,8 +56,19 @@ jobs:
           cache: pip
           cache-dependency-path: docs/requirements.txt
 
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
       - name: Install docs dependencies
         run: pip install -r docs/requirements.txt
+
+      - name: Install site dependencies
+        working-directory: website
+        run: npm ci
 
       - name: Materialize placeholder docs assets
         run: node scripts/materialize-doc-placeholder-assets.mjs
@@ -64,8 +77,23 @@ jobs:
         id: pages
         uses: actions/configure-pages@v6
 
+      # The documentation is half the artifact, under `/docs/`; the landing page
+      # below is the other half and owns the root. See docs/dev/site-and-landing.md.
       - name: Build docs site
-        run: mkdocs build --strict --site-dir site
+        run: mkdocs build --strict --site-dir site/docs
+
+      - name: Build landing page
+        working-directory: website
+        run: npm run build
+        env:
+          # Raises the GitHub API rate limit for the page that lists branch
+          # previews. Build-time only: it never reaches the browser bundle.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose the site
+        run: |
+          cp -R website/dist/. site/
+          node scripts/generate-doc-redirects.mjs site
 
       - name: Inject updater JSONs into site
         uses: actions/github-script@v9
