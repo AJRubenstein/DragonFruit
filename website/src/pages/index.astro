@@ -1,7 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import DownloadMenu from '../components/DownloadMenu.astro';
-import ScreenshotCarousel from '../components/ScreenshotCarousel.astro';
+import ScreenshotGrid from '../components/ScreenshotGrid.astro';
 import DiscordIcon from '../components/DiscordIcon.astro';
 import Wordmark from '../components/Wordmark.astro';
 import { LINKS, SITE, docs } from '../data/site';
@@ -26,7 +26,7 @@ const capabilities = [
   {
     title: 'High-performance slicing',
     href: docs('dev/slicing-engine/'),
-    body: 'A Rust pipeline with its own encoders: Puck the Adventurer, the model in the strip below, sliced and written in 1.01 seconds.',
+    body: 'A Rust pipeline with its own encoders: Puck the Adventurer, the model in the grid below, sliced and written in 1.01 seconds.',
   },
   {
     title: 'Mesh repair',
@@ -92,7 +92,7 @@ const reference = [
     </div>
   </section>
 
-  <ScreenshotCarousel />
+  <ScreenshotGrid />
 
   <section class="shell section" id="docs">
     <div class="section-head">

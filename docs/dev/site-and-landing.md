@@ -17,7 +17,7 @@ constraints are, and what to run before pushing.
 | `website/src/styles/ora.css` | The design language — tokens, layout shell, buttons, surfaces. |
 | `website/src/assets/wordmark.svg` | The wordmark, inlined by `Wordmark.astro` so the part of it drawn in white can follow the theme. |
 | `website/public/brand/` | The emblem (`simple_icon.svg`) and the social card. MkDocs serves its own copy of the emblem from `docs/assets/branding/`, so a change to it belongs in both. |
-| `website/public/media/` | The five screenshots in the strip, re-encoded from the marketing renders. |
+| `website/public/media/` | The four screenshots in the grid, re-encoded from the marketing renders. |
 | `website/src/og/` | The social cards: a build hook, the renderer, the fonts and the emblem PNG. |
 | `website/src/lib/og.ts` | Where a card lives, and the digest its URL carries. |
 | `docs/` | The documentation source, unchanged: one Markdown file per page, `docs/internal/` excluded from the build. |
@@ -157,30 +157,37 @@ the text changes while the URL a share already points at keeps resolving.
 ## The screenshots
 
 `website/public/media/*.webp` are re-encoded from the marketing renders supplied for the
-0.2.0 release. The strip tells a story in order, and each caption says what its image is for:
+0.2.0 release. The grid is read two by two; the captions are not in it — a tile is the image
+and nothing else, and its caption is shown under the enlarged image when it is opened:
 
-| Slide | Source | What it is there to show |
+| Image | Source | What it is there to show |
 |---|---|---|
 | `ui.webp` | `general_view.png` | the workspace itself — a clean window with nothing in the way |
 | `support-studio.webp` | `supports.png` | Support Studio with island scanning on |
 | `multi-plate.webp` | `multi-plate.png` | four plates in one scene |
-| `slicing.webp` | `high-speed-slicing.png` | a plate sliced and written in 1.01 s |
 | `3daa.webp` | `3daa.png` | 3D anti-aliasing (3DAA in the code) — grey levels in the layer mask, which is what removes stair-stepping |
 
+The fifth render, `high-speed-slicing.png`, is not on the page: it is a modal over a darkened
+window, and the 1.01 s it reports is already a sentence in the copy above the grid. The
+`high-speed-slicing` WebP is gone with it — re-encode and re-add both if that changes.
+
 The sources are 2560×1392 PNGs of about a megabyte each; the WebPs are 1600 px wide at
-quality 80, which is 184 KB for all five. Re-encode the same way when they change, and keep
-the order and the captions in `ScreenshotCarousel.astro` in step with the images: every
-caption describes what is on screen, so a replaced image means a rewritten caption.
+quality 80, which is 169 KB for all four. Re-encode the same way when they change, and keep
+the order and the captions in `ScreenshotGrid.astro` in step with the images: every
+caption describes what is on screen, so a replaced image means a rewritten caption. The
+captions are the dialog's text and nothing else — a caption that reads well under a tile at
+half page width is not the same sentence as one under the full-size image, and the grid does
+not show them at all.
 
 ## Pages, and what the network is for
 
-The landing project has two pages and one strip:
+The landing project has two pages and one grid:
 
 | Page | Source | Data |
 |---|---|---|
 | `/` | `website/src/pages/index.astro` | none at build time; `website/src/lib/release-feed.ts` narrows the download button to the visitor's platform in the browser. |
 | `/builds/` | `website/src/pages/builds.astro` | two lists, both read **at build time**: the developer build from the updater's own `latest-dev.json` at the site root, and the branch previews from the GitHub releases API. Each section degrades on its own. |
-| the screenshot strip, below *What it does* | `website/src/components/ScreenshotCarousel.astro` | none — five images, one per view, paged by two arrows and a count. Nothing auto-advances, and without JavaScript it is still a scroller. |
+| the screenshot grid, below *What it does* | `website/src/components/ScreenshotGrid.astro` | none — four images, one per view, laid out two by two with none of them paged. A click opens one full size in a `<dialog>`, with its caption and arrows under it: the arrows (and Left/Right) step to the next image without closing, and wrap at either end. That lightbox is the only script, and without JavaScript the grid is still a grid. |
 
 The split is deliberate and worth keeping:
 
