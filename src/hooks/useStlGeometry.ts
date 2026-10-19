@@ -15,7 +15,7 @@ import { accelerateGeometry } from '@/utils/bvh';
 import { logToNativeFile } from '@/utils/nativeLog';
 import { runWithConcurrency } from '@/utils/runWithConcurrency';
 import { computeFlatteningPlanes, type FlatteningPlane } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
-import { REFINE_MAX_TRIANGLES, refineCoarseFaces } from '@/utils/tauriMeshBridge';
+import { refineCoarseFaces, shouldRefineCoarseFaces } from '@/utils/tauriMeshBridge';
 import {
   analyzeFromGeometry,
   applyRepairedPositions,
@@ -1174,6 +1174,21 @@ function wantsLoaderClassification(options: ProcessGeometryOptions): boolean {
 }
 
 /**
+ * Whether a model-only import may skip the native pass.
+ *
+ * {@link ProcessGeometryOptions.skipClassification} suppresses repair as well as
+ * classification, so a mesh that carries no support section can only claim it
+ * while the import is not auto-repairing. A LYS scene supplies its supports
+ * separately and is not pre-repaired, which is the case this separates.
+ */
+export function skipsNativePassForModelOnly(
+  modelOnly: boolean,
+  autoRepair: boolean,
+): boolean {
+  return modelOnly && !autoRepair;
+}
+
+/**
  * The classification report that describes the payload the loader just produced.
  *
  * The loader's own report when it classified, since it describes exactly what it
@@ -1381,8 +1396,7 @@ export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: Pro
 
   let geometry = source;
   let refined = false;
-  const triangles = (source.getAttribute('position')?.count ?? 0) / 3;
-  if (triangles > 0 && triangles <= REFINE_MAX_TRIANGLES) {
+  if (shouldRefineCoarseFaces(source)) {
     try {
       const result = await refineCoarseFaces(source);
       if (result) {

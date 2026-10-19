@@ -3,10 +3,10 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import * as THREE from 'three';
-import { loadTauriCore, refineCoarseFaces } from '@/utils/tauriMeshBridge';
+import { loadTauriCore, refineCoarseFaces, shouldRefineCoarseFaces } from '@/utils/tauriMeshBridge';
 import { solidRemeshFromGeometry, tetSurfaceFromGeometry, type SolidRemeshProgressSink, type SolidRemeshOptions, type TetSurfaceProgressSink, type TetWrapOptions } from '@/utils/meshShrinkwrap';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
-import { loadMeshGeometry, loadMeshGeometryFromRange, load3mfGeometryMergedWithSplitData, processGeometry, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
+import { loadMeshGeometry, loadMeshGeometryFromRange, load3mfGeometryMergedWithSplitData, processGeometry, skipsNativePassForModelOnly, type GeometryWithBounds, type ProcessGeometryOptions } from '@/hooks/useStlGeometry';
 import type { MeshHealthReport, MeshAnalysisJson, MeshRepairProgressSink } from '@/utils/meshRepair';
 import { loadMeshFromPath } from '@/utils/meshRepair';
 import { computeFlatteningPlanes } from '@/features/placeOnFace/logic/computeFlatteningPlanes';
@@ -931,6 +931,8 @@ type PluginSceneImportPayload = {
   objName?: string;
   supportData?: DragonfruitImportFormat | null;
   meshModifiers?: ModelMeshModifiers;
+  /** The plugin built a model-only mesh and supplied supports separately. */
+  skipClassification?: boolean;
 };
 
 function toFiniteNumber(value: unknown): number | null {
@@ -1003,6 +1005,7 @@ function normalizePluginSceneImportPayload(payload: unknown): PluginSceneImportP
     objName?: unknown;
     supportData?: unknown;
     meshModifiers?: unknown;
+    skipClassification?: unknown;
   };
 
   if (!(source.geometry instanceof THREE.BufferGeometry)) return null;
@@ -1041,6 +1044,7 @@ function normalizePluginSceneImportPayload(payload: unknown): PluginSceneImportP
       : undefined,
     supportData: asDragonfruitImportFormat(source.supportData),
     meshModifiers,
+    skipClassification: source.skipClassification === true,
   };
 }
 
@@ -5873,19 +5877,28 @@ export function useSceneCollectionManager(options?: {
           }
         }
         let skipComputeNormals = false;
-        try {
-          const refined = await refineCoarseFaces(geometry);
-          if (refined) {
-            geometry = refined;
-            skipComputeNormals = true;
+        // The mesh loaders already gate refinement on size. Plugin geometry
+        // takes this path directly, so apply the same ceiling here instead of
+        // sending a multi-million-triangle soup over IPC for a dense mesh.
+        if (shouldRefineCoarseFaces(geometry)) {
+          try {
+            const refined = await refineCoarseFaces(geometry);
+            if (refined) {
+              geometry = refined;
+              skipComputeNormals = true;
+            }
+          } catch (error) {
+            console.warn('[refine] plugin geometry left unrefined', error);
           }
-        } catch (error) {
-          console.warn('[refine] plugin geometry left unrefined', error);
         }
         const processed = await processGeometry(geometry, {
           center: false,
           ...(skipComputeNormals ? { _skipComputeNormals: true } : {}),
           nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
+          skipClassification: skipsNativePassForModelOnly(
+            normalized.skipClassification === true,
+            autoRepairScenes,
+          ),
           onNativeProcessingStage: (stage) => {
             if (options?.suppressProgress) return;
 

@@ -355,6 +355,19 @@ export async function tetSurfaceStagedMesh(
 export const REFINE_MAX_TRIANGLES = 400_000;
 
 /**
+ * Whether a renderer-built geometry is small enough for the refine round trip.
+ * The loader and the plugin scene bridge share this rule so a dense mesh is
+ * never sent over IPC just to be left alone by the native refiner.
+ */
+export function shouldRefineCoarseFaces(
+  geometry: THREE.BufferGeometry,
+  maxTriangles: number = REFINE_MAX_TRIANGLES,
+): boolean {
+  const triangles = (geometry.getIndex()?.count ?? geometry.getAttribute('position')?.count ?? 0) / 3;
+  return triangles > 0 && triangles <= maxTriangles;
+}
+
+/**
  * Ask the native side to refine geometry an importer built in the renderer.
  *
  * Only the importers that build geometry themselves need this: the native loaders
