@@ -834,6 +834,20 @@ export function decideGridPlacement(args: DecideGridPlacementArgs): GridPlacemen
     }
     const placedTypeId = claimedTypeId;
 
+    // A contact cone or socket below the plate cannot be rescued by snapping
+    // the root or attaching to another support. Type overrides above build
+    // their own geometry, so an unused trunk candidate must not reject them.
+    if (candidate.error === 'OUT_OF_BOUNDS') {
+        return {
+            kind: 'reject',
+            nodeKey: settings.grid?.enabled
+                ? getResolvedSnappedNodeKey(candidate.route) ?? getPreferredNodeKey(candidate, spacingMm)
+                : 'disabled',
+            reason: 'OUT_OF_BOUNDS',
+            trunkBuild: candidate,
+        };
+    }
+
     if (!settings.grid?.enabled) {
         const trunkBuild = withResolvedSnappedRoute(candidate, {
             snappedRootPos: getResolvedSnappedRootPos(candidate.route, candidate.root.transform.pos),

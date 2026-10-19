@@ -29,6 +29,17 @@ Six phases inside `computeAutoSupportPlan` (`autoPlace.ts`):
 
 Islands arrive from volume analysis carrying a `source`. Three matter: `overhang` (the mesh-normal classifier's shallow surfaces), `minima` (local low points, only when `class === 'minimaOnly'`), and `intersection`. Emission is island-typed by footprint span: sub-head specks (≤0.5mm) get one tip at the bbox center; narrow islands 1.5–6mm long split into a symmetric pair (half area each); wide blobs keep one candidate (the grid path covers their area).
 
+### Near-plate type overrides
+
+`placeOneCandidate` may build a default trunk before the registry selects a
+near-plate type with its own contact builder. An `OUT_OF_BOUNDS` error on that
+unused trunk must not prevent `decideGridPlacement` from building and validating
+the selected type. Only a registered override gets this deferral; an actual
+below-plate trunk remains rejected, and a rejected override still adds nothing.
+The rule is the same with grid mode on or off. See
+[below-platform placement](support-system.md#below-platform-placement).
+
+
 ## Stabilization
 
 Formation overhang and stability are two different failure modes, and the

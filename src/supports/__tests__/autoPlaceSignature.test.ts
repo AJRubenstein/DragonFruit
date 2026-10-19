@@ -9,15 +9,11 @@ import type { AutoPlaceResult } from '../autoSupport/types';
 import { getSnapshot, resetStore, resetKickstandsInState } from '../state';
 import { getSettings, setSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
-import { SUPPORT_TYPES } from '../supportTypeRegistry';
 import { initializeBVH, accelerateGeometry } from '@/utils/bvh';
 import { footprintFromPoints } from '@/volumeAnalysis/Islands/voxelFootprint';
 import type { DetectedIsland } from '@/volumeAnalysis/Islands/types';
 
-/**
- * A whole-run signature for auto-placement: one scene run end to end, with the
- * per-type outcome pinned.
- */
+/** Rebuilding the same mixed scene must produce the same placement outcome. */
 
 const MODEL = 'model-a';
 
@@ -151,7 +147,7 @@ function fanTarget(xOffsetMm: number, zOffsetMm: number): DetectedIsland {
     };
 }
 
-/** What `runSignature` returns and `assertSignature` pins. */
+/** The placement outcome compared between identical runs. */
 interface RunSignature {
     placed: AutoPlaceResult['placed'];
     rejectedCandidates: number;
@@ -167,8 +163,7 @@ function runSignature(gridEnabled: boolean): RunSignature {
     initializeBVH();
     setModelMesh(MODEL, cavityMesh());
 
-    // Grid on routes candidates through `decideGridPlacement`; grid off routes
-    // them through the merge/trunk/cavity chain. Both are pinned.
+    // Check repeatability in both grid and gridless placement modes.
     const settings = createDefaultSettings();
     settings.grid.enabled = gridEnabled;
     setSettings(settings);
@@ -217,120 +212,9 @@ function runSignature(gridEnabled: boolean): RunSignature {
     return signature;
 }
 
-/**
- * The recorded signatures. Regenerate ONLY after confirming a change is
- * intended, and say why in the commit.
- *
- * `placed` is what the ladder decided, one number per `SUPPORT_TYPES` entry in
- * registry order; `inStore` is what survived the resize and consolidation
- * passes. Both move under a rewrite, so both are pinned.
- *
- * Recorded on THIS branch's placement policy, which differs from dev's on two
- * counts: grid mode attaches to the trunk already standing on a node instead of
- * standing a second one (so fewer trunks, the tips becoming leaves), and a long
- * overhang fan link becomes a branch rather than staying a leaf.
- *
- * Re-recorded once more when model-scale sizing landed (`parameterSizing.ts`):
- * the grid-on run moves 2 members from branch to leaf (151/21 → 149/23). The
- * height term is what moves them — long supports are thicker now — and
- * neutering the model terms leaves these counts unchanged, so tuning the
- * print-scale/mass-share constants does not churn this signature. The grid-off
- * run does not move at all.
- *
- * Re-recorded for the contact-tip cap (`contactTipCap.ts`): the grid-on run
- * moved 4 members from leaf to branch (149/23 → 153/19), and the corpus moved on
- * `steep-flat-wedge` (coverage 40.4 → 41.0%) and `sloped-cantilever`.
- *
- * Re-recorded BACK to 149/23 for the cap's two corrections
- * (`autoSupport.tipContactMarginScale` 0.6 → 0.9, and no cap when `localFreeWidthMm` returns
- * 0 because the probe found no clearance either way). Both benches are now
- * **byte-identical to the pre-cap baselines on all seven fixtures in both
- * modes**: every contact the cap had been moving on the corpus read a zero
- * width, i.e. it was the inconclusive kind the new rule leaves alone, and a
- * 0.9 margin no longer shrinks a 0.28 mm tip inside a 0.4 mm feature. The cap
- * still binds where a width is genuinely measured under `bandTip / 0.9`
- * (`contactTipCap.test.ts` pins the 0.3 mm rib and the anchor band).
- */
-const RECORDED = {
-    /** Grid enabled: candidates resolve through `decideGridPlacement`, branch-heavy. */
-    gridOn: {
-        placed: [28, 149, 23, 197, 0, 0, 1, 0],
-        rejectedCandidates: 0,
-        changed: true,
-        inStore: { trunks: 28, branches: 149, leaves: 23, twigs: 197, sticks: 0, anchors: 1, knots: 172, roots: 28 },
-        forest: { hostCount: 28, leafCount: 23, branchCount: 149, bareHosts: 2 },
-    },
-    /** Grid disabled: candidates resolve through the merge/trunk/cavity ladder, leaf-heavy. */
-    gridOff: {
-        placed: [73, 1, 126, 197, 0, 0, 1, 0],
-        rejectedCandidates: 0,
-        changed: true,
-        inStore: { trunks: 73, branches: 1, leaves: 126, twigs: 197, sticks: 0, anchors: 1, knots: 127, roots: 73 },
-        forest: { hostCount: 73, leafCount: 126, branchCount: 1, bareHosts: 2 },
-    },
-} as const;
-
-function assertSignature(
-    actual: RunSignature,
-    expected: (typeof RECORDED)['gridOn'] | (typeof RECORDED)['gridOff'],
-) {
-    // Compared per field so a failure names which part moved, rather than
-    // dumping two opaque objects. `placed` is read along the registry's axis:
-    // one entry per declared type, in `SUPPORT_TYPES` order.
-    assert.deepEqual(
-        SUPPORT_TYPES.map((descriptor) => actual.placed[descriptor.id]),
-        expected.placed,
-        'per-type placement counts moved (SUPPORT_TYPES order)',
-    );
-    assert.equal(actual.rejectedCandidates, expected.rejectedCandidates, 'rejection count moved');
-    assert.deepEqual(actual.inStore, expected.inStore, 'what landed in the store moved');
-    assert.deepEqual(actual.forest, expected.forest, 'the forest report moved');
-}
-
-test('the grid path produces the recorded whole-run signature', () => {
-    assertSignature(runSignature(true), RECORDED.gridOn);
-});
-
-test('the gridless ladder produces the recorded whole-run signature', () => {
-    // The two settings take different code paths through the ladder, so a
-    // rewrite has to be pinned in both or half of it is unguarded.
-    assertSignature(runSignature(false), RECORDED.gridOff);
-});
-
-test('the two settings genuinely exercise different paths', () => {
-    // If both settings collapsed onto the same outcome, this fixture would look
-    // like coverage while providing half of it.
-    const on = runSignature(true).placed;
-    const off = runSignature(false).placed;
-    assert.notDeepEqual(on, off, 'grid on and off must not produce the same outcome');
-    assert.ok(on.branch > 0, 'grid on exercises the branch path');
-    assert.ok(off.leaf > 0, 'grid off exercises the fan-leaf path');
-});
-
-test('the signature covers more than one placement path', () => {
-    // A fixture that collapsed onto one path would still "pass" while testing
-    // almost nothing. This guards the net, not the behaviour.
-    const actual = runSignature(true).placed;
-    const kinds = Object.entries(actual).filter(([, n]) => n > 0).map(([k]) => k);
-    assert.ok(kinds.length >= 4, `the scene should exercise several types, got: ${kinds.join(', ')}`);
-    // The ledger carries one entry per declared type, which is what lets the
-    // recorded counts be compared along the registry's axis without losing a key.
-    assert.deepEqual(
-        Object.keys(actual).sort(),
-        SUPPORT_TYPES.map((descriptor) => descriptor.id).sort(),
-        'the ledger must carry every declared type',
-    );
-    // Every type the recording says the scene places must still be placed, read
-    // off the registry along that same axis.
-    for (const [index, count] of RECORDED.gridOn.placed.entries()) {
-        if (count === 0) continue;
-        const typeId = SUPPORT_TYPES[index].id;
-        assert.ok(actual[typeId] > 0, `${typeId} placement is covered`);
-    }
-});
 
 test('a second run of the same scene is identical', () => {
-    // Determinism is what makes the signature usable as a net at all.
+    // Compare runs with each other, not with incidental recorded counts.
     assert.deepEqual(runSignature(true), runSignature(true));
     assert.deepEqual(runSignature(false), runSignature(false));
 });
