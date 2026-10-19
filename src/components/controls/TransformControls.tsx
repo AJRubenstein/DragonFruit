@@ -286,7 +286,7 @@ export function TransformControls({
                 <button
                   type="button"
                   onClick={() => onAutoLiftChange(!autoLift)}
-                  title={t`On, models stay this far above the build plate after every move, rotation or scale. Off, they rest on the plate.`}
+                  title={t`On, models stay this far above the build plate after every move or rotation. Off, they rest on the plate. Scaling keeps the current bottom height.`}
                   className="h-7 min-w-[64px] rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors"
                   style={autoLift
                     ? {

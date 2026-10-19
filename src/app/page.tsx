@@ -90,7 +90,7 @@ import {
   dispatchDeleteModelAction,
   resolveModelActionTargetIds,
 } from '@/features/scene/modelActionTargets';
-import { buildLiftDropUpdates, getModelLowestWorldZ } from '@/features/scene/selectionLiftDrop';
+import { buildLiftDropUpdates, getModelLowestWorldZ, preserveModelBottom } from '@/features/scene/selectionLiftDrop';
 import { dropOverlaySupportedFormats, dropOverlayUnsupportedFormats } from '@/features/scene/sceneImportMessages';
 import {
   buildCenterSelectionUpdates,
@@ -1087,6 +1087,7 @@ export default function Home() {
     operation: 'move' | 'scale';
   } | null>(null);
   const transformEndFlushedRef = React.useRef(false);
+  const isScaleGestureRef = React.useRef(false);
   const pendingRotateGizmoCommitRef = React.useRef<{
     modelId: string;
     before: ModelTransform;
@@ -6814,8 +6815,16 @@ export default function Home() {
   // churn feeding back into gizmo drag listeners/effects.
   const handleTransformChange = React.useCallback((pos: THREE.Vector3, rot: THREE.Euler, scl: THREE.Vector3) => {
     transformMgr.setIsTransforming(true);
+    if (isScaleGestureRef.current) {
+      // Scale gizmos already preserve the starting bottom; auto-snap would replace that Z.
+      transformMgr.pendingTransformRef.current = { pos: pos.clone(), rot: rot.clone(), scl: scl.clone() };
+      transformMgr.transformHook.setPosition(pos.x, pos.y, pos.z);
+      transformMgr.transformHook.setRotation(rot.x, rot.y, rot.z);
+      transformMgr.transformHook.setScale(scl.x, scl.y, scl.z);
+      return;
+    }
     transformMgr.onTransformChange(pos, rot, scl);
-  }, [transformMgr.onTransformChange, transformMgr.setIsTransforming]);
+  }, [transformMgr.onTransformChange, transformMgr.pendingTransformRef, transformMgr.setIsTransforming, transformMgr.transformHook]);
 
   // 3. Slicing (Global context - operates on scene bounds, not just active model)
   const hasAnyEntries = React.useCallback((record: Record<string, unknown>) => {
@@ -8494,6 +8503,7 @@ export default function Home() {
     finalTransform?: ModelTransform,
     options?: { skipStoreCommit?: boolean; spawnPlateForDrop?: boolean },
   ) => {
+    isScaleGestureRef.current = false;
     const stampNow = () => ({ perfMs: performance.now(), epochMs: Date.now() });
     const releasePerf = performance.now();
 
@@ -8675,6 +8685,7 @@ export default function Home() {
       islands.clearScanData();
       applyPostRotateLift();
     } else {
+      // Scale keeps the gizmo's preserved bottom instead of running post-rotation auto-snap.
       transformMgr.pendingTransformRef.current = null;
     }
 
@@ -8820,8 +8831,7 @@ export default function Home() {
   /**
    * Seats the models the way a single model is seated after a rotation: lowest point at the lift
    * distance with Auto on, on the plate with it off. A model whose Z was set by hand (or that came
-   * in from a project with its own Z) is left where it is, as it would be on its own. A group
-   * scale needs it too, since it spreads the models along Z from their centre.
+   * in from a project with its own Z) is left where it is, as it would be on its own.
    */
   const seatSelectionOnPlate = React.useCallback((
     entries: Array<{ id: string; transform: ModelTransform }>,
@@ -8869,9 +8879,9 @@ export default function Home() {
           scale: entry.after.scale.clone(),
         },
       }));
-    // A turned or scaled selection is seated as a single model is, in the same undo step.
+    // Only rotation seats the selection; scale already preserves each model's original bottom.
     if (payload.operation === 'rotate' && changedEntries.length > 0) islands.clearScanData();
-    const updates = payload.operation === 'move' ? changedEntries : seatSelectionOnPlate(changedEntries);
+    const updates = payload.operation === 'rotate' ? seatSelectionOnPlate(changedEntries) : changedEntries;
 
     if (updates.length === 0) {
       beginSupportDragSyncTransaction([], {
@@ -9019,6 +9029,21 @@ export default function Home() {
       .filter((entry) => targetIdSet.has(entry.id));
   }, []);
 
+  const preserveSelectionBottoms = React.useCallback((
+    entries: Array<{ id: string; transform: ModelTransform }>,
+    beforeEntries: Array<{ id: string; transform: ModelTransform }>,
+  ) => {
+    const modelById = new Map(scene.models.map((model) => [model.id, model]));
+    const beforeById = new Map(beforeEntries.map((entry) => [entry.id, entry.transform]));
+    return entries.map((entry) => {
+      const model = modelById.get(entry.id);
+      const before = beforeById.get(entry.id);
+      return model && before
+        ? { ...entry, transform: preserveModelBottom({ ...model, transform: before }, entry.transform) }
+        : entry;
+    });
+  }, [scene.models]);
+
   const handlePositionSelectedModels = React.useCallback((x: number, y: number, z: number) => {
     const targetIds = getSelectionTargetIds();
     if (targetIds.length === 0) return;
@@ -9058,14 +9083,14 @@ export default function Home() {
     selectionRotationMode,
   ]);
 
-  /** Closes the panel's open undo step, seating the models first after a rotation or a scale. */
+  /** Closes the panel's open undo step, seating the models first only after a rotation. */
   const handleSelectionTransformCommit = React.useCallback(() => {
     const kind = pendingSelectionPositionHistoryRef.current?.kind;
-    if (kind !== 'rotate' && kind !== 'scale') {
+    if (kind !== 'rotate') {
       commitPendingSelectionPositionHistory();
       return;
     }
-    if (kind === 'rotate') islands.clearScanData();
+    islands.clearScanData();
     const targetIds = getSelectionTargetIds();
     applySelectionPositionUpdates(
       seatSelectionOnPlate(getSelectionTransformEntries(targetIds)),
@@ -9095,16 +9120,18 @@ export default function Home() {
     if (!requestDestructiveTransformSupportDeletion('Scale XYZ', targetIds)) return;
 
     ensurePendingSelectionHistory(targetIds, 'scale');
-    applySelectionPositionUpdates(scaleSelectionFromActive(
-      getPendingSelectionStartEntries(targetIds),
+    const beforeEntries = getPendingSelectionStartEntries(targetIds);
+    applySelectionPositionUpdates(preserveSelectionBottoms(scaleSelectionFromActive(
+      beforeEntries,
       activeModel.id,
       new THREE.Vector3(x, y, z),
-    ), { pushHistory: false });
+    ), beforeEntries), { pushHistory: false });
   }, [
     applySelectionPositionUpdates,
     ensurePendingSelectionHistory,
     getPendingSelectionStartEntries,
     getSelectionTargetIds,
+    preserveSelectionBottoms,
     requestDestructiveTransformSupportDeletion,
     scene.activeModel,
   ]);
@@ -9116,9 +9143,12 @@ export default function Home() {
     if (!requestDestructiveTransformSupportDeletion(operationLabel, targetIds)) return;
 
     commitPendingSelectionPositionHistory();
-    const resetEntries = resetSelectionTransforms(getSelectionTransformEntries(targetIds), { [reset]: true });
+    const beforeEntries = getSelectionTransformEntries(targetIds);
+    const resetEntries = resetSelectionTransforms(beforeEntries, { [reset]: true });
     if (reset === 'rotation') islands.clearScanData();
-    applySelectionPositionUpdates(seatSelectionOnPlate(resetEntries));
+    applySelectionPositionUpdates(reset === 'rotation'
+      ? seatSelectionOnPlate(resetEntries)
+      : preserveSelectionBottoms(resetEntries, beforeEntries));
   }, [
     _,
     applySelectionPositionUpdates,
@@ -9126,6 +9156,7 @@ export default function Home() {
     getSelectionTargetIds,
     getSelectionTransformEntries,
     islands,
+    preserveSelectionBottoms,
     requestDestructiveTransformSupportDeletion,
     seatSelectionOnPlate,
   ]);
@@ -9233,6 +9264,7 @@ export default function Home() {
     details?: { axis?: 'x' | 'y' | 'z' | 'uniform'; isUniform?: boolean },
   ) => {
     skipNextTransformEndCommitRef.current = null;
+    isScaleGestureRef.current = false;
 
     // A locked bed refuses the gesture itself, not just the commit: the gizmo would otherwise
     // move the model and the store would refuse on release, which reads as a broken gizmo.
@@ -9296,6 +9328,7 @@ export default function Home() {
       pendingRotateGizmoCommitRef.current = null;
     }
 
+    isScaleGestureRef.current = operation === 'scale';
     return true;
   }, [captureTransformSupportSnapshot, disableAutoLiftForManualZMove, requestDestructiveTransformSupportDeletion, scene.activeModel, scene.activeModelId, scene.models, scene.selectedModelIds]);
 
