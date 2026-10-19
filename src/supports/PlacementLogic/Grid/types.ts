@@ -13,7 +13,8 @@ export type GridPlacementRejectReason =
     | 'NO_HOST_SEGMENT'
     | 'MODEL_MISMATCH'
     | 'NO_VALID_ATTACHMENT'
-    | 'COLLISION_WITH_MODEL';
+    | 'COLLISION_WITH_MODEL'
+    | 'OUT_OF_BOUNDS';
 
 export type GridPlacementDecision =
     | {

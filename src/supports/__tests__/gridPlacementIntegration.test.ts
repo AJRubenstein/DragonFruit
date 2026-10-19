@@ -950,3 +950,112 @@ test('a neighbour leaning over a node does not hide the pillar standing on it', 
     }
     assert.equal(decision.placed.hostedBy?.id, standing.build.trunk.id);
 });
+
+for (const gridEnabled of [false, true]) {
+    for (const isPreview of [true, false]) {
+        test(`a 6 mm cone on a 5 mm contact is refused with its error ghost (grid=${gridEnabled}, preview=${isPreview})`, () => {
+            const settings = makeSettings();
+            settings.grid.enabled = gridEnabled;
+            settings.tip.lengthMm = 6;
+            setSettings(settings);
+
+            const input: TrunkBuildInput = {
+                tipPos: { x: 1, y: 1, z: 5 },
+                tipNormal: { x: 0, y: 0, z: -1 },
+                modelId: MODEL_ID,
+                isPreview,
+            };
+            const candidate = buildTrunkData(input);
+            assert.ok(getFinalSocketPosition(candidate.trunk.contactCone!).z < 0,
+                'the authored cone extends below the plate');
+
+            const decision = decideGridPlacement({
+                settings,
+                snapshot: makeEmptySnapshot(),
+                candidate,
+                ...input,
+            });
+
+            if (decision.kind !== 'reject') assert.fail('a below-plate support must not be placed');
+            assert.equal(decision.reason, 'OUT_OF_BOUNDS');
+            assert.ok(decision.trunkBuild, 'the invalid support remains available for the red ghost');
+            assert.equal(decision.trunkBuild.error, 'OUT_OF_BOUNDS');
+            assert.equal(decision.trunkBuild.route.error, 'OUT_OF_BOUNDS');
+            assert.equal(decision.trunkBuild.route.validity, 'hard_invalid');
+            assert.equal(decision.trunkBuild.supportData.error, 'OUT_OF_BOUNDS');
+            assert.ok(getFinalSocketPosition(decision.trunkBuild.supportData.contactCone!).z < 0,
+                'refusing the support does not shorten or lift its preview geometry');
+        });
+
+        for (const tipZ of [10, 2]) {
+            test(`a safe ${tipZ === 2 ? 'stump override' : 'trunk'} remains placeable (grid=${gridEnabled}, preview=${isPreview})`, () => {
+                const settings = makeSettings();
+                settings.grid.enabled = gridEnabled;
+                settings.tip.lengthMm = 6;
+                setSettings(settings);
+
+                const input: TrunkBuildInput = {
+                    tipPos: { x: 1, y: 1, z: tipZ },
+                    tipNormal: { x: 0, y: 0, z: -1 },
+                    modelId: MODEL_ID,
+                    isPreview,
+                };
+                const candidate = buildTrunkData(input);
+                assert.equal(candidate.error, tipZ === 2 ? 'OUT_OF_BOUNDS' : undefined);
+
+                const decision = decideGridPlacement({
+                    settings,
+                    snapshot: makeEmptySnapshot(),
+                    candidate,
+                    ...input,
+                });
+
+                if (decision.kind !== 'place') assert.fail(`expected a safe support, got ${decision.reason}`);
+                assert.equal(decision.placed.typeId, tipZ === 2 ? 'stump' : 'trunk');
+                assert.ok(decision.supportData);
+                assert.equal(decision.supportData.error, undefined);
+                assert.ok(getFinalSocketPosition(decision.supportData.contactCone!).z > 0);
+                if (tipZ === 2) {
+                    const stump = decision.placed.entity as Stump;
+                    assert.ok(getFinalSocketPosition(stump.contactCone).z >= stump.joint.pos.z - 1e-3,
+                        'the override validates its own cone, not the unused invalid trunk');
+                }
+            });
+        }
+    }
+}
+
+for (const isPreview of [true, false]) {
+    test(`an occupied grid host cannot turn a below-plate cone into an attachment (preview=${isPreview})`, () => {
+        const settings = makeSettings();
+        settings.tip.lengthMm = 6;
+        setSettings(settings);
+
+        const snapshot = makeEmptySnapshot();
+        const hostInput: TrunkBuildInput = {
+            tipPos: { x: 0, y: 0, z: 20 },
+            tipNormal: { x: 0, y: 0, z: -1 },
+            modelId: MODEL_ID,
+        };
+        const host = buildTrunkData(hostInput);
+        assert.equal(host.error, undefined);
+        addTrunkBuild(snapshot, { input: hostInput, build: host });
+
+        const input: TrunkBuildInput = {
+            tipPos: { x: 1, y: 1, z: 5 },
+            tipNormal: { x: 0, y: 0, z: -1 },
+            modelId: MODEL_ID,
+            isPreview,
+        };
+        const candidate = buildTrunkData(input);
+        assert.equal(candidate.error, 'OUT_OF_BOUNDS');
+        const decision = decideGridPlacement({ settings, snapshot, candidate, ...input });
+
+        if (decision.kind !== 'reject') assert.fail('an occupied node must not rescue a below-plate cone');
+        assert.equal(decision.nodeKey, '0,0');
+        assert.equal(decision.reason, 'OUT_OF_BOUNDS');
+        assert.equal(decision.trunkBuild?.supportData.error, 'OUT_OF_BOUNDS');
+        assert.equal(Object.keys(snapshot.trunks).length, 1);
+        assert.equal(snapshot.trunks[host.trunk.id], host.trunk);
+    });
+}

@@ -111,6 +111,34 @@ either case would clear the support selection set.
 - By hand: modifier keys choose the family, the first click's target chooses the type — [Support Placement Modifiers](../reference/support-placement-modifiers.md).
 - Automatically: `autoSupport/` generates candidates from island analysis and overhang regions, then sizes and places a forest. Gated behind an experiment.
 
+### Below-platform placement
+
+A trunk whose final contact cone or socket-joint sphere extends below world
+Z=0 is invalid. `buildTrunkDataFromPlacement` in
+`src/supports/SupportTypes/Trunk/trunkBuilder.ts` classifies the authored geometry
+after resolving the cone axis, length, and disk standoff; it does not shorten the
+cone or reposition the support to make it fit. Crossings deeper than 1e-6 mm use
+the existing `OUT_OF_BOUNDS` limitation, while tangent contact is allowed.
+
+`getContactConeLowestZ` in
+`src/supports/SupportPrimitives/ContactCone/contactConeUtils.ts` returns the
+analytic minimum world Z of a contact cone, including tilted end rims, its round
+tip, and any contact disk. Pass the final cone, with the existing normalized
+world-space normals and resolved `diskLengthOverride`:
+
+```ts
+const minimumZ = getContactConeLowestZ(contactCone);
+```
+
+The builder puts the same error on its result, route validity, and preview data.
+The grid decision rejects it before snapping or host attachment can discard the
+error, and hover/click do not try a cavity bridge for this limitation. Registry
+overrides still validate their own geometry rather than inheriting an unused
+trunk candidate's failure. The existing red preview and limitation feedback show
+the refusal; ordinary clicks do not add it. The explicit force-place override
+retains its existing behavior, as for other invalid supports.
+
+
 ## The placement guide line
 
 Hovering a model in Support mode marks the band where the tip will land: the

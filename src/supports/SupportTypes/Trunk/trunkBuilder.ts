@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 import { Vec3, Roots, Trunk, Segment, Joint } from '../../types';
 import type { ContactCone, SupportTipProfile } from '../../SupportPrimitives/ContactCone/types';
-import { getFinalSocketPosition, getSocketPosition } from '../../SupportPrimitives/ContactCone/contactConeUtils';
+import { getContactConeLowestZ, getFinalSocketPosition, getSocketPosition } from '../../SupportPrimitives/ContactCone/contactConeUtils';
 import { calculateDiskThickness } from '../../SupportPrimitives/ContactDisk/contactDiskUtils';
 // Direct, not through the barrel: the barrel re-exports renderers and their
 // React hooks, which a server route cannot import.
@@ -28,6 +28,7 @@ import { encodeSupportSettingsHex } from '../../Settings/supportSettingsCodec';
 import { perfMark, perfMeasureWithSpike } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
 
 const JOINT_CHAIN_Z_EPSILON = 0.0001;
+const BUILD_PLATE_Z_EPSILON_MM = 1e-6;
 
 function getAscendingJointPenalty(joints: Vec3[], lowerBoundZ: number, upperBoundZ: number): number {
     let penalty = 0;
@@ -281,6 +282,13 @@ export function buildTrunkDataFromPlacement(input: TrunkBuildInput, placement: T
         mesh,
     );
     const resolvedSocketPos = getFinalSocketPosition(contactConeTemplate);
+    const jointDiameter = getJointDiameter(shaftDiameter);
+    const lowestContactZ = Math.min(
+        getContactConeLowestZ(contactConeTemplate),
+        resolvedSocketPos.z - jointDiameter / 2,
+    );
+    const buildError = placement.error
+        ?? (lowestContactZ < -BUILD_PLATE_Z_EPSILON_MM ? 'OUT_OF_BOUNDS' : undefined);
     const rootsTopZ = diskHeight + coneHeight;
     const authoredRouteJoints = placement.joints ? [...placement.joints] : [];
     const authoredConstructionJoints = placement.constructionJoints ? [...placement.constructionJoints] : [];
@@ -327,8 +335,8 @@ export function buildTrunkDataFromPlacement(input: TrunkBuildInput, placement: T
         unsnappedBottomPos: placement.unsnappedBottomPos ?? placement.basePos,
         joints: finalRouteJoints,
         constructionJoints: finalConstructionJoints,
-        validity: placement.error ? 'hard_invalid' : 'valid',
-        error: placement.error,
+        validity: buildError ? 'hard_invalid' : 'valid',
+        error: buildError,
         warning: placement.warning,
         angle: placement.angle,
         coneAxis: effectiveConeAxis,
@@ -344,12 +352,12 @@ export function buildTrunkDataFromPlacement(input: TrunkBuildInput, placement: T
                     z: routeBase.basePos.z,
                 }
                 : routeBase.basePos,
-            snappedValidity: placement.error
+            snappedValidity: buildError
                 ? 'hard_invalid'
                 : routeBase.unsnappedBottomPos.x === routeBase.basePos.x && routeBase.unsnappedBottomPos.y === routeBase.basePos.y
                     ? 'valid'
                     : 'invalid_assisted',
-            validity: placement.error
+            validity: buildError
                 ? 'hard_invalid'
                 : routeBase.unsnappedBottomPos.x === routeBase.basePos.x && routeBase.unsnappedBottomPos.y === routeBase.basePos.y
                     ? 'valid'
@@ -368,8 +376,6 @@ export function buildTrunkDataFromPlacement(input: TrunkBuildInput, placement: T
     const contactConeId = uuidv4();
     // NEW: Generate a dedicated ID for the socket joint to ensure it is distinct from the knee.
     const socketJointId = uuidv4();
-
-    const jointDiameter = getJointDiameter(shaftDiameter);
 
     // Build Joints and Segments
     // We need N joints and N+1 segments.

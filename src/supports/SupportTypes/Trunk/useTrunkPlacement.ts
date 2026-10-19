@@ -459,8 +459,11 @@ export function useTrunkPlacementV2() {
         // IMPORTANT: ANGLE_TOO_STEEP (shallow angle / upward face) is a hard
         // surface rejection that prevents ALL support types — do NOT fall back
         // to a stick or twig for this error.
-        const cavityBridgeEligible = result.stagnated || result.exhaustedBudget
-            || (result.error && result.error !== 'ANGLE_TOO_STEEP');
+        // OUT_OF_BOUNDS is a build-plate refusal, not a routing failure that a
+        // cavity bridge can rescue.
+        const cavityBridgeEligible = result.error !== 'OUT_OF_BOUNDS'
+            && (result.stagnated || result.exhaustedBudget
+                || (result.error && result.error !== 'ANGLE_TOO_STEEP'));
         if (cavityBridgeEligible) {
             if (mesh) {
                 perfMark('hover:cavity-stick');
@@ -640,8 +643,11 @@ export function useTrunkPlacementV2() {
         // IMPORTANT: ANGLE_TOO_STEEP (shallow angle / upward face) is a hard
         // surface rejection that prevents ALL support types — do NOT fall back
         // to a stick or twig for this error.
-        const cavityBridgeEligible = result.stagnated || result.exhaustedBudget
-            || (result.error && result.error !== 'ANGLE_TOO_STEEP');
+        // OUT_OF_BOUNDS is a build-plate refusal, not a routing failure that a
+        // cavity bridge can rescue.
+        const cavityBridgeEligible = result.error !== 'OUT_OF_BOUNDS'
+            && (result.stagnated || result.exhaustedBudget
+                || (result.error && result.error !== 'ANGLE_TOO_STEEP'));
         if (cavityBridgeEligible) {
             if (mesh) {
                 const cavityBridge = buildCavityBridge(tipPos, tipNormal, modelId, mesh);
@@ -676,10 +682,13 @@ export function useTrunkPlacementV2() {
             return;
         }
 
-        // In grid mode, decideGridPlacement may override a trunk error into an
-        // attachment decision. Only bail on trunk errors when grid is disabled
-        // (direct placement path).
-        if (result.error && !settings.grid?.enabled) {
+        // A type with its own build must validate that geometry in both modes,
+        // even when the unused trunk candidate is below the plate.
+        const claimedType = selectTypeForPlacement('tipHeight', tipPos.z);
+        const isOverriddenBand = !!claimedType && !!buildContactOverride(claimedType);
+        // Grid mode may replace a trunk error with a valid attachment; without
+        // the grid or a type override, the trunk candidate is final.
+        if (result.error && !settings.grid?.enabled && !isOverriddenBand) {
             if (forcePlaceOverrideRef.current) {
                 commitTrunkBuild(result, placementSurface);
             }
