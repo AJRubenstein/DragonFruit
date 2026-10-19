@@ -1,6 +1,7 @@
-import type { Joint, Segment } from '../../types';
+import type { Joint, LimitationCode, Segment, Vec3 } from '../../types';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { getJointDiameter } from '../../constants';
+import { isShaftBlocked } from '../../PlacementLogic/CollisionAvoidance';
 import * as THREE from 'three';
 import { assertKickstandHostKind, clampKickstandHostT } from './kickstandRules';
 import {
@@ -53,6 +54,49 @@ function createRootAndJointHeights(input: KickstandBuildInput, rootTopZ: number)
     );
 
     return { firstJointZ, secondJointZ, thirdJointZ, layout };
+}
+
+/**
+ * Does the column run through the model on its way up to the host?
+ *
+ * The topmost joint meets the host support, which sits on the surface, so that
+ * end is inside material by construction. Pulling the probe back by a shaft
+ * radius keeps the host's own contact from reading as a collision, the way a
+ * stick insets both of its sockets.
+ */
+function columnCollision(
+    segments: Segment[],
+    bodyDiameterMm: number,
+    mesh: THREE.Mesh | undefined,
+): LimitationCode | undefined {
+    if (!mesh) return undefined;
+
+    const radius = Math.max(0.001, bodyDiameterMm / 2);
+    const points: Vec3[] = [];
+    for (const segment of segments) {
+        if (segment.bottomJoint?.pos && points.length === 0) points.push(segment.bottomJoint.pos);
+        if (segment.topJoint?.pos) points.push(segment.topJoint.pos);
+    }
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+        const start = points[i];
+        const end = points[i + 1];
+        const isTopRun = i === points.length - 2;
+        const probeEnd = isTopRun ? insetTowards(end, start, radius) : end;
+        if (isShaftBlocked(start, probeEnd, radius, mesh)) return 'COLLISION_WITH_MODEL';
+    }
+    return undefined;
+}
+
+/** `from` pulled back toward `towards` by `distanceMm`, or unchanged if shorter. */
+function insetTowards(from: Vec3, towards: Vec3, distanceMm: number): Vec3 {
+    const dx = towards.x - from.x;
+    const dy = towards.y - from.y;
+    const dz = towards.z - from.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length <= distanceMm) return from;
+    const scale = distanceMm / length;
+    return { x: from.x + dx * scale, y: from.y + dy * scale, z: from.z + dz * scale };
 }
 
 export function buildKickstandData(input: KickstandBuildInput): KickstandBuildResult {
@@ -177,6 +221,7 @@ export function buildKickstandData(input: KickstandBuildInput): KickstandBuildRe
         root,
         hostKnot,
         kickstand,
+        error: columnCollision(segments, bodyDiameterMm, input.collisionMesh),
     };
 }
 
@@ -200,5 +245,6 @@ export function toKickstandPreviewData(build: KickstandBuildResult): SupportData
         roots: build.root,
         segments: previewSegments,
         knot: build.hostKnot,
+        error: build.error,
     };
 }

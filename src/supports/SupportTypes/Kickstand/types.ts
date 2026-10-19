@@ -1,4 +1,5 @@
-import type { Kickstand, Knot, Roots, Vec3 } from '../../types';
+import type * as THREE from 'three';
+import type { Kickstand, Knot, LimitationCode, Roots, Vec3 } from '../../types';
 import type { KickstandHostTypeId } from '../../supportTypeRegistry';
 
 // Declared with the other support types; re-exported so this module stays the
@@ -29,12 +30,16 @@ export interface KickstandBuildInput {
     layoutOverrides?: Partial<KickstandPlacementLayout>;
     /** A column known end to end; without one the derived four-segment shape applies. */
     authoredColumn?: { topPos: Vec3 };
+    /** The model the column must not run through. Without one it is not checked. */
+    collisionMesh?: THREE.Mesh;
 }
 
 export interface KickstandBuildResult {
     root: Roots;
     hostKnot: Knot;
     kickstand: Kickstand;
+    /** Why this column is illegal, when it is. Force placement ignores it. */
+    error?: LimitationCode;
 }
 
 export interface KickstandState {
