@@ -63,6 +63,19 @@ node scripts/generate-doc-redirects.mjs site
 `site/` is the artifact: `site/index.html` is the landing page, `site/docs/` is the manual,
 and every other directory is a redirect to its `/docs/` equivalent.
 
+`npm run serve:site` (`scripts/serve-site.mjs`) is those five steps in one command,
+followed by a static server over the composed `site/` at http://127.0.0.1:8123 —
+`--port` moves it. It is the way to check anything that only exists once the two halves
+sit together: the landing page's `/docs/` links, a redirect from an old URL, or a
+documentation page whose relative links assume the `/docs/` prefix. Neither `astro dev`
+(the landing page alone, at :4321) nor `mkdocs serve` (the manual alone, at :8000) can
+serve the other half, so a `/docs/` link is a 404 under both.
+
+The launcher rebuilds both halves every time and deletes `site/` first, so it takes as
+long as the two builds do; it is not a watcher. It finds mkdocs in `.venv` (Windows
+`.venv/Scripts/mkdocs.exe` or `.venv/bin/mkdocs`) and falls back to `mkdocs` on `PATH`,
+and it runs `npm ci` in `website/` when that directory has no `node_modules` yet.
+
 ### The social cards need the plugin's font cache
 
 `mkdocs build` runs Material's `social` plugin, which renders one Open Graph card per page.
