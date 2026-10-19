@@ -100,6 +100,20 @@ A plain \`pip install mkdocs\` or \`brew install mkdocs\` installs mkdocs withou
 Material theme, and the build then fails with "Unrecognised theme name: 'material'".
 See docs/dev/site-and-landing.md.`;
 
+/**
+ * The social cards load Homebrew's libcairo through cffi, and dyld does not look in
+ * Homebrew's lib directories on its own. Exporting DYLD_FALLBACK_LIBRARY_PATH in the
+ * shell does not help: `npm run` goes through /bin/sh, and SIP strips every DYLD_*
+ * variable from a protected binary. Node starts mkdocs directly, so set it here.
+ */
+function mkdocsEnv() {
+  if (process.platform !== 'darwin') return process.env;
+  const fallback = [process.env.DYLD_FALLBACK_LIBRARY_PATH, '/opt/homebrew/lib', '/usr/local/lib', '/usr/lib']
+    .filter(Boolean)
+    .join(':');
+  return { ...process.env, DYLD_FALLBACK_LIBRARY_PATH: fallback };
+}
+
 function step(label) {
   console.log(`\n==> ${label}`);
 }
@@ -116,6 +130,7 @@ step('Building the documentation');
 // missing target, so the placeholders come first. See docs/dev/site-and-landing.md.
 run(process.execPath, [path.join(projectRoot, 'scripts', 'materialize-doc-placeholder-assets.mjs')]);
 run(mkdocs, ['build', '--strict', '--site-dir', path.join('site', 'docs')], {
+  env: mkdocsEnv(),
   missingHint: MKDOCS_MISSING_HINT,
 });
 
