@@ -36,6 +36,7 @@ src-tauri/gen/
 /website/dist/
 /website/node_modules/
 /website/.astro/
+/docs/assets/placeholders/*png
 
 # environment files (can opt-in for committing if needed)
 .env*
