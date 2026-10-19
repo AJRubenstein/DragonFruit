@@ -97,8 +97,11 @@ export interface BraceLinkPayload {
 }
 
 
+/** Field names are the registry's removal shape for `kickstand`. */
 export interface SupportKickstandPayload {
-  build: KickstandBuildResult;
+  kickstand: KickstandBuildResult['kickstand'];
+  roots: KickstandBuildResult['root'];
+  knots: KickstandBuildResult['hostKnot'];
 }
 
 export interface SupportReplaceTrunkPayload {

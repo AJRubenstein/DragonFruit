@@ -658,9 +658,15 @@ export function KickstandPlacementController() {
             addKnot(finalBuild.hostKnot);
             addSupportEntity('kickstand', finalBuild.kickstand);
 
+            // Keyed by the registry's removal shape, which is what the undo
+            // handler reads: a nested build leaves it with nothing to restore.
             pushSupportHistory({
                 type: addAction('kickstand'),
-                payload: { build: finalBuild },
+                payload: {
+                    kickstand: finalBuild.kickstand,
+                    roots: finalBuild.root,
+                    knots: finalBuild.hostKnot,
+                },
             });
 
             clearSupportSelection();
