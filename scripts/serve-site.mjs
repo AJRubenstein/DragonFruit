@@ -27,7 +27,7 @@ const websiteDir = path.join(projectRoot, 'website');
 const portArg = process.argv.indexOf('--port');
 const port = portArg === -1 ? 8123 : Number(process.argv[portArg + 1]);
 
-function run(command, args, options = {}) {
+function run(command, args, { missingHint, ...options } = {}) {
   const result = spawnSync(command, args, {
     cwd: projectRoot,
     stdio: 'inherit',
@@ -38,6 +38,7 @@ function run(command, args, options = {}) {
 
   if (result.error) {
     console.error(`\n${command} could not be started: ${result.error.message}`);
+    if (result.error.code === 'ENOENT' && missingHint) console.error(missingHint);
     process.exit(1);
   }
   if (result.status !== 0) {
@@ -75,6 +76,30 @@ async function exists(target) {
   }
 }
 
+// A bare `pip install mkdocs` (or Homebrew's mkdocs) is not enough: mkdocs.yml needs the
+// Material theme and its `social` plugin, which is what docs/requirements.txt pins.
+const MKDOCS_MISSING_HINT = `
+mkdocs is not installed. Install it with the pinned requirements (Material theme and the
+social-card plugin included); serve:site picks up a .venv in the repo root on its own.
+
+  Windows:
+    py -m venv .venv
+    .venv\\Scripts\\pip install -r docs/requirements.txt
+
+  macOS (Homebrew's Python refuses a global pip install, so use a venv; the social
+  cards also need Cairo):
+    brew install cairo
+    python3 -m venv .venv
+    .venv/bin/pip install -r docs/requirements.txt
+
+  Linux:
+    python3 -m venv .venv
+    .venv/bin/pip install -r docs/requirements.txt
+
+A plain \`pip install mkdocs\` or \`brew install mkdocs\` installs mkdocs without the
+Material theme, and the build then fails with "Unrecognised theme name: 'material'".
+See docs/dev/site-and-landing.md.`;
+
 function step(label) {
   console.log(`\n==> ${label}`);
 }
@@ -90,7 +115,9 @@ step('Building the documentation');
 // The docs link screenshots that are not committed yet, and `--strict` fails on a
 // missing target, so the placeholders come first. See docs/dev/site-and-landing.md.
 run(process.execPath, [path.join(projectRoot, 'scripts', 'materialize-doc-placeholder-assets.mjs')]);
-run(mkdocs, ['build', '--strict', '--site-dir', path.join('site', 'docs')]);
+run(mkdocs, ['build', '--strict', '--site-dir', path.join('site', 'docs')], {
+  missingHint: MKDOCS_MISSING_HINT,
+});
 
 step('Building the landing page');
 if (!(await exists(path.join(websiteDir, 'node_modules')))) {
