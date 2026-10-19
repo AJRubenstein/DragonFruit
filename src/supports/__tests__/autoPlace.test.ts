@@ -17,7 +17,7 @@ import test from 'node:test';
 import * as THREE from 'three';
 
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { clearHistory, undo, registerHistoryHandler } from '../../history/historyStore';
+import { clearHistory, getUndoCount, undo, registerHistoryHandler } from '../../history/historyStore';
 import { SUPPORT_AUTO_PLACE } from '../history/actionTypes';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
 import { runAutoPlace } from '../autoSupport/autoPlace';
@@ -28,6 +28,8 @@ import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { isShaftBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { getSettings, setSettings } from '../Settings/state';
 import { createDefaultSettings } from '../Settings/types';
+import { createPreset, deletePreset } from '../Settings/presets';
+import { getContactConeLowestZ } from '../SupportPrimitives/ContactCone/contactConeUtils';
 import {
     contactBridgeTypes,
     defaultPlacementToolTypeId,
@@ -1134,54 +1136,79 @@ test('a long fan link becomes a pillar, never a tapered spike', () => {
 // and not the override or the commit path.
 // ---------------------------------------------------------------------------
 
-test('runAutoPlace builds the near-plate overridden type for a low island, not a trunk', () => {
-    resetStore();
-    resetKickstandsInState();
-    clearHistory();
+for (const gridEnabled of [false, true]) {
+    test(`runAutoPlace builds the valid near-plate override with grid ${gridEnabled ? 'on' : 'off'}`, () => {
+        const previous = getSettings();
+        resetStore();
+        resetKickstandsInState();
+        clearHistory();
+        const settings = createDefaultSettings();
+        settings.grid.enabled = gridEnabled;
+        setSettings(settings);
 
-    // A tip below the near-plate threshold, with the serving type read from the
-    // declared band rather than named.
-    const TIP_Z = 3;
-    const nearPlateTypeId = selectTypeForPlacement('tipHeight', TIP_Z);
-    assert.ok(nearPlateTypeId, 'a type must claim the near-plate band');
-    // The default tool must not serve this band, or the assertions below would
-    // pass on the fallback.
-    assert.notEqual(
-        nearPlateTypeId,
-        defaultPlacementToolTypeId(),
-        'the near-plate band must resolve to a type other than the default tool',
-    );
+        try {
+            const tipZ = 3;
+            const nearPlateTypeId = selectTypeForPlacement('tipHeight', tipZ);
+            assert.ok(nearPlateTypeId, 'a type must claim the near-plate band');
+            assert.notEqual(nearPlateTypeId, defaultPlacementToolTypeId());
 
-    const islands = [makeIsland('i-low', 0, 0, TIP_Z, 1)];
-    const result = runAutoPlace(islands, 'model-a');
+            const result = runAutoPlace([makeIsland('i-low', 0, 0, tipZ, 1)], 'model-a', {
+                debugSkipAutoBracing: true,
+                stabilizationEnabled: false,
+            });
 
-    // The planner reports it under the resolved id.
-    assert.equal(result.placed[nearPlateTypeId], 1, 'one support of the resolved type');
-    assert.equal(result.placed[defaultPlacementToolTypeId()] ?? 0, 0, 'no trunk stood on the band');
+            assert.equal(result.placed[nearPlateTypeId], 1, 'the valid override serves the low island');
+            assert.equal(result.placed[defaultPlacementToolTypeId()] ?? 0, 0, 'no trunk replaces the override');
+            assert.equal(result.rejectedCandidates, 0);
+            assert.equal(getUndoCount(), 1, 'the accepted placement is one history step');
 
-    // The store holds exactly one, in that type's own collection and stamped
-    // with its type.
-    const snapshot = getSnapshot();
-    const stored = Object.values(snapshot.stumps) as Array<{
-        id: string; typeId?: string;
-        contactCone: { pos: { z: number } };
-        joint: { pos: { z: number } };
-    }>;
-    assert.equal(stored.length, 1, 'the store holds exactly one');
-    const entity = stored[0]!;
-    assert.equal(entity.typeId, nearPlateTypeId, 'the entity carries its own type');
-    assert.equal(getSupportTypeOf(entity.id), nearPlateTypeId, 'and resolves back to it');
+            const stored = Object.values(getSnapshot().stumps);
+            assert.equal(stored.length, 1);
+            const entity = stored[0]!;
+            assert.equal(entity.typeId, nearPlateTypeId);
+            assert.equal(getSupportTypeOf(entity.id), nearPlateTypeId);
+            assert.ok(entity.contactCone.pos.z > entity.joint.pos.z - 1e-3);
+            assert.ok(entity.joint.pos.z - entity.joint.diameter / 2 >= 0, 'the root joint clears the plate');
+            assert.ok(getContactConeLowestZ(entity.contactCone) >= 0, 'the final cone clears the plate');
+        } finally {
+            setModelMesh('model-a', null);
+            setSettings(previous);
+        }
+    });
 
-    // The type's own two invariants, checked on the committed entity: it meets
-    // the plate at the tip, and its cone never dips below the root joint.
-    assert.ok(
-        entity.contactCone.pos.z > entity.joint.pos.z - 1e-3,
-        `cone dips below the root joint: ${entity.contactCone.pos.z} < ${entity.joint.pos.z}`,
-    );
-    assert.ok(entity.joint.pos.z > 0, 'the root joint sits above the plate');
+    test(`runAutoPlace still rejects invalid trunks and overrides with grid ${gridEnabled ? 'on' : 'off'}`, () => {
+        const previous = getSettings();
+        const settings = createDefaultSettings();
+        settings.grid.enabled = gridEnabled;
+        settings.tip.lengthMm = 6;
+        setSettings(settings);
+        const preset = createPreset('below-plate auto-placement regression');
+        setSettings({ ...settings, autoSupport: { ...settings.autoSupport, sizingPreset: preset.id } });
 
-    setModelMesh('model-a', null);
-});
+        try {
+            for (const tipZ of [0.5, 5]) {
+                resetStore();
+                resetKickstandsInState();
+                clearHistory();
+                const result = runAutoPlace([makeIsland('i-invalid', 0, 0, tipZ, 1)], 'model-a', {
+                    debugSkipAutoBracing: true,
+                    stabilizationEnabled: false,
+                });
+
+                assert.equal(result.changed, false, `no invalid support is committed at Z=${tipZ}`);
+                assert.equal(result.rejectedCandidates, 1, `the contact is refused at Z=${tipZ}`);
+                assert.equal(Object.keys(getSnapshot().trunks).length, 0);
+                assert.equal(Object.keys(getSnapshot().stumps).length, 0);
+                assert.equal(Object.keys(getSnapshot().roots).length, 0);
+                assert.equal(getUndoCount(), 0, 'a rejected placement creates no history entry');
+            }
+        } finally {
+            deletePreset(preset.id);
+            setModelMesh('model-a', null);
+            setSettings(previous);
+        }
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Model-scale sizing: the run-level factors reach the built geometry.

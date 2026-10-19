@@ -1,10 +1,12 @@
 import {
+    buildContactOverride,
     contactBridgeTypes,
     contactEndpointsFor,
     getSupportTypeDescriptor,
     GRID_HOST_TYPES,
     isOriginConvertibleToTree,
     resolveSupportTypeIdOf,
+    selectTypeForPlacement,
     SHAFT_HOSTED_MEMBER_TYPES,
     SUPPORT_TYPES,
     NEAR_PLATE_ORIGIN,
@@ -1307,7 +1309,13 @@ function placeOneCandidate(
         isSmallIsland,
         ignoreGrid,
     });
-    if (trunkResult.error) {
+    // A near-plate type builds different geometry. Its own validation, not an
+    // unused out-of-bounds trunk, decides whether that contact can be served.
+    const claimedType = trunkResult.error === 'OUT_OF_BOUNDS'
+        ? selectTypeForPlacement('tipHeight', tipPos.z)
+        : null;
+    const deferToTypeOverride = claimedType ? Boolean(buildContactOverride(claimedType)) : false;
+    if (trunkResult.error && !deferToTypeOverride) {
         // Cavity fallback: if the trunk can't reach the build plate, try
         // bridging to a lower surface with a Stick (model-to-model).
         if (trunkResult.error === 'COLLISION_WITH_MODEL' && mesh) {
