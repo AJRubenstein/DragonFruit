@@ -1,5 +1,14 @@
 [
   {
+    "name": "KCast",
+    "profile": "https://opencollective.com/incognito-511b471d",
+    "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/9d3d5d53-be83-4892-a5e9-7b81735ced93/IMG_6181.jpg",
+    "website": null,
+    "role": "BACKER",
+    "tier": null,
+    "totalAmountDonated": 900
+  },
+  {
     "name": "Siraya Tech",
     "profile": "https://opencollective.com/siraya-tech",
     "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/9d2748f9-cbf9-4f1f-a456-14bdf6a03680/siraya-logo-mid.jpg",
@@ -9,15 +18,6 @@
     "totalAmountDonated": 400
   },
   {
-    "name": "KCast",
-    "profile": "https://opencollective.com/incognito-511b471d",
-    "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/9d3d5d53-be83-4892-a5e9-7b81735ced93/IMG_6181.jpg",
-    "website": null,
-    "role": "BACKER",
-    "tier": null,
-    "totalAmountDonated": 300
-  },
-  {
     "name": "Atlas 3DSS",
     "profile": "https://opencollective.com/atlas-3dss",
     "image": "https://opencollective-production.s3.us-west-1.amazonaws.com/account-avatar/f479abfb-3b76-4f3f-87c1-9e6f7bfe29b8/_AtlasLogo_Large.png",
@@ -25,6 +25,15 @@
     "role": "BACKER",
     "tier": "Sponsor",
     "totalAmountDonated": 200
+  },
+  {
+    "name": "ben",
+    "profile": "https://opencollective.com/guest-29653113",
+    "image": null,
+    "website": null,
+    "role": "BACKER",
+    "tier": "Patron",
+    "totalAmountDonated": 160
   },
   {
     "name": "Gobbledygook Games",
@@ -43,15 +52,6 @@
     "role": "BACKER",
     "tier": null,
     "totalAmountDonated": 100
-  },
-  {
-    "name": "ben",
-    "profile": "https://opencollective.com/guest-29653113",
-    "image": null,
-    "website": null,
-    "role": "BACKER",
-    "tier": "Patron",
-    "totalAmountDonated": 60
   },
   {
     "name": "jacobi",
@@ -88,6 +88,15 @@
     "role": "BACKER",
     "tier": "Contributor",
     "totalAmountDonated": 30
+  },
+  {
+    "name": "DCent",
+    "profile": "https://opencollective.com/guest-c5210655",
+    "image": null,
+    "website": null,
+    "role": "BACKER",
+    "tier": null,
+    "totalAmountDonated": 20
   },
   {
     "name": "foors",
@@ -133,6 +142,15 @@
     "role": "BACKER",
     "tier": "Backer",
     "totalAmountDonated": 10
+  },
+  {
+    "name": "MachineMenace",
+    "profile": "https://opencollective.com/machinemenace",
+    "image": null,
+    "website": null,
+    "role": "BACKER",
+    "tier": "Backer",
+    "totalAmountDonated": 5
   },
   {
     "name": "Sin",
