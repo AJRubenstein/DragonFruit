@@ -114,11 +114,14 @@ this is the **stranded-stack hazard** (see below).
    depending on the render tree — silently. Supports register via
    `useSupportHistoryHandlers()` at the app root (`src/app/page.tsx`); scene and
    mesh-smoothing register in always-mounted hooks.
-3. **Everything pushed to the stack needs a handler** — even a marker with no
-   undo behavior needs a pass-through (`() => true`). An unhandled entry strands
-   the stack: `undo()` pops it, finds no handler, and pushes it back forever.
-   Example: `SCENE_SLICED` (a post-slice marker) is registered as a pass-through
-   in `useSceneCollectionManager.ts`.
+3. **Everything pushed to the stack needs a handler.** An unhandled entry
+   strands the stack: `undo()` pops it, finds no handler, and pushes it back
+   forever. A marker with no undo behavior would need a pass-through
+   (`() => true`), but prefer not to push one. Each marker is a Ctrl+Z that does
+   nothing visible. The post-slice marker cost one per sliced plate, and after a
+   multi-plate slice undo looked broken. To learn whether the scene changed since
+   some point, subscribe to history changes instead (`subscribeHistoryChanges`,
+   as `useSlicedPlates` does).
 4. **A new push clears the redo stack.**
 5. **`origin` is stamped centrally** by `setHistoryOriginProvider`, not by
    domains. `subscribeHistoryOperations` drives tool restore + toast.

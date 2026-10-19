@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconButton, cn } from '@/components/atoms';
 import { Minus, Plus } from 'lucide-react';
 import { wheelStepDirection } from '@/components/ui/wheelStepDirection';
+import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 import { clamp } from '@/utils/math';
 
 interface ScrollableNumberFieldProps {
@@ -43,6 +44,7 @@ export function ScrollableNumberField({
   inputClassName,
   compact = false,
 }: ScrollableNumberFieldProps) {
+  const fmt = useLocaleFormat();
   const clampValue = useCallback((candidate: number): number => {
     const boundedMin = Number.isFinite(min) ? min : Number.NEGATIVE_INFINITY;
     const boundedMax = Number.isFinite(max) ? max : Number.POSITIVE_INFINITY;
@@ -53,9 +55,8 @@ export function ScrollableNumberField({
 
   const formatValue = useCallback((candidate: number): string => {
     if (!Number.isFinite(candidate)) return '';
-    const normalized = Number(candidate.toFixed(6));
-    return String(normalized);
-  }, []);
+    return fmt.field(candidate, 6);
+  }, [fmt]);
 
   const [draftValue, setDraftValue] = useState<string>(() => formatValue(clampValue(value)));
   const isEditingRef = useRef(false);
@@ -67,7 +68,7 @@ export function ScrollableNumberField({
   }, [clampValue, formatValue, value]);
 
   const commitFromRaw = useCallback((raw: string): boolean => {
-    const parsed = Number(raw);
+    const parsed = fmt.parse(raw);
     if (!Number.isFinite(parsed)) {
       return false;
     }
@@ -76,17 +77,17 @@ export function ScrollableNumberField({
     onChange(next);
     setDraftValue(formatValue(next));
     return true;
-  }, [clampValue, formatValue, onChange]);
+  }, [clampValue, fmt, formatValue, onChange]);
 
   const stepBy = useCallback((direction: 1 | -1) => {
     if (disabled) return;
 
-    const parsed = Number(draftValue);
+    const parsed = fmt.parse(draftValue);
     const base = Number.isFinite(parsed) ? parsed : clampValue(value);
     const next = clampValue(base + (normalizeStep * direction));
     onChange(next);
     setDraftValue(formatValue(next));
-  }, [clampValue, disabled, draftValue, formatValue, normalizeStep, onChange, value]);
+  }, [clampValue, disabled, draftValue, fmt, formatValue, normalizeStep, onChange, value]);
 
   // React attaches its `wheel` listener at the root as PASSIVE, so
   // preventDefault() inside an onWheel handler is silently ignored and the wheel
@@ -123,7 +124,7 @@ export function ScrollableNumberField({
       return;
     }
 
-    const parsed = Number(draftValue);
+    const parsed = fmt.parse(draftValue);
     if (!Number.isFinite(parsed)) {
       setDraftValue(formatValue(clampValue(value)));
       return;
@@ -134,7 +135,7 @@ export function ScrollableNumberField({
     setDraftValue(formatValue(next));
   };
 
-  const parsedCurrent = Number(draftValue);
+  const parsedCurrent = fmt.parse(draftValue);
   const currentValue = Number.isFinite(parsedCurrent)
     ? clampValue(parsedCurrent)
     : clampValue(value);
@@ -162,10 +163,10 @@ export function ScrollableNumberField({
       <div className="relative w-0 min-w-0 flex-1">
         <input
           ref={inputRef}
-          type="number"
-          min={min}
-          max={max}
-          step={normalizeStep}
+          // Text, not "number": a number input writes and reads the decimals of the system's
+          // locale, not the app's, and rejects a comma where the app shows one.
+          type="text"
+          inputMode="decimal"
           value={draftValue}
           disabled={disabled}
           onFocus={() => {
@@ -175,7 +176,7 @@ export function ScrollableNumberField({
             const nextRaw = event.target.value;
             setDraftValue(nextRaw);
             if (commitOnBlur) return;
-            const parsed = Number(nextRaw);
+            const parsed = fmt.parse(nextRaw);
             if (!Number.isFinite(parsed)) return;
             onChange(clampValue(parsed));
           }}
@@ -187,6 +188,13 @@ export function ScrollableNumberField({
                 commitFromRaw(draftValue);
               }
               event.currentTarget.blur();
+              return;
+            }
+
+            // What a number input did on its own.
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              stepBy(event.key === 'ArrowUp' ? 1 : -1);
               return;
             }
 
