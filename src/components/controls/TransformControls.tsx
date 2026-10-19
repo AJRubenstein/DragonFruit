@@ -41,6 +41,7 @@ interface TransformControlsProps {
   scale: THREE.Vector3;
   onScaleChange: (x: number, y: number, z: number) => void;
   onResetScale: () => void;
+  onScaleCommit: () => void;
   uniformScaling: boolean;
   onUniformScalingChange: (value: boolean) => void;
 
@@ -76,6 +77,7 @@ export function TransformControls({
   scale,
   onScaleChange,
   onResetScale,
+  onScaleCommit,
   uniformScaling,
   onUniformScalingChange,
   localSpace,
@@ -286,7 +288,7 @@ export function TransformControls({
                 <button
                   type="button"
                   onClick={() => onAutoLiftChange(!autoLift)}
-                  title={t`On, models stay this far above the build plate after every move, rotation or scale. Off, they rest on the plate.`}
+                  title={t`On, models stay this far above the build plate after every move or rotation. Off, they rest on the plate. Scaling keeps the current bottom height.`}
                   className="h-7 min-w-[64px] rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors"
                   style={autoLift
                     ? {
@@ -481,7 +483,7 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(newScale, scale.y, scale.z);
                         }}
-                        onBlur={() => onTransformCommit?.()}
+                        onBlur={onScaleCommit}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -498,7 +500,7 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, newScale, scale.z);
                         }}
-                        onBlur={() => onTransformCommit?.()}
+                        onBlur={onScaleCommit}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -515,7 +517,7 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, scale.y, newScale);
                         }}
-                        onBlur={() => onTransformCommit?.()}
+                        onBlur={onScaleCommit}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -535,7 +537,7 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(newScale, scale.y, scale.z);
                         }}
-                        onBlur={() => onTransformCommit?.()}
+                        onBlur={onScaleCommit}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -552,7 +554,7 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, newScale, scale.z);
                         }}
-                        onBlur={() => onTransformCommit?.()}
+                        onBlur={onScaleCommit}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -569,7 +571,7 @@ export function TransformControls({
                           if (uniformScaling) onScaleChange(newScale, newScale, newScale);
                           else onScaleChange(scale.x, scale.y, newScale);
                         }}
-                        onBlur={() => onTransformCommit?.()}
+                        onBlur={onScaleCommit}
                         className={valueInputClass}
                         showStepper={false}
                       />
@@ -581,7 +583,7 @@ export function TransformControls({
                 <Button
                   onClick={() => {
                     onResetScale();
-                    onTransformCommit?.();
+                    onScaleCommit();
                   }}
                   variant="secondary"
                   size="auto"

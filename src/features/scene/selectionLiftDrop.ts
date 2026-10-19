@@ -32,6 +32,17 @@ export function getModelLowestWorldZ(model: LiftDropModel): number {
   return computeLowestZ(geometry, matrix);
 }
 
+/** Keeps the mesh's current bottom height while its scale and centre change. */
+export function preserveModelBottom(model: LiftDropModel, next: ModelTransform): ModelTransform {
+  const position = next.position.clone();
+  position.z += getModelLowestWorldZ(model) - getModelLowestWorldZ({ ...model, transform: next });
+  return {
+    position,
+    rotation: next.rotation.clone(),
+    scale: next.scale.clone(),
+  };
+}
+
 export function buildLiftDropUpdates(
   models: readonly LiftDropModel[],
   targetIds: readonly string[],

@@ -202,6 +202,7 @@ import { applyScaleFactor } from '@/components/gizmo/scale/applyScaleFactor';
 import { createWheelDeviceClassifier, type WheelDevice } from '@/components/scene/SceneCanvas/wheelDeviceClassifier';
 import { getSelectionGizmoCenter } from '@/features/scene/selectionPosition';
 import { rotateSelectionFromActive, type SelectionRotationMode } from '@/features/scene/selectionTransform';
+import { preserveModelBottom } from '@/features/scene/selectionLiftDrop';
 import { DEFAULT_LIFT_DISTANCE_MM } from '@/features/transform/liftDefaults';
 import { setPickRayFromCamera } from '@/components/scene/camera/pickRay';
 import {
@@ -1148,6 +1149,7 @@ export function SceneCanvas({
     axis?: 'x' | 'y' | 'z' | 'uniform';
     isUniform?: boolean;
   } | null>(null);
+  const lastEndedGizmoOperationRef = React.useRef<'move' | 'rotate' | 'scale' | null>(null);
   const [outOfBoundsRotateGraceActive, setOutOfBoundsRotateGraceActive] = React.useState(false);
   const outOfBoundsRotateGraceTimeoutRef = React.useRef<number | null>(null);
   const [isPostGizmoInteractionGuardActive, setIsPostGizmoInteractionGuardActive] = React.useState(false);
@@ -2937,10 +2939,14 @@ export function SceneCanvas({
           before.scale.z * ratio.z,
         ),
       };
+      const model = modelById.get(modelId);
+      if (model) {
+        result[modelId] = preserveModelBottom({ ...model, transform: before }, result[modelId]);
+      }
     }
 
     return result;
-  }, [selectionRotationMode]);
+  }, [modelById, selectionRotationMode]);
 
   const multiGizmoPreviewTransformsById = React.useMemo(() => {
     const snapshot = gizmoGroupStartSnapshot;
@@ -5874,6 +5880,7 @@ export function SceneCanvas({
 
   const markGizmoDragEnded = React.useCallback((expectParentTransaction = true) => {
     window.__gizmoDragEndedThisFrame = true;
+    lastEndedGizmoOperationRef.current = gizmoTransformStartSnapshotRef.current?.operation ?? 'move';
     suppressNextCanvasClickRef.current = true;
     setIsPostGizmoInteractionGuardActive(true);
     hideDragCornerCagesNow();
@@ -6533,9 +6540,9 @@ export function SceneCanvas({
                     ? (liveActiveTransformForMultiPreview ?? model.transform)
                     : (transform ?? model.transform));
                 const shouldApplyLiveLiftAlignment =
-                  isGizmoDragging
-                  || isGizmoRetargeting
-                  || isPostGizmoInteractionGuardActive;
+                  (isGizmoDragging || isGizmoRetargeting || isPostGizmoInteractionGuardActive)
+                  && (activeGizmoDragDescriptor?.operation
+                    ?? (isPostGizmoInteractionGuardActive ? lastEndedGizmoOperationRef.current : null)) !== 'scale';
                 const activeTransformForRender = isActive
                   ? (shouldApplyLiveLiftAlignment
                     ? (alignLiveTransformToLift(model, rawActiveTransformForRender) ?? rawActiveTransformForRender)
@@ -7545,11 +7552,9 @@ export function SceneCanvas({
                     const shouldProceed = onTransformStart?.('scale', { axis: startAxis, isUniform });
                     if (shouldProceed === false) return false;
                     setActiveGizmoDragDescriptor({ operation: 'scale', axis: startAxis, isUniform });
-                    if (activeGroupRef.current) {
-                      initialScaleRef.current.copy(activeGroupRef.current.scale);
-                    }
                     if (activeModelId && activeModel) {
                       const sourceTransform = transform ?? activeModel.transform;
+                      initialScaleRef.current.copy(sourceTransform.scale);
                       const idsForCage = isMultiGizmoSelection
                         ? selectedTransformableModelIds
                         : [activeModelId];
@@ -7604,23 +7609,22 @@ export function SceneCanvas({
                       const safeScalar = Number.isFinite(Number(value)) ? Number(value) : 1;
                       const nextScale = applyScaleFactor(initialScaleRef.current, axis, safeScalar);
                       activeGroupRef.current.scale.copy(nextScale);
-                      applySupportGroupDelta();
+                      const startSnapshot = gizmoTransformStartSnapshotRef.current;
                       const live = captureActiveGroupTransform();
                       if (live) {
-                        const correctedLive = alignLiveTransformToLift(activeModel ?? null, live) ?? live;
-                        activeGroupRef.current.position.copy(correctedLive.position);
-                        activeGroupRef.current.quaternion.copy(new THREE.Quaternion().setFromEuler(correctedLive.rotation));
-                        activeGroupRef.current.scale.copy(correctedLive.scale);
-                        applySupportGroupDelta();
+                        let correctedLive = live;
                         if (isMultiGizmoSelection && gizmoGroupStartSnapshot?.operation === 'scale') {
-                          const immediatePreviewByModelId = buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, {
-                            position: correctedLive.position.clone(),
-                            rotation: correctedLive.rotation.clone(),
-                            scale: correctedLive.scale.clone(),
-                          });
+                          const immediatePreviewByModelId = buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, live);
+                          correctedLive = immediatePreviewByModelId[gizmoGroupStartSnapshot.activeModelId] ?? correctedLive;
                           applyImmediateMultiPreview(gizmoGroupStartSnapshot, immediatePreviewByModelId);
                           setMultiGizmoAnchorPosition(computeCenterFromTransforms(immediatePreviewByModelId));
+                        } else if (activeModel && startSnapshot?.operation === 'scale') {
+                          correctedLive = preserveModelBottom({ ...activeModel, transform: startSnapshot.before }, live);
                         }
+                        activeGroupRef.current.position.copy(correctedLive.position);
+                        activeGroupRef.current.quaternion.copy(quaternionFromGlobalEuler(correctedLive.rotation));
+                        activeGroupRef.current.scale.copy(correctedLive.scale);
+                        applySupportGroupDelta();
 
                         queueLiveDragTransform({
                           position: correctedLive.position.clone(),
@@ -7636,14 +7640,29 @@ export function SceneCanvas({
                   }}
                   onScaleEnd={() => {
                     markGizmoDragEnded(true);
-                    const live = captureActiveGroupTransform();
+                    const capturedLive = captureActiveGroupTransform();
+                    const startSnapshot = gizmoTransformStartSnapshotRef.current;
+                    const finalByModelId = capturedLive && isMultiGizmoSelection && gizmoGroupStartSnapshot?.operation === 'scale'
+                      ? buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, capturedLive)
+                      : null;
+                    const live = finalByModelId && gizmoGroupStartSnapshot
+                      ? (finalByModelId[gizmoGroupStartSnapshot.activeModelId] ?? capturedLive)
+                      : capturedLive && activeModel && startSnapshot?.operation === 'scale'
+                        ? preserveModelBottom({ ...activeModel, transform: startSnapshot.before }, capturedLive)
+                        : capturedLive;
                     if (live) {
+                      if (activeGroupRef.current) {
+                        activeGroupRef.current.position.copy(live.position);
+                        activeGroupRef.current.quaternion.copy(quaternionFromGlobalEuler(live.rotation));
+                        activeGroupRef.current.scale.copy(live.scale);
+                        applySupportGroupDelta();
+                      }
+                      queueLiveDragTransform(live);
                       if (onTransformChange && !isMultiGizmoSelection) {
                         flushPendingTransformChange();
                         onTransformChange(live.position, live.rotation, live.scale);
                       }
 
-                      const startSnapshot = gizmoTransformStartSnapshotRef.current;
                       if (startSnapshot && startSnapshot.modelId === activeModelId && !isMultiGizmoSelection) {
                         onGizmoTransformCommit?.({
                           modelId: activeModelId,
@@ -7661,22 +7680,11 @@ export function SceneCanvas({
                         });
                       }
 
-                      if (isMultiGizmoSelection && gizmoGroupStartSnapshot?.operation === 'scale') {
-                        const finalByModelId = buildMultiSelectionTransformsFromActive(gizmoGroupStartSnapshot, {
-                          position: live.position.clone(),
-                          rotation: live.rotation.clone(),
-                          scale: live.scale.clone(),
-                        });
+                      if (finalByModelId && gizmoGroupStartSnapshot) {
                         applyImmediateMultiPreview(gizmoGroupStartSnapshot, finalByModelId);
                         setMultiGizmoAnchorPosition(computeCenterFromTransforms(finalByModelId));
                         const entries = Object.entries(gizmoGroupStartSnapshot.beforeByModelId).map(([modelId, before]) => {
-                          const after = modelId === activeModelId
-                            ? {
-                                position: live.position.clone(),
-                                rotation: live.rotation.clone(),
-                                scale: live.scale.clone(),
-                              }
-                            : (finalByModelId[modelId] ?? before);
+                          const after = finalByModelId[modelId] ?? before;
 
                           return {
                             modelId,

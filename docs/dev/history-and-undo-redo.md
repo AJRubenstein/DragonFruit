@@ -166,6 +166,45 @@ gesture so undo restores the complete selection atomically. Capture every model
 that the gesture may move, including linked peers; models omitted from
 `beforeTransforms` cannot be restored by the resulting entry.
 
+#### Bottom-anchored scaling
+
+Panel scaling, scale reset, and gizmo scaling preserve each mesh's lowest
+world-space Z, rather than its centre Z or the current Auto-Lift target. Use
+`preserveModelBottom` from `src/features/scene/selectionLiftDrop.ts` with the
+model's transform from the start of the edit and the next candidate transform:
+
+```ts
+const anchored = preserveModelBottom(
+  { ...model, transform: beforeTransform },
+  nextTransform,
+);
+```
+
+The helper returns a cloned transform and adjusts only `position.z`, using the
+mesh vertices and the bounding-box centre offset, so tilted meshes are anchored
+to their actual lowest point. Retain the same before-transform throughout a live
+edit to avoid drift. Multi-selection scaling keeps horizontal spacing changes
+but anchors each model independently. Do not apply plate/lift snapping to scaling
+previews or commits: that would overwrite the preserved height. Record the
+adjusted position and scale together in the existing single history step.
+
+`src/components/organisms/panels/PreparePanelStack.tsx` routes scale edits and
+Reset Scale through the shared selection handlers even when exactly one model
+is selected. Do not send that single-model branch directly to
+`transformHook.setScale` or `transformHook.resetScale`: those setters update only
+the scale, not the compensating position. `TransformControls` uses its required
+`onScaleCommit` callback for scale-field blur and Reset Scale, independently of
+the generic `onTransformCommit` callback. This keeps scale history in one scene
+step without changing the existing move/rotation commit paths:
+
+```tsx
+onScaleChange={handleScaleSelectedModels}
+onResetScale={() => handleResetSelectedModels('scale')}
+onScaleCommit={handleSelectionTransformCommit}
+```
+
+See [Transform and Positioning](../workflows/transform-and-positioning.md).
+
 Three payload patterns exist:
 
 - **Inline state** — the common case for supports: the payload carries the full

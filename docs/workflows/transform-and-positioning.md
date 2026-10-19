@@ -48,6 +48,11 @@ either writes `useTransformManager`'s `autoLift`.
 - Toggle **Uniform** scaling.
 - Switch units between **%** and **mm**.
 - Use **Reset Scale** to restore scale defaults.
+- Scaling keeps the mesh's current bottom height fixed by moving its centre up
+  or down. A model on the plate stays on the plate; a raised model keeps its gap.
+  This applies to uniform and per-axis scaling, percentage and millimetre fields,
+  gizmo dragging, and **Reset Scale**, including tilted models. Scaling does not
+  snap the bottom to the Auto-Lift distance.
 
 ## Several models at once
 
@@ -58,11 +63,13 @@ selection, each change as a single undo step:
   Rotate header picks how: on, the selection turns as one block about its
   centre; off, each model turns in place.
 - **Scale** applies the same factor to every model and spreads them out (or
-  pulls them in) about the selection's centre, as the gizmo does.
-- **Reset Rotation** and **Reset Scale** reset every selected model where it
-  stands.
-- With auto-snap on, rotated or scaled models are set back on the plate (or at
-  the lift distance) afterwards.
+  pulls them in) horizontally about the selection's centre. Each model keeps
+  its own bottom height, even when the selection contains models at different
+  elevations.
+- **Reset Rotation** resets every selected model's rotation; **Reset Scale**
+  restores each model's scale while keeping its bottom height fixed.
+- With auto-snap on, rotated models are set back on the plate (or at the lift
+  distance) afterwards. Scaling preserves the existing bottom height instead.
 - **Auto-Repair** (or **Repair Again**) from the model menu or the model list
   repairs the selected models one after another, all in one undo step; the
   progress names the model it is on. **Stop** keeps the models already
@@ -74,6 +81,18 @@ selection, each change as a single undo step:
 - Ensure model is clear of plate unless intentionally dropped.
 - Keep orientation suitable for drainage and support access.
 - Re-check bounds before moving to support placement.
+
+### Panel scaling regression checks
+
+- Select exactly one model. Increase and decrease its scale using both the
+  percentage and millimetre fields; its bottom must stay at the same world Z
+  during typing and after leaving the field. Repeat with a tilted, raised model.
+- Use **Reset Scale** on that single model. The bottom must still stay fixed.
+- Undo and redo each completed edit. Position and scale must restore together
+  in one step, including the centre's compensating Z movement.
+- Repeat with several selected models at different heights. Each model must
+  retain its own bottom height.
+
 
 ## Related workflows
 
