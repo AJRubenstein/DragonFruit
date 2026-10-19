@@ -143,12 +143,19 @@ keep absorbing new (0.3.x) work the moment this happens, while `main`
 stabilizes what's already there.
 
 ```
+VER=0.2.0
 git checkout main
-git merge --ff-only v0.1.11        # or whatever the last dev tag was
-# bump version → 0.2.0-rc.1
-npm version 0.2.0-rc.1 --no-git-tag-version
-git commit -a -m "chore: release 0.2.0-rc.1"
-git push origin main
+git switch -c release/v$VER
+# The next step can take a while.
+git merge release/v0.1.18        # or whatever the last dev tag/branch was
+# bump version → $VER
+npm version $VER --no-git-tag-version
+# Generate the bitmap for the NSIS installer.
+./scripts/gen_nsis_images.py
+
+git commit -a -m "chore: release $VER"
+# Push to main and open a PR.
+git push origin
 ```
 
 Fix anything that comes up with normal commits on `main` (cherry-picked from
@@ -160,7 +167,7 @@ When satisfied:
 # bump version → 0.2.0 (drop the -rc suffix)
 npm version 0.2.0 --no-git-tag-version
 git commit -a -m "chore: release 0.2.0"
-git push origin main
+git push origin
 ```
 
 `release.yml` will look for a prior GitHub release tagged `v0.2.0-rc.*` and
