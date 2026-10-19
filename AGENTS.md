@@ -110,6 +110,12 @@ and both live here:
   URLs forward to their `/docs/` equivalents, and `scripts/generate-doc-redirects.mjs`
   writes those forwarding pages at deploy time.
 
+Neither half can serve the other, so a `/docs/` link is a 404 under `astro dev` and
+under `mkdocs serve`. `npm run serve:site` builds both, composes `site/` exactly as
+CI does and serves it at http://127.0.0.1:8123; that is the only local check for a
+`/docs/` link, a redirect, or a documentation page whose relative links assume the
+prefix.
+
 The landing page's stylesheet is openresin.org's design language, copied into
 `website/src/styles/ora.css`; the two repositories share no package, so a change
 to a token or a primitive belongs in both by hand. The site's colours are
