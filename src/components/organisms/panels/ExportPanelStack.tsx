@@ -4,6 +4,7 @@ import { ExportPanel } from '@/features/export/components/ExportPanel';
 import { SlicingPanel, type SliceIntent } from '@/features/slicing/components/SlicingPanel';
 import type { SliceExportArtifact, SliceExportResult } from '@/features/slicing/sliceExportOrchestrator';
 import type { useSceneCollectionManager } from '@/features/scene/useSceneCollectionManager';
+import { modelsOnPlate, plateSliceScope } from '@/features/scene/plates/plateLayout';
 import type { useSlicingManager } from '@/features/slicing/useSlicingManager';
 
 export type ExportPanelStackProps = {
@@ -89,18 +90,8 @@ export function ExportPanelStack({
   // several plates can be sliced one file per plate.
   const plateSliceScopes = scene.plateFrames.length > 0
     ? scene.plateFrames.map((frame) => ({
-        plateId: frame.id,
+        ...plateSliceScope(frame, scene.models, scene.plateFrames),
         plateName: scene.plates.find((plate) => plate.id === frame.id)?.name ?? '',
-        modelIds: scene.models
-          .filter((model) => scene.resolveModelPlateId(model) === frame.id)
-          .map((model) => model.id),
-        volumeBoundsMm: {
-          minX: frame.minX,
-          minY: frame.minY,
-          maxX: frame.maxX,
-          maxY: frame.maxY,
-        },
-        offsetMm: { dxMm: frame.dxMm, dyMm: frame.dyMm },
       }))
     : undefined;
   const activePlateSliceIndex = Math.max(
@@ -119,9 +110,7 @@ export function ExportPanelStack({
     .map((plate) => ({
       id: plate.id,
       name: plate.name,
-      modelIds: scene.models
-        .filter((model) => scene.resolveModelPlateId(model) === plate.id)
-        .map((model) => model.id),
+      modelIds: modelsOnPlate(scene.models, plate.id, scene.plateFrames).map((model) => model.id),
     }))
     .filter((plate) => plate.modelIds.length > 0);
 

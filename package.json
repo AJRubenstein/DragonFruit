@@ -23,7 +23,7 @@
     "check:i18n-literals": "node scripts/check-i18n-literals.mjs",
     "check:lint": "node scripts/check-lint-clean.mjs",
     "check:plugin-allowlist": "node scripts/check-complex-plugin-allowlist.mjs",
-    "check:scene-slice": "node scripts/check-scene-slice.mjs",
+    "check:scene-slice": "tsx scripts/check-scene-slice.ts",
     "check:support-prefixes": "tsx scripts/scan-support-type-references.ts --check",
     "clean": "cargo clean --manifest-path src-tauri/Cargo.toml && cargo clean --manifest-path rust/dragonfruit-voxl-thumbnail/Cargo.toml && rm -rf .next frontend-dist",
     "dev": "next dev -p 3005",
