@@ -287,11 +287,6 @@ export function InstancedShaftGroup({
     // colour then rides on the material, the same way an instanced shaft's does,
     // and two shafts that should look alike cannot diverge by which path drew
     // them. The selection tints at most two colours.
-    // A merged tube mesh has one material, so a caller that tints individual
-    // shafts gets one merged mesh per colour rather than vertex colours: the
-    // colour then rides on the material, the same way an instanced shaft's does,
-    // and two shafts that should look alike cannot diverge by which path drew
-    // them. The selection tints at most two colours.
     const curvedTubeGroups = useMemo(() => {
         noteActivity('support-mode:curved-shaft-tubes');
         const byColor = new Map<string, InstancedShaft[]>();
