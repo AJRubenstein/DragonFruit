@@ -7,7 +7,7 @@ import {
     typesDeclaringOwnHistoryEntryWithoutUpdate,
     typesMissingContactOverride,
     removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
-import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
+import { collectCascade, groupByCollection, type EntityRef } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
 import { supportSettleFor } from './settle/seam';
 import { hasSupportUpdater, hostKnotFieldsFor, typeIdForCollection, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
@@ -199,6 +199,24 @@ export function removeSupportEntity<T extends SupportTypeId>(
     return removeSupportEntityCascading(typeId, id) as SupportRemovalResult<T> | null;
 }
 
+/**
+ * Remove many entities as one cascade, one state write, and one notify.
+ *
+ * The dependency reachability is the same as removing each seed through
+ * `removeSupportEntity` -- seeds that share a host still resolve it once
+ * nothing outside the doomed set references it -- but the graph indexes are
+ * built once. A per-seed loop pays a full graph walk per entity, which made
+ * Clear All quadratic in brace count (16 s for 2 000 braces on the main
+ * thread). Callers that need each removal's history shape still use the
+ * single-entity form.
+ */
+export function removeSupportEntities(seeds: readonly EntityRef[]): void {
+    const existing = seeds.filter((seed) => state[seed.collection][seed.id]);
+    if (existing.length === 0) return;
+
+    commitCascadeRemoval(collectCascade(state, existing));
+}
+
 /*
  * Per-type wrappers below are DEBT, not API. Each exists only because its call
  * sites are not converted yet; they bind a type id and nothing else. Adding
@@ -249,6 +267,14 @@ function removeSupportEntityCascading(
     }
 
     // Apply: one state write, one notify.
+    commitCascadeRemoval(doomed);
+    return result;
+}
+
+/** Apply a cascade result as one state write and one notify. */
+function commitCascadeRemoval(doomed: ReadonlySet<string>): void {
+    const byCollection = groupByCollection(doomed);
+
     const next: Record<string, unknown> = { ...state };
     for (const [key, ids] of byCollection) {
         const record = { ...state[key] } as Record<string, unknown>;
@@ -266,15 +292,15 @@ function removeSupportEntityCascading(
     setState(next as unknown as SupportState);
 
     for (const [key, ids] of byCollection) {
-        const node = SUPPORT_TYPES.find((d) => d.location.key === key);
-        if (!node?.hasEditableSettings) continue;
+        const descriptor = SUPPORT_TYPES.find((d) => d.location.key === key);
+        if (!descriptor?.hasEditableSettings) continue;
         for (const entityId of ids) {
-            deleteCachedSupportSettingsHex(node.id, entityId);
+            deleteCachedSupportSettingsHex(descriptor.id, entityId);
         }
     }
 
+    setState(next as unknown as SupportState);
     notify();
-    return result;
 }
 
 function resolveLowerSegmentIndex(segments: Segment[], jointId: string) {
