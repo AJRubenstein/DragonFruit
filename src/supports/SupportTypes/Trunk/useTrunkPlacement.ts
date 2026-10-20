@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { addSupportEntity, addKnot, addRoot, addSupportEntityWithHistory, getSnapshot, updateKnot } from '../../state';
+import { addSupportEntity, addKnot, addRoot, addSupportEntityWithHistory, asOneSupportEdit, getSnapshot, updateKnot } from '../../state';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { addAction } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
@@ -292,8 +292,11 @@ export function useTrunkPlacementV2() {
 
     const commitTrunkBuild = useCallback((trunkBuild: ReturnType<typeof buildTrunkData>, placementSurface?: PlacementSurface) => {
         const markedBuild = markTrunkBuildPlacementSurface(trunkBuild, placementSurface);
-        addRoot(markedBuild.root);
-        addSupportEntity(markedBuild.trunk);
+        // One write: a root alone is a root no trunk claims, and the renderer culls those.
+        asOneSupportEdit(() => {
+            addRoot(markedBuild.root);
+            addSupportEntity(markedBuild.trunk);
+        });
         // The action and the payload key are both declared by the type, so
         // neither is written here.
         const trunkTypeId = resolveSupportTypeIdOf(markedBuild.trunk);
@@ -719,24 +722,27 @@ export function useTrunkPlacementV2() {
             // collection, so this dispatches on a declared key rather than
             // guessing from the value's shape.
             const descriptor = getSupportTypeDescriptor(typeId);
-            for (const edge of descriptor.edges) {
-                const primitive = supplied[edge.field];
-                if (!primitive) continue;
-                if (edge.to === 'roots') addRoot(primitive as never);
-                else if (edge.to === 'knots') addKnot(primitive as never);
-            }
+            // One write: a primitive alone is one nothing claims, and the renderer culls those.
+            asOneSupportEdit(() => {
+                for (const edge of descriptor.edges) {
+                    const primitive = supplied[edge.field];
+                    if (!primitive) continue;
+                    if (edge.to === 'roots') addRoot(primitive as never);
+                    else if (edge.to === 'knots') addKnot(primitive as never);
+                }
 
-            // A hosted support loads its host, so a host that re-solves its
-            // diameter from what it carries has to be re-solved. Asked of the
-            // descriptions, never of a type name.
-            const host = hostedBy;
-            const repairsHost = host
-                && getSupportTypeDescriptor(host.typeId).recomputesDiameterFromAttachments
-                && descriptor.repairsHostDiameterOnAdd;
-            const hostRepair = repairsHost && host ? repairHostDiameter(host) : null;
-            addSupportEntityWithHistory(typeId, entity, {
-                ...(supplied.parentKnotId ? { knot: supplied.parentKnotId } : {}),
-                ...(hostRepair ?? {}),
+                // A hosted support loads its host, so a host that re-solves its
+                // diameter from what it carries has to be re-solved. Asked of the
+                // descriptions, never of a type name.
+                const host = hostedBy;
+                const repairsHost = host
+                    && getSupportTypeDescriptor(host.typeId).recomputesDiameterFromAttachments
+                    && descriptor.repairsHostDiameterOnAdd;
+                const hostRepair = repairsHost && host ? repairHostDiameter(host) : null;
+                addSupportEntityWithHistory(typeId, entity, {
+                    ...(supplied.parentKnotId ? { knot: supplied.parentKnotId } : {}),
+                    ...(hostRepair ?? {}),
+                });
             });
             clearSupportSelection();
             clearPreview();

@@ -8,7 +8,7 @@ import {
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
-import { beginSupportStateBatch, endSupportStateBatch, removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
+import { asOneSupportEdit, removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { setSupportBlockedTriangles } from '../autoSupport/supportBlockers';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
 import { getSupportTypeBySelectionCategory, getSupportTypeDescriptor, parsePrefixedSegmentId, restoreToCollection, updateSupportEntity, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, removalShapeFor, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
@@ -131,19 +131,9 @@ function restoreRemoved(descriptor: SupportTypeDescriptor, payload: unknown): vo
   if (seed) restoreToCollection(descriptor.location.key, seed);
 }
 
-/**
- * Runs one inversion as a single store write.
- *
- * An entity, the collections it cascades to and its host edits are separate
- * writes; a subscriber that saw only the first would draw a root with no shaft.
- */
+/** Runs one inversion as a single store write, then reports it applied. */
 function asOneEdit(apply: () => void): true {
-  beginSupportStateBatch();
-  try {
-    apply();
-  } finally {
-    endSupportStateBatch();
-  }
+  asOneSupportEdit(apply);
   return true;
 }
 

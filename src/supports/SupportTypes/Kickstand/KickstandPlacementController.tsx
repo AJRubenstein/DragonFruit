@@ -7,7 +7,7 @@ import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { findClosestMeshToPoint } from '../../PlacementLogic/PlacementUtils';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { addAction } from '@/supports/history/actionTypes';
-import { addSupportEntity, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
+import { addSupportEntity, addKnot, addRoot, asOneSupportEdit, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import { getGridSettings, getSettings } from '../../Settings/state';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
@@ -678,9 +678,14 @@ export function KickstandPlacementController() {
 
             // Three ordinary entities: the kickstand, the root it mounts to and
             // the knot it hangs from. No bundled adder.
-            addRoot(finalBuild.root);
-            addKnot(finalBuild.hostKnot);
-            addSupportEntity('kickstand', finalBuild.kickstand);
+            //
+            // One write: a root alone is a root no kickstand claims, and the
+            // renderer culls those.
+            asOneSupportEdit(() => {
+                addRoot(finalBuild.root);
+                addKnot(finalBuild.hostKnot);
+                addSupportEntity('kickstand', finalBuild.kickstand);
+            });
 
             // Keyed by the registry's removal shape, which is what the undo
             // handler reads: a nested build leaves it with nothing to restore.

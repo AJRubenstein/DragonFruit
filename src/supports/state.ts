@@ -1182,6 +1182,23 @@ export function endSupportStateBatch() {
     }
 }
 
+/**
+ * Runs several store writes as one notification.
+ *
+ * An entity and the primitives it owns are separate writes. Subscribers that
+ * act on what they see -- the renderer culls roots no entity claims -- would
+ * otherwise read the gap between them and delete a root its entity was about
+ * to arrive for.
+ */
+export function asOneSupportEdit<T>(apply: () => T): T {
+    beginSupportStateBatch();
+    try {
+        return apply();
+    } finally {
+        endSupportStateBatch();
+    }
+}
+
 function rebuildSupportSettingsHexCacheFromState() {
     const next = createEmptySettingsHexCache();
 
