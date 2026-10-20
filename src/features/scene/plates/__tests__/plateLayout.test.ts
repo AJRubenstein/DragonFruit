@@ -8,6 +8,7 @@ import {
   plateLocalRect,
   plateSliceScope,
   resolveModelPlateId,
+  withPlateMembership,
 } from '../plateLayout';
 
 // Saturn 2: the footprint the CLI's end-to-end check slices with.
@@ -51,6 +52,13 @@ test('off every plate, the stored membership decides, then the first plate', () 
   assert.equal(resolveModelPlateId(at('b', 1000, 1000, 'gone'), frames), 'p1');
   assert.equal(resolveModelPlateId(at('c', 1000, 1000), frames), 'p1');
   assert.equal(resolveModelPlateId(at('d', 0, 0), []), '');
+});
+
+test('membership follows the model, unless the gesture names the plate', () => {
+  assert.equal(withPlateMembership(at('a', 242.88, 0, 'p1'), frames).plateId, 'p2');
+  assert.equal(withPlateMembership(at('b', 0, 0), frames, 'p2').plateId, 'p2');
+  const unframed = at('c', 0, 0, 'p2');
+  assert.equal(withPlateMembership(unframed, []), unframed, 'with no frames it keeps what it had');
 });
 
 test('models on a plate keep their order', () => {

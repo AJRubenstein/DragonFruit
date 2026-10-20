@@ -107,6 +107,20 @@ export function resolveModelPlateId(model: PlateMember, frames: readonly PlateFr
   return frames[0]?.id ?? '';
 }
 
+/**
+ * `model` stamped with the plate it now stands on, or with `landedPlateId` when the
+ * gesture already knows where it put it. Membership follows the model; with no
+ * plate to name (no frames yet) it keeps the one it had.
+ */
+export function withPlateMembership<M extends PlateMember>(
+  model: M,
+  frames: readonly PlateFrame[],
+  landedPlateId?: string,
+): M {
+  const plateId = landedPlateId ?? resolveModelPlateId(model, frames);
+  return plateId ? { ...model, plateId } : model;
+}
+
 /** The models standing on a plate, in their original order. */
 export function modelsOnPlate<M extends PlateMember>(
   models: readonly M[],
