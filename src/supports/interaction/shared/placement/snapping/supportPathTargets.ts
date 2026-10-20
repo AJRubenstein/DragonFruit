@@ -52,6 +52,21 @@ function cloneVec3(v: Vec3): Vec3 {
     return { x: v.x, y: v.y, z: v.z };
 }
 
+/**
+ * Where a column's shaft leaves its root: above the disk and the cone it caps.
+ *
+ * The first segment has no bottom joint, so without this its length is not a
+ * target anything can ride.
+ */
+function rootTopOf(root: { transform: { pos: Vec3 }; diskHeight: number; coneHeight: number } | undefined): Vec3 | undefined {
+    if (!root) return undefined;
+    return {
+        x: root.transform.pos.x,
+        y: root.transform.pos.y,
+        z: root.transform.pos.z + root.diskHeight + (root.coneHeight || 1.5),
+    };
+}
+
 function shouldExclude(id: string, excludeSegmentIds?: ReadonlySet<string>): boolean {
     return !!excludeSegmentIds && excludeSegmentIds.has(id);
 }
@@ -125,12 +140,7 @@ export function buildSupportPathSnapTargets(
             const root = rootMap.get(trunk.rootId);
             if (!root || trunk.segments.length === 0) continue;
 
-            const startZOffset = root.diskHeight + (root.coneHeight || 1.5);
-            let currentStart: Vec3 = {
-                x: root.transform.pos.x,
-                y: root.transform.pos.y,
-                z: root.transform.pos.z + startZOffset,
-            };
+            let currentStart: Vec3 = rootTopOf(root)!;
 
             for (const segment of trunk.segments) {
                 const endPoint = segment.topJoint
@@ -238,23 +248,24 @@ export function buildSupportPathSnapTargets(
 
     for (const descriptor of shaftedSnapTypes) {
         if (!snap.has(descriptor.id)) continue;
-        const record = supportState[descriptor.location.key as SupportCollectionKey] as Record<string, { segments: Segment[]; hostKnotId?: string }>;
+        const record = supportState[descriptor.location.key as SupportCollectionKey] as Record<string, { segments: Segment[]; hostKnotId?: string; rootId?: string }>;
         for (const entity of Object.values(record)) {
             if (!matchesPlacementSurfaceFilter(getPlacementSurface(descriptor, entity), placementSurface)) continue;
-            // A terminal segment ends at the host knot rather than at a joint,
-            // so without this its length is not a target anything can ride.
+            // A column's end segments meet its root and its host knot rather
+            // than a joint, so neither is a target unless those stand in.
             const hostKnotPos = entity.hostKnotId ? knotMap.get(entity.hostKnotId)?.pos : undefined;
+            const rootTopPos = entity.rootId ? rootTopOf(rootMap.get(entity.rootId)) : undefined;
             for (const segment of entity.segments) {
                 if (shouldExclude(segment.id, excludeSegmentIds)) continue;
-                if (!segment.bottomJoint) continue;
+                const startPos = segment.bottomJoint?.pos ?? rootTopPos;
                 const endPos = segment.topJoint?.pos ?? hostKnotPos;
-                if (!endPos) continue;
+                if (!startPos || !endPos) continue;
 
                 targets.push({
                     id: segment.id,
                     type: 'path',
                     pathSegment: {
-                        start: cloneVec3(segment.bottomJoint.pos),
+                        start: cloneVec3(startPos),
                         end: cloneVec3(endPos),
                         radius: segment.diameter / 2,
                         bezier: segment.type === 'bezier'

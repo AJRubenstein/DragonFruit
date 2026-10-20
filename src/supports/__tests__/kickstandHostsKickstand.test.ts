@@ -34,9 +34,14 @@ function seedKickstand(): void {
         hostMinT: 0,
         segments: [
             {
+                id: 'seg-first',
+                diameter: 1,
+                topJoint: { id: 'j-1', pos: { x: 0, y: 0, z: 4 }, diameter: 1.1 },
+            },
+            {
                 id: 'seg-lower',
                 diameter: 1,
-                bottomJoint: { id: 'j-1', pos: { x: 0, y: 0, z: 0 }, diameter: 1.1 },
+                bottomJoint: { id: 'j-1', pos: { x: 0, y: 0, z: 4 }, diameter: 1.1 },
                 topJoint: { id: 'j-2', pos: { x: 0, y: 0, z: 10 }, diameter: 1.1 },
             },
             {
@@ -54,7 +59,7 @@ test('every segment of a kickstand can host another kickstand', () => {
     const index = buildKickstandSnapTargetMetaIndex(getSnapshot());
     const ids = [...index.keys()].sort();
 
-    assert.deepEqual(ids, ['seg-lower', 'seg-terminal']);
+    assert.deepEqual(ids, ['seg-first', 'seg-lower', 'seg-terminal']);
     for (const meta of index.values()) {
         assert.equal(meta.supportKind, 'kickstand');
     }
@@ -69,5 +74,17 @@ test('the terminal segment spans from its joint to the host knot', () => {
     assert.ok(path, 'the terminal segment carries a path to ride');
     assert.deepEqual(path.start, { x: 0, y: 0, z: 10 });
     assert.deepEqual(path.end, { x: 2, y: 0, z: 14 });
+    resetStore();
+});
+
+test('the first segment spans from the root top to its joint', () => {
+    seedKickstand();
+    const target = buildKickstandSnapTargetMetaIndex(getSnapshot()).get('seg-first');
+    const path = target?.target.pathSegment;
+
+    assert.ok(path, 'the first segment carries a path to ride');
+    // The root sits at z 0 with a 0.5 disk under a 1 cone.
+    assert.deepEqual(path.start, { x: 0, y: 0, z: 1.5 });
+    assert.deepEqual(path.end, { x: 0, y: 0, z: 4 });
     resetStore();
 });
