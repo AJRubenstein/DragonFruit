@@ -8,7 +8,7 @@ import {
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
-import { removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
+import { beginSupportStateBatch, endSupportStateBatch, removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { setSupportBlockedTriangles } from '../autoSupport/supportBlockers';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
 import { getSupportTypeBySelectionCategory, getSupportTypeDescriptor, parsePrefixedSegmentId, restoreToCollection, updateSupportEntity, SHAFTED_COLLECTION_KEYS, SUPPORT_PRIMITIVE_COLLECTIONS, removalShapeFor, SUPPORT_TYPES, type SupportCollectionKey, type SupportEntityIn, type SupportTypeDescriptor, type SupportTypeId } from '../supportTypeRegistry';
@@ -132,6 +132,22 @@ function restoreRemoved(descriptor: SupportTypeDescriptor, payload: unknown): vo
 }
 
 /**
+ * Runs one inversion as a single store write.
+ *
+ * An entity, the collections it cascades to and its host edits are separate
+ * writes; a subscriber that saw only the first would draw a root with no shaft.
+ */
+function asOneEdit(apply: () => void): true {
+  beginSupportStateBatch();
+  try {
+    apply();
+  } finally {
+    endSupportStateBatch();
+  }
+  return true;
+}
+
+/**
  * Knot and trunk edits some payloads carry alongside the entity.
  *
  * Adding a branch can resize its host knot and rewrite the trunk it hangs from;
@@ -167,18 +183,20 @@ export function registerSupportHistoryHandlers(): () => void {
       registerSupportHistoryHandler(descriptor.historyAdd, (payload, direction) => {
         const seed = seedEntity(descriptor, payload);
         if (!seed) return false;
-        if (direction === 'undo') removeSupportEntity(descriptor.id, seed.id);
-        else restoreRemoved(descriptor, payload);
-        applyHostEdits(payload, direction);
-        return true;
+        return asOneEdit(() => {
+          if (direction === 'undo') removeSupportEntity(descriptor.id, seed.id);
+          else restoreRemoved(descriptor, payload);
+          applyHostEdits(payload, direction);
+        });
       }),
       registerSupportHistoryHandler(descriptor.historyRemove, (payload, direction) => {
         const seed = seedEntity(descriptor, payload);
         if (!seed) return false;
-        if (direction === 'undo') restoreRemoved(descriptor, payload);
-        else removeSupportEntity(descriptor.id, seed.id);
-        applyHostEdits(payload, direction);
-        return true;
+        return asOneEdit(() => {
+          if (direction === 'undo') restoreRemoved(descriptor, payload);
+          else removeSupportEntity(descriptor.id, seed.id);
+          applyHostEdits(payload, direction);
+        });
       }),
     ]),
     // Update handlers, for the types that record a before/after edit of their
