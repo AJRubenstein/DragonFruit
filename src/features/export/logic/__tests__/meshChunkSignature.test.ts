@@ -4,6 +4,8 @@ import test from 'node:test';
 import * as THREE from 'three';
 
 import { ExportManager } from '../ExportManager';
+import { MeshChunkStore } from '@/features/scene/voxl/meshChunkStore';
+import { applyRepairedPositions } from '@/utils/meshRepair';
 import type { LoadedModel } from '@/features/scene/useSceneCollectionManager';
 
 /**
@@ -53,4 +55,44 @@ test('an in-place edit keeps its own signature change', () => {
 
   position.needsUpdate = true;
   assert.notEqual(ExportManager.computeModelGeometrySignature(modelWith(geometry)), before);
+});
+
+test('the chunk store refuses the bytes it baked before a reorder', async () => {
+  // The save-time sequence behind a mis-sliced VOXL: a chunk is baked, the
+  // classifier then installs its reordered soup, and the writer asks the store for
+  // the model's chunk again. A signature that cannot see the reorder serves the
+  // pre-classification bytes, which the writer then stamps with the
+  // post-classification boundary — a file whose boundary cuts the model in half.
+  const store = new MeshChunkStore();
+  const soup = new Float32Array(54);
+  for (let triangle = 0; triangle < 6; triangle += 1) {
+    soup.set([0, 0, triangle + 1, 1, 0, triangle + 1, 0, 1, triangle + 1], triangle * 9);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(soup, 3));
+  geometry.computeBoundingBox();
+  const model = {
+    id: 'm1',
+    geometry: {
+      geometry,
+      center: new THREE.Vector3(),
+      bbox: geometry.boundingBox,
+      size: new THREE.Vector3(1, 1, 6),
+      flatteningPlanes: [],
+    },
+  } as unknown as LoadedModel;
+
+  const chunk = new Uint8Array([1, 2, 3]);
+  const before = ExportManager.computeModelGeometrySignature(model);
+  await store.bake({ modelId: 'm1', signature: before, encode: () => chunk });
+  assert.notEqual(store.lookup('m1', before), null, 'the bake is served while nothing moved');
+
+  // What a classify pass does: same corners, model-first order, same counts.
+  const reordered = new Float32Array(soup);
+  reordered.set(soup.subarray(9), 0);
+  reordered.set(soup.subarray(0, 9), 9);
+  applyRepairedPositions(geometry, reordered);
+
+  const after = ExportManager.computeModelGeometrySignature(model);
+  assert.equal(store.lookup('m1', after), null, 'the reorder must force a fresh bake');
 });
