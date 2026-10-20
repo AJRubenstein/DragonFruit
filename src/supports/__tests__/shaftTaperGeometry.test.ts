@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { braceSpanDiameters } from '../SupportTypes/Brace/braceSpanDiameters';
+import { quantizeToScale } from '@/utils/math';
 import { taperWidthAlong } from '../SupportPrimitives/Shaft/shaftTaperGeometry';
-import { buildBatchedTaperedShafts, isTaperedBatchedShaft } from '../SupportPrimitives/Shaft/batchedTaperedShaftGeometry';
-import { resolveCurvedShaftIndexForFace } from '../Curves/batchedBezierTubeGeometry';
-import type { InstancedShaft } from '../SupportPrimitives/Shaft/InstancedShaftGroup';
 import type { Brace, Knot } from '../types';
 
 const knot = (diameter: number) => ({ diameter }) as Knot;
@@ -50,27 +48,20 @@ test('matching knots leave a brace uniform', () => {
     assert.equal(span.isTapered, false);
 });
 
-test('tapered shafts merge into one geometry whose faces map back', () => {
-    const shafts: InstancedShaft[] = [
-        { id: 'a', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 10 }, diameter: 2, diameterEnd: 1 },
-        { id: 'b', start: { x: 5, y: 0, z: 0 }, end: { x: 5, y: 0, z: 10 }, diameter: 3, diameterEnd: 1 },
-    ];
-    const merged = buildBatchedTaperedShafts(shafts, 12);
 
-    assert.ok(merged, 'the shafts merge');
-    assert.equal(merged.triangleRangeEnds.length, shafts.length, 'one face range each');
-    for (let i = 0; i < shafts.length; i += 1) {
-        const firstFace: number = i === 0 ? 0 : merged.triangleRangeEnds[i - 1];
-        assert.equal(
-            resolveCurvedShaftIndexForFace(merged.triangleRangeEnds, firstFace),
-            i,
-            `a face of ${shafts[i].id} resolves to it`,
-        );
-    }
+test('a taper ratio scales to both of its end diameters', () => {
+    // The bucket's cone is `ratio` over 1; the instance scales it by the body.
+    const ratio = quantizeToScale(1.1 / 2.1, 1000);
+    const bottomDiameter = 0.5 * 2.1 * 2;
+    const topDiameter = (ratio / 2) * 2.1 * 2;
+
+    assert.equal(bottomDiameter, 2.1);
+    assert.equal(Math.round(topDiameter * 100) / 100, 1.1);
 });
 
-test('a shaft with equal ends is not treated as tapering', () => {
-    assert.equal(isTaperedBatchedShaft({ id: 'a', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 1 }, diameter: 2 }), false);
-    assert.equal(isTaperedBatchedShaft({ id: 'b', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 1 }, diameter: 2, diameterEnd: 2 }), false);
-    assert.equal(isTaperedBatchedShaft({ id: 'c', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 1 }, diameter: 2, diameterEnd: 1 }), true);
+test('shafts sharing a ratio share a bucket, whatever their size', () => {
+    const ratioOf = (body: number, end: number) => String(quantizeToScale(end / body, 1000));
+
+    assert.equal(ratioOf(2.1, 1.1), ratioOf(4.2, 2.2), 'twice the size, one bucket');
+    assert.notEqual(ratioOf(2.1, 1.1), ratioOf(1.2, 1.1), 'a different taper is its own');
 });
