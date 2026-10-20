@@ -17,6 +17,12 @@ import {
   readPlateOrdering,
   type PlateOrdering,
 } from '@/features/scene/plates/plateCascade';
+import {
+  computePlateFrames,
+  plateLocalRect,
+  resolveModelPlateId as plateIdForModel,
+  type PlateFrame,
+} from '@/features/scene/plates/plateLayout';
 import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef, type VoxlMeshRange } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, resetStore, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
@@ -1058,19 +1064,7 @@ export type ScenePlate = {
 };
 
 /** Where a plate is in the world, and the build volume it holds there. */
-export type PlateFrame = {
-  id: string;
-  /** Position in the cascade, which is also its display order. */
-  index: number;
-  /** World offset from the first plate's frame. */
-  dxMm: number;
-  dyMm: number;
-  /** The build volume in world coordinates. */
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-};
+export type { PlateFrame };
 
 export interface LoadedModel {
   id: string;
@@ -2010,8 +2004,7 @@ export function useSceneCollectionManager(options?: {
    * every caller.
    */
   const defaultImportCenterXY = useMemo(() => {
-    const localX = view3dSettings.originMode === 'front_left' ? view3dSettings.widthMm * 0.5 : 0;
-    const localY = view3dSettings.originMode === 'front_left' ? view3dSettings.depthMm * 0.5 : 0;
+    const { centerX: localX, centerY: localY } = plateLocalRect(view3dSettings);
     const index = Math.max(0, plates.findIndex((plate) => plate.id === activePlateId));
     const { dxMm, dyMm } = plateCascadeOffsetMm(index, {
       widthMm: view3dSettings.widthMm,
@@ -2040,8 +2033,9 @@ export function useSceneCollectionManager(options?: {
       widthMm: view3dSettings.widthMm,
       depthMm: view3dSettings.depthMm,
     }, plates.length, plateOrdering);
-    const minX = (view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5) + dxMm;
-    const minY = (view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5) + dyMm;
+    const local = plateLocalRect(view3dSettings);
+    const minX = local.minX + dxMm;
+    const minY = local.minY + dyMm;
     return {
       minX,
       maxX: minX + view3dSettings.widthMm,
@@ -2770,8 +2764,7 @@ export function useSceneCollectionManager(options?: {
     ): void => {
       if (!assignedCenter) return;
 
-      const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5;
-      const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5;
+      const { minX: localMinX, minY: localMinY } = plateLocalRect(view3dSettings);
       const insideAnyBed = platesRef.current.some((plate) => {
         const { dxMm, dyMm } = plateOffsetForRef.current(plate.id);
         const minX = localMinX + dxMm;
@@ -2793,8 +2786,7 @@ export function useSceneCollectionManager(options?: {
       if (!plate) return;
 
       const { dxMm, dyMm } = reserved.offsets.get(plate.id) ?? { dxMm: 0, dyMm: 0 };
-      const localCenterX = view3dSettings.originMode === 'front_left' ? view3dSettings.widthMm * 0.5 : 0;
-      const localCenterY = view3dSettings.originMode === 'front_left' ? view3dSettings.depthMm * 0.5 : 0;
+      const { centerX: localCenterX, centerY: localCenterY } = plateLocalRect(view3dSettings);
       model.transform.position.set(localCenterX + dxMm, localCenterY + dyMm, model.transform.position.z);
       model.plateId = plate.id;
     };
@@ -5420,14 +5412,8 @@ export function useSceneCollectionManager(options?: {
     });
     pendingPlacements = activePlacements.unplaced;
 
-    const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5;
-    const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5;
-    const localPlateRect: Rect2D = {
-      minX: localMinX,
-      maxX: localMinX + view3dSettings.widthMm,
-      minY: localMinY,
-      maxY: localMinY + view3dSettings.depthMm,
-    };
+    const localPlateRect: Rect2D = plateLocalRect(view3dSettings);
+    const { minX: localMinX, minY: localMinY } = localPlateRect;
 
     // The beds the scene already has are filled next, in plate order: the run that spilled
     // onto plate 2 leaves room on it, and a paste that went straight to a new bed would add
@@ -6063,8 +6049,7 @@ export function useSceneCollectionManager(options?: {
 
         const bedWidth = view3dSettings.widthMm;
         const bedDepth = view3dSettings.depthMm;
-        const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -bedWidth * 0.5;
-        const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -bedDepth * 0.5;
+        const { minX: localMinX, minY: localMinY } = plateLocalRect(view3dSettings);
 
         /** A model's footprint at a given Z, grown to the raft standing beside it. */
         const footprintAt = (model: LoadedModel, rotationZ: number, reach: { x: number; y: number }) => {
@@ -6701,8 +6686,7 @@ export function useSceneCollectionManager(options?: {
       // on: reading the active one alone called every model on any other bed out of bounds,
       // which in a multi-plate scene is the whole point of the file. A file that names no
       // plates of its own leaves the beds already here in place, so those are the ones.
-      const localBedMinX = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5;
-      const localBedMinY = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5;
+      const { minX: localBedMinX, minY: localBedMinY } = plateLocalRect(view3dSettings);
       const bedRectAt = (index: number, count: number): Rect2D => {
         const { dxMm, dyMm } = plateCascadeOffsetMm(index, {
           widthMm: view3dSettings.widthMm,
@@ -7667,8 +7651,7 @@ export function useSceneCollectionManager(options?: {
     const footprint = { widthMm, depthMm };
     const was = options?.laidOut ?? { widthMm, depthMm, originMode };
     const nowOrdering = plateOrderingRef.current;
-    const wasMinX = was.originMode === 'front_left' ? 0 : -was.widthMm * 0.5;
-    const wasMinY = was.originMode === 'front_left' ? 0 : -was.depthMm * 0.5;
+    const { minX: wasMinX, minY: wasMinY } = plateLocalRect(was);
 
     const shifts = new Map<string, { dxMm: number; dyMm: number }>();
     const frames = before.map((plate, index) => {
@@ -7971,47 +7954,14 @@ export function useSceneCollectionManager(options?: {
    */
   const plateFrames = useMemo<PlateFrame[]>(() => {
     const { widthMm, depthMm, originMode } = view3dSettings;
-    const localMinX = originMode === 'front_left' ? 0 : -widthMm * 0.5;
-    const localMinY = originMode === 'front_left' ? 0 : -depthMm * 0.5;
-    const footprint = { widthMm, depthMm };
-
-    return plates.map((plate, index) => {
-      const { dxMm, dyMm } = plateCascadeOffsetMm(index, footprint, plates.length, plateOrdering);
-      return {
-        id: plate.id,
-        index,
-        dxMm,
-        dyMm,
-        minX: localMinX + dxMm,
-        minY: localMinY + dyMm,
-        maxX: localMinX + dxMm + widthMm,
-        maxY: localMinY + dyMm + depthMm,
-      };
-    });
+    return computePlateFrames({ plates, footprint: { widthMm, depthMm, originMode }, ordering: plateOrdering });
   }, [plateOrdering, plates, view3dSettings]);
 
-  /**
-   * The plate a model stands on.
-   *
-   * Where it stands is what counts: every plate is a valid build volume, and a
-   * model dragged from one bed to the next belongs to the bed it landed on. A
-   * stored membership is only a hint, and it goes stale the moment a model is
-   * moved, which is how a model sitting on plate two came to be reported as
-   * outside the volume for not being on plate one.
-   *
-   * The hint is the fallback for a model that stands outside every plate, where
-   * position cannot answer; then the first plate.
-   */
-  const resolveModelPlateId = useCallback((model: LoadedModel): string => {
-    const x = model.transform.position.x;
-    const y = model.transform.position.y;
-    const containing = plateFrames.find(
-      (frame) => x >= frame.minX && x <= frame.maxX && y >= frame.minY && y <= frame.maxY,
-    );
-    if (containing) return containing.id;
-    if (model.plateId && plateFrames.some((frame) => frame.id === model.plateId)) return model.plateId;
-    return plateFrames[0]?.id ?? '';
-  }, [plateFrames]);
+  /** The plate a model stands on; the rule is `resolveModelPlateId` in plateLayout. */
+  const resolveModelPlateId = useCallback(
+    (model: LoadedModel): string => plateIdForModel(model, plateFrames),
+    [plateFrames],
+  );
   resolveModelPlateIdRef.current = resolveModelPlateId;
 
   /** The frame of the plate a model stands on. */
