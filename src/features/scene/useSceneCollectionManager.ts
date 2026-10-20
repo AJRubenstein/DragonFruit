@@ -6402,11 +6402,22 @@ export function useSceneCollectionManager(options?: {
       // one model's serial phase run during another's. The hash is computed here once
       // per model and reused by the loop, so neither the content hash nor the
       // integrity check is paid twice.
+      //
+      // The `classification` a `MODL` entry carries is **not** used. It is a boundary
+      // into the soup the file stores, and a file written before the mesh chunk's
+      // signature could see a reordered soup pairs it with a different order: the
+      // boundary then cuts a slab out of the model and paints it as support. A count
+      // check cannot tell those apart, so the loader classifies the payload it just
+      // built and the sections come from that answer. Cost: one classify per model on
+      // load — the same pass a fresh STL import pays, done natively inside the loader
+      // rather than as a second round trip.
       const buildOptionsFor = (model: (typeof document.models)[number]): ProcessGeometryOptions => ({
-        ...(autoRepairScenes || !model.classification ? {} : { bakedClassification: model.classification }),
         nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
         assumeSupportGeometry: model.isSupportGeometry,
         skipClassification: model.isSupportGeometry,
+        // The payload is the scene's own mesh: refining it again changes the count and
+        // order every boundary indexes, and grows it on each round trip.
+        _refine: false,
       });
       const hashByModelId = new Map<string, string>();
       const uniqueBuilds = new Map<

@@ -195,6 +195,16 @@ export interface ProcessGeometryOptions {
    * from it before then misses the attribute. @internal
    */
   _deferOcclusionBake?: (bake: Promise<boolean>) => void;
+  /**
+   * Whether the native loader may refine coarse faces. Default true.
+   *
+   * A payload that is already a scene's own mesh — a VOXL `MESH` chunk — passes
+   * false: refinement is not idempotent, so refining a stored mesh changes the
+   * triangle count and order that any model/support boundary indexes, and a
+   * save/load cycle grows it every time (81,282 triangles came back as 126,386 on
+   * the reported scene). @internal
+   */
+  _refine?: boolean;
   /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
   _skipComputeNormals?: boolean;
   _isTauriRuntime?: () => boolean;
@@ -1268,7 +1278,7 @@ export async function loadMeshGeometryFromRange(
     compressedSize: range.compressedSize,
     compression: range.compression,
     classify: wantsLoaderClassification(options),
-    refine: !options.bakedClassification,
+    refine: options._refine !== false,
   });
   const decoded = await decodeDfmx(payload);
   const merged = mergeBodyGeometries(decoded.bodies);
@@ -1373,13 +1383,10 @@ export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: Pro
   // classifies the bytes, where the renderer path parses in JS and then stages the
   // mesh back for the classifier. A VOXL model or a file out of a zip arrives as
   // bytes, so it never has a path for `load_mesh_file` to use.
-  // A payload whose classification the caller holds is scene geometry, already
-  // refined once: refining it again changes the count and order that boundary
-  // indexes, so every reload would drop the file's own answer and reclassify.
   const decoded = await loadNativeMeshBytes(
     buffer,
     wantsLoaderClassification(options),
-    !options.bakedClassification,
+    options._refine !== false,
   );
   if (decoded) {
     return processGeometry(mergeBodyGeometries(decoded.bodies), {

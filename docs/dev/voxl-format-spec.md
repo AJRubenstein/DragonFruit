@@ -242,6 +242,18 @@ that ran over the triangle order of that model's `mesh` payload. The value is th
 report — the `MeshHealthReport` shape (`src/utils/meshRepair.ts`), whose `model_triangle_count`
 is the split boundary: the first N triangles are the model body, the remainder support geometry.
 
+**A reader re-derives it rather than trusting it.** The boundary is only as good as the pairing of
+those bytes with that report, and a count check cannot see the failure that matters: a soup of the
+same length in a different order. A file written before the mesh chunk's signature included the
+position array's identity can hold exactly that — the classifier's boundary beside the mesh it
+classified *before* reordering it — and applying it cuts a slab out of the model and paints it as
+support. So the VOXL import builds each payload, asks the native loader to classify it, and takes
+the sections from that answer (`handleImportVoxlFile`'s `buildOptionsFor`). The cost is one classify
+per model per load, the same pass a fresh STL import pays, done inside the loader rather than as a
+second round trip. The writer still records the field: it is the file's own description of its
+mesh, it is correct by construction once the bytes and the report come from the same bake, and a
+future reader can honour it again when a file can prove the two agree.
+
 Requirements:
 
 - The boundary is an index into the soup, so it is only meaningful for the mesh the classifying
@@ -260,19 +272,14 @@ Requirements:
 - The boundary is expressed in the triangle order of the **stored mesh bytes**, not of the
   original import. Native decimation preserves section order, so a reduced preview's boundary is
   the one the reader must use.
-- Readers that honour it must not re-run the classifier: the report is the answer for exactly
-  these triangles. They must still build the model/support section split from
-  `model_triangle_count`, since the sections are not stored separately.
-- A reader must *check* the report against the payload it just loaded before honouring it: the
-  same predicate, against the triangles it built. Refinement is deterministic but versioned, and
-  a section boundary is a triangle index, so a report written under a different refinement rule
-  describes a mesh this build does not produce. A report that fails the check is dropped and the
-  classifier runs, which is the pre-3.3 path. (`src/hooks/useStlGeometry.ts`,
-  `classificationForPayload`.)
-- The loaders must not be *asked* for a classification the caller already holds
-  (`wantsLoaderClassification`): a second pass over the same triangles costs the whole classify —
-  measured at 430 ms of a 550 ms native load of a 725k-triangle model, and 11.9 s across the
-  13-unique-mesh scene in `backlog.md` — to reproduce the stored answer.
+- A reader that does honour it (it does not today, see above) must check the report against the
+  payload it just loaded with the same predicate, and must not re-run the classifier on a report
+  that passes: the report is the answer for exactly these triangles. The sections themselves are
+  never stored separately — the split is built from `model_triangle_count` either way.
+  (`src/hooks/useStlGeometry.ts`: `classificationForPayload`, `loadMeshGeometryFromRange`.)
+- A stored mesh is not refined again on load (`_refine: false`, `refine` on the native loaders).
+  Refinement is not idempotent, so re-refining a stored payload changes the count and order that
+  any boundary indexes and grows the mesh on every save/load cycle.
 - A reader that has the *file's path* may leave the `MESH` chunks packed: the directory
   already carries `(offset, compressedSize, uncompressedSize, compression)`, and
   `load_mesh_range` reads and inflates a range natively, so a scene never holds its
