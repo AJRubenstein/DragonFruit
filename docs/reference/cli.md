@@ -192,7 +192,7 @@ and prints `[command] Xms` to stderr.
 | `scene transform-model <voxl> --id <id> [--position x,y,z] [--rotate x,y,z] [--scale x,y,z]` | Set transform | VOXL mutation |
 | `scene duplicate <voxl> --id <id> [--count N] [--offset x,y,z]` | Duplicate model | VOXL mutation |
 | `scene arrange <voxl> --mesh-dir <dir> [--spacing 2] [--build-width-mm 218] [--build-depth-mm 122] [--anchor center]` | Auto-arrange on plate | `highPrecisionArrange` (SAT nesting) |
-| `scene slice <voxl> --o <out> --mesh-dir <dir> [--printer <profile.json>] [--material <material.json>] [--aa-preset P] [--aa-settings <aa.json>] [--lut-curves <curves.json>]` | Merge + slice via Rust, with the job the app would build | Loads STLs → applies transforms → `assembleSliceJob` → `dragonfruit-cli slice run` |
+| `scene slice <voxl> --o <out> --mesh-dir <dir> [--plate <id or n>] [--printer <profile.json>] [--material <material.json>] [--aa-preset P] [--aa-settings <aa.json>] [--lut-curves <curves.json>]` | Merge + slice via Rust, with the job the app would build | Loads STLs → applies transforms → `assembleSliceJob` → `dragonfruit-cli slice run` |
 | `scene load <voxl> [--json]` | Dump full scene | `voxl/codec::parseVoxlAuto` |
 
 **`scene slice` builds the same job as the app.** With `--printer` (an official
@@ -206,6 +206,17 @@ the bundle's first material, else the app's default for a new material.
 `--layer-height`, `--build-width-mm`, `--build-depth-mm` and `--dither*` override
 the material and printer. Without `--printer`, `slice run` gets raw engine
 defaults and no metadata.
+
+**A slice covers one plate**, as in the app. `--plate` picks it by id or by its
+number from 1; without it, the scene's active plate. Only the models standing
+on that plate are sliced, shifted back by the plate's offset so they land where
+they stand on it, and each model left out is named on stderr
+(`not sliced: 'Cube B' stands on plate 2`). Which plate a model stands on comes
+from `plateLayout.ts`, the same rule the app uses (see
+[ADR-0045](../adr/0045-headless-scene-operations.md)). The VOXL does not record
+the viewer's origin mode, so plates are laid out with the default centred
+origin. Every command that saves keeps the scene's plates, active plate and
+embedded printer.
 
 Anti-aliasing is resolved by the same code as the slicing panel. Without flags
 the job gets what the panel does by default: the `balanced` auto preset and
@@ -256,10 +267,20 @@ It needs the generated plugin and support registries (`npm run generate:plugin-r
 `generate:support-renderers`); the other commands do not.
 
 `npm run check:scene-slice` runs it end to end, and CI runs that on every pull
-request: a cube through `scene create`, `add-model`, `place-on-platform` and
-`scene slice` with the Saturn 2 bundle, checking the layer and triangle counts
-the Rust slicer reports. It generates the registries itself but needs the
-release build of `dragonfruit-cli`.
+request, in two cases:
+
+- A cube through `scene create`, `add-model`, `place-on-platform` and
+  `scene slice` with the Saturn 2 bundle, checking the layer and triangle
+  counts the Rust slicer reports.
+- A cube on each of two plates, written with the app's writer. A
+  `transform-model` save has to keep the plates, and `--plate 1` and
+  `--plate 2` have to slice one cube each to the same file, header aside. A
+  float32 rounding of plate two's offset (about 5 nm) can flip one pixel's AA
+  level, so up to 16 bytes past the header may differ; a missing offset
+  changes every layer.
+
+It generates the registries itself but needs the release build of
+`dragonfruit-cli`.
 
 Not covered: plugin metadata payloads such as the
 VOXL scene in `.lumen`, and thumbnails.
