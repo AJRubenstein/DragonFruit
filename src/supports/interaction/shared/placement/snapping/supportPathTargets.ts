@@ -238,19 +238,24 @@ export function buildSupportPathSnapTargets(
 
     for (const descriptor of shaftedSnapTypes) {
         if (!snap.has(descriptor.id)) continue;
-        const record = supportState[descriptor.location.key as SupportCollectionKey] as Record<string, { segments: Segment[] }>;
+        const record = supportState[descriptor.location.key as SupportCollectionKey] as Record<string, { segments: Segment[]; hostKnotId?: string }>;
         for (const entity of Object.values(record)) {
             if (!matchesPlacementSurfaceFilter(getPlacementSurface(descriptor, entity), placementSurface)) continue;
+            // A terminal segment ends at the host knot rather than at a joint,
+            // so without this its length is not a target anything can ride.
+            const hostKnotPos = entity.hostKnotId ? knotMap.get(entity.hostKnotId)?.pos : undefined;
             for (const segment of entity.segments) {
                 if (shouldExclude(segment.id, excludeSegmentIds)) continue;
-                if (!segment.bottomJoint || !segment.topJoint) continue;
+                if (!segment.bottomJoint) continue;
+                const endPos = segment.topJoint?.pos ?? hostKnotPos;
+                if (!endPos) continue;
 
                 targets.push({
                     id: segment.id,
                     type: 'path',
                     pathSegment: {
                         start: cloneVec3(segment.bottomJoint.pos),
-                        end: cloneVec3(segment.topJoint.pos),
+                        end: cloneVec3(endPos),
                         radius: segment.diameter / 2,
                         bezier: segment.type === 'bezier'
                             ? { control1: segment.controlPoint1, control2: segment.controlPoint2 }
