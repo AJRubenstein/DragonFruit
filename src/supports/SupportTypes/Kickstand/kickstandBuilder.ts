@@ -56,6 +56,42 @@ function createRootAndJointHeights(input: KickstandBuildInput, rootTopZ: number)
     return { firstJointZ, secondJointZ, thirdJointZ, layout };
 }
 
+/** At least this far from horizontal, matching the shaft constraint's 80deg default. */
+const DEFAULT_MAX_SHAFT_ANGLE_DEG = 80;
+
+/**
+ * Is the column a shape a printer can build?
+ *
+ * Every run has to climb: one that descends means the chain overshot the host
+ * and doubles back, which no amount of angle allowance makes printable. The
+ * rest obey the same limit from vertical that a shaft does, so a grid-snapped
+ * column is held to what a freely placed one already was.
+ */
+function columnShapeError(
+    segments: Segment[],
+    hostPos: Vec3,
+    maxShaftAngleDeg: number | undefined,
+): LimitationCode | undefined {
+    const limitDeg = maxShaftAngleDeg ?? DEFAULT_MAX_SHAFT_ANGLE_DEG;
+    const points: Vec3[] = [];
+    for (const segment of segments) {
+        if (segment.bottomJoint?.pos && points.length === 0) points.push(segment.bottomJoint.pos);
+        if (segment.topJoint?.pos) points.push(segment.topJoint.pos);
+    }
+    points.push(hostPos);
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+        const start = points[i];
+        const end = points[i + 1];
+        const dz = end.z - start.z;
+        const span = Math.hypot(end.x - start.x, end.y - start.y, dz);
+        if (span < 1e-6) continue;
+        const angleFromUpDeg = Math.acos(Math.max(-1, Math.min(1, dz / span))) * (180 / Math.PI);
+        if (angleFromUpDeg > limitDeg) return 'ANGLE_TOO_STEEP';
+    }
+    return undefined;
+}
+
 /**
  * Does the column run through the model on its way up to the host?
  *
@@ -221,7 +257,8 @@ export function buildKickstandData(input: KickstandBuildInput): KickstandBuildRe
         root,
         hostKnot,
         kickstand,
-        error: columnCollision(segments, bodyDiameterMm, input.collisionMesh),
+        error: columnShapeError(segments, hostKnot.pos, input.maxShaftAngleDeg)
+            ?? columnCollision(segments, bodyDiameterMm, input.collisionMesh),
     };
 }
 

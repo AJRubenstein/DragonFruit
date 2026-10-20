@@ -9,7 +9,7 @@ import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { addAction } from '@/supports/history/actionTypes';
 import { addSupportEntity, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
-import { getGridSettings } from '../../Settings/state';
+import { getGridSettings, getSettings } from '../../Settings/state';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
 import { clampKickstandHostT } from './kickstandRules';
 import { buildKickstandData, toKickstandPreviewData } from './kickstandBuilder';
@@ -399,6 +399,7 @@ export function KickstandPlacementController() {
                 minT: meta.minT,
             },
             collisionMesh: resolveCollisionMesh(meta.modelId, snappedPos),
+            maxShaftAngleDeg: getSettings().shaft.maxAngleDeg,
         });
 
         return {

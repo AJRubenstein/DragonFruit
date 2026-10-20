@@ -32,6 +32,8 @@ export interface KickstandBuildInput {
     authoredColumn?: { topPos: Vec3 };
     /** The model the column must not run through. Without one it is not checked. */
     collisionMesh?: THREE.Mesh;
+    /** How far a run may lean from vertical, from the shaft setting. */
+    maxShaftAngleDeg?: number;
 }
 
 export interface KickstandBuildResult {
