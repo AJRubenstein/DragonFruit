@@ -1,6 +1,6 @@
 import { registerSupportProxyGeometry } from '../../proxyGeometry/seam';
 import { braceBezierToBatchedShaft } from '../../Curves/batchedBezierShaft';
-import { JOINT_DIAMETER_OFFSET_MM } from '../../constants';
+import { braceSpanDiameters } from './braceSpanDiameters';
 import { knotHostId, spanKnotHostType } from '../../supportTypeRegistry';
 import type { Brace } from '../../types';
 
@@ -18,21 +18,8 @@ registerSupportProxyGeometry<Brace>('brace', (brace, ctx) => {
   const endKnot = ctx.state.knots[brace.endKnotId];
   if (!startKnot || !endKnot) return;
 
-  const profileDiameter = Math.max(0.001, brace.profile?.diameter ?? 1);
-  const startHostDiameter = Math.min(
-    profileDiameter,
-    Math.max(
-      0.001,
-      (startKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-    ),
-  );
-  const endHostDiameter = Math.min(
-    profileDiameter,
-    Math.max(
-      0.001,
-      (endKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-    ),
-  );
+  const { startDiameterMm: startHostDiameter, endDiameterMm: endHostDiameter } =
+    braceSpanDiameters(brace, startKnot, endKnot);
 
   const braceDiameter = (startHostDiameter + endHostDiameter) * 0.5;
 

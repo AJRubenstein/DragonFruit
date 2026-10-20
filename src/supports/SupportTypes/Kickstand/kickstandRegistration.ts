@@ -51,7 +51,9 @@ registerSupportExportGroup<Kickstand>('kickstand', (kickstand, context) => {
     kickstand.segments.forEach((segment, index) => {
         const isLast = index === kickstand.segments.length - 1;
         const end = segment.topJoint ? segment.topJoint.pos : isLast ? hostKnot.pos : currentStart;
-        appendShafts(group, segment, currentStart, end);
+        // The segment ending at the knot narrows into it, as `shaftTaper` says.
+        const taperEnd = segment.topJoint ? undefined : kickstand.profile?.terminalEndDiameterMm;
+        appendShafts(group, segment, currentStart, end, taperEnd);
         if (segment.topJoint) group.add(SupportGeometryGenerator.generateJointMesh(segment.topJoint));
         currentStart = end;
     });

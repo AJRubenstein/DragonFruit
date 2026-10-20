@@ -7,6 +7,7 @@ import {
     resolveCurvedShaftIndexForFace,
     splitBatchedShafts,
 } from '../../Curves/batchedBezierTubeGeometry';
+import { buildBatchedTaperedShafts, isTaperedBatchedShaft } from './batchedTaperedShaftGeometry';
 import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
 import { supportAnswersPointer } from '@/features/scene/plates/plateInteractivity';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
@@ -91,6 +92,45 @@ const NOOP_RAYCAST: THREE.Object3D['raycast'] = () => {};
 /** Grouping key for curved shafts a caller does not tint: not a colour. */
 const NO_TINT_KEY = 'no-tint';
 
+/** A merged mesh and the shafts whose faces it holds, in face order. */
+interface MergedShaftGroup {
+    /** Which builder made it, so the two kinds keep distinct React keys. */
+    kind: 'curved' | 'tapered';
+    color: string;
+    shafts: InstancedShaft[];
+    merged: { geometry: THREE.BufferGeometry; triangleRangeEnds: number[] };
+}
+
+/**
+ * Shafts that cannot be instanced, merged into one mesh per colour.
+ *
+ * A merged mesh has one material, so a caller that tints individual shafts gets
+ * one mesh per colour rather than vertex colours: the colour then rides on the
+ * material, the same way an instanced shaft's does, and two shafts that should
+ * look alike cannot diverge by which path drew them. The selection tints at
+ * most two colours. Curved and tapered shafts merge alike; only the builder
+ * that turns a group into geometry differs.
+ */
+function mergeShaftsByColor(
+    kind: MergedShaftGroup['kind'],
+    shafts: readonly InstancedShaft[],
+    instanceColor: ((shaft: InstancedShaft) => THREE.Color) | undefined,
+    build: (group: InstancedShaft[]) => MergedShaftGroup['merged'] | null,
+): MergedShaftGroup[] {
+    const byColor = new Map<string, InstancedShaft[]>();
+    for (const shaft of shafts) {
+        const color = instanceColor ? instanceColor(shaft).getHexString() : NO_TINT_KEY;
+        const bucket = byColor.get(color);
+        if (bucket) bucket.push(shaft);
+        else byColor.set(color, [shaft]);
+    }
+
+    return [...byColor.entries()].flatMap(([color, group]) => {
+        const merged = build(group);
+        return merged ? [{ kind, color, shafts: group, merged }] : [];
+    });
+}
+
 /** Layout scratch: layouts are synchronous, so the batch kinds can share it. */
 const scratchObject = new THREE.Object3D();
 const shaftStart = new THREE.Vector3();
@@ -129,11 +169,7 @@ export function InstancedShaftGroup({
         const straight: InstancedShaft[] = [];
         const tapered: InstancedShaft[] = [];
         for (const shaft of allStraightShafts) {
-            if (shaft.diameterEnd != null && Math.abs(shaft.diameterEnd - shaft.diameter) > 1e-6) {
-                tapered.push(shaft);
-            } else {
-                straight.push(shaft);
-            }
+            (isTaperedBatchedShaft(shaft) ? tapered : straight).push(shaft);
         }
         return { straightShafts: straight, taperedShafts: tapered };
     }, [allStraightShafts]);
@@ -162,50 +198,37 @@ export function InstancedShaftGroup({
     // them. The selection tints at most two colours.
     const curvedTubeGroups = useMemo(() => {
         noteActivity('support-mode:curved-shaft-tubes');
-        const byColor = new Map<string, InstancedShaft[]>();
-        for (const shaft of curvedShafts) {
-            const color = instanceColor ? instanceColor(shaft).getHexString() : NO_TINT_KEY;
-            const bucket = byColor.get(color);
-            if (bucket) bucket.push(shaft);
-            else byColor.set(color, [shaft]);
-        }
-
-        return [...byColor.entries()].flatMap(([color, group]) => {
-            const tubes = buildBatchedBezierTubes(group, radialSegments);
-            return tubes ? [{ color, shafts: group, tubes }] : [];
-        });
+        return mergeShaftsByColor(
+            'curved',
+            curvedShafts,
+            instanceColor,
+            (group) => buildBatchedBezierTubes(group, radialSegments),
+        );
     }, [curvedShafts, radialSegments, instanceColor]);
 
     useEffect(() => {
         return () => {
-            for (const group of curvedTubeGroups) group.tubes.geometry.dispose();
+            for (const group of curvedTubeGroups) group.merged.geometry.dispose();
         };
     }, [curvedTubeGroups]);
 
-    // One cone per tapering shaft, placed the way an instance would be. Few
-    // enough to draw individually: a shaft only tapers where it meets a host
-    // narrower than itself.
-    const taperedMeshes = useMemo(() => taperedShafts.map((shaft) => {
-        const start = new THREE.Vector3(shaft.start.x, shaft.start.y, shaft.start.z);
-        const end = new THREE.Vector3(shaft.end.x, shaft.end.y, shaft.end.z);
-        const direction = new THREE.Vector3().subVectors(end, start);
-        const length = direction.length();
-        if (length < 0.001) return null;
-        direction.divideScalar(length);
+    // Tapered shafts merge the same way curved ones do: one mesh per colour,
+    // not one per shaft, so leaving the batch does not cost a draw call each.
+    const taperedMergedGroups = useMemo(() => {
+        noteActivity('support-mode:tapered-shaft-merge');
+        return mergeShaftsByColor(
+            'tapered',
+            taperedShafts,
+            instanceColor,
+            (group) => buildBatchedTaperedShafts(group, radialSegments),
+        );
+    }, [taperedShafts, radialSegments, instanceColor]);
 
-        return {
-            shaft,
-            position: new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5),
-            quaternion: new THREE.Quaternion().setFromUnitVectors(UP, direction),
-            // `cylinderGeometry` takes the top radius first, and the mesh's +Y
-            // was aligned to `end` above.
-            radiusTop: Math.max(0.0005, (shaft.diameterEnd ?? shaft.diameter) / 2),
-            radiusBottom: Math.max(0.0005, shaft.diameter / 2),
-            length,
-            color: instanceColor ? `#${instanceColor(shaft).getHexString()}` : color,
+    useEffect(() => {
+        return () => {
+            for (const group of taperedMergedGroups) group.merged.geometry.dispose();
         };
-    }).filter((entry): entry is NonNullable<typeof entry> => entry !== null),
-    [taperedShafts, instanceColor, color]);
+    }, [taperedMergedGroups]);
 
     const hasOverlay = !!outOfBoundsMaterial;
 
@@ -334,39 +357,40 @@ export function InstancedShaftGroup({
         lastHoveredShaftRef.current = null;
     };
 
-    const resolveCurvedShaft = (event: { faceIndex?: number | null; object?: THREE.Object3D }): InstancedShaft | null => {
+    // The merged meshes share one handler set, so which one was hit decides
+    // which shaft list the face index belongs to.
+    const mergedGroups = [...curvedTubeGroups, ...taperedMergedGroups];
+    const resolveMergedShaft = (event: { faceIndex?: number | null; object?: THREE.Object3D }): InstancedShaft | null => {
         const faceIndex = event.faceIndex;
         if (faceIndex == null) return null;
-        // The tube meshes share one handler set, so which one was hit decides
-        // which curve list the face index belongs to.
         const hitGeometry = event.object && 'geometry' in event.object ? event.object.geometry : null;
-        const group = curvedTubeGroups.find((candidate) => candidate.tubes.geometry === hitGeometry);
+        const group = mergedGroups.find((candidate) => candidate.merged.geometry === hitGeometry);
         if (!group) return null;
-        const index = resolveCurvedShaftIndexForFace(group.tubes.triangleRangeEnds, faceIndex);
+        const index = resolveCurvedShaftIndexForFace(group.merged.triangleRangeEnds, faceIndex);
         return index >= 0 ? group.shafts[index] ?? null : null;
     };
 
-    const handleCurvedClick = (event: ThreeEvent<MouseEvent>) => {
+    const handleMergedClick = (event: ThreeEvent<MouseEvent>) => {
         if (!onShaftClick) return;
         event.stopPropagation();
-        const shaft = resolveCurvedShaft(event);
+        const shaft = resolveMergedShaft(event);
         if (!shaft) return;
         onShaftClick(shaft, event);
     };
 
 
-    const handleCurvedPointerDown = (event: ThreeEvent<PointerEvent>) => {
+    const handleMergedPointerDown = (event: ThreeEvent<PointerEvent>) => {
         if (!onShaftPointerDown) return;
         event.stopPropagation();
-        const shaft = resolveCurvedShaft(event);
+        const shaft = resolveMergedShaft(event);
         if (!shaft) return;
         onShaftPointerDown(shaft, event);
     };
 
-    const handleCurvedPointerMove = (event: ThreeEvent<PointerEvent>) => {
+    const handleMergedPointerMove = (event: ThreeEvent<PointerEvent>) => {
         if (!onShaftPointerMove) return;
         event.stopPropagation();
-        const shaft = resolveCurvedShaft(event);
+        const shaft = resolveMergedShaft(event);
         if (!shaft) return;
         lastHoveredShaftRef.current = shaft;
         onShaftPointerMove(shaft, event);
@@ -412,15 +436,15 @@ export function InstancedShaftGroup({
                     <cylinderGeometry args={[0.5, 0.5, 1, radialSegments, 1, false]} />
                 </instancedMesh>
             )}
-            {curvedTubeGroups.map((group) => (
+            {mergedGroups.map((group) => (
                 <mesh
-                    key={`curved:${group.color}`}
-                    geometry={group.tubes.geometry}
+                    key={`merged:${group.kind}:${group.color}`}
+                    geometry={group.merged.geometry}
                     frustumCulled={false}
                     renderOrder={100000}
-                    onClick={onShaftClick ? handleCurvedClick : undefined}
-                    onPointerDown={onShaftPointerDown ? handleCurvedPointerDown : undefined}
-                    onPointerMove={onShaftPointerMove ? handleCurvedPointerMove : undefined}
+                    onClick={onShaftClick ? handleMergedClick : undefined}
+                    onPointerDown={onShaftPointerDown ? handleMergedPointerDown : undefined}
+                    onPointerMove={onShaftPointerMove ? handleMergedPointerMove : undefined}
                     onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
                 >
                     <meshStandardMaterial
@@ -434,39 +458,16 @@ export function InstancedShaftGroup({
                     />
                 </mesh>
             ))}
-            {curvedTubeGroups.map((group) => (outOfBoundsMaterial ? (
+            {mergedGroups.map((group) => (outOfBoundsMaterial ? (
                 <mesh
-                    key={`curved-overlay:${group.color}`}
-                    geometry={group.tubes.geometry}
+                    key={`merged-overlay:${group.kind}:${group.color}`}
+                    geometry={group.merged.geometry}
                     frustumCulled={false}
                     raycast={NOOP_RAYCAST}
                     renderOrder={100000}
                     material={outOfBoundsMaterial}
                 />
             ) : null))}
-            {taperedMeshes.map((entry) => (isHidden?.(entry.shaft) ? null : (
-                <mesh
-                    key={`tapered:${entry.shaft.id}`}
-                    position={entry.position}
-                    quaternion={entry.quaternion}
-                    frustumCulled={false}
-                    onClick={onShaftClick ? (event) => onShaftClick(entry.shaft, event) : undefined}
-                    onPointerDown={onShaftPointerDown ? (event) => onShaftPointerDown(entry.shaft, event) : undefined}
-                    onPointerMove={onShaftPointerMove ? (event) => onShaftPointerMove(entry.shaft, event) : undefined}
-                    onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
-                >
-                    <cylinderGeometry args={[entry.radiusTop, entry.radiusBottom, entry.length, radialSegments]} />
-                    <meshStandardMaterial
-                        color={entry.color}
-                        emissive={emissive}
-                        emissiveIntensity={emissiveIntensity}
-                        transparent={transparent}
-                        opacity={opacity}
-                        depthWrite={!transparent}
-                        clippingPlanes={clippingPlanes ?? undefined}
-                    />
-                </mesh>
-            )))}
         </>
     );
 }
