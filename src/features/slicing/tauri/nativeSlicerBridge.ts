@@ -591,7 +591,11 @@ export async function loadMeshFileFromNativePath(filePath: string, classify?: bo
  * The classify flag rides in a header, because a raw-body command cannot also
  * take JSON arguments.
  */
-export async function loadMeshBytes(bytes: Uint8Array, classify: boolean): Promise<Uint8Array> {
+export async function loadMeshBytes(
+  bytes: Uint8Array,
+  classify: boolean,
+  refine = true,
+): Promise<Uint8Array> {
   const core = await loadTauriCore();
   if (!core) {
     throw new Error('Native mesh loading is only available in DragonFruit Desktop (Tauri runtime).');
@@ -601,6 +605,7 @@ export async function loadMeshBytes(bytes: Uint8Array, classify: boolean): Promi
     headers: {
       'Content-Type': 'application/octet-stream',
       'x-mesh-classify': classify ? '1' : '0',
+      'x-mesh-refine': refine ? '1' : '0',
     },
   });
   return toPayloadBytes(payload);

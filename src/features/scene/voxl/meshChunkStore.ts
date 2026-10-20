@@ -17,7 +17,8 @@
  * **1. Dirty tracking is by geometry SIGNATURE, not by a boolean flag.**
  * `ExportManager.computeModelGeometrySignature` is promoted from a private cache
  * key to the dirty primitive. It is derived from the geometry object itself
- * (`uuid : position.version : index.version : vertexCount`), so it cannot drift
+ * (`uuid : position.version : index.version : vertexCount : position-array identity`),
+ * so it cannot drift
  * the way a flag missed by a future mutation path would. The consequence worth
  * stating: because the signature is the authority and the bake hooks are merely
  * *when*, a missed hook costs a lazy re-bake on the next tick — **never a stale

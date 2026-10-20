@@ -415,6 +415,13 @@ export async function loadMeshRangeFromNativePath(request: {
   compressedSize: number;
   compression: number;
   classify?: boolean;
+  /**
+   * Whether the native side refines coarse faces before encoding. A VOXL's stored
+   * mesh is already the scene's refined geometry, and refining it again changes the
+   * triangle count and order the file's `classification` addresses — so the caller
+   * passes false for one it holds a classification for.
+   */
+  refine?: boolean;
 }): Promise<Uint8Array> {
   const core = await loadTauriCore();
   if (!core) {
@@ -426,6 +433,7 @@ export async function loadMeshRangeFromNativePath(request: {
     length: request.compressedSize,
     compression: request.compression,
     classify: request.classify ?? false,
+    refine: request.refine ?? true,
   });
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 }

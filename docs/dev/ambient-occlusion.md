@@ -62,6 +62,16 @@ since — and an evicted token — fall back to the soup path, which cannot go s
 fallback is what every other geometry uses: a plugin's, a repaired one, a file out of a
 zip.
 
+The recording happens in the loader, immediately after the decoded bodies are merged and
+*before* prep runs (`rememberLoadedMeshMesh`, called from `loadMeshGeometryFromRange` — the
+range load is the one path whose `DFMX` header carries a token). It used to happen at the
+end of prep, which was one pass too late: a classify pass replaces the position attribute
+with the reordered soup at the same corner count, so the array recorded afterwards was the
+*new* one and the guard passed — the bake then indexed the loader's triangle order into a
+geometry drawn in the classifier's order, one triangle over, which renders as speckle.
+Recorded first, the reorder invalidates the token by itself. A centering translate mutates
+the array in place and correctly keeps it.
+
 `aBakedAo` is the queue's only key, so the sweep must not re-issue a bake whose
 result has not landed yet: a geometry with a bake in flight has no attribute, and
 looks exactly like one that was never baked. The sweep therefore keeps the
