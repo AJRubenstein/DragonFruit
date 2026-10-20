@@ -104,11 +104,8 @@ function seedEntity(
   const fields = payload as Record<string, unknown> | null | undefined;
   if (!fields) return null;
 
-  const seed = fields[payloadFields(descriptor).self] as
-    { id?: string; kickstand?: { id: string } } | undefined;
+  const seed = fields[payloadFields(descriptor).self] as { id?: string } | undefined;
   if (seed?.id) return seed as { id: string };
-  // Nested builds carry the entity one level down.
-  if (seed?.kickstand?.id) return seed.kickstand;
 
   const list = fields[descriptor.location.key] as { id: string }[] | undefined;
   return list?.length ? list[0] : null;

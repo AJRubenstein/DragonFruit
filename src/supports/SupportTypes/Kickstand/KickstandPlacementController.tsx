@@ -3,11 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'r
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
+import { useActionActive } from '@/hotkeys/hotkeyStore';
+import { findClosestMeshToPoint } from '../../PlacementLogic/PlacementUtils';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { addAction } from '@/supports/history/actionTypes';
 import { addSupportEntity, addKnot, addRoot, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
-import { getGridSettings } from '../../Settings/state';
+import { getGridSettings, getSettings } from '../../Settings/state';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
 import { clampKickstandHostT } from './kickstandRules';
 import { buildKickstandData, toKickstandPreviewData } from './kickstandBuilder';
@@ -338,8 +340,11 @@ function findNearestUnoccupiedGridRoot(
 export function KickstandPlacementController() {
     const { hotkeyActive } = useKickstandPlacementState();
     const supportState = useSyncExternalStore(subscribe, getSnapshot);
-    const { camera, gl, pointer, raycaster } = useThree();
+    const { camera, gl, pointer, raycaster, scene } = useThree();
     const { getHotkey } = useHotkeyConfig();
+    const forcePlaceActive = useActionActive('SUPPORTS', 'FORCE_PLACE_SUPPORT');
+    const forcePlaceRef = useRef(false);
+    forcePlaceRef.current = forcePlaceActive;
     const hoverPointBySegmentRef = useRef<Map<string, Vec3>>(new Map());
     const hoveredSegmentIdRef = useRef<string | null>(null);
     const desiredBandRef = useRef<DesiredBand>('front');
@@ -350,6 +355,18 @@ export function KickstandPlacementController() {
     const targetMetaById = useMemo(() => {
         return buildKickstandSnapTargetMetaIndex(supportState);
     }, [supportState]);
+
+    /** The model the column has to clear, picked from the scene by its id. */
+    const resolveCollisionMesh = useCallback((modelId: string, near: Vec3): THREE.Mesh | undefined => {
+        if (!scene) return undefined;
+        const meshes: THREE.Object3D[] = [];
+        scene.traverse((obj) => {
+            if (obj.userData?.modelId !== modelId) return;
+            const mesh = obj as THREE.Mesh;
+            if (mesh.isMesh && mesh.geometry) meshes.push(mesh);
+        });
+        return findClosestMeshToPoint(near, meshes);
+    }, [scene]);
 
     const snapTargets = useMemo(() => {
         return Array.from(targetMetaById.values()).map((meta) => meta.target);
@@ -381,6 +398,8 @@ export function KickstandPlacementController() {
                 diameterMm: meta.diameterMm,
                 minT: meta.minT,
             },
+            collisionMesh: resolveCollisionMesh(meta.modelId, snappedPos),
+            maxShaftAngleDeg: getSettings().shaft.maxAngleDeg,
         });
 
         return {
@@ -396,7 +415,7 @@ export function KickstandPlacementController() {
             },
             build,
         };
-    }, []);
+    }, [resolveCollisionMesh]);
 
     useEffect(() => {
         const el = gl.domElement;
@@ -557,7 +576,10 @@ export function KickstandPlacementController() {
 
         const { target, build } = buildPlacementFromSnap(meta, clampedT, snappedPos, rootPos);
         const previewData = toKickstandPreviewData(build);
-        previewData.error = nodeOccupied ? 'TOO_CLOSE_TO_EXISTING' : undefined;
+        // An occupied node outranks a collision: the solver can resolve it.
+        previewData.error = forcePlaceRef.current
+            ? undefined
+            : (nodeOccupied ? 'TOO_CLOSE_TO_EXISTING' : build.error);
 
         console.log('[DEBUG Kickstand placement useFrame] Setting preview:', {
             segmentId: meta.segmentId,
@@ -650,6 +672,8 @@ export function KickstandPlacementController() {
                 return;
             }
 
+            if (finalBuild.error && !forcePlaceRef.current) return;
+
             console.log('[DEBUG Kickstand placement handleClick] Placement succeeded! Adding kickstand:', finalBuild);
 
             // Three ordinary entities: the kickstand, the root it mounts to and
@@ -658,9 +682,15 @@ export function KickstandPlacementController() {
             addKnot(finalBuild.hostKnot);
             addSupportEntity('kickstand', finalBuild.kickstand);
 
+            // Keyed by the registry's removal shape, which is what the undo
+            // handler reads: a nested build leaves it with nothing to restore.
             pushSupportHistory({
                 type: addAction('kickstand'),
-                payload: { build: finalBuild },
+                payload: {
+                    kickstand: finalBuild.kickstand,
+                    roots: finalBuild.root,
+                    knots: finalBuild.hostKnot,
+                },
             });
 
             clearSupportSelection();

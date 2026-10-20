@@ -314,7 +314,7 @@ export function collectProxyPrimitives(
   // Curved segments become batched-shaft entries, drawn as capped tubes. The
   // unscoped STL/3MF export serializes this layer's scene graph, so curves must
   // be visible here too.
-  const pushSegmentShafts = (segment: Segment, start: Vec3, end: Vec3, supportId: string, modelId?: string) => {
+  const pushSegmentShafts = (segment: Segment, start: Vec3, end: Vec3, supportId: string, modelId?: string, diameterEnd?: number) => {
     if (segment.type === 'bezier') {
       pushShaft(bezierSegmentToBatchedShaft(segment, start, end, supportId, modelId));
       return;
@@ -326,6 +326,7 @@ export function collectProxyPrimitives(
       start,
       end,
       diameter: segment.diameter,
+      ...(diameterEnd != null ? { diameterEnd } : {}),
     });
   };
 

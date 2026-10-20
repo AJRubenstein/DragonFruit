@@ -17,6 +17,8 @@ export interface ProxyPrimitiveSink {
         end: Vec3,
         supportId: string,
         modelId?: string,
+        /** The width at `end`, for a segment that narrows into its host. */
+        diameterEnd?: number,
     ): void;
     pushRoot(root: InstancedRoot): void;
     pushJoint(joint: InstancedJoint, dedupeKey?: string, diameterBlendMm?: number): void;

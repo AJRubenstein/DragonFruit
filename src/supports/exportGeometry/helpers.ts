@@ -56,11 +56,12 @@ export function appendConeGeometry(group: THREE.Group, cone: ContactCone): void 
 }
 
 /** One segment's shaft, straight or bezier, as the segment declares. */
-export function appendShafts(group: THREE.Group, segment: Segment, start: Vec3, end: Vec3): void {
+export function appendShafts(group: THREE.Group, segment: Segment, start: Vec3, end: Vec3, diameterEnd?: number): void {
     const meshes = SupportGeometryGenerator.generateSegmentShaftMeshes(
         segment,
         new THREE.Vector3(start.x, start.y, start.z),
         new THREE.Vector3(end.x, end.y, end.z),
+        diameterEnd,
     );
     for (const mesh of meshes) {
         group.add(mesh);

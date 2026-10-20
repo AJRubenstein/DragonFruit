@@ -12,6 +12,7 @@ import { supportAnswersPointer } from '@/features/scene/plates/plateInteractivit
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
 import { INSTANCED_MESH_RAYCAST } from '../instancedRaycast';
 import { noteActivity } from '@/utils/debug/heartbeatContext';
+import { quantizeToScale } from '@/utils/math';
 import { writeInstanceColors } from '../instanceColorWriter';
 
 export interface InstancedShaft {
@@ -19,6 +20,8 @@ export interface InstancedShaft {
     start: Vec3;
     end: Vec3;
     diameter: number;
+    /** The width at `end`. Set and differing, the shaft leaves the batch. */
+    diameterEnd?: number;
     supportId?: string;
     modelId?: string;
     /**
@@ -80,10 +83,6 @@ interface InstancedShaftGroupProps {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
-const NOOP_RAYCAST: THREE.Object3D['raycast'] = () => {};
-
-/** Grouping key for curved shafts a caller does not tint: not a colour. */
-const NO_TINT_KEY = 'no-tint';
 
 /** Layout scratch: layouts are synchronous, so the batch kinds can share it. */
 const scratchObject = new THREE.Object3D();
@@ -91,6 +90,145 @@ const shaftStart = new THREE.Vector3();
 const shaftEnd = new THREE.Vector3();
 const shaftDirection = new THREE.Vector3();
 const shaftMidpoint = new THREE.Vector3();
+const NOOP_RAYCAST: THREE.Object3D['raycast'] = () => {};
+
+/** Grouping key for curved shafts a caller does not tint: not a colour. */
+const NO_TINT_KEY = 'no-tint';
+
+/** True when this shaft's two ends differ enough to need a cone. */
+function isTaperedShaft(shaft: InstancedShaft): boolean {
+    return shaft.diameterEnd != null
+        && Math.abs(shaft.diameterEnd - shaft.diameter) > 1e-6;
+}
+
+/**
+ * Tapered shafts sharing one end-to-end ratio, which one instanced cone draws.
+ *
+ * A cone of radius `ratio` over radius 1 scales to any width and length, so a
+ * ratio is all a bucket needs -- the same shape-keyed batching the roots use.
+ */
+interface TaperBucket {
+    key: string;
+    ratio: number;
+    shafts: InstancedShaft[];
+}
+
+function taperBuckets(shafts: readonly InstancedShaft[]): TaperBucket[] {
+    const grouped = new Map<string, TaperBucket>();
+    for (const shaft of shafts) {
+        const ratio = quantizeToScale((shaft.diameterEnd ?? shaft.diameter) / shaft.diameter, 1000);
+        const key = String(ratio);
+        const existing = grouped.get(key);
+        if (existing) existing.shafts.push(shaft);
+        else grouped.set(key, { key, ratio, shafts: [shaft] });
+    }
+    return [...grouped.values()];
+}
+
+/**
+ * One bucket of tapered shafts, instanced like the straight batch.
+ *
+ * The base cone is `ratio` over 1, so the shared (diameter, length, diameter)
+ * scale lands each shaft's two ends where they belong.
+ */
+function TaperedShaftBucket({
+    bucket,
+    radialSegments,
+    color,
+    emissive,
+    emissiveIntensity,
+    transparent,
+    opacity,
+    clippingPlanes,
+    instanceColor,
+    isHidden,
+    onShaftClick,
+    onShaftPointerDown,
+    onShaftPointerMove,
+    onShaftPointerOut,
+}: {
+    bucket: TaperBucket;
+    radialSegments: number;
+    color: string;
+    emissive: string;
+    emissiveIntensity: number;
+    transparent: boolean;
+    opacity: number;
+    clippingPlanes: THREE.Plane[] | null;
+    instanceColor?: (shaft: InstancedShaft) => THREE.Color;
+    isHidden?: (shaft: InstancedShaft) => boolean;
+    onShaftClick?: (shaft: InstancedShaft, event: ThreeEvent<MouseEvent>) => void;
+    onShaftPointerDown?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
+    onShaftPointerMove?: (shaft: InstancedShaft, event: ThreeEvent<PointerEvent>) => void;
+    onShaftPointerOut?: (shaft: InstancedShaft | null, event: ThreeEvent<PointerEvent>) => void;
+}) {
+    const meshRef = useRef<THREE.InstancedMesh>(null);
+
+    useLayoutEffect(() => {
+        const mesh = meshRef.current;
+        if (!mesh) return;
+        bucket.shafts.forEach((shaft, index) => {
+            if (isHidden?.(shaft)) {
+                mesh.setMatrixAt(index, HIDDEN_INSTANCE_MATRIX);
+                return;
+            }
+            shaftStart.set(shaft.start.x, shaft.start.y, shaft.start.z);
+            shaftEnd.set(shaft.end.x, shaft.end.y, shaft.end.z);
+            shaftDirection.subVectors(shaftEnd, shaftStart);
+            const length = shaftDirection.length();
+            if (length < 0.001) {
+                mesh.setMatrixAt(index, HIDDEN_INSTANCE_MATRIX);
+                return;
+            }
+            shaftDirection.divideScalar(length);
+            shaftMidpoint.addVectors(shaftStart, shaftEnd).multiplyScalar(0.5);
+            scratchObject.position.copy(shaftMidpoint);
+            scratchObject.quaternion.setFromUnitVectors(UP, shaftDirection);
+            scratchObject.scale.set(shaft.diameter, length, shaft.diameter);
+            scratchObject.updateMatrix();
+            mesh.setMatrixAt(index, scratchObject.matrix);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        if (instanceColor) writeInstanceColors(mesh, bucket.shafts, instanceColor);
+    }, [bucket, isHidden, instanceColor]);
+
+    const shaftAt = (event: { instanceId?: number }) => (
+        event.instanceId == null ? null : bucket.shafts[event.instanceId] ?? null
+    );
+
+    return (
+        <instancedMesh
+            ref={meshRef}
+            args={[undefined, undefined, bucket.shafts.length]}
+            frustumCulled={false}
+            raycast={INSTANCED_MESH_RAYCAST}
+            onClick={onShaftClick ? (event) => {
+                const shaft = shaftAt(event);
+                if (shaft) { event.stopPropagation(); onShaftClick(shaft, event); }
+            } : undefined}
+            onPointerDown={onShaftPointerDown ? (event) => {
+                const shaft = shaftAt(event);
+                if (shaft) { event.stopPropagation(); onShaftPointerDown(shaft, event); }
+            } : undefined}
+            onPointerMove={onShaftPointerMove ? (event) => {
+                const shaft = shaftAt(event);
+                if (shaft) { event.stopPropagation(); onShaftPointerMove(shaft, event); }
+            } : undefined}
+            onPointerOut={onShaftPointerOut ? (event) => onShaftPointerOut(null, event) : undefined}
+        >
+            <cylinderGeometry args={[bucket.ratio / 2, 0.5, 1, radialSegments]} />
+            <meshStandardMaterial
+                color={instanceColor ? undefined : color}
+                emissive={emissive}
+                emissiveIntensity={emissiveIntensity}
+                transparent={transparent}
+                opacity={opacity}
+                depthWrite={!transparent}
+                clippingPlanes={clippingPlanes ?? undefined}
+            />
+        </instancedMesh>
+    );
+}
 
 export function InstancedShaftGroup({
     shafts,
@@ -115,7 +253,17 @@ export function InstancedShaftGroup({
     const overlayMeshRef = useRef<THREE.InstancedMesh>(null);
     const lastHoveredShaftRef = useRef<InstancedShaft | null>(null);
 
-    const { straightShafts, curvedShafts } = useMemo(() => splitBatchedShafts(shafts), [shafts]);
+    const { straightShafts: allStraightShafts, curvedShafts } = useMemo(() => splitBatchedShafts(shafts), [shafts]);
+
+    // One instance is a cylinder scaled by a matrix, which cannot narrow.
+    const { straightShafts, taperedShafts } = useMemo(() => {
+        const straight: InstancedShaft[] = [];
+        const tapered: InstancedShaft[] = [];
+        for (const shaft of allStraightShafts) {
+            (isTaperedShaft(shaft) ? tapered : straight).push(shaft);
+        }
+        return { straightShafts: straight, taperedShafts: tapered };
+    }, [allStraightShafts]);
 
     // The straight batch draws every shaft of every model in one mesh, so three's
     // own raycast would walk all of them (~0.11 us each, 13 ms at 100k) on every
@@ -160,6 +308,9 @@ export function InstancedShaftGroup({
             for (const group of curvedTubeGroups) group.tubes.geometry.dispose();
         };
     }, [curvedTubeGroups]);
+
+    // One instanced cone per taper ratio, so a taper costs no draw call each.
+    const taperedBuckets = useMemo(() => taperBuckets(taperedShafts), [taperedShafts]);
 
     const hasOverlay = !!outOfBoundsMaterial;
 
@@ -398,6 +549,25 @@ export function InstancedShaftGroup({
                     material={outOfBoundsMaterial}
                 />
             ) : null))}
+            {taperedBuckets.map((bucket) => (
+                <TaperedShaftBucket
+                    key={`tapered:${bucket.key}`}
+                    bucket={bucket}
+                    radialSegments={radialSegments}
+                    color={color}
+                    emissive={emissive}
+                    emissiveIntensity={emissiveIntensity}
+                    transparent={transparent}
+                    opacity={opacity}
+                    clippingPlanes={clippingPlanes}
+                    instanceColor={instanceColor}
+                    isHidden={isHidden}
+                    onShaftClick={onShaftClick}
+                    onShaftPointerDown={onShaftPointerDown}
+                    onShaftPointerMove={onShaftPointerMove}
+                    onShaftPointerOut={onShaftPointerOut}
+                />
+            ))}
         </>
     );
 }

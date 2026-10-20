@@ -42,7 +42,9 @@ registerSupportProxyGeometry<Kickstand>('kickstand', (kickstand, ctx) => {
     }
 
     const end = segment.topJoint?.pos ?? hostKnot.pos;
-    ctx.pushSegmentShafts(segment, currentStart, end, kickstand.id, kickstand.modelId);
+    // The terminal segment narrows into the host, as `shaftTaper` declares.
+    const taperEnd = segment.topJoint ? undefined : kickstand.profile?.terminalEndDiameterMm;
+    ctx.pushSegmentShafts(segment, currentStart, end, kickstand.id, kickstand.modelId, taperEnd);
 
     if (ctx.includeDetailedPrimitives && segment.topJoint) {
       ctx.pushJoint({

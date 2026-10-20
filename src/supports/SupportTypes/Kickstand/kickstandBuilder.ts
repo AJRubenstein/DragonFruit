@@ -1,7 +1,9 @@
-import type { Joint, Segment } from '../../types';
+import type { Joint, LimitationCode, Segment, Vec3 } from '../../types';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { getJointDiameter } from '../../constants';
+import { isShaftBlocked } from '../../PlacementLogic/CollisionAvoidance';
 import * as THREE from 'three';
+import { toVector3 } from '../../Curves/BezierUtils';
 import { assertKickstandHostKind, clampKickstandHostT } from './kickstandRules';
 import {
     getKickstandKnotDiameterMm,
@@ -53,6 +55,69 @@ function createRootAndJointHeights(input: KickstandBuildInput, rootTopZ: number)
     );
 
     return { firstJointZ, secondJointZ, thirdJointZ, layout };
+}
+
+/** At least this far from horizontal, matching the shaft constraint's 80deg default. */
+const DEFAULT_MAX_SHAFT_ANGLE_DEG = 80;
+
+/** A descending run means the chain overshot its host and doubled back. */
+function columnShapeError(
+    segments: Segment[],
+    hostPos: Vec3,
+    maxShaftAngleDeg: number | undefined,
+): LimitationCode | undefined {
+    const limitDeg = maxShaftAngleDeg ?? DEFAULT_MAX_SHAFT_ANGLE_DEG;
+    const points = columnPoints(segments, hostPos);
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+        const run = new THREE.Vector3().subVectors(points[i + 1], points[i]);
+        const span = run.length();
+        if (span < 1e-6) continue;
+        const angleFromUpDeg = THREE.MathUtils.radToDeg(
+            Math.acos(THREE.MathUtils.clamp(run.z / span, -1, 1)),
+        );
+        if (angleFromUpDeg > limitDeg) return 'ANGLE_TOO_STEEP';
+    }
+    return undefined;
+}
+
+/** The column's joints bottom to top, ending at the host it reaches. */
+function columnPoints(segments: Segment[], hostPos?: Vec3): THREE.Vector3[] {
+    const points: THREE.Vector3[] = [];
+    for (const segment of segments) {
+        if (segment.bottomJoint?.pos && points.length === 0) points.push(toVector3(segment.bottomJoint.pos));
+        if (segment.topJoint?.pos) points.push(toVector3(segment.topJoint.pos));
+    }
+    if (hostPos) points.push(toVector3(hostPos));
+    return points;
+}
+
+/** Does the column run through the model? The top run insets off its host. */
+function columnCollision(
+    segments: Segment[],
+    bodyDiameterMm: number,
+    mesh: THREE.Mesh | undefined,
+): LimitationCode | undefined {
+    if (!mesh) return undefined;
+
+    const radius = Math.max(0.001, bodyDiameterMm / 2);
+    const points = columnPoints(segments);
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+        const start = points[i];
+        const end = points[i + 1];
+        const probeEnd = i === points.length - 2 ? insetTowards(end, start, radius) : end;
+        if (isShaftBlocked(start, probeEnd, radius, mesh)) return 'COLLISION_WITH_MODEL';
+    }
+    return undefined;
+}
+
+/** `from` pulled back toward `towards`, or unchanged when the run is shorter. */
+function insetTowards(from: THREE.Vector3, towards: THREE.Vector3, distanceMm: number): THREE.Vector3 {
+    const run = new THREE.Vector3().subVectors(towards, from);
+    const length = run.length();
+    if (length <= distanceMm) return from;
+    return from.clone().addScaledVector(run.divideScalar(length), distanceMm);
 }
 
 export function buildKickstandData(input: KickstandBuildInput): KickstandBuildResult {
@@ -177,6 +242,8 @@ export function buildKickstandData(input: KickstandBuildInput): KickstandBuildRe
         root,
         hostKnot,
         kickstand,
+        error: columnShapeError(segments, hostKnot.pos, input.maxShaftAngleDeg)
+            ?? columnCollision(segments, bodyDiameterMm, input.collisionMesh),
     };
 }
 
@@ -200,5 +267,6 @@ export function toKickstandPreviewData(build: KickstandBuildResult): SupportData
         roots: build.root,
         segments: previewSegments,
         knot: build.hostKnot,
+        error: build.error,
     };
 }

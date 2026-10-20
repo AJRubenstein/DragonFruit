@@ -7,6 +7,7 @@ import { getConeQuaternion } from '@/supports/SupportPrimitives/ContactCone/cont
 import { calculateDiskThickness, getDiskCenter, getDiskRotation } from '@/supports/SupportPrimitives/ContactDisk/contactDiskUtils';
 import { RaftSettings } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { JOINT_DIAMETER_OFFSET_MM } from '@/supports/constants';
+import { taperWidthAlong } from '@/supports/SupportPrimitives/Shaft/shaftTaperGeometry';
 
 /**
  * SupportGeometryGenerator
@@ -204,7 +205,7 @@ export class SupportGeometryGenerator {
    * segment, or a piecewise-cylinder approximation of the curve for a bezier
    * segment (matching the live renderers and the raster slicing path).
    */
-  public static generateSegmentShaftMeshes(segment: Segment, start: THREE.Vector3, end: THREE.Vector3): THREE.Mesh[] {
+  public static generateSegmentShaftMeshes(segment: Segment, start: THREE.Vector3, end: THREE.Vector3, diameterEnd?: number): THREE.Mesh[] {
     if (segment.type === 'bezier') {
       const points = bezierToLineSegments(
         { x: start.x, y: start.y, z: start.z },
@@ -214,27 +215,32 @@ export class SupportGeometryGenerator {
         segment.resolution,
       );
       const meshes: THREE.Mesh[] = [];
+      const widthAt = taperWidthAlong(points.length, segment.diameter, diameterEnd);
       for (let i = 0; i < points.length - 1; i += 1) {
         const mesh = this.generateShaftMesh(
           new THREE.Vector3(points[i].x, points[i].y, points[i].z),
           new THREE.Vector3(points[i + 1].x, points[i + 1].y, points[i + 1].z),
-          segment.diameter,
+          widthAt(i),
+          widthAt(i + 1),
         );
         if (mesh) meshes.push(mesh);
       }
       return meshes;
     }
 
-    const mesh = this.generateShaftMesh(start, end, segment.diameter);
+    const mesh = this.generateShaftMesh(start, end, segment.diameter, diameterEnd);
     return mesh ? [mesh] : [];
   }
 
-  public static generateShaftMesh(start: THREE.Vector3, end: THREE.Vector3, diameter: number): THREE.Mesh | null {
+  /** `diameterEnd` narrows the mesh toward `end`; without one it is a cylinder. */
+  public static generateShaftMesh(start: THREE.Vector3, end: THREE.Vector3, diameter: number, diameterEnd?: number): THREE.Mesh | null {
     const length = start.distanceTo(end);
     if (length < 0.001) return null;
 
     const radius = diameter / 2;
-    const geometry = new THREE.CylinderGeometry(radius, radius, length, 8);
+    // The cylinder's +Y is aligned to `end` below, so the top radius is the end.
+    const radiusEnd = Math.max(0.0005, (diameterEnd ?? diameter) / 2);
+    const geometry = new THREE.CylinderGeometry(radiusEnd, radius, length, 8);
     
     // Orient the cylinder
     const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);

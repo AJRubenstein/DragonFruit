@@ -52,6 +52,7 @@ import { inlineRootBatchInstance } from './SupportPrimitives/Roots/inlineRootBat
 import { batchesInView, BATCHED_PASSES } from './rendering/batchCoverage';
 import { InstancedContactConeGroup, coneAxisSpan, type InstancedContactCone } from './SupportPrimitives/ContactCone/InstancedContactConeGroup';
 import { useBracePlacementState } from './SupportTypes/Brace/bracePlacementState';
+import { braceSpanDiameters } from './SupportTypes/Brace/braceSpanDiameters';
 import { useLeafPlacementState } from './SupportTypes/Leaf/leafPlacementState';
 import { useKickstandPlacementState } from './SupportTypes/Kickstand/kickstandPlacementState';
 import { useJointInteraction } from './SupportPrimitives/Joint/useJointInteraction';
@@ -1808,22 +1809,11 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             const endKnot = braceRenderKnotsById[brace.endKnotId];
             if (!startKnot || !endKnot) continue;
 
-            const profileDiameter = Math.max(0.001, brace.profile?.diameter ?? 1.0);
-            const startHostDiameter = Math.min(
-                profileDiameter,
-                Math.max(
-                    0.001,
-                    (startKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-                ),
-            );
-            const endHostDiameter = Math.min(
-                profileDiameter,
-                Math.max(
-                    0.001,
-                    (endKnot.diameter ?? (profileDiameter + JOINT_DIAMETER_OFFSET_MM)) - JOINT_DIAMETER_OFFSET_MM,
-                ),
-            );
-            const isTaperedBrace = Math.abs(startHostDiameter - endHostDiameter) > 1e-4;
+            const {
+                startDiameterMm: startHostDiameter,
+                endDiameterMm: endHostDiameter,
+                isTapered: isTaperedBrace,
+            } = braceSpanDiameters(brace, startKnot, endKnot);
 
             // Tapered braces are rendered in the detailed path so we can preserve
             // dynamic start/end diameters. Uniform braces remain batched for speed.

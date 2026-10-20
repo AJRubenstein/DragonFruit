@@ -3456,6 +3456,31 @@ export function getSupportSettingsForTarget(target: EditableSupportTarget, base?
 }
 
 
+/**
+ * The profile with the taper's start moved to the new shaft width. Its end
+ * stays as built, matching the host. Null when the taper reads elsewhere.
+ */
+function resizeTaperStart(
+    descriptor: SupportTypeDescriptor,
+    entity: Record<string, unknown>,
+    shaftDiameterMm: number,
+): Record<string, unknown> | null {
+    const taper = descriptor.shaftTaper;
+    if (!taper) return null;
+    const [startPath, endPath] = taper.from;
+    if (!startPath.startsWith('profile.') || !endPath.startsWith('profile.')) return null;
+
+    const profile = entity.profile as Record<string, unknown> | undefined;
+    if (!profile) return null;
+
+    const startKey = startPath.slice('profile.'.length);
+    return {
+        ...profile,
+        bodyDiameterMm: shaftDiameterMm,
+        [startKey]: shaftDiameterMm,
+    };
+}
+
 function applyTipSettingsToConeProfile(
     profile: SupportTipProfile,
     tip: SupportSettings['tip'],
@@ -3548,6 +3573,10 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
     }
     // Only a root-owning type records its shaft width on the entity.
     if (descriptor.ownsRoot) next.baseDiameterMm = settings.shaft.diameterMm;
+
+    // Without this the terminal segment keeps its build-time width.
+    const taperedProfile = resizeTaperStart(descriptor, entity, settings.shaft.diameterMm);
+    if (taperedProfile) next.profile = taperedProfile;
 
     // An inline root is geometry on the entity, so the same settings land on the
     // fields it declares rather than on a shared `Roots` row.
