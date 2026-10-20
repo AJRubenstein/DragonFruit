@@ -4,7 +4,7 @@ import React, { useSyncExternalStore, forwardRef, useImperativeHandle, useCallba
 import * as THREE from 'three';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { LineMaterial, LineSegments2, LineSegmentsGeometry } from 'three-stdlib';
-import { removeRootById, subscribe, getSnapshot,
+import { subscribe, getSnapshot,
   getKickstandKnots,
   getKickstandRoots,
   type SupportState,
@@ -25,7 +25,6 @@ import { buildSegmentPreviewBatch } from './previewGeometry/seam';
 import './previewGeometry/registerBuiltinPreviewBuilders';
 import {
     anyContactMatches,
-    collectOwnedRootIds,
     contactEndpointsFor,
     parseKnotHostId,
     knotHostId,
@@ -1229,23 +1228,6 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         hoveredCategoryForVisual,
         hoveredIdForVisual,
     ]);
-
-    // Cull roots no entity claims any more.
-    //
-    // Read against the live store, not this render's `state`: a placement adds
-    // the root before the entity that claims it, so a render between the two
-    // carries a snapshot in which the root looks orphaned. Deleting from that
-    // view takes the root out from under the entity arriving behind it.
-    useEffect(() => {
-        if (!interactionHooksEnabled) return;
-        const live = getSnapshot();
-        const ownedRootIds = collectOwnedRootIds(live);
-        for (const rootId of Object.keys(live.roots)) {
-            if (ownedRootIds.has(rootId)) continue;
-            removeRootById(rootId);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections it walks, not the snapshot: a hover ran this walk over every root for nothing.
-    }, supportCollectionRefs(state, interactionHooksEnabled));
 
     // Enable joint dragging
     useJointInteraction(isInteractable);

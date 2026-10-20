@@ -10,7 +10,7 @@ import {
 import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
 import { supportSettleFor } from './settle/seam';
-import { hasSupportUpdater, hostKnotFieldsFor, typeIdForCollection, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
+import { collectOwnedRootIds, hasSupportUpdater, hostKnotFieldsFor, typeIdForCollection, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
 import { typesMissingExportGroupBuilder } from './exportGeometry/seam';
 import { migrateLegacySupportPayload } from './importMigrations';
 import type { SupportCollectionKey } from './supportTypeRegistry';
@@ -477,6 +477,23 @@ function computeClosestTOnSegmentFromPoint(
 
     const ap = p.sub(a);
     return THREE.MathUtils.clamp(ap.dot(ab) / abLenSq, 0, 1);
+}
+
+/**
+ * Drops roots no imported entity claims.
+ *
+ * An import writes the file's roots as given, so a file naming a root whose
+ * owner is missing leaves one behind. Every other removal reaches a root
+ * through its owner's cascade; this is the one path that cannot.
+ */
+function pruneUnclaimedRoots(roots: Record<string, Roots>, claimedBy: Pick<SupportState, SupportCollectionKey>): Record<string, Roots> {
+    const owned = collectOwnedRootIds(claimedBy);
+    const unclaimed = Object.keys(roots).filter((id) => !owned.has(id));
+    if (unclaimed.length === 0) return roots;
+
+    const kept = { ...roots };
+    for (const id of unclaimed) delete kept[id];
+    return kept;
 }
 
 function normalizeLoadedKnotAndLeafGeometry(snapshot: Pick<SupportState, SupportCollectionKey>): {
@@ -2273,11 +2290,12 @@ export function loadFromImportFormat(data: DragonfruitImportFormat) {
     const normalized = normalizeLoadedKnotAndLeafGeometry(newState);
     newState.knots = normalized.knots;
     newState.leaves = normalized.leaves;
+    newState.roots = pruneUnclaimedRoots(newState.roots, newState);
 
     setState(newState);
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('loadFromImportFormat');
-    console.log('[SupportStore] Loaded from LYS:', Object.fromEntries(
+    console.log('[SupportStore] Loaded from import:', Object.fromEntries(
         SUPPORT_COLLECTION_KEYS.map((key) => [key, Object.keys(state[key] ?? {}).length]),
     ));
     notify();
@@ -2641,11 +2659,12 @@ export function mergeFromImportFormat(data: DragonfruitImportFormat, ownerModelI
     const normalized = normalizeLoadedKnotAndLeafGeometry(merged);
     merged.knots = normalized.knots;
     merged.leaves = normalized.leaves;
+    merged.roots = pruneUnclaimedRoots(merged.roots, merged);
 
     setState(merged);
     rebuildSupportSettingsHexCacheFromState();
     emitSupportInteractionReset('mergeFromImportFormat');
-    console.log('[SupportStore] Merged from LYS:', Object.fromEntries(
+    console.log('[SupportStore] Merged from import:', Object.fromEntries(
         SUPPORT_COLLECTION_KEYS.map((key) => [key, Object.keys(merged[key]).length]),
     ));
     notify();

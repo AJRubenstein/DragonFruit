@@ -7,11 +7,8 @@ import {
     addSupportEntity,
     asOneSupportEdit,
     getSnapshot,
-    removeRootById,
     resetStore,
-    subscribe,
 } from '../state';
-import { collectOwnedRootIds } from '../supportTypeRegistry';
 import type { Kickstand, Knot, Roots, Trunk } from '../types';
 
 const root = {
@@ -36,25 +33,6 @@ const trunk = {
     }],
 } as unknown as Trunk;
 
-/**
- * The renderer's cull effect, which runs after every notification and deletes
- * roots no entity claims. See SupportRenderer's "Cull roots no entity claims".
- */
-function withCuller(act: () => void): void {
-    const unsubscribe = subscribe(() => {
-        const state = getSnapshot();
-        const owned = collectOwnedRootIds(state);
-        for (const rootId of Object.keys(state.roots)) {
-            if (!owned.has(rootId)) removeRootById(rootId);
-        }
-    });
-    try {
-        act();
-    } finally {
-        unsubscribe();
-    }
-}
-
 /** Whether every entity's root is still in the store. */
 function rootsResolve(): boolean {
     const state = getSnapshot();
@@ -72,10 +50,10 @@ function rootsResolve(): boolean {
 test('a placed trunk keeps the root it owns', () => {
     resetStore();
     // commitTrunkBuild's two writes, as one edit.
-    withCuller(() => asOneSupportEdit(() => {
+    asOneSupportEdit(() => {
         addRoot(root);
         addSupportEntity(trunk);
-    }));
+    });
 
     assert.equal(Object.keys(getSnapshot().roots).length, 1);
     assert.ok(rootsResolve(), 'the trunk still owns a root that exists');
@@ -102,38 +80,14 @@ test('a placed kickstand keeps the root it owns', () => {
         profile: { bodyDiameterMm: 1, terminalStartDiameterMm: 1, terminalEndDiameterMm: 1 },
     } as unknown as Kickstand;
 
-    withCuller(() => asOneSupportEdit(() => {
+    asOneSupportEdit(() => {
         addRoot(root);
         addKnot(hostKnot);
         addSupportEntity('kickstand', kickstand);
-    }));
+    });
 
     assert.equal(Object.keys(getSnapshot().roots).length, 1);
     assert.ok(rootsResolve(), 'the kickstand still owns a root that exists');
     resetStore();
 });
 
-test('the cull reads the live store, not a render that caught the gap', () => {
-    resetStore();
-    // A render between the two writes captures a snapshot holding the root
-    // alone. The effect runs after both writes, but with that stale view.
-    addRoot(root);
-    const caughtMidPlacement = getSnapshot();
-    addSupportEntity(trunk);
-
-    const owned = collectOwnedRootIds(getSnapshot());
-    for (const rootId of Object.keys(caughtMidPlacement.roots)) {
-        if (!owned.has(rootId)) removeRootById(rootId);
-    }
-
-    assert.ok(rootsResolve(), 'the root survives a cull driven by a stale render');
-    resetStore();
-});
-
-test('the culler still collects a root nothing claims', () => {
-    resetStore();
-    withCuller(() => addRoot(root));
-
-    assert.equal(Object.keys(getSnapshot().roots).length, 0);
-    resetStore();
-});
