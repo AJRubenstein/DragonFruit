@@ -57,6 +57,7 @@ registerSupportProxyGeometry<Brace>('brace', (brace, ctx) => {
     modelId: brace.modelId,
     start: startKnot.pos,
     end: endKnot.pos,
-    diameter: braceDiameter,
+    diameter: startHostDiameter,
+    diameterEnd: endHostDiameter,
   });
 }, { skipInInteriorView: true });

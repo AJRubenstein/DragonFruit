@@ -19,6 +19,12 @@ export interface InstancedShaft {
     start: Vec3;
     end: Vec3;
     diameter: number;
+    /**
+     * The width at `end`, when it differs from `diameter`. An instance is one
+     * scaled cylinder, so a shaft that tapers is drawn as its own cone mesh
+     * instead; leave it unset and the shaft stays in the batch.
+     */
+    diameterEnd?: number;
     supportId?: string;
     modelId?: string;
     /**
@@ -115,7 +121,22 @@ export function InstancedShaftGroup({
     const overlayMeshRef = useRef<THREE.InstancedMesh>(null);
     const lastHoveredShaftRef = useRef<InstancedShaft | null>(null);
 
-    const { straightShafts, curvedShafts } = useMemo(() => splitBatchedShafts(shafts), [shafts]);
+    const { straightShafts: allStraightShafts, curvedShafts } = useMemo(() => splitBatchedShafts(shafts), [shafts]);
+
+    // A tapering shaft leaves the batch, the way a curved one does: one instance
+    // is one cylinder scaled by a matrix, which cannot narrow along its length.
+    const { straightShafts, taperedShafts } = useMemo(() => {
+        const straight: InstancedShaft[] = [];
+        const tapered: InstancedShaft[] = [];
+        for (const shaft of allStraightShafts) {
+            if (shaft.diameterEnd != null && Math.abs(shaft.diameterEnd - shaft.diameter) > 1e-6) {
+                tapered.push(shaft);
+            } else {
+                straight.push(shaft);
+            }
+        }
+        return { straightShafts: straight, taperedShafts: tapered };
+    }, [allStraightShafts]);
 
     // The straight batch draws every shaft of every model in one mesh, so three's
     // own raycast would walk all of them (~0.11 us each, 13 ms at 100k) on every
@@ -160,6 +181,31 @@ export function InstancedShaftGroup({
             for (const group of curvedTubeGroups) group.tubes.geometry.dispose();
         };
     }, [curvedTubeGroups]);
+
+    // One cone per tapering shaft, placed the way an instance would be. Few
+    // enough to draw individually: a shaft only tapers where it meets a host
+    // narrower than itself.
+    const taperedMeshes = useMemo(() => taperedShafts.map((shaft) => {
+        const start = new THREE.Vector3(shaft.start.x, shaft.start.y, shaft.start.z);
+        const end = new THREE.Vector3(shaft.end.x, shaft.end.y, shaft.end.z);
+        const direction = new THREE.Vector3().subVectors(end, start);
+        const length = direction.length();
+        if (length < 0.001) return null;
+        direction.divideScalar(length);
+
+        return {
+            shaft,
+            position: new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5),
+            quaternion: new THREE.Quaternion().setFromUnitVectors(UP, direction),
+            // `cylinderGeometry` takes the top radius first, and the mesh's +Y
+            // was aligned to `end` above.
+            radiusTop: Math.max(0.0005, (shaft.diameterEnd ?? shaft.diameter) / 2),
+            radiusBottom: Math.max(0.0005, shaft.diameter / 2),
+            length,
+            color: instanceColor ? `#${instanceColor(shaft).getHexString()}` : color,
+        };
+    }).filter((entry): entry is NonNullable<typeof entry> => entry !== null),
+    [taperedShafts, instanceColor, color]);
 
     const hasOverlay = !!outOfBoundsMaterial;
 
@@ -398,6 +444,29 @@ export function InstancedShaftGroup({
                     material={outOfBoundsMaterial}
                 />
             ) : null))}
+            {taperedMeshes.map((entry) => (isHidden?.(entry.shaft) ? null : (
+                <mesh
+                    key={`tapered:${entry.shaft.id}`}
+                    position={entry.position}
+                    quaternion={entry.quaternion}
+                    frustumCulled={false}
+                    onClick={onShaftClick ? (event) => onShaftClick(entry.shaft, event) : undefined}
+                    onPointerDown={onShaftPointerDown ? (event) => onShaftPointerDown(entry.shaft, event) : undefined}
+                    onPointerMove={onShaftPointerMove ? (event) => onShaftPointerMove(entry.shaft, event) : undefined}
+                    onPointerOut={onShaftPointerOut ? handlePointerOut : undefined}
+                >
+                    <cylinderGeometry args={[entry.radiusTop, entry.radiusBottom, entry.length, radialSegments]} />
+                    <meshStandardMaterial
+                        color={entry.color}
+                        emissive={emissive}
+                        emissiveIntensity={emissiveIntensity}
+                        transparent={transparent}
+                        opacity={opacity}
+                        depthWrite={!transparent}
+                        clippingPlanes={clippingPlanes ?? undefined}
+                    />
+                </mesh>
+            )))}
         </>
     );
 }
