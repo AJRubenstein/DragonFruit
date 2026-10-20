@@ -113,6 +113,23 @@ test('a placed kickstand keeps the root it owns', () => {
     resetStore();
 });
 
+test('the cull reads the live store, not a render that caught the gap', () => {
+    resetStore();
+    // A render between the two writes captures a snapshot holding the root
+    // alone. The effect runs after both writes, but with that stale view.
+    addRoot(root);
+    const caughtMidPlacement = getSnapshot();
+    addSupportEntity(trunk);
+
+    const owned = collectOwnedRootIds(getSnapshot());
+    for (const rootId of Object.keys(caughtMidPlacement.roots)) {
+        if (!owned.has(rootId)) removeRootById(rootId);
+    }
+
+    assert.ok(rootsResolve(), 'the root survives a cull driven by a stale render');
+    resetStore();
+});
+
 test('the culler still collects a root nothing claims', () => {
     resetStore();
     withCuller(() => addRoot(root));

@@ -1231,10 +1231,16 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     ]);
 
     // Cull roots no entity claims any more.
+    //
+    // Read against the live store, not this render's `state`: a placement adds
+    // the root before the entity that claims it, so a render between the two
+    // carries a snapshot in which the root looks orphaned. Deleting from that
+    // view takes the root out from under the entity arriving behind it.
     useEffect(() => {
         if (!interactionHooksEnabled) return;
-        const ownedRootIds = collectOwnedRootIds(state);
-        for (const rootId of Object.keys(state.roots)) {
+        const live = getSnapshot();
+        const ownedRootIds = collectOwnedRootIds(live);
+        for (const rootId of Object.keys(live.roots)) {
             if (ownedRootIds.has(rootId)) continue;
             removeRootById(rootId);
         }
