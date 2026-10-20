@@ -52,12 +52,7 @@ function cloneVec3(v: Vec3): Vec3 {
     return { x: v.x, y: v.y, z: v.z };
 }
 
-/**
- * Where a column's shaft leaves its root: above the disk and the cone it caps.
- *
- * The first segment has no bottom joint, so without this its length is not a
- * target anything can ride.
- */
+/** Where a column's shaft leaves its root: above the disk and its cone. */
 function rootTopOf(root: { transform: { pos: Vec3 }; diskHeight: number; coneHeight: number } | undefined): Vec3 | undefined {
     if (!root) return undefined;
     return {
@@ -251,8 +246,7 @@ export function buildSupportPathSnapTargets(
         const record = supportState[descriptor.location.key as SupportCollectionKey] as Record<string, { segments: Segment[]; hostKnotId?: string; rootId?: string }>;
         for (const entity of Object.values(record)) {
             if (!matchesPlacementSurfaceFilter(getPlacementSurface(descriptor, entity), placementSurface)) continue;
-            // A column's end segments meet its root and its host knot rather
-            // than a joint, so neither is a target unless those stand in.
+            // A column's end segments meet its root and host knot, not joints.
             const hostKnotPos = entity.hostKnotId ? knotMap.get(entity.hostKnotId)?.pos : undefined;
             const rootTopPos = entity.rootId ? rootTopOf(rootMap.get(entity.rootId)) : undefined;
             for (const segment of entity.segments) {

@@ -576,8 +576,7 @@ export function KickstandPlacementController() {
 
         const { target, build } = buildPlacementFromSnap(meta, clampedT, snappedPos, rootPos);
         const previewData = toKickstandPreviewData(build);
-        // An occupied node outranks a collision: it is the one the solver below
-        // can still resolve. Force placement answers for both.
+        // An occupied node outranks a collision: the solver can resolve it.
         previewData.error = forcePlaceRef.current
             ? undefined
             : (nodeOccupied ? 'TOO_CLOSE_TO_EXISTING' : build.error);

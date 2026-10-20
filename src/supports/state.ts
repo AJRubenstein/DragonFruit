@@ -3431,12 +3431,8 @@ export function getSupportSettingsForTarget(target: EditableSupportTarget, base?
 
 
 /**
- * The entity's profile with the taper's start moved to the new shaft width.
- *
- * Only for a type whose `shaftTaper` reads both ends off its own `profile`:
- * the start is the shaft, so it follows a resize, while the end stays as built
- * because it matches the host. Null when the type taper reads elsewhere, as a
- * brace's does from its contact disks.
+ * The profile with the taper's start moved to the new shaft width. Its end
+ * stays as built, matching the host. Null when the taper reads elsewhere.
  */
 function resizeTaperStart(
     descriptor: SupportTypeDescriptor,
@@ -3552,9 +3548,7 @@ export function applySettingsToSupportTarget(target: EditableSupportTarget, sett
     // Only a root-owning type records its shaft width on the entity.
     if (descriptor.ownsRoot) next.baseDiameterMm = settings.shaft.diameterMm;
 
-    // A taper reading its start from the entity's own profile has to follow the
-    // resize, or the terminal segment keeps its build-time width and the shaft
-    // meets its host as a blunt cylinder.
+    // Without this the terminal segment keeps its build-time width.
     const taperedProfile = resizeTaperStart(descriptor, entity, settings.shaft.diameterMm);
     if (taperedProfile) next.profile = taperedProfile;
 

@@ -20,11 +20,7 @@ export interface InstancedShaft {
     start: Vec3;
     end: Vec3;
     diameter: number;
-    /**
-     * The width at `end`, when it differs from `diameter`. An instance is one
-     * scaled cylinder, so a shaft that tapers is drawn as its own cone mesh
-     * instead; leave it unset and the shaft stays in the batch.
-     */
+    /** The width at `end`. Set and differing, the shaft leaves the batch. */
     diameterEnd?: number;
     supportId?: string;
     modelId?: string;
@@ -104,12 +100,9 @@ interface MergedShaftGroup {
 /**
  * Shafts that cannot be instanced, merged into one mesh per colour.
  *
- * A merged mesh has one material, so a caller that tints individual shafts gets
- * one mesh per colour rather than vertex colours: the colour then rides on the
- * material, the same way an instanced shaft's does, and two shafts that should
- * look alike cannot diverge by which path drew them. The selection tints at
- * most two colours. Curved and tapered shafts merge alike; only the builder
- * that turns a group into geometry differs.
+ * A merged mesh has one material, so a tinting caller gets a mesh per colour
+ * rather than vertex colours, and the selection tints at most two. Curved and
+ * tapered shafts merge alike; only the builder differs.
  */
 function mergeShaftsByColor(
     kind: MergedShaftGroup['kind'],
@@ -163,8 +156,7 @@ export function InstancedShaftGroup({
 
     const { straightShafts: allStraightShafts, curvedShafts } = useMemo(() => splitBatchedShafts(shafts), [shafts]);
 
-    // A tapering shaft leaves the batch, the way a curved one does: one instance
-    // is one cylinder scaled by a matrix, which cannot narrow along its length.
+    // One instance is a cylinder scaled by a matrix, which cannot narrow.
     const { straightShafts, taperedShafts } = useMemo(() => {
         const straight: InstancedShaft[] = [];
         const tapered: InstancedShaft[] = [];
@@ -212,8 +204,7 @@ export function InstancedShaftGroup({
         };
     }, [curvedTubeGroups]);
 
-    // Tapered shafts merge the same way curved ones do: one mesh per colour,
-    // not one per shaft, so leaving the batch does not cost a draw call each.
+    // One mesh per colour, so leaving the batch costs no draw call per shaft.
     const taperedMergedGroups = useMemo(() => {
         noteActivity('support-mode:tapered-shaft-merge');
         return mergeShaftsByColor(

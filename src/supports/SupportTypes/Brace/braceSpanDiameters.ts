@@ -2,14 +2,10 @@ import { JOINT_DIAMETER_OFFSET_MM } from '../../constants';
 import type { Brace, Knot } from '../../types';
 
 /**
- * How wide a brace is at each of the knots it spans.
+ * How wide a brace is at each knot it spans: the knot's width less the joint
+ * offset, capped by the brace's profile. Differing ends are what makes it taper.
  *
- * A brace has no root to size it, so each end takes its host knot's width less
- * the joint offset, capped by the brace's own profile. The two ends differ
- * whenever the knots do, which is what makes a brace taper.
- *
- * One home for the rule: the renderer, the proxy layer and the exporter each
- * draw the same brace and must agree on how wide it is.
+ * The renderer, the proxy layer and the exporter all draw the same brace.
  */
 export function braceSpanDiameters(
     brace: Pick<Brace, 'profile'>,

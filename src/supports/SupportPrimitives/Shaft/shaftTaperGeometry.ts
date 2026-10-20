@@ -1,15 +1,8 @@
 import * as THREE from 'three';
 
 /**
- * The width of a tapering shaft at each point of a polyline approximating it.
- *
- * A curve is drawn as a run of straight pieces, so a taper across the whole
- * curve has to be shared out between them: each piece starts where the last
- * ended, rather than every piece carrying the full taper.
- *
- * Returns a reader rather than an array so a caller asks for the two widths a
- * piece needs without allocating per segment. With no `endDiameterMm` the width
- * is constant, which is the uniform shaft every caller had before.
+ * The width of a tapering shaft at each point of the polyline drawing it, so a
+ * curve's pieces share the taper rather than each carrying all of it.
  */
 export function taperWidthAlong(
     pointCount: number,
