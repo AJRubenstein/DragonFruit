@@ -3,6 +3,7 @@ import { STLExporter } from 'three-stdlib';
 import type { LoadedModel, ScenePlate } from '@/features/scene/useSceneCollectionManager';
 import type { ModelMeshModifiers } from '@/features/mesh-modifiers/types';
 import type { MeshHealthReport } from '@/utils/meshRepair';
+import { reportAddressesTriangleSoup } from '@/features/scene/voxl/classification';
 import { resolveModelMeshModifiers } from '@/features/mesh-modifiers/meshModifierStore';
 import { KNOWN_SOURCE_EXTENSION_STRIP_RE } from '@/features/plugins/pluginFileTypeExtensions';
 import { buildSupportExportFromStores, serializeVoxlDocumentV2, serializeVoxlDocumentV2Streaming, VoxlSizeLimitError, VoxlUnchangedError, type PrecompressedChunk, type VoxlChunkCache, type VoxlChunkReportEntry, type VoxlPrinterBundle } from '@/features/scene/voxl';
@@ -96,6 +97,30 @@ function snapshotToken(obj: unknown): string {
     snapshotTokens.set(obj, token);
   }
   return token;
+}
+
+/**
+ * Identity of the position buffer a geometry is drawn from.
+ *
+ * Weak, so a replaced array's token is forgotten with it; monotonic, so two arrays
+ * alive at once never share one. `computeModelGeometrySignature` needs it because a
+ * classify pass installs a whole new position attribute whose version starts at 0
+ * again: every other field of the signature is identical before and after, yet the
+ * triangle order — the thing a `classification` boundary indexes — is not.
+ */
+const soupTokens = new WeakMap<ArrayBufferView, number>();
+let soupTokenCounter = 0;
+function soupToken(
+  position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null | undefined,
+): number {
+  if (!position) return 0;
+  const array = 'data' in position ? position.data.array : position.array;
+  if (!array) return 0;
+  const known = soupTokens.get(array as ArrayBufferView);
+  if (known !== undefined) return known;
+  soupTokenCounter += 1;
+  soupTokens.set(array as ArrayBufferView, soupTokenCounter);
+  return soupTokenCounter;
 }
 
 export class ExportManager {
@@ -216,6 +241,15 @@ export class ExportManager {
    * is read out of. The cost of getting it wrong is asymmetric — a missed flag
    * writes stale geometry into the user's recovery file; a missed bake hook only
    * costs one lazy re-bake.
+   *
+   * `soupToken` is the position ARRAY's identity, and the version numbers cannot
+   * stand in for it. A classify pass installs a *new* position attribute with the
+   * same corner count and version 0 over the same `BufferGeometry`, so every other
+   * field here is unchanged while the triangle order is not — which is exactly the
+   * pair a VOXL stores as geometry plus a `classification` boundary. Without it the
+   * store could hand back bytes written before the classifier ran, the writer would
+   * stamp the post-classification boundary beside them, and the reload would split
+   * the soup at an index that no longer means anything.
    */
   static computeModelGeometrySignature(model: LoadedModel): string {
     const geometry = model.geometry.geometry;
@@ -226,7 +260,7 @@ export class ExportManager {
       ? 0
       : ('version' in position ? position.version : position.data.version);
     const indexVersion = index?.version ?? 0;
-    return `${geometry.uuid}:${positionVersion}:${indexVersion}:${vertexCount}`;
+    return `${geometry.uuid}:${positionVersion}:${indexVersion}:${vertexCount}:${soupToken(position)}`;
   }
 
   /**
@@ -1199,10 +1233,20 @@ export class ExportManager {
             // session already knows, persisted so a reload does not re-run the
             // classifier over the same triangles. Omitted for a stale chunk —
             // those bytes are one bake behind the geometry the report describes,
-            // so its boundary would not address them.
+            // so its boundary would not address them — and omitted unless the
+            // report's boundary actually addresses the soup the chunk holds: a
+            // repair report describes the mesh the pass ended with, and stamping
+            // one whose `post` disagrees with the stored bytes made every reader
+            // discard it and reclassify, which reorders the soup on load.
+            const storedTriangles = model.geometry.geometry.getIndex()?.count
+              ?? model.geometry.geometry.getAttribute('position')?.count
+              ?? 0;
+            const report = model.geometry.meshDefects?.nativeRepairReport;
             const classification = staleModelIds.has(model.id)
+              || !report
+              || !reportAddressesTriangleSoup(report, storedTriangles / 3)
               ? undefined
-              : model.geometry.meshDefects?.nativeRepairReport;
+              : report;
 
             const origChunk = meshChunkStore.lastCommitted(model.id, 'original');
             if (origChunk) {

@@ -481,16 +481,6 @@ pub fn write_3mf(path: &Path, positions: &[f32]) -> Result<(), String> {
 // VOXL Loading (V2 binary + ORIG full-res chunk preference)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
-struct VoxlChunkEntry {
-    type_tag: [u8; 4],
-    index: u16,
-    compression: u16,
-    offset: usize,
-    compressed_size: usize,
-    uncompressed_size: usize,
-}
-
 /// Helper function to parse binary STL buffer from memory.
 pub fn parse_binary_stl_bytes(data: &[u8]) -> Result<Vec<f32>, String> {
     if data.len() < 84 {
@@ -549,11 +539,11 @@ pub fn is_voxl_file(path: &Path) -> bool {
 }
 
 /// Load triangles from a VOXL binary file.
-/// Prefers `ORIG` (full-resolution) chunks over `MESH` (preview) chunks.
-/// Returns `(positions_f32, used_orig_chunk)`.
+///
+/// Same resolution as {@link load_voxl}: per model, `ORIG` (full-resolution) over a
+/// sidecar file over `MESH` (preview), with the model's placement applied and its
+/// baked model/support split honoured. Returns `(positions_f32, used_orig_chunk)`.
 pub fn load_voxl_triangles(path: &Path) -> Result<(Vec<f32>, bool), String> {
-    use flate2::read::ZlibDecoder;
-
     let data = std::fs::read(path).map_err(|e| format!("Failed to read VOXL file: {e}"))?;
     if data.len() < 16 {
         return Err("VOXL file too small (< 16 bytes)".into());
@@ -565,135 +555,14 @@ pub fn load_voxl_triangles(path: &Path) -> Result<(Vec<f32>, bool), String> {
     if ver < 2 {
         return Err(unsupported_voxl_version_error(ver));
     }
-    let chunk_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
-    let dir_end = 16 + chunk_count * 20;
-    if data.len() < dir_end {
-        return Err("VOXL file truncated: incomplete chunk directory".into());
-    }
 
-    let mut entries = Vec::with_capacity(chunk_count);
-    for i in 0..chunk_count {
-        let b = 16 + i * 20;
-        let mut type_tag = [0u8; 4];
-        type_tag.copy_from_slice(&data[b..b + 4]);
-        let index = u16::from_le_bytes([data[b + 4], data[b + 5]]);
-        let compression = u16::from_le_bytes([data[b + 6], data[b + 7]]);
-        let offset = u32::from_le_bytes([data[b + 8], data[b + 9], data[b + 10], data[b + 11]]) as usize;
-        let compressed_size = u32::from_le_bytes([data[b + 12], data[b + 13], data[b + 14], data[b + 15]]) as usize;
-        let uncompressed_size = u32::from_le_bytes([data[b + 16], data[b + 17], data[b + 18], data[b + 19]]) as usize;
-
-        if offset + compressed_size > data.len() {
-            return Err("VOXL chunk extends beyond file boundary".into());
-        }
-
-        entries.push(VoxlChunkEntry {
-            type_tag,
-            index,
-            compression,
-            offset,
-            compressed_size,
-            uncompressed_size,
-        });
-    }
-
-    let read_chunk_data = |entry: &VoxlChunkEntry| -> Result<Vec<u8>, String> {
-        let raw = &data[entry.offset..entry.offset + entry.compressed_size];
-        match entry.compression {
-            0 => Ok(raw.to_vec()),
-            1 => {
-                let mut decoder = ZlibDecoder::new(raw);
-                let mut out = Vec::with_capacity(entry.uncompressed_size);
-                std::io::Read::read_to_end(&mut decoder, &mut out)
-                    .map_err(|e| format!("Decompress chunk failed: {e}"))?;
-                Ok(out)
-            }
-            c => Err(format!("Unsupported compression mode {c}")),
-        }
-    };
-
-    let orig_chunk_indices: Vec<u16> = entries.iter().filter(|e| &e.type_tag == b"ORIG").map(|e| e.index).collect();
-    let mesh_chunk_indices: Vec<u16> = entries.iter().filter(|e| &e.type_tag == b"MESH").map(|e| e.index).collect();
-
-    // 1. If embedded ORIG chunks are present, load them
-    if !orig_chunk_indices.is_empty() {
-        let mut idxs = orig_chunk_indices;
-        idxs.sort();
-        idxs.dedup();
-        let mut all_positions = Vec::new();
-        for &idx in &idxs {
-            if let Some(entry) = entries.iter().find(|e| &e.type_tag == b"ORIG" && e.index == idx) {
-                let chunk_bytes = read_chunk_data(entry)?;
-                let pos = parse_binary_stl_bytes(&chunk_bytes)?;
-                all_positions.extend_from_slice(&pos);
-            }
-        }
-        return Ok((all_positions, true));
-    }
-
-    // 2. Check for originalRef / sidecar file references in MODL chunk if no embedded ORIG chunk exists
-    if let Some(modl_entry) = entries.iter().find(|e| &e.type_tag == b"MODL") {
-        if let Ok(modl_bytes) = read_chunk_data(modl_entry) {
-            if let Ok(modl_str) = std::str::from_utf8(&modl_bytes) {
-                if let Ok(models) = serde_json::from_str::<serde_json::Value>(modl_str) {
-                    if let Some(model_list) = models.as_array() {
-                        let mut sidecar_positions = Vec::new();
-                        let mut loaded_sidecars = 0;
-
-                        for model in model_list {
-                            let file_name = model.get("originalRef")
-                                .and_then(|r| r.get("fileName"))
-                                .and_then(|v| v.as_str())
-                                .or_else(|| model.get("sourcePath").and_then(|v| v.as_str()));
-
-                            if let Some(fname) = file_name {
-                                let fname_trimmed = fname.trim();
-                                if !fname_trimmed.is_empty() {
-                                    let rel_path = Path::new(fname_trimmed);
-                                    let sidecar_path = if rel_path.is_absolute() {
-                                        rel_path.to_path_buf()
-                                    } else {
-                                        path.parent().unwrap_or_else(|| Path::new("")).join(rel_path)
-                                    };
-
-                                    if sidecar_path.exists() {
-                                        if let Ok(pos) = load_binary_stl(&sidecar_path) {
-                                            sidecar_positions.extend_from_slice(&pos);
-                                            loaded_sidecars += 1;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if loaded_sidecars > 0 && !sidecar_positions.is_empty() {
-                            return Ok((sidecar_positions, true));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Fallback: load MESH chunks (decimated preview)
-    let mut idxs = mesh_chunk_indices;
-    idxs.sort();
-    idxs.dedup();
-
-    if idxs.is_empty() {
+    let geometry = collect_voxl_geometry(&data, path)?;
+    let mut positions = geometry.model;
+    positions.extend(geometry.support);
+    if positions.is_empty() {
         return Err("No MESH or ORIG geometry chunks found in VOXL file".into());
     }
-
-    let mut all_positions = Vec::new();
-
-    for &idx in &idxs {
-        if let Some(entry) = entries.iter().find(|e| &e.type_tag == b"MESH" && e.index == idx) {
-            let chunk_bytes = read_chunk_data(entry)?;
-            let pos = parse_binary_stl_bytes(&chunk_bytes)?;
-            all_positions.extend_from_slice(&pos);
-        }
-    }
-
-    Ok((all_positions, false))
+    Ok((positions, geometry.used_orig))
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +597,75 @@ pub struct VoxlModelEntry {
     pub original_ref: Option<VoxlOriginalRef>,
     #[serde(rename = "sourcePath")]
     pub source_path: Option<String>,
+    /// Where the model sits on the plate. Absent means identity.
+    #[serde(default)]
+    pub transform: Option<VoxlModelTransform>,
+    /// The model/support split the file was written with, if it had one.
+    #[serde(default)]
+    pub classification: Option<VoxlClassification>,
+}
+
+/// A triple out of a `MODL` entry: a translation in millimetres, a rotation in
+/// radians, or a scale factor.
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
+pub struct VoxlVec3 {
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+    #[serde(default)]
+    pub z: f32,
+}
+
+const UNIT_SCALE: VoxlVec3 = VoxlVec3 { x: 1.0, y: 1.0, z: 1.0 };
+
+fn unit_scale() -> VoxlVec3 {
+    UNIT_SCALE
+}
+
+/// A model's placement, in the app's convention: the geometry is centred on its own
+/// bounding box, then rotated about the fixed plate axes by `rotation` (extrinsic
+/// XYZ, radians — `src/utils/rotation.ts::quaternionFromGlobalEuler`), scaled, and
+/// translated by `position`.
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+pub struct VoxlModelTransform {
+    #[serde(default)]
+    pub position: VoxlVec3,
+    #[serde(default)]
+    pub rotation: VoxlVec3,
+    #[serde(default = "unit_scale")]
+    pub scale: VoxlVec3,
+}
+
+impl Default for VoxlModelTransform {
+    fn default() -> Self {
+        Self {
+            position: VoxlVec3::default(),
+            rotation: VoxlVec3::default(),
+            scale: UNIT_SCALE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
+pub struct VoxlTriangleCount {
+    #[serde(default)]
+    pub triangle_count: u64,
+}
+
+/// The model/support boundary a VOXL was written with.
+///
+/// The boundary is a triangle index into the mesh the classifying pass *ended* with,
+/// which is `post` — `pre` is the mesh that was sent in. A reader checks `post`
+/// against the triangles it holds and ignores the classification otherwise; see
+/// `reportAddressesTriangleSoup` on the TypeScript side and
+/// `docs/dev/voxl-format-spec.md`.
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
+pub struct VoxlClassification {
+    #[serde(default)]
+    pub post: VoxlTriangleCount,
+    #[serde(default)]
+    pub model_triangle_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -889,14 +827,23 @@ fn decompress_chunk_bytes(data: &[u8], chunk: &VoxlChunkHeader) -> Result<Vec<u8
     }
 }
 
-fn load_voxl_v2_from_bytes_with_path(data: &[u8], path: &Path) -> Result<VoxlLoadedMesh, String> {
+/// One VOXL's geometry, resolved and in the order the container addresses it: the
+/// model triangles, then the support triangles.
+struct VoxlGeometry {
+    model: Vec<f32>,
+    support: Vec<f32>,
+    /// Whether any model came from an `ORIG` chunk or a sidecar file rather than from
+    /// the decimated `MESH` preview.
+    used_orig: bool,
+}
+
+fn voxl_chunk_directory(data: &[u8]) -> Result<Vec<VoxlChunkHeader>, String> {
     let chunk_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
-    let mut dir_offset = 16;
     if data.len() < 16 + chunk_count * 20 {
         return Err("Truncated VOXL header/directory".into());
     }
-
     let mut chunks = Vec::with_capacity(chunk_count);
+    let mut dir_offset = 16;
     for _ in 0..chunk_count {
         let tag = [data[dir_offset], data[dir_offset + 1], data[dir_offset + 2], data[dir_offset + 3]];
         let index = u16::from_le_bytes([data[dir_offset + 4], data[dir_offset + 5]]);
@@ -905,113 +852,178 @@ fn load_voxl_v2_from_bytes_with_path(data: &[u8], path: &Path) -> Result<VoxlLoa
         let comp_size = u32::from_le_bytes([data[dir_offset + 12], data[dir_offset + 13], data[dir_offset + 14], data[dir_offset + 15]]) as usize;
         let raw_size = u32::from_le_bytes([data[dir_offset + 16], data[dir_offset + 17], data[dir_offset + 18], data[dir_offset + 19]]) as usize;
         dir_offset += 20;
-
         chunks.push(VoxlChunkHeader { tag, index, compression, offset, comp_size, raw_size });
     }
+    Ok(chunks)
+}
 
+/// Where a model's original file lives, when the container references one instead of
+/// embedding it.
+fn voxl_sidecar_path(model: &VoxlModelEntry, container: &Path) -> Option<std::path::PathBuf> {
+    let name = model.original_ref.as_ref().and_then(|r| r.file_name.as_deref())
+        .or(model.source_path.as_deref())?
+        .trim();
+    if name.is_empty() {
+        return None;
+    }
+    let referenced = Path::new(name);
+    Some(if referenced.is_absolute() {
+        referenced.to_path_buf()
+    } else {
+        container.parent().unwrap_or_else(|| Path::new("")).join(referenced)
+    })
+}
+
+/// Place one model's triangles where the file says they sit.
+///
+/// The app stores a model centred on its own bounding box and renders it at
+/// `-centre` with the placement applied, so the local frame here is the soup minus
+/// its own bbox centre — a translate of zero for a `MESH` chunk, which the writer
+/// already stored centred, and the normalisation an `ORIG` chunk or a sidecar file
+/// needs. `rotation` is extrinsic XYZ about the fixed plate axes, matching
+/// `quaternionFromGlobalEuler`: rotate about X, then Y, then Z.
+fn apply_model_transform(positions: &mut [f32], transform: Option<&VoxlModelTransform>) {
+    let Some(transform) = transform else { return };
+    let (position, rotation, scale) = (transform.position, transform.rotation, transform.scale);
+    let translate = position.x != 0.0 || position.y != 0.0 || position.z != 0.0;
+    let rotate = rotation.x != 0.0 || rotation.y != 0.0 || rotation.z != 0.0;
+    let rescale = scale.x != 1.0 || scale.y != 1.0 || scale.z != 1.0;
+    if !rotate && !rescale {
+        if translate {
+            for vertex in positions.chunks_exact_mut(3) {
+                vertex[0] += position.x;
+                vertex[1] += position.y;
+                vertex[2] += position.z;
+            }
+        }
+        return;
+    }
+
+    let (mut min, mut max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
+    for vertex in positions.chunks_exact(3) {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(vertex[axis]);
+            max[axis] = max[axis].max(vertex[axis]);
+        }
+    }
+    let centre = [
+        (min[0] + max[0]) * 0.5,
+        (min[1] + max[1]) * 0.5,
+        (min[2] + max[2]) * 0.5,
+    ];
+
+    let (sin_x, cos_x) = rotation.x.sin_cos();
+    let (sin_y, cos_y) = rotation.y.sin_cos();
+    let (sin_z, cos_z) = rotation.z.sin_cos();
+
+    for vertex in positions.chunks_exact_mut(3) {
+        let x = (vertex[0] - centre[0]) * scale.x;
+        let y = (vertex[1] - centre[1]) * scale.y;
+        let z = (vertex[2] - centre[2]) * scale.z;
+        // About X.
+        let (y, z) = (y * cos_x - z * sin_x, y * sin_x + z * cos_x);
+        // About Y.
+        let (x, z) = (x * cos_y + z * sin_y, -x * sin_y + z * cos_y);
+        // About Z.
+        let (x, y) = (x * cos_z - y * sin_z, x * sin_z + y * cos_z);
+        vertex[0] = x + position.x;
+        vertex[1] = y + position.y;
+        vertex[2] = z + position.z;
+    }
+}
+
+/// The model/support boundary a model's classification names, if it still addresses
+/// the triangles it was loaded with.
+///
+/// The same rule the TypeScript reader applies (`reportAddressesTriangleSoup`): the
+/// boundary is an index into the mesh the classifying pass ended with, so `post` is
+/// the count to check, and a boundary that is not strictly inside the mesh splits
+/// nothing.
+fn voxl_classification_split(
+    classification: Option<&VoxlClassification>,
+    triangles: usize,
+) -> Option<usize> {
+    let classification = classification?;
+    let boundary = classification.model_triangle_count? as usize;
+    if classification.post.triangle_count as usize != triangles || boundary == 0 || boundary >= triangles {
+        return None;
+    }
+    Some(boundary)
+}
+
+/// Resolve a VOXL container's geometry: one model at a time, `ORIG` over a sidecar
+/// over `MESH`, placed by its transform and split by its baked classification.
+///
+/// Both CLI entry points read VOXL through this, because the second reader of the
+/// format is where the two implementations drifted: the triangle order here is the
+/// order every other consumer of the file indexes into (a classification boundary, a
+/// `MESH` chunk's soup, the AO bake's corner table).
+fn collect_voxl_geometry(data: &[u8], path: &Path) -> Result<VoxlGeometry, String> {
+    let chunks = voxl_chunk_directory(data)?;
     let modl_chunk = chunks.iter().find(|c| &c.tag == b"MODL")
         .ok_or_else(|| "VOXL container missing MODL chunk".to_string())?;
-
     let modl_raw_bytes = decompress_chunk_bytes(data, modl_chunk)?;
     let modl_json_str = std::str::from_utf8(&modl_raw_bytes)
         .map_err(|e| format!("Invalid UTF-8 in MODL chunk: {e}"))?;
-
     let models: Vec<VoxlModelEntry> = serde_json::from_str(modl_json_str)
         .map_err(|e| format!("Failed to parse MODL JSON: {e}"))?;
 
-    let has_orig_chunks = chunks.iter().any(|c| &c.tag == b"ORIG");
+    let mut geometry = VoxlGeometry { model: Vec::new(), support: Vec::new(), used_orig: false };
 
-    let mut used_orig = false;
-    let mut model_triangles = Vec::new();
-    let mut support_triangles = Vec::new();
-
-    if has_orig_chunks {
-        used_orig = true;
-        for (i, m) in models.iter().enumerate() {
-            if !m.visible.unwrap_or(true) {
-                continue;
-            }
-            let is_support = m.is_support_geometry.unwrap_or(false);
-            let target_chunk_index = m.mesh.as_ref()
-                .and_then(|mesh| mesh.chunk_index)
-                .unwrap_or(i as u16);
-
-            if let Some(c) = chunks.iter().find(|c| &c.tag == b"ORIG" && c.index == target_chunk_index) {
-                let chunk_bytes = decompress_chunk_bytes(data, c)?;
-                let tris = parse_mesh_bytes(&chunk_bytes)?;
-                if is_support {
-                    support_triangles.extend(tris);
-                } else {
-                    model_triangles.extend(tris);
-                }
-            }
+    for (index, model) in models.iter().enumerate() {
+        if !model.visible.unwrap_or(true) {
+            continue;
         }
-    } else {
-        let mut loaded_sidecars = 0;
-        for m in &models {
-            if !m.visible.unwrap_or(true) {
-                continue;
+        let chunk_index = model.mesh.as_ref().and_then(|m| m.chunk_index).unwrap_or(index as u16);
+        let is_support = model.is_support_geometry.unwrap_or(false);
+
+        let embedded = chunks.iter().find(|c| &c.tag == b"ORIG" && c.index == chunk_index);
+        let mut triangles = match embedded {
+            Some(chunk) => {
+                geometry.used_orig = true;
+                parse_mesh_bytes(&decompress_chunk_bytes(data, chunk)?)?
             }
-            let is_support = m.is_support_geometry.unwrap_or(false);
-            let file_name = m.original_ref.as_ref()
-                .and_then(|r| r.file_name.as_ref())
-                .map(|s| s.as_str())
-                .or_else(|| m.source_path.as_deref());
-
-            if let Some(fname) = file_name {
-                let fname_trimmed = fname.trim();
-                if !fname_trimmed.is_empty() {
-                    let rel_path = Path::new(fname_trimmed);
-                    let sidecar_path = if rel_path.is_absolute() {
-                        rel_path.to_path_buf()
-                    } else {
-                        path.parent().unwrap_or_else(|| Path::new("")).join(rel_path)
-                    };
-
-                    if sidecar_path.exists() {
-                        if let Ok(tris) = load_binary_stl(&sidecar_path) {
-                            if is_support {
-                                support_triangles.extend(tris);
-                            } else {
-                                model_triangles.extend(tris);
-                            }
-                            loaded_sidecars += 1;
-                        }
+            None => {
+                let sidecar = voxl_sidecar_path(model, path).filter(|candidate| candidate.exists());
+                match sidecar {
+                    Some(sidecar) => {
+                        geometry.used_orig = true;
+                        load_binary_stl(&sidecar)?
                     }
+                    None => match chunks.iter().find(|c| &c.tag == b"MESH" && c.index == chunk_index) {
+                        Some(chunk) => parse_mesh_bytes(&decompress_chunk_bytes(data, chunk)?)?,
+                        None => continue,
+                    },
                 }
             }
-        }
+        };
 
-        if loaded_sidecars > 0 {
-            used_orig = true;
+        apply_model_transform(&mut triangles, model.transform.as_ref());
+
+        let total = triangles.len() / 9;
+        if !is_support {
+            if let Some(boundary) = voxl_classification_split(model.classification.as_ref(), total) {
+                geometry.support.extend_from_slice(&triangles[boundary * 9..]);
+                triangles.truncate(boundary * 9);
+            }
+        }
+        if is_support {
+            geometry.support.extend(triangles);
         } else {
-            for (i, m) in models.iter().enumerate() {
-                if !m.visible.unwrap_or(true) {
-                    continue;
-                }
-                let is_support = m.is_support_geometry.unwrap_or(false);
-                let target_chunk_index = m.mesh.as_ref()
-                    .and_then(|mesh| mesh.chunk_index)
-                    .unwrap_or(i as u16);
-
-                if let Some(c) = chunks.iter().find(|c| &c.tag == b"MESH" && c.index == target_chunk_index) {
-                    let chunk_bytes = decompress_chunk_bytes(data, c)?;
-                    let tris = parse_mesh_bytes(&chunk_bytes)?;
-                    if is_support {
-                        support_triangles.extend(tris);
-                    } else {
-                        model_triangles.extend(tris);
-                    }
-                }
-            }
+            geometry.model.extend(triangles);
         }
     }
 
-    let model_triangle_count = model_triangles.len() / 9;
-    let mut triangles_xyz = model_triangles;
-    triangles_xyz.extend(support_triangles);
+    Ok(geometry)
+}
+
+fn load_voxl_v2_from_bytes_with_path(data: &[u8], path: &Path) -> Result<VoxlLoadedMesh, String> {
+    let geometry = collect_voxl_geometry(data, path)?;
+    let model_triangle_count = geometry.model.len() / 9;
+    let mut triangles_xyz = geometry.model;
+    triangles_xyz.extend(geometry.support);
     let total_triangle_count = triangles_xyz.len() / 9;
-    let mesh_encoding = if used_orig { "voxl_orig" } else { "voxl_mesh" };
+    let mesh_encoding = if geometry.used_orig { "voxl_orig" } else { "voxl_mesh" };
 
     Ok(VoxlLoadedMesh {
         triangles_xyz,
@@ -1667,5 +1679,103 @@ mod tests {
         assert_eq!(voxl.triangles_xyz[2], 1.0);
         // Support tri second (z=5.0)
         assert_eq!(voxl.triangles_xyz[11], 5.0);
+    }
+
+    /// A container with one `MODL` and one `MESH` chunk, both uncompressed.
+    fn voxl_v2_container(modl_json: &str, mesh: &[u8]) -> Vec<u8> {
+        let modl = modl_json.as_bytes();
+        let modl_offset = 16 + 2 * 20;
+        let mesh_offset = modl_offset + modl.len();
+        let mut data = Vec::new();
+        data.extend_from_slice(b"VOXL");
+        data.extend_from_slice(&3u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        for (tag, offset, len) in [
+            (b"MODL", modl_offset, modl.len()),
+            (b"MESH", mesh_offset, mesh.len()),
+        ] {
+            data.extend_from_slice(tag);
+            data.extend_from_slice(&0u16.to_le_bytes());
+            data.extend_from_slice(&0u16.to_le_bytes());
+            data.extend_from_slice(&(offset as u32).to_le_bytes());
+            data.extend_from_slice(&(len as u32).to_le_bytes());
+            data.extend_from_slice(&(len as u32).to_le_bytes());
+        }
+        data.extend_from_slice(modl);
+        data.extend_from_slice(mesh);
+        data
+    }
+
+    /// Two raw triangles (positions.bin layout), one at z=1 and one at z=5.
+    fn two_triangle_soup() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for xyz in [
+            [0.0f32, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 5.0, 1.0, 0.0, 5.0, 0.0, 1.0, 5.0],
+        ] {
+            for f in xyz {
+                bytes.extend_from_slice(&f.to_le_bytes());
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn voxl_v2_applies_the_model_transform_before_the_bake_boundary() {
+        // A quarter turn about Z, then 10 mm along X. The soup's bbox centre is
+        // (0.5, 0.5, 3), so the first corner lands at (10.5, -0.5, -2): the first
+        // triangle's z=1 becomes z=-2, and its x=0 becomes x=10.5.
+        let modl = serde_json::json!([{
+            "id": "m1",
+            "visible": true,
+            "isSupportGeometry": false,
+            "mesh": { "chunkIndex": 0 },
+            "transform": {
+                "position": { "x": 10.0, "y": 0.0, "z": 0.0 },
+                "rotation": { "x": 0.0, "y": 0.0, "z": std::f32::consts::FRAC_PI_2 },
+                "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+            },
+            "classification": {
+                "pre": { "triangle_count": 4 },
+                "post": { "triangle_count": 2 },
+                "model_triangle_count": 1
+            }
+        }]).to_string();
+
+        let voxl = load_voxl_from_bytes(&voxl_v2_container(&modl, &two_triangle_soup())).unwrap();
+
+        assert_eq!(voxl.total_triangle_count, 2);
+        assert_eq!(voxl.model_triangle_count, 1, "the baked boundary splits the mesh");
+        let first = &voxl.triangles_xyz[0..3];
+        assert!((first[0] - 10.5).abs() < 1e-5, "x was {}", first[0]);
+        assert!((first[1] + 0.5).abs() < 1e-5, "y was {}", first[1]);
+        assert!((first[2] + 2.0).abs() < 1e-5, "z was {}", first[2]);
+        // The support tail carries the same placement: a quarter turn about Z leaves
+        // z alone, so the second triangle stays at z=5 minus the centre = +2.
+        assert!((voxl.triangles_xyz[11] - 2.0).abs() < 1e-5);
+        assert!((voxl.triangles_xyz[9] - 10.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn voxl_v2_ignores_a_classification_that_does_not_address_the_payload() {
+        // `post` says three triangles; the payload has two. The boundary describes a
+        // different mesh, so nothing is split and every triangle stays model.
+        let modl = serde_json::json!([{
+            "id": "m1",
+            "visible": true,
+            "mesh": { "chunkIndex": 0 },
+            "classification": {
+                "pre": { "triangle_count": 3 },
+                "post": { "triangle_count": 3 },
+                "model_triangle_count": 1
+            }
+        }]).to_string();
+
+        let voxl = load_voxl_from_bytes(&voxl_v2_container(&modl, &two_triangle_soup())).unwrap();
+
+        assert_eq!(voxl.total_triangle_count, 2);
+        assert_eq!(voxl.model_triangle_count, 2);
     }
 }

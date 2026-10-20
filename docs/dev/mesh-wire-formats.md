@@ -110,6 +110,30 @@ and an oversized ASCII STL is refused. The TS seam is
 `load_mesh_bytes` is the same pipeline for a source with no on-disk path — a VOXL
 model's embedded mesh chunk, or a file expanded out of a zip. It takes the file's
 bytes in the request body and writes the same payload, so both share one decoder.
+`load_mesh_range` is that pipeline for bytes that are already on disk: the caller
+passes `(sourcePath, offset, length, compression)` and the file's range is read and
+inflated inside Rust, so a VOXL scene never holds its meshes' bytes in the webview.
+
+**Refinement is opt-out, and a stored scene mesh opts out.** `refine_coarse_faces`
+splits triangles longer than 2% of the bbox diagonal, and it is not idempotent: run it
+over a mesh it already produced and it splits more, because the new edges are still
+long relative to the same diagonal. A VOXL `MESH` chunk is the scene's refined
+geometry, so refining it again changes both the count and the order its
+`classification` boundary indexes — on the reported scene, 81,282 triangles came back
+as 126,386, the boundary was dropped, the classifier re-ran and grew the mesh again on
+the next save. Both loaders take `refine: false` (`x-mesh-refine: 0` on
+`load_mesh_bytes`, the `refine` argument on `load_mesh_range`), and the VOXL loaders
+pass it whenever the caller holds a classification for that payload.
+
+**The staged passes are serialised on the JS side.** `stage_mesh_binary_set` and the
+`*_read_positions` commands share one process-wide buffer, so a stage/read window is
+only meaningful while nothing else stages. The VOXL import builds four models
+concurrently, and a model whose stored classification does not address its payload runs
+`classifyFromGeometry` inside its own build; two of those interleaved and each read back
+the other's soup, which rendered as one model's geometry standing in another's place.
+`withStagedMesh` (`src/utils/meshRepair.ts`) is the single queue every staged pass goes
+through — classify, analyze, both path repairs and the path load. It does not serialise
+the AO bake, which sends its soup in the request body precisely to avoid this buffer.
 
 ## What DFMX deliberately drops
 

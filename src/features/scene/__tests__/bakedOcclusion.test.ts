@@ -97,7 +97,7 @@ describe('loaded mesh tokens', () => {
     const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    rememberLoadedMeshMesh(geometry, { token: 7, positions });
+    rememberLoadedMeshMesh(geometry, 7);
     assert.deepEqual(meshTokenForGeometry(geometry), { token: 7, positions });
 
     // A repair installs a new position attribute: same geometry, different mesh.
@@ -110,5 +110,41 @@ describe('loaded mesh tokens', () => {
 
     // And a geometry the loader never touched has no token to use.
     assert.equal(meshTokenForGeometry(new THREE.BufferGeometry()), null);
+  });
+
+  it('goes stale when a prep pass reorders the soup after the loader recorded it', () => {
+    // Two triangles, corners `abc` then `def`.
+    const positions = new Float32Array([
+      0, 0, 0, 1, 0, 0, 0, 1, 0,
+      2, 0, 0, 3, 0, 0, 2, 1, 0,
+    ]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    rememberLoadedMeshMesh(geometry, 11);
+    assert.equal(meshTokenForGeometry(geometry)?.token, 11);
+
+    // What a classify pass does (`applyRepairedPositions`): same corner count, the
+    // triangles in a different order. The count alone cannot tell them apart, so the
+    // array identity is the whole guard.
+    const reordered = new Float32Array(positions);
+    reordered.set(positions.subarray(9), 0);
+    reordered.set(positions.subarray(0, 9), 9);
+    geometry.setAttribute('position', new THREE.BufferAttribute(reordered, 3));
+    assert.equal(
+      meshTokenForGeometry(geometry),
+      null,
+      'a reordered soup must fall back to sending the soup, not bake the loader\'s order into it',
+    );
+  });
+
+  it('keeps the token through an in-place translate', () => {
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    rememberLoadedMeshMesh(geometry, 5);
+
+    // Centering translates the same buffer; the mesh the registry holds moved with it.
+    geometry.translate(0, -1, 0);
+    assert.equal(meshTokenForGeometry(geometry)?.token, 5);
   });
 });

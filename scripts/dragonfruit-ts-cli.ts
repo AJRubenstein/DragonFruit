@@ -27,6 +27,7 @@ import { createRequire } from 'module';
 import { v4 as uuidv4 } from 'uuid';
 import { parseVoxlAuto } from '../src/features/scene/voxl/codec';
 import { serializeVoxlDocumentV2 } from '../src/features/scene/voxl/codec-v2';
+import { reportAddressesTriangleSoup } from '../src/features/scene/voxl/classification';
 import {
   DYNAMIC_PLATE_ORDERING,
   VOXL_PLATE_ORDERING_EXTENSION,
@@ -1524,12 +1525,16 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
     const meshBytes = LOADED_MESH_BYTES.get(model.id);
     const origBytes = LOADED_ORIG_BYTES.get(model.id);
     const embedded = modifiersBaked ? (meshBytes ?? origBytes) : (origBytes ?? meshBytes);
+    // Which payload these triangles came from. Only the MESH chunk is written with
+    // the `classification` boundary beside it — the ORIG chunk is the pristine
+    // original's bytes, addressed by neither.
+    let source: 'orig' | 'mesh' | 'file' = 'file';
     if (embedded) {
       // `embedded-chunk`/`embedded-file`: the codec already decoded the geometry
       // to STL bytes — no filesystem lookup needed.
       positions = parseBinaryStl(Buffer.from(embedded.buffer, embedded.byteOffset, embedded.byteLength));
-      const src = embedded === origBytes ? 'orig' : 'mesh';
-      console.error(`  loading ${model.name}: <embedded ${src}${modifiersBaked ? ', baked-modifiers' : ''}>`);
+      source = embedded === origBytes ? 'orig' : 'mesh';
+      console.error(`  loading ${model.name}: <embedded ${source}${modifiersBaked ? ', baked-modifiers' : ''}>`);
     } else if (model.mesh.mode === 'external-file' || model.mesh.fileName) {
       const meshFileName = model.mesh.fileName ?? model.name + '.stl';
       // Try mesh-dir, then absolute path, then cwd
@@ -1558,6 +1563,46 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
     const hasPos = t.position.x !== 0 || t.position.y !== 0 || t.position.z !== 0;
     if (hasPos || hasRot || hasScl) {
       console.error(`    transform: pos=(${t.position.x.toFixed(1)},${t.position.y.toFixed(1)},${t.position.z.toFixed(1)}) rot=(${t.rotation.x.toFixed(3)},${t.rotation.y.toFixed(3)},${t.rotation.z.toFixed(3)}) scale=(${t.scale.x},${t.scale.y},${t.scale.z})`);
+    }
+
+    // The file's own model/support split. The GUI slices a loaded model by
+    // `model_triangle_count` (see `effectiveModelTriangleCount`), so a headless slice
+    // has to place the same boundary: the first N triangles are model, the rest are
+    // support. Emitted as two inputs — a support-classified model contributes zero
+    // model triangles, and the orchestrator appends support-range triangles after
+    // every model's, which is the layout the engine expects. The rule that decides
+    // whether the boundary still addresses these bytes is shared with the app's own
+    // reader; see `reportAddressesTriangleSoup`.
+    const classification = source === 'mesh' ? model.classification : undefined;
+    const triangles = positions.length / 9;
+    const boundary = classification
+      && !(model.isSupportGeometry ?? false)
+      && reportAddressesTriangleSoup(classification, triangles)
+      && classification.model_triangle_count != null
+      && classification.model_triangle_count > 0
+      && classification.model_triangle_count < triangles
+      ? classification.model_triangle_count
+      : null;
+    if (boundary != null) {
+      const cut = boundary * 9;
+      console.error(`    classification: ${boundary} model + ${triangles - boundary} support triangles`);
+      modelInputs.push({
+        id: model.id,
+        name: model.name,
+        color: model.color,
+        polygonCount: boundary,
+        isSupportGeometry: false,
+        positions: positions.subarray(0, cut),
+      });
+      modelInputs.push({
+        id: `${model.id}#support`,
+        name: `${model.name} (support)`,
+        color: model.color,
+        polygonCount: triangles - boundary,
+        isSupportGeometry: true,
+        positions: positions.subarray(cut),
+      });
+      continue;
     }
 
     modelInputs.push({

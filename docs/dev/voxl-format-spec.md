@@ -55,6 +55,35 @@ Format detection by first bytes:
 
 All transform/vector numbers must be finite IEEE 754 values.
 
+## Mesh triangle order
+
+Everything that indexes a mesh in this format is an index into **one order**, and the order
+survives every hop of the pipeline. State it once; do not re-derive it per consumer.
+
+- Rust hands geometry to TypeScript as a corner soup in `IndexedMesh.triangles` order
+  (`dragonfruit-mesh-core`, `mesh.rs`): `DFMX` bodies, the writer's `write_soup` and the
+  `MESH` chunk's STL bytes all carry that order unchanged. A `MESH` payload is the scene
+  geometry translated by `-geometry.center`; nothing else about it is reordered.
+- A classification boundary (`model_triangle_count`), the baked-occlusion attribute
+  (`aBakedAo`, one value per soup corner), the model/support section split and support
+  routing all address that order. A classifier reports the order the pass produced, and
+  the mesh it hands back *is* that order — model triangles first.
+- A pass that replaces the position attribute (classify, repair, refine, swap) is a new
+  mesh: per-corner data and any loader token recorded against the old array are void. An
+  in-place translate (the centering) is not — it moves the same triangles.
+- A report and the bytes it describes must be written together, and a reader must check
+  they still agree. The rule is one function, not a convention:
+  `reportAddressesTriangleSoup(report, triangles)` in
+  `src/features/scene/voxl/classification.ts` compares `post.triangle_count`, because the
+  boundary describes the mesh the pass *ended* with. The writer
+  (`ExportManager.exportVoxl`), the loader (`classificationForPayload`) and both CLI
+  readers call it. See Revision 3.3 for the stored form.
+- Placing a model: the local frame is the soup minus its own bounding-box centre, then the
+  entry's `transform` — extrinsic XYZ Euler radians about the fixed plate axes
+  (`quaternionFromGlobalEuler`), scale, translation. Both CLIs apply it themselves
+  (`scripts/dragonfruit-ts-cli.ts::applyVoxlTransform`,
+  `rust/dragonfruit-cli/src/io.rs::apply_model_transform`) and read the same boundary.
+
 ## Binary container contract (V2/V3)
 
 Binary layout:
@@ -213,28 +242,44 @@ that ran over the triangle order of that model's `mesh` payload. The value is th
 report — the `MeshHealthReport` shape (`src/utils/meshRepair.ts`), whose `model_triangle_count`
 is the split boundary: the first N triangles are the model body, the remainder support geometry.
 
+**A reader re-derives it rather than trusting it.** The boundary is only as good as the pairing of
+those bytes with that report, and a count check cannot see the failure that matters: a soup of the
+same length in a different order. A file written before the mesh chunk's signature included the
+position array's identity can hold exactly that — the classifier's boundary beside the mesh it
+classified *before* reordering it — and applying it cuts a slab out of the model and paints it as
+support. So the VOXL import builds each payload, asks the native loader to classify it, and takes
+the sections from that answer (`handleImportVoxlFile`'s `buildOptionsFor`). The cost is one classify
+per model per load, the same pass a fresh STL import pays, done inside the loader rather than as a
+second round trip. The writer still records the field: it is the file's own description of its
+mesh, it is correct by construction once the bytes and the report come from the same bake, and a
+future reader can honour it again when a file can prove the two agree.
+
 Requirements:
 
-- Writers stamp `classification` only when the classifier actually ran over the exact payload
-  being written. A geometry replaced after classification (a baked hollowing, hole punch, mirror,
-  or repair) carries none — the boundary would not address it — and neither does a payload whose
-  bake fell behind the live geometry.
+- The boundary is an index into the soup, so it is only meaningful for the mesh the classifying
+  pass *ended* with: **`post.triangle_count`**. `pre` is the mesh that was sent in, and a repair
+  changes the topology between the two. Classify-only leaves `pre == post`, which is why the
+  distinction went unnoticed for a while.
+- One predicate decides whether a report still addresses a soup of *N* triangles —
+  `reportAddressesTriangleSoup(report, N)` in `src/features/scene/voxl/classification.ts`. The
+  writer, the loader and both CLIs call it; nothing re-implements the comparison.
+- Writers stamp `classification` only when that predicate holds for the exact payload being
+  written. A geometry replaced after classification (a baked hollowing, hole punch, mirror, or
+  repair) carries none — the boundary would not address it — and neither does a payload whose
+  bake fell behind the live geometry. The chunk store's geometry signature includes the identity
+  of the position array (`ExportManager.computeModelGeometrySignature`), because a classify pass
+  installs a reordered soup of the same length and every count-based field is blind to that.
 - The boundary is expressed in the triangle order of the **stored mesh bytes**, not of the
   original import. Native decimation preserves section order, so a reduced preview's boundary is
   the one the reader must use.
-- Readers that honour it must not re-run the classifier: the report is the answer for exactly
-  these triangles. They must still build the model/support section split from
-  `model_triangle_count`, since the sections are not stored separately.
-- A reader must *check* the report against the payload it just loaded before honouring it: compare
-  `pre.triangle_count` with the mesh it built. Refinement is deterministic but versioned, and a
-  section boundary is a triangle index, so a report written under a different refinement rule
-  describes a mesh this build does not produce. A report that fails the check is dropped and the
-  classifier runs, which is the pre-3.3 path. (`src/hooks/useStlGeometry.ts`,
-  `classificationForPayload`.)
-- The loaders must not be *asked* for a classification the caller already holds
-  (`wantsLoaderClassification`): a second pass over the same triangles costs the whole classify —
-  measured at 430 ms of a 550 ms native load of a 725k-triangle model, and 11.9 s across the
-  13-unique-mesh scene in `backlog.md` — to reproduce the stored answer.
+- A reader that does honour it (it does not today, see above) must check the report against the
+  payload it just loaded with the same predicate, and must not re-run the classifier on a report
+  that passes: the report is the answer for exactly these triangles. The sections themselves are
+  never stored separately — the split is built from `model_triangle_count` either way.
+  (`src/hooks/useStlGeometry.ts`: `classificationForPayload`, `loadMeshGeometryFromRange`.)
+- A stored mesh is not refined again on load (`_refine: false`, `refine` on the native loaders).
+  Refinement is not idempotent, so re-refining a stored payload changes the count and order that
+  any boundary indexes and grows the mesh on every save/load cycle.
 - A reader that has the *file's path* may leave the `MESH` chunks packed: the directory
   already carries `(offset, compressedSize, uncompressedSize, compression)`, and
   `load_mesh_range` reads and inflates a range natively, so a scene never holds its

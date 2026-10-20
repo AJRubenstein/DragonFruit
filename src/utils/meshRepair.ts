@@ -23,6 +23,24 @@ import {
   readPositionsFromCommand,
 } from './tauriMeshBridge';
 
+/**
+ * Runs one staged mesh pass at a time.
+ *
+ * `stage_mesh_binary_set` — and every command that reads the staged buffer back —
+ * is process-wide state, so a stage/consume window is only meaningful while nothing
+ * else stages. The VOXL import builds four models concurrently, and a model whose
+ * stored classification does not address its payload runs the classify pass from
+ * inside its build: two of those interleaved, each read back the *other's* soup, and
+ * the viewport showed one model's geometry in another model's place. Serialising the
+ * window is the whole fix; each pass is still native work off the main thread.
+ */
+let stagedPass: Promise<unknown> = Promise.resolve();
+function withStagedMesh<T>(pass: () => Promise<T>): Promise<T> {
+  const run = stagedPass.then(pass, pass);
+  stagedPass = run.catch(() => undefined);
+  return run;
+}
+
 export interface MeshAnalysisJson {
   triangle_count: number;
   vertex_count: number;
@@ -298,14 +316,16 @@ export async function repairFromPath(
   }
 
   try {
-    const reportJson = await core.invoke<string>('mesh_repair_from_path', {
-      filePath,
-      optionsJson,
-      progressToken: token,
+    return await withStagedMesh(async () => {
+      const reportJson = await core.invoke<string>('mesh_repair_from_path', {
+        filePath,
+        optionsJson,
+        progressToken: token,
+      });
+      const report = normalizeMeshHealthReport(JSON.parse(reportJson));
+      const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+      return { report, positions };
     });
-    const report = normalizeMeshHealthReport(JSON.parse(reportJson));
-    const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
-    return { report, positions };
   } finally {
     unlisten?.();
   }
@@ -346,14 +366,16 @@ export async function repairPartsFromPath(
   }
 
   try {
-    const reportJson = await core.invoke<string>('mesh_repair_parts_from_path', {
-      filePath,
-      optionsJson,
-      progressToken: token,
+    return await withStagedMesh(async () => {
+      const reportJson = await core.invoke<string>('mesh_repair_parts_from_path', {
+        filePath,
+        optionsJson,
+        progressToken: token,
+      });
+      const report = normalizeMeshHealthReport(JSON.parse(reportJson));
+      const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+      return { report, positions };
     });
-    const report = normalizeMeshHealthReport(JSON.parse(reportJson));
-    const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
-    return { report, positions };
   } finally {
     unlisten?.();
   }
@@ -368,8 +390,10 @@ export async function repairPartsFromPath(
 export async function loadMeshFromPath(filePath: string): Promise<Float32Array | null> {
   const core = await loadTauriCore();
   if (!core) return null;
-  await core.invoke<void>('mesh_load_from_path', { filePath });
-  return readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+  return withStagedMesh(async () => {
+    await core.invoke<void>('mesh_load_from_path', { filePath });
+    return readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+  });
 }
 
 /**
@@ -389,12 +413,13 @@ export async function analyzeFromGeometry(
   const soup = expandGeometryToTriangleSoup(geometry);
   const bytes = new Uint8Array(soup.buffer, soup.byteOffset, soup.byteLength);
 
-  await core.invoke('stage_mesh_binary_set', bytes, {
-    headers: { 'Content-Type': 'application/octet-stream' },
+  return withStagedMesh(async () => {
+    await core.invoke('stage_mesh_binary_set', bytes, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
+    const analysisJson = await core.invoke<string>('mesh_analyze_staged');
+    return normalizeMeshAnalysis(JSON.parse(analysisJson));
   });
-
-  const analysisJson = await core.invoke<string>('mesh_analyze_staged');
-  return normalizeMeshAnalysis(JSON.parse(analysisJson));
 }
 
 /**
@@ -525,21 +550,22 @@ export async function classifyFromGeometry(
   const soup = expandGeometryToTriangleSoup(geometry);
   const bytes = new Uint8Array(soup.buffer, soup.byteOffset, soup.byteLength);
 
-  await core.invoke('stage_mesh_binary_set', bytes, {
-    headers: { 'Content-Type': 'application/octet-stream' },
-  });
-
   const optionsPayload = {
     ...options,
     assume_support_geometry: options.assumeSupportGeometry,
   };
   const optionsJson = JSON.stringify(optionsPayload);
-  const reportJson = await core.invoke<string>('mesh_classify_staged', {
-    optionsJson,
+  return withStagedMesh(async () => {
+    await core.invoke('stage_mesh_binary_set', bytes, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
+    const reportJson = await core.invoke<string>('mesh_classify_staged', {
+      optionsJson,
+    });
+    const report = normalizeMeshHealthReport(JSON.parse(reportJson));
+    const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
+    return { report, positions };
   });
-  const report = normalizeMeshHealthReport(JSON.parse(reportJson));
-  const positions = await readPositionsFromCommand(core.invoke, 'mesh_repair_read_positions');
-  return { report, positions };
 }
 
 /**
