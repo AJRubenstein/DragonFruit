@@ -13,24 +13,25 @@ import { noteActivity } from '@/utils/debug/heartbeatContext';
 import {
     buildSupportPlacementPreviewBatch,
     resolvePlacementPreviewMaterial,
-    type InteriorContactFilter,
     type InteriorContactPoint,
     type PlacementPreviewBatch,
     type PlacementPreviewDisk,
     type PlacementPreviewTaperedShaft,
+    type InteriorContactFilter,
     type PlacementSurface,
     type Vec3Like,
 } from './supportPlacementPreviewMath';
 import { buildSegmentPreviewBatch } from './previewGeometry/seam';
+import { createInteriorSideTester } from './interiorSupportGeometry';
 import './previewGeometry/registerBuiltinPreviewBuilders';
 import {
     anyContactMatches,
     collectOwnedRootIds,
     contactEndpointsFor,
     parseKnotHostId,
-    knotHostId,
     isConeKnotHost,
     isSpanKnotHost,
+    knotHostId,
     spanKnotHostType,
     coneKnotHostType,
     getSupportTypeBySelectionCategory,
@@ -710,22 +711,27 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     const braceList = useMemo(() => Object.values(state.braces), [state.braces]);
     const stumpList = useMemo(() => Object.values(state.stumps), [state.stumps]);
     const kickstandList = useMemo(() => Object.values(state.kickstands), [state.kickstands]);
+    // Cavity classification for supports that carry no `placementSurface`
+    // (auto-generated and imported ones). Built lazily per cavity and reused
+    // for every contact.
+    const isOnInteriorSide = useMemo(
+        () => createInteriorSideTester(cavityGeometryByModelId, modelWorldInverseById),
+        [cavityGeometryByModelId, modelWorldInverseById],
+    );
     const matchesInteriorContact = useMemo<InteriorContactFilter>(() => {
         if (!interiorView) return () => true;
+        // Interior view needs a cavity; without one, keep the layer's old
+        // contract of showing everything rather than hiding it all.
+        if (!cavityGeometryByModelId || cavityGeometryByModelId.size === 0) return () => true;
 
-        return (contact, _modelId) => {
+        return (contact, modelId) => {
             if (!contact) return false;
             if (contact.placementSurface === 'interior') return true;
             if (contact.placementSurface === 'exterior') return false;
-            // placementSurface is undefined for imported (LYS) supports — show them
-            // in interior view so the user can see how all supports relate to the
-            // cavity. The BVH/raycasting tests are unreliable on non-watertight
-            // cavity meshes.
-            return true;
+            // Unstamped: ask the cavity, the same test the Prepare proxy uses.
+            return isOnInteriorSide(contact.pos, modelId);
         };
-    }, [interiorView, cavityGeometryByModelId, modelWorldInverseById]);
-    const knotList = useMemo(() => Object.values(state.knots), [state.knots]);
-    const kickstandKnotList = useMemo(() => Object.values(kickstandKnotsById), [kickstandKnotsById]);
+    }, [interiorView, cavityGeometryByModelId, isOnInteriorSide]);
     const matchesInteriorBrace = useMemo(() => {
         if (!interiorView) return (_brace: Brace) => true;
 
@@ -784,6 +790,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         // whole snapshot is the dependency.
     }, [interiorView, state, matchesInteriorContact]);
 
+    const knotList = useMemo(() => Object.values(state.knots), [state.knots]);
+    const kickstandKnotList = useMemo(() => Object.values(kickstandKnotsById), [kickstandKnotsById]);
     const entityModelIdByKnotId = useMemo(() => {
         const map = new Map<string, string | undefined>();
         for (const [id, modelId] of Object.entries(supportRenderLookup.entityModelIdByKnotId)) {

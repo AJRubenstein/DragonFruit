@@ -20,12 +20,14 @@ import { emitSupportModelPointerHover } from './interaction/clickHandlers';
 import { bezierSegmentToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
+import { SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import {
-    anyContactMatches,
-    contactEndpointsFor,
-    SUPPORT_TYPES,
-    type SupportTypeId,
-} from './supportTypeRegistry';
+    createInteriorSideTester,
+    interiorSupportIds,
+    interiorSupportKey,
+    isAnySegmentPointInterior,
+    isInteriorContact,
+} from './interiorSupportGeometry';
 
 interface SupportProxyMeshLayerProps {
   mode?: 'prepare' | 'analysis' | 'support' | 'export' | 'printing';
@@ -209,53 +211,6 @@ function fromModelKey(modelKey: string): string | undefined {
   return modelKey === MODEL_NONE_KEY ? undefined : modelKey;
 }
 
-
-/** An interior-support id: the entity's `typeId`, a colon, then its own id. */
-function interiorIdPrefix(entity: { typeId?: SupportTypeId }): string {
-    return `${entity.typeId}:`;
-}
-
-/** The key an entity contributes to, and looks itself up under. */
-function interiorSupportKey(entity: { id: string; typeId?: SupportTypeId }): string {
-    return `${interiorIdPrefix(entity)}${entity.id}`;
-}
-
-/**
- * Which supports the interior (cavity) view draws. A `plateRoot` type is
- * skipped; any interior contact qualifies; a shaft is tested along its length
- * only when it starts at a knot. Predicates are injected to keep this pure.
- */
-export function interiorSupportIds(
-    state: SupportState,
-    isContactInterior: (contact: unknown, modelId?: string) => boolean,
-    areSegmentsInterior: (segments: readonly Segment[], modelId?: string) => boolean,
-): Set<string> {
-    const ids = new Set<string>();
-
-    for (const descriptor of SUPPORT_TYPES) {
-        // Rooted in the plate: never inside a cavity.
-        if (descriptor.lower.kind === 'plateRoot') continue;
-        if (contactEndpointsFor(descriptor.id).length === 0) continue;
-
-        const collection = state[descriptor.location.key] as unknown as
-            Record<string, { id: string; typeId?: SupportTypeId; modelId?: string; segments?: Segment[] }> | undefined;
-
-        for (const entity of Object.values(collection ?? {})) {
-            const key = interiorSupportKey(entity);
-            if (anyContactMatches(descriptor.id, entity, (contact) => isContactInterior(contact, entity.modelId))) {
-                ids.add(key);
-                continue;
-            }
-            if (descriptor.lower.kind === 'knot'
-                && descriptor.hasSegments
-                && areSegmentsInterior(entity.segments ?? [], entity.modelId)) {
-                ids.add(key);
-            }
-        }
-    }
-
-    return ids;
-}
 
 /** Every proxy primitive the layer draws, grouped by model. Geometry only. */
 export function collectProxyPrimitives(
@@ -553,165 +508,13 @@ export function SupportProxyMeshLayer({
   // before the BVH query.
   const interiorSupportIdSet = React.useMemo<Set<string> | null>(() => {
     if (!interiorView || !cavityGeometryByModelId || cavityGeometryByModelId.size === 0) return null;
-
-    const ids = new Set<string>();
-    const tempVec = new THREE.Vector3();
-    const queryTarget = { point: new THREE.Vector3(), distance: 0, faceIndex: -1 } as {
-      point: THREE.Vector3;
-      distance: number;
-      faceIndex: number;
-    };
-
-    // Build BVH on cavity geometries for O(log n) closest-point queries
-    const cavityBvhByGeometry = new Map<THREE.BufferGeometry, THREE.BufferGeometry & { boundsTree?: { closestPointToPoint: Function } }>();
-    for (const [, geometry] of cavityGeometryByModelId) {
-      const g = geometry as THREE.BufferGeometry & { boundsTree?: { closestPointToPoint: Function }; computeBoundsTree?: () => void };
-      if (!g.boundsTree && typeof g.computeBoundsTree === 'function') {
-        g.computeBoundsTree();
-      }
-      cavityBvhByGeometry.set(geometry, g);
-    }
-
-    // Pre-compute face normals for each cavity geometry so we can determine
-    // which side of the cavity surface a point lies on.
-    const faceNormalsByGeometry = new Map<THREE.BufferGeometry, Float32Array>();
-    for (const [, geometry] of cavityGeometryByModelId) {
-      const posAttr = geometry.getAttribute('position');
-      const indexAttr = geometry.getIndex();
-      if (!posAttr) continue;
-      const positions = posAttr.array as Float32Array;
-      const indices = indexAttr ? (indexAttr.array as Uint16Array | Uint32Array) : null;
-
-      const triCount = indices
-        ? indices.length / 3
-        : posAttr.count / 3;
-      const normals = new Float32Array(triCount * 3);
-
-      const a = new THREE.Vector3();
-      const b = new THREE.Vector3();
-      const c = new THREE.Vector3();
-      const edge1 = new THREE.Vector3();
-      const edge2 = new THREE.Vector3();
-      const faceNormal = new THREE.Vector3();
-
-      for (let i = 0; i < triCount; i++) {
-        const i0 = indices ? indices[i * 3] : i * 3;
-        const i1 = indices ? indices[i * 3 + 1] : i * 3 + 1;
-        const i2 = indices ? indices[i * 3 + 2] : i * 3 + 2;
-        a.set(positions[i0 * 3], positions[i0 * 3 + 1], positions[i0 * 3 + 2]);
-        b.set(positions[i1 * 3], positions[i1 * 3 + 1], positions[i1 * 3 + 2]);
-        c.set(positions[i2 * 3], positions[i2 * 3 + 1], positions[i2 * 3 + 2]);
-        edge1.subVectors(b, a);
-        edge2.subVectors(c, a);
-        faceNormal.crossVectors(edge1, edge2).normalize();
-        normals[i * 3] = faceNormal.x;
-        normals[i * 3 + 1] = faceNormal.y;
-        normals[i * 3 + 2] = faceNormal.z;
-      }
-      faceNormalsByGeometry.set(geometry, normals);
-    }
-
-    /**
-     * Returns true if `pos` lies on the interior side of the cavity surface
-     * or is very close to it (within the shell thickness).
-     *
-     * Finds the closest point on the cavity mesh, then compares the vector
-     * from that point to `pos` against the face normal at the closest point.
-     * - dot > 0  → pos is in same direction as normal → INSIDE cavity → show
-     * - dot ≤ 0 but dist < SHELL_PROXIMITY_MM → near the cavity wall → show
-     * - dot ≤ 0 and dist ≥ SHELL_PROXIMITY_MM → in solid material far from cavity → hide
-     *
-     * This is purely local — no watertightness or raycasting required.
-     */
-    const isOnInteriorSide = (pos: Vec3, modelId?: string): boolean => {
-      const geometry = modelId ? cavityGeometryByModelId.get(modelId) : null;
-      const target = geometry ?? (cavityGeometryByModelId ? Array.from(cavityGeometryByModelId.values())[0] : null);
-      if (!target) return false;
-      const g = cavityBvhByGeometry.get(target);
-      if (!g?.boundsTree) return false;
-
-      tempVec.set(pos.x, pos.y, pos.z);
-      if (modelId && modelWorldInverseById) {
-        const inv = modelWorldInverseById.get(modelId);
-        if (inv) tempVec.applyMatrix4(inv);
-      }
-      queryTarget.distance = Infinity;
-      queryTarget.faceIndex = -1;
-      const result = g.boundsTree.closestPointToPoint(tempVec, queryTarget);
-      if (!result || queryTarget.faceIndex < 0) return false;
-
-      const normals = faceNormalsByGeometry.get(target);
-      if (!normals || queryTarget.faceIndex * 3 + 2 >= normals.length) return false;
-
-      // Vector from closest cavity point → support point
-      const dx = tempVec.x - queryTarget.point.x;
-      const dy = tempVec.y - queryTarget.point.y;
-      const dz = tempVec.z - queryTarget.point.z;
-
-      // Face normal at closest point (outward from cavity)
-      const nx = normals[queryTarget.faceIndex * 3];
-      const ny = normals[queryTarget.faceIndex * 3 + 1];
-      const nz = normals[queryTarget.faceIndex * 3 + 2];
-
-      const dot = dx * nx + dy * ny + dz * nz;
-
-      // Cavity mesh normals point INTO the cavity (marching-cubes convention).
-      // dot > 0  → point is inside the cavity void → definitely show
-      // dot ≤ 0  → point is in the model wall or outside.
-      //   dist < 1.5mm → on/near the INTERIOR wall (cavity-facing) → show
-      //   dist ≥ 1.5mm → exterior wall or far outside → hide
-      const INTERIOR_WALL_THRESHOLD_MM = 1.5;
-      return dot > 0 || result.distance < INTERIOR_WALL_THRESHOLD_MM;
-    };
-
-    // A contact is interior when its placement surface says so, or when an
-    // unstamped one sits on the cavity side. Takes `unknown` and narrows here,
-    // since the seam hands over whichever field the descriptor declared.
-    const isInteriorContact = (contact: unknown, modelId?: string): boolean => {
-      const c = contact as { pos?: Vec3; placementSurface?: 'interior' | 'exterior' } | null | undefined;
-      if (!c?.pos) return false;
-      if (c.placementSurface === 'interior') return true;
-      if (c.placementSurface === 'exterior') return false;
-      return isOnInteriorSide(c.pos, modelId);
-    };
-
-    // Sample a segment shaft for cavity interior crossing. Both endpoints are
-    // typically outside the cavity (tip at model surface, base at raft/parent).
-    // The shaft may only pass through the cavity over a short fraction of its
-    // length, so we sample at 10% increments to catch narrow crossings.
-    const isAnySegmentPointInterior = (
-      segs: readonly Segment[],
-      modelId?: string,
-    ): boolean => {
-      for (const seg of segs) {
-        if (seg.bottomJoint?.pos && isOnInteriorSide(seg.bottomJoint.pos, modelId)) return true;
-        if (seg.topJoint?.pos && isOnInteriorSide(seg.topJoint.pos, modelId)) return true;
-
-        const a = seg.bottomJoint?.pos;
-        const b = seg.topJoint?.pos;
-        if (a && b) {
-          for (let i = 1; i <= 9; i++) {
-            const t = i / 10;
-            const mid: Vec3 = {
-              x: a.x + (b.x - a.x) * t,
-              y: a.y + (b.y - a.y) * t,
-              z: a.z + (b.z - a.z) * t,
-            };
-            if (isOnInteriorSide(mid, modelId)) return true;
-          }
-        }
-      }
-      return false;
-    };
-
-    // See `interiorSupportIds`: the descriptor answers every question here.
-    return interiorSupportIds(supportState, isInteriorContact, isAnySegmentPointInterior);
-  }, [
-    interiorView,
-    cavityGeometryByModelId,
-    modelWorldInverseById,
-    supportState,
-  ]);
+    const isOnInteriorSide = createInteriorSideTester(cavityGeometryByModelId, modelWorldInverseById);
+    return interiorSupportIds(
+      supportState,
+      (contact, modelId) => isInteriorContact(contact, modelId, isOnInteriorSide),
+      (segments, modelId) => isAnySegmentPointInterior(segments, isOnInteriorSide, modelId),
+    );
+  }, [interiorView, cavityGeometryByModelId, modelWorldInverseById, supportState]);
 
   const baseProxyByModel = React.useMemo(() => {
     // The snapshot is replaced on any change, so it alone decides a rebuild.
