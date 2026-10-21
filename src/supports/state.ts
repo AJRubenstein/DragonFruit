@@ -7,7 +7,7 @@ import {
     typesDeclaringOwnHistoryEntryWithoutUpdate,
     typesMissingContactOverride,
     removalShapeFor, type SupportRemovalResult } from './supportTypeRegistry';
-import { collectCascade, groupByCollection, isReferencedOutside } from './supportCascade';
+import { collectCascade, groupByCollection, isReferencedOutside, ownedPrimitives } from './supportCascade';
 import { pushSupportHistory } from './history/supportHistory';
 import { supportSettleFor } from './settle/seam';
 import { collectOwnedRootIds, hasSupportUpdater, hostKnotFieldsFor, typeIdForCollection, updateSupportEntity, JOINT_REMOVAL_TYPES, MODEL_ID_COLLECTION_KEYS, bundledSupportTypeId, parseKnotHostId, parsePrefixedSegmentId, isKnotHostId, isConeKnotHost, isSpanKnotHost, knotHostId, CONE_KNOT_HOST_TYPES, SPAN_KNOT_HOST_TYPES, SUPPORT_COLLECTION_KEYS, contactEndpointsFor, EDITABLE_SUPPORT_TYPES, hasSettingsInference, inferSupportSettings, isEditableSupportType, registerCollectionRestore, collectionsMissingRestore, registerSettingsInference, transformExtrasFor, type SupportTypeDescriptor, createEmptySupportCollections, getSupportTypeDescriptor, registerKnotDiameterRule, registerSupportUpdater, registerSupportTypeResolver, resolveKnotDiameter, resolveSupportTypeIdOf, type SupportEntityFor, SUPPORT_STATE_COLLECTIONS, SUPPORT_TYPES, type SupportTypeId, type JointRemovalTypeId } from './supportTypeRegistry';
@@ -207,6 +207,47 @@ export function removeSupportEntity<T extends SupportTypeId>(
  */
 
 /**
+ * One entity plus everything the graph says hangs off it, under the field
+ * names its removal shape declares.
+ *
+ * The one payload builder for both directions: a remove records what it is
+ * about to delete, an add records what its undo would delete. Sharing it is
+ * what keeps redo able to restore exactly what undo took.
+ */
+function cascadePayload(
+    typeId: SupportTypeId,
+    entity: { id: string },
+    byCollection: Map<SupportCollectionKey, Set<string>>,
+    // A removal's entities are about to be deleted, so its payload owns copies.
+    // An add's are the ones just written, which nothing mutates in place.
+    copy: <T>(value: T) => T,
+): Record<string, unknown> {
+    const shape = removalShapeFor(typeId);
+    const result: Record<string, unknown> = { [shape.self]: copy(entity) };
+    const plural = (field: string) => field.endsWith('s');
+
+    for (const [key, field] of Object.entries(shape.cascade as Record<string, string | readonly string[]>)) {
+        // The seed is included when its own collection is listed in `cascade`.
+        // removeBranch reports every doomed branch, itself among them, because
+        // undo replays the list wholesale; removeTrunk names the trunk
+        // separately via `self` and does not list `trunks` here.
+        const ids = [...(byCollection.get(key as SupportCollectionKey) ?? [])];
+        const entities = ids
+            .map((entityId) => state[key as SupportCollectionKey][entityId])
+            .filter(Boolean)
+            .map((member) => copy(member));
+
+        if (typeof field === 'string') {
+            result[field] = plural(field) ? entities : (entities[0] ?? null);
+        } else {
+            // Positional slots: fill in declared order, pad with null.
+            field.forEach((slot, index) => { result[slot] = entities[index] ?? null; });
+        }
+    }
+    return result;
+}
+
+/**
  * Remove an entity and everything the declared graph says depends on it.
  * `collectCascade` finds the doomed set from the registry's edges;
  * `removalShape` names each piece so history payloads keep their field names.
@@ -225,28 +266,7 @@ function removeSupportEntityCascading(
     const byCollection = groupByCollection(doomed);
 
     // Snapshot before deleting: the shape is what undo replays from.
-    const result: Record<string, unknown> = { [shape.self]: deepClone(existing) };
-    const plural = (field: string) => field.endsWith('s');
-
-    for (const [key, field] of Object.entries(shape.cascade as Record<string, string | readonly string[]>)) {
-        // The seed is included when its own collection is listed in `cascade`.
-        // removeBranch reports every doomed branch, itself among them, because
-        // undo replays the list wholesale; removeTrunk names the trunk
-        // separately via `self` and does not list `trunks` here.
-        const ids = [...(byCollection.get(key as SupportCollectionKey) ?? [])];
-        const node = SUPPORT_TYPES.find((d) => d.location.key === key);
-        const entities = ids
-            .map((entityId) => state[key as SupportCollectionKey][entityId])
-            .filter(Boolean)
-            .map((entity) => deepClone(entity));
-
-        if (typeof field === 'string') {
-            result[field] = plural(field) ? entities : (entities[0] ?? null);
-        } else {
-            // Positional slots: fill in declared order, pad with null.
-            field.forEach((slot, index) => { result[slot] = entities[index] ?? null; });
-        }
-    }
+    const result = cascadePayload(typeId, existing, byCollection, deepClone);
 
     // Apply: one state write, one notify.
     const next: Record<string, unknown> = { ...state };
@@ -2758,11 +2778,20 @@ export function addSupportEntityWithHistory(
     extras?: Record<string, unknown>,
 ) {
     addSupportEntity(typeId, entity);
+    // Undo removes this entity by cascade, so the entry has to carry what that
+    // cascade takes -- the same payload a removal records. Nothing mutates a
+    // just-written entity, so the payload holds it rather than a copy.
+    const recorded = cascadePayload(
+        typeId,
+        entity,
+        ownedPrimitives(state, typeId, entity),
+        (value) => value,
+    );
     // The declared `self` field is the key that type's add payload carries,
     // but it is computed here, so the compiler cannot match it to the union.
     pushSupportHistory({
         type: getSupportTypeDescriptor(typeId).historyAdd,
-        payload: { [removalShapeFor(typeId).self]: entity, ...extras },
+        payload: { ...recorded, ...extras },
     } as unknown as Parameters<typeof pushSupportHistory>[0]);
 }
 

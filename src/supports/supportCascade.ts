@@ -1,4 +1,4 @@
-import { SUPPORT_GRAPH_NODES, SUPPORT_TYPES, type SupportCollectionKey } from './supportTypeRegistry';
+import { SUPPORT_GRAPH_NODES, SUPPORT_TYPES, getSupportTypeDescriptor, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
 import type { Segment, SupportState } from './types';
 
 /**
@@ -207,6 +207,34 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
 }
 
 /** Split a cascade result back into per-collection id sets. */
+/**
+ * The primitives a new entity owns, grouped the way a cascade reports them.
+ *
+ * A just-placed entity hosts nothing, so its cascade is only what its own
+ * `owns` edges name. Read off the entity rather than through
+ * {@link collectCascade}, whose dependents index costs a pass over every
+ * support -- too much to spend on each placement.
+ */
+export function ownedPrimitives(
+    state: CascadeState,
+    typeId: SupportTypeId,
+    entity: { id: string },
+): Map<SupportCollectionKey, Set<string>> {
+    const owned = new Map<SupportCollectionKey, Set<string>>();
+    const node = SUPPORT_GRAPH_NODES.find((n) => n.key === getSupportTypeDescriptor(typeId).location.key);
+    if (!node) return owned;
+
+    for (const edge of node.edges) {
+        if (edge.ownership !== 'owns' || edge.to === 'segment') continue;
+        const id = (entity as unknown as Record<string, unknown>)[edge.field];
+        if (typeof id !== 'string' || !id || !state[edge.to][id]) continue;
+        const ids = owned.get(edge.to) ?? new Set<string>();
+        ids.add(id);
+        owned.set(edge.to, ids);
+    }
+    return owned;
+}
+
 export function groupByCollection(doomed: ReadonlySet<string>): Map<SupportCollectionKey, Set<string>> {
     const byCollection = new Map<SupportCollectionKey, Set<string>>();
     for (const key of doomed) {

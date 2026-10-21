@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { clearHistory, redo, undo } from '../../history/historyStore';
-import { pushSupportHistory } from '../history/supportHistory';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
-import { addRoot, addSupportEntity, getSnapshot, resetStore, subscribe } from '../state';
-import { getSupportTypeDescriptor } from '../supportTypeRegistry';
+import { addRoot, addSupportEntityWithHistory, getSnapshot, resetStore, subscribe } from '../state';
 import type { Roots, Trunk } from '../types';
 
 const root = {
@@ -31,14 +29,15 @@ const trunk = {
     }],
 } as unknown as Trunk;
 
-/** Places a trunk the way its placement controller does. */
+/**
+ * Places a trunk the way its placement controller does.
+ *
+ * Through the real adder, so the payload is the one the app records rather
+ * than one written here: a hand-built payload cannot drift from the cascade.
+ */
 function placeTrunk(): void {
     addRoot(root);
-    addSupportEntity(trunk);
-    pushSupportHistory({
-        type: getSupportTypeDescriptor('trunk').historyAdd,
-        payload: { trunk, roots: [root] },
-    } as unknown as Parameters<typeof pushSupportHistory>[0]);
+    addSupportEntityWithHistory('trunk', trunk);
 }
 
 /** What each store notification would show a renderer. */
