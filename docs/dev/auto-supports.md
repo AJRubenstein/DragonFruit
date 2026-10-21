@@ -56,10 +56,14 @@ tall blade gets buttresses partway up instead of base teeth only. The common
 case (a flat base) emits nothing. Gated by the `stabilizationEnabled` setting
 (default on).
 
-Stabilization anchors enter placement as `source: 'stabilization'` candidates
-and are deliberately standalone trunks: they never fan or merge onto a nearby
-host (the merge gate is source-gated), so a tip pillar and its flanking
-anchors stay independent instead of collapsing into drift-culled leaves.
+Stabilization anchors enter placement as `source: 'stabilization'` candidates.
+While the brace pass runs they attach to a host within the normal merge radius
+(4 mm): a member off an already-rooted shaft resists the same topple moment with
+one plate contact instead of one per tooth, and the brace carries the load the
+extra roots used to. With `debugSkipAutoBracing` on they stay standalone
+buttresses — nothing else would hold the moment, so the base they widen is the
+whole point. They are still stamped `origin: 'island'`, so the consolidation
+pass cannot convert them into trees.
 
 
 ## Minima reinforcement

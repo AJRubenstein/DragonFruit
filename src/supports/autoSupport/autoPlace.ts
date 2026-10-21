@@ -1024,15 +1024,21 @@ function placeOneCandidate(
             }
         }
     }
-    // Stabilization anchors stay standalone: they are buttresses along a
-    // bearing edge, and fanning them onto a host collapses the base they exist
-    // to widen. Reinforcement points are not buttresses but ordinary contacts
-    // that happen to ring a minima, so they attach like any island contact:
-    // the minima's own tip pillar is 2.5mm away, and a crown of leaves on it
+    // Stabilization anchors attach only while the brace pass is running.
+    // Their job is to resist topple, and a member off a rooted host resists
+    // the same moment with one plate contact instead of one per tooth. With
+    // bracing off nothing else holds that moment, so an anchor stays a
+    // standalone buttress and keeps the base it widens; merging it there
+    // would trade the only thing resisting the tip for a shorter member.
+    // Reinforcement points are ordinary contacts that happen to ring a
+    // minima, so they attach like any island contact in either case: the
+    // minima's own tip pillar is 2.5mm away, and a crown of leaves on it
     // leaves ONE plate contact instead of seven. Ringing them standalone was
     // the rule until a mini report showed 18 of its 61 bare trunks were ring
     // points, all within 5mm of each other.
-    if (!gridEnabled && !candidate.gridPoint && candidate.source !== 'stabilization') {
+    const anchorsMayAttach = candidate.source !== 'stabilization'
+        || supportSettings.autoSupport?.debugSkipAutoBracing !== true;
+    if (!gridEnabled && !candidate.gridPoint && anchorsMayAttach) {
         // Overhang-derived candidates (sub-threshold, non-anchor regions)
         // attach via the regular leaf-fanning path — a standalone straight
         // trunk next to fan leaves reads as a misplaced island support. No
@@ -2895,8 +2901,9 @@ export function computeAutoSupportPlan(
 
     // Stabilization pass: when the oriented mesh bears on a point or edge,
     // formation detection sees nothing to support, so a dedicated bearing
-    // analysis adds anchor contacts to broaden the base. Standalone trunks —
-    // they never fan/merge onto a nearby host (the source gates that below).
+    // analysis adds anchor contacts to broaden the base. They attach to a
+    // nearby host when the brace pass will run, and stay standalone when it
+    // will not (see the placement gate below).
     let stabilizationAnchors = 0;
     if (autoSettings.stabilizationEnabled !== false && resolvedMesh) {
         const anchors = computeStabilizationAnchors(resolvedMesh, { hasRaft });
