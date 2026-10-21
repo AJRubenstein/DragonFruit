@@ -8,6 +8,7 @@ import {
     SLOPE_RELAX_RAMP_START,
     GRID_SPACING_MAX_FACTOR,
     ISLAND_TWO_POINT_MAX_MM,
+    INTERIOR_CAVITY_SPACING_SCALE,
 } from './constants';
 import type { AutoSupportSettings } from './settings';
 import { applyContactTipCaps } from './contactTipCap';
@@ -548,7 +549,11 @@ export function generateGridCandidates(
     for (const island of overhangIslands) {
         if (!shouldUseDensityGrid(island, settings)) continue;
         const baseSpacing = computeRegionSpacing(island, settings);
-        const spacing = baseSpacing * steepFlatSpacingMultiplier(island, baseSpacing, partThicknessMm);
+        // An internal ceiling is bridged to the cavity floor, not carried to
+        // the plate; the short strut needs far fewer contacts.
+        const spacing = baseSpacing
+            * steepFlatSpacingMultiplier(island, baseSpacing, partThicknessMm)
+            * (island.interior ? INTERIOR_CAVITY_SPACING_SCALE : 1);
 
         const voxels = island.contactVoxels;
         if (!voxels || voxels.count === 0) continue;
