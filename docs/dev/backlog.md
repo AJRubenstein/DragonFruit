@@ -877,6 +877,27 @@ before and after):
   skips only points the fixed-step loop would also have found clear, so the
   verdict is unchanged and a cone in the open costs an order of magnitude fewer
   queries.
+- `deduplicateCandidates` filtered the *whole* retained list through every
+  neighbouring bucket (`bucket.some(rr => rr.id === r.id)` inside a loop over
+  retained), which is O(candidates × retained × bucket) on a dense lattice.
+  Only retained candidates can suppress a later one, so the buckets are built
+  from survivors as they are kept; a candidate probes its neighbours directly.
+  Numeric cell keys replace the per-candidate template string. On the
+  overhang-slab fixture this took dedup from 104 ms to 20 ms with an identical
+  candidate set.
+- `computeAndApplySupportDiameterProfile` deep-cloned **every knot of the
+  snapshot once per trunk** (`structuredClone` in a `trunks × knots` loop) and
+  then filtered them with `trunk.segments.some(...)`. Knots are immutable in
+  that function — every change is `{ ...knot, ... }` — so the map holds the
+  snapshot's own objects and only changed knots are copied; the segment filter
+  is a `Set`. The forest resize on the same fixture dropped from 222 ms to
+  98 ms.
+- `isCollisionFrustumBlocked` cloned two `Vector3`s and lerped/cloned one pair
+  per slice; it now slices with scalar arithmetic (same `start + (end-start)*t`
+  the lerp performed). `recomputeContactConeForMovedDisk` likewise computes the
+  axes as scalars and materialises only the vectors its thickness resolver
+  takes. Together that removed the frustum check from the top of the profile
+  (179 ms → 59 ms across the three-model profile).
 
 Still open, in the order a profile says they pay:
 
@@ -886,9 +907,7 @@ Still open, in the order a profile says they pay:
 2. `fanLeafToHost` / `buildConsolidationBranch` call `getSupportTypeDescriptor`
    per candidate host sample, and their reach is a linear walk of the whole
    shaft pool. Registry lookups want hoisting; the pool wants a spatial index.
-3. `computeForestDiameterProfile` deep-clones the forest with
-   `structuredClone` — most of that phase's cost.
-4. `isAutoBraceableShaftType` / `lateralStabiliserTypes` rebuild their
+3. `isAutoBraceableShaftType` / `lateralStabiliserTypes` rebuild their
    filter+map+Set on every call, and they are called per sample.
 
 **The responsiveness fix was architectural, not micro-optimisation.** The plan is
