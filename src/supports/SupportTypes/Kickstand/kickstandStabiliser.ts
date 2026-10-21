@@ -527,6 +527,11 @@ export function generateRequiredKickstands(
 
                     try {
                         const trialBuild = buildKickstandData(buildInput);
+                        // The same gate a manual placement applies. A build
+                        // error means the terminal cannot reach the host at a
+                        // legal angle (or runs through the model), leaving a
+                        // column beside the trunk rather than a kickstand.
+                        if (trialBuild.error) continue;
                         if (!builtKickstandPassesMeshClearance(trialBuild, trunk.modelId)) {
                             continue;
                         }

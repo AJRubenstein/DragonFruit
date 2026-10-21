@@ -225,6 +225,12 @@ export function buildKickstandData(input: KickstandBuildInput): KickstandBuildRe
 
     const kickstand = {
         id: kickstandId,
+        // Stamped here, not only by the store: auto-bracing builds a kickstand
+        // into a local snapshot before committing it, and the type resolver
+        // falls back to store membership for an unstamped entity. Without this
+        // the fresh kickstand has no resolvable segments, so the brace pass
+        // gives it no samples and never braces it to its host.
+        typeId: 'kickstand' as const,
         modelId: input.modelId,
         rootId,
         hostKnotId,
