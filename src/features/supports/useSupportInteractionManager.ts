@@ -18,7 +18,7 @@ import { removeJointWithPayload } from '@/supports/history/jointRemovalPayload';
 import { pushSupportEditHistory } from '@/supports/history/supportEditHistory';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { SUPPORT_AUTO_BRACE_REPLACE } from '@/supports/history/actionTypes';
+import { SUPPORT_MULTI_DELETE } from '@/supports/history/actionTypes';
 import { findKnotHost, getSupportTypeBySelectionCategory, getSupportTypeDescriptor, KNOT_HOST_PRECEDENCE, SUPPORT_TYPES } from '@/supports/supportTypeRegistry';
 import { removeSupportEntityWithPayload } from '@/supports/history/removalPayload';
 import { MODEL_SURFACE_GESTURE_TYPES } from '@/supports/supportTypeRegistry';
@@ -340,7 +340,7 @@ export function useSupportInteractionManager({ mode }: SupportInteractionOptions
           const afterSupportSnapshot = cloneSupportState(getSnapshot());
 
           pushSupportHistory({
-            type: SUPPORT_AUTO_BRACE_REPLACE,
+            type: SUPPORT_MULTI_DELETE,
             description: deleteSupportsLabel(multiSelectedIds.length),
             payload: {
               before: beforeSupportSnapshot,

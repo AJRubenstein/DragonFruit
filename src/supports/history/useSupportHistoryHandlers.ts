@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import {
-  SUPPORT_REPLACE_TRUNK,
   SUPPORT_EDIT_REPLACE,
+  SUPPORT_MULTI_DELETE,
   SUPPORT_AUTO_BRACE_REPLACE,
   SUPPORT_AUTO_PLACE,
   SUPPORT_BLOCKER_STROKE,
@@ -90,25 +90,14 @@ function payloadFields(descriptor: SupportTypeDescriptor): {
   };
 }
 
-/**
- * The removed entity a payload is keyed on.
- *
- * Normally the declared `self` field. Callers may omit it and send only the
- * type's collection list -- the branch remove path does -- so fall back to the
- * first entry there rather than refusing the entry.
- */
+/** The removed entity a payload is keyed on, under the type's declared `self`. */
 function seedEntity(
   descriptor: SupportTypeDescriptor,
   payload: unknown,
 ): { id: string } | null {
   const fields = payload as Record<string, unknown> | null | undefined;
-  if (!fields) return null;
-
-  const seed = fields[payloadFields(descriptor).self] as { id?: string } | undefined;
-  if (seed?.id) return seed as { id: string };
-
-  const list = fields[descriptor.location.key] as { id: string }[] | undefined;
-  return list?.length ? list[0] : null;
+  const seed = fields?.[payloadFields(descriptor).self] as { id?: string } | undefined;
+  return seed?.id ? (seed as { id: string }) : null;
 }
 
 /** Puts a removal payload back, walking the collections its shape declares. */
@@ -162,6 +151,14 @@ function applyKnotUpdates(payload: unknown, direction: 'undo' | 'redo'): void {
   }
 }
 
+/** Actions whose payload is a before/after state pair. */
+const snapshotActions = [
+  SUPPORT_EDIT_REPLACE,
+  SUPPORT_MULTI_DELETE,
+  SUPPORT_AUTO_BRACE_REPLACE,
+  SUPPORT_AUTO_PLACE,
+] as const;
+
 export function registerSupportHistoryHandlers(): () => void {
   const unregisters = [
     // Add and remove handlers, derived from the registry.
@@ -214,31 +211,11 @@ export function registerSupportHistoryHandlers(): () => void {
         return true;
       })]
       : [])),
-    registerSupportHistoryHandler(SUPPORT_REPLACE_TRUNK, (payload, direction) => {
-      if (!payload?.before || !payload?.after) return false;
-      clearSupportSelection();
-      if (direction === 'undo') {
-        setSnapshot(payload.before);
-      } else {
-        setSnapshot(payload.after);
-      }
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_EDIT_REPLACE, (payload, direction) => {
+    ...snapshotActions.map((type) => registerSupportHistoryHandler(type, (payload, direction) => {
       if (!payload?.before || !payload?.after) return false;
       applySnapshotHistory(payload, direction);
       return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_AUTO_BRACE_REPLACE, (payload, direction) => {
-      if (!payload?.before || !payload?.after) return false;
-      applySnapshotHistory(payload, direction);
-      return true;
-    }),
-    registerSupportHistoryHandler(SUPPORT_AUTO_PLACE, (payload, direction) => {
-      if (!payload?.before || !payload?.after) return false;
-      applySnapshotHistory(payload, direction);
-      return true;
-    }),
+    })),
     registerSupportHistoryHandler(SUPPORT_BLOCKER_STROKE, (payload, direction) => {
       if (!payload || !payload.modelId) return false;
       setSupportBlockedTriangles(payload.modelId, direction === 'undo' ? payload.before : payload.after);
