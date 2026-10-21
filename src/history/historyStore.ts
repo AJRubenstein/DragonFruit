@@ -101,16 +101,6 @@ export function pushHistory(action: HistoryAction) {
   notifyHistoryChange('push', action);
 }
 
-// TEMPORARY undo/redo tracing. Filled by the supports layer; delete with it.
-let traceHook: ((direction: HistoryDirection, action: HistoryAction, run: () => void) => void) | null = null;
-
-export function setHistoryTraceHook(
-  hook: ((direction: HistoryDirection, action: HistoryAction, run: () => void) => void) | null,
-) {
-  traceHook = hook;
-  return () => { if (traceHook === hook) traceHook = null; };
-}
-
 export function undo() {
   const action = undoStack.pop();
   if (!action) {
@@ -304,19 +294,10 @@ type DispatchOutcome = 'applied' | 'no-handler' | 'declined';
 function dispatch(action: HistoryAction, direction: HistoryDirection): DispatchOutcome {
   const handlers = handlerMap.get(action.type);
   if (!handlers || handlers.size === 0) return 'no-handler';
-
-  let outcome: DispatchOutcome = 'applied';
-  const run = () => {
-    for (const handler of handlers) {
-      if (handler(action, direction) === false) {
-        outcome = 'declined';
-        return;
-      }
+  for (const handler of handlers) {
+    if (handler(action, direction) === false) {
+      return 'declined';
     }
-    outcome = 'applied';
-  };
-
-  if (traceHook) traceHook(direction, action, run);
-  else run();
-  return outcome;
+  }
+  return 'applied';
 }

@@ -1178,19 +1178,11 @@ export function removeJointById(jointId: string): RemoveJointByIdResult | null {
     return null;
 }
 
-// TEMPORARY undo/redo tracing: counts each real notification. Delete with
-// undoRedoTrace.ts.
-let notifyProbe: (() => void) | null = null;
-export function setSupportNotifyProbe(probe: (() => void) | null) {
-    notifyProbe = probe;
-}
-
 function notify() {
     if (notifyBatchDepth > 0) {
         pendingNotify = true;
         return;
     }
-    notifyProbe?.();
     listeners.forEach((l) => l());
 }
 
@@ -1203,7 +1195,6 @@ export function endSupportStateBatch() {
     notifyBatchDepth -= 1;
     if (notifyBatchDepth === 0 && pendingNotify) {
         pendingNotify = false;
-        notifyProbe?.();
         listeners.forEach((l) => l());
     }
 }
