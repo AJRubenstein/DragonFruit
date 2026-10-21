@@ -211,7 +211,11 @@ export function runAutoPlaceRequest(
     payload: AutoPlaceWorkerPayload,
     onProgress?: AutoPlaceProgressCallback,
 ): AutoSupportPlan | null {
+    // Seeding rebuilds the mesh and its BVH (hundreds of milliseconds on a
+    // large model); the bar must already be on screen for that.
+    onProgress?.({ phase: 'Preparing model', done: 0, total: 1 });
     const mesh = seedAutoPlaceEnvironment(payload);
+    onProgress?.({ phase: 'Preparing model', done: 1, total: 1 });
     const islands: DetectedIsland[] = payload.islands.map((island) => ({
         ...island,
         contact: new THREE.Vector3(island.contact.x, island.contact.y, island.contact.z),

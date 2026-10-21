@@ -160,6 +160,9 @@ const requestPlan = (
         }, AUTO_PLACE_WORKER_STARTUP_TIMEOUT_MS);
 
         pending.set(requestId, { resolve, reject, startupTimer, onProgress });
+        // Serialising the mesh and structured-cloning the payload happen
+        // before the worker can report anything. Put the bar up now.
+        onProgress?.({ phase: 'Preparing model', done: 0, total: 1 });
         target.postMessage({ type: 'run', requestId, payload });
     });
 };

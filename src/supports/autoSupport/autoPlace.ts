@@ -2798,6 +2798,14 @@ export function computeAutoSupportPlan(
         return null;
     }
 
+    // The modal's bar used to start at the placement pass, so the worker
+    // startup, the BVH build, the pose measurement and candidate generation
+    // looked like a freeze. Every pass reports its own short progress now.
+    const reportPhase = (phase: string, done: number, total: number) => {
+        onProgress?.({ phase, done, total });
+    };
+    reportPhase('Preparing model', 0, 1);
+
     const before = baseState ?? cloneSupportState(getSnapshot());
     let draft: SupportState = before;
 
@@ -2878,6 +2886,8 @@ export function computeAutoSupportPlan(
 
     console.log(LOG_PREFIX, `Input: ${islands.length} islands from scan`);
     resetRouterStats();
+    reportPhase('Preparing model', 1, 1);
+    reportPhase('Finding candidates', 0, 1);
     timingStart('candidates');
 
     let candidates = generateCandidates(islandsToCover, autoSettings, { mesh: resolvedMesh, modelId });
@@ -2978,6 +2988,8 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('candidates');
+    reportPhase('Finding candidates', 1, 1);
+    reportPhase('Removing duplicates', 0, 1);
     timingStart('dedup');
     // ------------------------------------------------------------------
     // 2. Deduplicate
@@ -3000,6 +3012,8 @@ export function computeAutoSupportPlan(
     // ------------------------------------------------------------------
 
     timingEnd('dedup');
+    reportPhase('Removing duplicates', 1, 1);
+    reportPhase('Filtering supports', 0, 1);
     timingStart('support-filter');
     const beforeSupportFilter = candidates.length;
     candidates = filterAlreadySupported(candidates, draft);
@@ -3101,6 +3115,8 @@ export function computeAutoSupportPlan(
     // convergence (gap-fill) passes. Each placement advances the local draft
     // (no store commit) so later candidates see earlier supports.
     timingEnd('support-filter');
+    reportPhase('Filtering supports', 1, 1);
+    reportPhase('Placing supports', 0, candidates.length);
     timingStart('placement');
 
     const placeOne = (candidate: CandidatePoint): string => {
@@ -3203,6 +3219,7 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('placement');
+    reportPhase('Consolidating supports', 0, 1);
     timingStart('consolidation');
 
     // ── Overhang→tree consolidation (order-independent) ──────────────
@@ -3365,6 +3382,8 @@ export function computeAutoSupportPlan(
         `| consolidation refusals: ${fmtRefusals(conRefusals)}`);
 
     timingEnd('consolidation');
+    reportPhase('Consolidating supports', 1, 1);
+    reportPhase('Filling gaps', 0, 1);
     timingStart('gap-fill');
 
     // ── Coverage convergence (gap-fill) ─────────────────────────────
@@ -3401,6 +3420,8 @@ export function computeAutoSupportPlan(
         `| presets: detail=${presets.detail} structure=${presets.structure} anchor=${presets.anchor}`);
 
     timingEnd('gap-fill');
+    reportPhase('Filling gaps', 1, 1);
+    reportPhase('Analysing supports', 0, 1);
     timingStart('analytics');
 
     // ── Coverage analytics ────────────────────────────────────────
@@ -3508,6 +3529,8 @@ export function computeAutoSupportPlan(
         `${analytics.islandsUncovered} islands uncovered.`);
 
     timingEnd('analytics');
+    reportPhase('Analysing supports', 1, 1);
+    reportPhase('Fanning leaves', 0, 1);
     timingStart('fanning');
 
     // ── Post-placement leaf fanning (iterative convergence) ──────────
@@ -3599,6 +3622,8 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('fanning');
+    reportPhase('Fanning leaves', 1, 1);
+    reportPhase('Checking coverage', 0, 1);
     timingStart('surface-coverage');
 
     // ── Overhang surface coverage ──────────────────────────────────
@@ -3760,6 +3785,8 @@ export function computeAutoSupportPlan(
     const changed = Object.values(placed).some((count) => count > 0);
 
     timingEnd('surface-coverage');
+    reportPhase('Checking coverage', 1, 1);
+    reportPhase('Resizing supports', 0, 1);
     timingStart('resize');
 
     // ------------------------------------------------------------------
@@ -3876,7 +3903,9 @@ export function computeAutoSupportPlan(
             }
 
             timingEnd('resize');
-            timingStart('report');
+    reportPhase('Resizing supports', 1, 1);
+            reportPhase('Compiling report', 0, 1);
+    timingStart('report');
 
             // ── Forest Report ───────────────────────────────────────
             // Structured per-run summary: every placed support's id, size,
@@ -3944,6 +3973,8 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('report');
+    reportPhase('Compiling report', 1, 1);
+    reportPhase('Bracing supports', 0, 1);
     timingStart('bracing');
 
     // ------------------------------------------------------------------
@@ -3968,6 +3999,7 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('bracing');
+    reportPhase('Bracing supports', 1, 1);
     const timings = collectTimings(perfEndFrame());
     if (timings) {
         // The distance field's own counters: the router's probes are most of a
