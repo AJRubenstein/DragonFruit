@@ -415,3 +415,66 @@ test('the worker classifies an internal island from the cavity mesh payload', ()
         'it is bridged inside the cavity');
     assert.equal(plan.result.rejectedCandidates, 0);
 });
+
+test('the worker fallback poses the cavity geometry with the model mesh', async () => {
+    initializeBVH();
+    const floor = new THREE.BoxGeometry(20, 20, 1).translate(0, 0, 0.5);
+    const ceiling = new THREE.BoxGeometry(20, 20, 1).translate(0, 0, 9.5);
+    const shell = new THREE.BufferGeometry();
+    shell.setAttribute('position', new THREE.Float32BufferAttribute([
+        ...floor.getAttribute('position').array,
+        ...ceiling.getAttribute('position').array,
+    ], 3));
+    shell.setIndex([
+        ...Array.from(floor.getIndex()!.array),
+        ...Array.from(ceiling.getIndex()!.array).map((i) => i + floor.getAttribute('position').count),
+    ]);
+    shell.computeVertexNormals();
+    accelerateGeometry(shell);
+
+    resetStore();
+    resetKickstandsInState();
+    clearHistory();
+    const dispose = registerSupportHistoryHandlers();
+    initializeBVH();
+    setSettings(createDefaultSettings());
+
+    // The model is translated +5 in X; the cavity geometry stays local. A
+    // classification that forgot the pose would miss the island entirely.
+    const modelMesh = new THREE.Mesh(shell);
+    modelMesh.position.set(5, 0, 0);
+    modelMesh.updateMatrixWorld(true);
+    setModelMesh(MODEL, modelMesh);
+
+    const cavity = new THREE.BoxGeometry(10, 10, 8).translate(0, 0, 5);
+    const idx = cavity.getIndex()!;
+    for (let i = 0; i < idx.count; i += 3) {
+        const b = idx.getX(i + 1);
+        idx.setX(i + 1, idx.getX(i + 2));
+        idx.setX(i + 2, b);
+    }
+    idx.needsUpdate = true;
+    accelerateGeometry(cavity);
+
+    const result = await runAutoPlaceInWorker(
+        [{
+            id: 'inner',
+            source: 'overhang',
+            contact: new THREE.Vector3(5, 0, 9),
+            baseZ: 9,
+            areaMm2: 100,
+            overhangAngleDeg: 0,
+            surfaceNormal: { x: 0, y: 0, z: -1 },
+        }],
+        MODEL,
+        { debugSkipAutoBracing: true },
+        undefined,
+        cavity,
+    );
+
+    assert.equal(result.placed.trunk, 0, 'no plate trunk for the posed internal contact');
+    assert.ok((result.placed.stick ?? 0) + (result.placed.twig ?? 0) > 0,
+        'bridged inside the cavity after applying the model pose');
+    setModelMesh(MODEL, null);
+    dispose();
+});
