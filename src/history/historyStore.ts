@@ -62,8 +62,6 @@ function appendHistoryDebugEvent(kind: HistoryDebugEventKind, action?: HistoryAc
     undoCount: undoStack.length,
     redoCount: redoStack.length,
     payloadBytes: action ? estimatePayloadBytes(action.payload) : undefined,
-    stackBytes: undoStack.reduce((sum, a) => sum + estimatePayloadBytes(a.payload), 0)
-      + redoStack.reduce((sum, a) => sum + estimatePayloadBytes(a.payload), 0),
   });
 
   while (historyDebugLog.length > HISTORY_DEBUG_LOG_LIMIT) {
