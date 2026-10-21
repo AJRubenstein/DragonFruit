@@ -218,6 +218,26 @@ function buildFixture(seedTypeId: SupportTypeId): { seedId: string; seedDescript
     return { seedId, seedDescriptor };
 }
 
+test('a brace removal names each knot slot after the seed field it mirrors', () => {
+    const { seedId } = buildFixture('brace');
+    try {
+        const removed = removeSupportEntityWithPayload('brace', seedId);
+        assert.ok(removed, 'the brace was removed');
+        assert.equal(
+            (removed.payload.startKnot as { id: string }).id,
+            `${seedId}-start`,
+            'startKnot holds the seed start knot',
+        );
+        assert.equal(
+            (removed.payload.endKnot as { id: string }).id,
+            `${seedId}-end`,
+            'endKnot holds the seed end knot',
+        );
+    } finally {
+        resetStore();
+    }
+});
+
 test('every type restores the full cascade its removal drains', () => {
     const unregister = registerSupportHistoryHandlers();
     try {

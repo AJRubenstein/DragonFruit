@@ -240,8 +240,16 @@ function cascadePayload(
         if (typeof field === 'string') {
             result[field] = plural(field) ? entities : (entities[0] ?? null);
         } else {
-            // Positional slots: fill in declared order, pad with null.
-            field.forEach((slot, index) => { result[slot] = entities[index] ?? null; });
+            // A named slot mirrors the seed field it came from -- `startKnot`
+            // reads `startKnotId` -- so it holds what the seed pointed at, not
+            // whichever member the cascade happened to claim first.
+            const seedFields = entity as unknown as Record<string, unknown>;
+            const entityById = new Map(ids.map((id, index) => [id, entities[index]]));
+            field.forEach((slot, index) => {
+                const seedId = seedFields[`${slot}Id`];
+                const named = typeof seedId === 'string' ? entityById.get(seedId) : undefined;
+                result[slot] = named ?? entities[index] ?? null;
+            });
         }
     }
     return result;

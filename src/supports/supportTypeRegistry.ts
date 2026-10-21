@@ -308,6 +308,11 @@ export interface SupportTypeDescriptor {
      */
     hostsBraceSnapCone?: boolean;
     /**
+     * Whether this type snaps an endpoint to a cone a `hostsBraceSnapCone`
+     * type offers, so removing that cone host takes this type with it.
+     */
+    snapsToBraceCone?: boolean;
+    /**
      * The measurement range this type serves, when the type is chosen
      * automatically rather than picked by the user.
      *
@@ -863,6 +868,7 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         segmentSelectionPrefix: 'braceSegment:',
         knotHostPrefix: 'braceSegment:',
+        snapsToBraceCone: true,
         hasOrigin: false,
         hasPlacementPreview: true,
         claimsModelSurfaceGestures: false,
@@ -1117,10 +1123,10 @@ export function resolveKnotDiameter(
 export const SUPPORT_REMOVAL_SHAPES = {
     trunk: { self: 'trunk', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
     branch: { self: 'branch', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
-    leaf: { self: 'leaf', cascade: { knots: 'knot' } },
+    leaf: { self: 'leaf', cascade: { knots: 'knot', braces: 'braces', kickstands: 'kickstands', roots: 'roots' } },
     twig: { self: 'twig', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
     stick: { self: 'stick', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
-    brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
+    brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'], kickstands: 'kickstands', roots: 'roots' } },
     stump: { self: 'stump', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
     kickstand: { self: 'kickstand', cascade: { roots: 'roots', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
     // `satisfies` keeps the literal narrowing the result types read, while
@@ -2316,6 +2322,13 @@ export function exportGroupName(typeId: SupportTypeId, entityId: string): string
     return `${singular.charAt(0).toUpperCase()}${singular.slice(1)}_${entityId}`;
 }
 
+/** The declared pseudo-shaft prefixes, read once rather than per knot. */
+const KNOT_HOST_PREFIXES: readonly (readonly [string, SupportTypeId])[] = SUPPORT_TYPES.flatMap(
+    (descriptor) => (descriptor.knotHostPrefix
+        ? [[descriptor.knotHostPrefix, descriptor.id] as const]
+        : []),
+);
+
 /**
  * Split a knot's `parentShaftId` into the type it rides and that entity's id,
  * or null when it names a real shaft segment.
@@ -2327,10 +2340,9 @@ export function exportGroupName(typeId: SupportTypeId, entityId: string): string
 export function parseKnotHostId(
     parentShaftId: string,
 ): { typeId: SupportTypeId; entityId: string } | null {
-    for (const descriptor of SUPPORT_TYPES) {
-        const prefix = descriptor.knotHostPrefix;
-        if (!prefix || !parentShaftId.startsWith(prefix)) continue;
-        return { typeId: descriptor.id, entityId: parentShaftId.slice(prefix.length) };
+    for (const [prefix, typeId] of KNOT_HOST_PREFIXES) {
+        if (!parentShaftId.startsWith(prefix)) continue;
+        return { typeId, entityId: parentShaftId.slice(prefix.length) };
     }
     return null;
 }

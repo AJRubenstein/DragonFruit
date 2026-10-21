@@ -1,4 +1,4 @@
-import { SUPPORT_GRAPH_NODES, SUPPORT_TYPES, getSupportTypeDescriptor, type SupportCollectionKey, type SupportTypeDescriptor, type SupportTypeId } from './supportTypeRegistry';
+import { SUPPORT_GRAPH_NODES, SUPPORT_TYPES, getSupportTypeDescriptor, parseKnotHostId, type SupportCollectionKey, type SupportTypeDescriptor, type SupportTypeId } from './supportTypeRegistry';
 import type { Segment, SupportState } from './types';
 
 /**
@@ -39,6 +39,24 @@ function buildSegmentOwners(state: CascadeState): Map<string, EntityRef> {
         }
     }
     return owners;
+}
+
+/**
+ * The entity a segment id names, for a real segment or a knot host's cone or
+ * span. Only an id a `hostedBy` edge actually names is parsed, so a scene's
+ * leaves and braces cost nothing until something rides one.
+ */
+function segmentOwnerKey(
+    owners: Map<string, EntityRef>,
+    segmentId: string,
+): string | null {
+    const real = owners.get(segmentId);
+    if (real) return refKey(real);
+
+    const host = parseKnotHostId(segmentId);
+    if (!host) return null;
+    const collection = getSupportTypeDescriptor(host.typeId).location.key;
+    return `${collection}:${host.entityId}`;
 }
 
 interface OutgoingLink {
@@ -130,8 +148,10 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
             for (const link of outgoingIds(state, ref)) {
                 if (link.ownership !== 'hostedBy') continue;
                 // A knot names a segment; map it to the shaft that owns it.
-                const host = link.edgeTo === 'segment' ? segmentOwners.get(link.id) : { collection: link.edgeTo, id: link.id };
-                if (host) addDependent(refKey(host), ref);
+                const hostKey = link.edgeTo === 'segment'
+                    ? segmentOwnerKey(segmentOwners, link.id)
+                    : refKey({ collection: link.edgeTo, id: link.id });
+                if (hostKey) addDependent(hostKey, ref);
             }
         }
     }
@@ -217,32 +237,56 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
 export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollectionKey> {
     const collections = new Set<SupportCollectionKey>();
     const seed = getSupportTypeDescriptor(typeId);
-    const queue: SupportTypeDescriptor[] = [seed];
     const visited = new Set<SupportTypeId>([seed.id]);
+
+    /** Types a span host mounts: kickstands ride the span between two knots. */
+    const includeSpanHosted = (descriptor: SupportTypeDescriptor) => {
+        if (!descriptor.hostsKickstand || !descriptor.segmentSelectionPrefix) return;
+        for (const hosted of SUPPORT_TYPES) {
+            const hostedBySegment = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
+                && edge.to === 'segment');
+            if (hostedBySegment) include(hosted);
+        }
+    };
+
+    /** An entity's owned primitives, and whatever rides a span it offers. */
+    const includeOwned = (descriptor: SupportTypeDescriptor) => {
+        for (const edge of descriptor.edges) {
+            if (edge.ownership !== 'owns' || edge.to === 'segment') continue;
+            collections.add(edge.to);
+            const owner = SUPPORT_TYPES.find((candidate) => candidate.location.key === edge.to);
+            if (!owner) continue;
+            include(owner);
+        }
+    };
 
     const include = (descriptor: SupportTypeDescriptor) => {
         if (visited.has(descriptor.id)) return;
         visited.add(descriptor.id);
         collections.add(descriptor.location.key);
-        queue.push(descriptor);
+        includeOwned(descriptor);
+        includeSpanHosted(descriptor);
     };
 
-    while (queue.length > 0) {
-        const descriptor = queue.pop()!;
+    // The seed's own primitives, then what its shaft offers directly. A span
+    // an included type offers is walked by `includeSpanHosted`, but not the
+    // shafts of types reached that way.
+    includeOwned(seed);
 
-        for (const edge of descriptor.edges) {
-            if (edge.ownership !== 'owns' || edge.to === 'segment') continue;
-            collections.add(edge.to);
-            const owner = SUPPORT_TYPES.find((candidate) => candidate.location.key === edge.to);
-            if (owner) include(owner);
-        }
+    const hostsSpans = seed.hasSegments
+        || (!!seed.segmentSelectionPrefix && seed.hostsKickstand);
+    const hostsKnots = seed.hasSegments || seed.knotHostPrefix !== undefined;
+    if (hostsKnots) collections.add('knots');
 
-        if (!descriptor.hasSegments) continue;
-        collections.add('knots');
-        for (const hosted of SUPPORT_TYPES) {
-            const hostedByShaft = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
-                && (edge.to === 'segment' || edge.to === 'knots'));
-            if (hostedByShaft) include(hosted);
+    for (const hosted of SUPPORT_TYPES) {
+        const hostedBySegment = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
+            && edge.to === 'segment');
+        const hostedByKnot = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
+            && edge.to === 'knots');
+        if ((hostsSpans && hostedBySegment)
+            || (seed.hasSegments && hostedByKnot)
+            || (seed.hostsBraceSnapCone && hosted.snapsToBraceCone)) {
+            include(hosted);
         }
     }
 
