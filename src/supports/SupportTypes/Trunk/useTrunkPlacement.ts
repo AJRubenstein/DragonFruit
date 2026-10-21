@@ -12,7 +12,7 @@ import type { LimitationCode, Segment, WarningCode } from '../../types';
 import { calculateSmoothedNormal } from '../../PlacementLogic/PlacementUtils';
 import { getSettings } from '../../Settings/state';
 import { decideGridPlacement } from '../../PlacementLogic/Grid';
-import { getSupportTypeDescriptor, bridgeMayLandSideways, buildContactBridge, buildContactOverride, resolveSupportTypeIdOf, selectTypeForPlacement, type SupportTypeId, updateSupportEntity } from '../../supportTypeRegistry';
+import { cascadeExtras, getSupportTypeDescriptor, bridgeMayLandSideways, buildContactBridge, buildContactOverride, resolveSupportTypeIdOf, selectTypeForPlacement, type SupportTypeId, updateSupportEntity } from '../../supportTypeRegistry';
 import { clearSupportSelection } from '../../interaction/shared/selection/selectionController';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
 import { perfMark, perfMeasureWithSpike, perfEndFrame } from '../../PlacementLogic/Pathfinding/pathfindingPerf';
@@ -732,8 +732,12 @@ export function useTrunkPlacementV2() {
                     && getSupportTypeDescriptor(host.typeId).recomputesDiameterFromAttachments
                     && descriptor.repairsHostDiameterOnAdd;
                 const hostRepair = repairsHost && host ? repairHostDiameter(host) : null;
+                // The knot's field name is the type's to declare -- a leaf calls it
+                // `knot`, a branch `knots` -- so it is asked for, not written here.
                 addSupportEntityWithHistory(typeId, entity, {
-                    ...(supplied.parentKnotId ? { knot: supplied.parentKnotId } : {}),
+                    ...(supplied.parentKnotId
+                        ? cascadeExtras(typeId, 'knots', [supplied.parentKnotId])
+                        : {}),
                     ...(hostRepair ?? {}),
                 });
             });

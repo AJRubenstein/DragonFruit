@@ -18,7 +18,7 @@ import { clearSupportSelection } from '../../interaction/shared/selection/select
 import { canResolveSupportPlacementBindingFromModifierState, getSupportPlacementModifierState, isSupportPlacementBindingSatisfiedByModifierState } from '../../interaction/shared/placement/hotkeys/supportPlacementHotkeyResolver';
 import { usePlacementSnappingSession } from '../../interaction/shared/placement/snapping/usePlacementSnappingSession';
 import { buildKickstandPathSnapTargets, buildPrimarySnapTargetIndex, ALL_SNAP_TYPES, buildSupportPathSnapTargets } from '../../interaction/shared/placement/snapping/supportPathTargets';
-import { getSupportTypeDescriptor, LEAF_SPROUT_HOST_TYPES, parseSegmentSelectionId, resolveSupportTypeIdOf, type SupportCollectionKey } from '../../supportTypeRegistry';
+import { cascadeExtras, getSupportTypeDescriptor, LEAF_SPROUT_HOST_TYPES, parseSegmentSelectionId, resolveSupportTypeIdOf, type SupportCollectionKey } from '../../supportTypeRegistry';
 import { LEAF_PLACEMENT_OWNER } from '../../interaction/shared/placement/hotkeys/supportPlacementRouting';
 import { projectPointToSnapTargetPath, projectRayToSnapTargetPath, selectNearestPathTarget } from '../../interaction/shared/placement/snapping/pathProjection';
 import { isSupportEditInteractionActive } from '../../interaction/gizmoInteractionLock';
@@ -671,7 +671,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                     addSupportEntityWithHistory(
                         leafTypeId,
                         markedLeaf,
-                        snap.junctionHubIsNew ? { knot: parentKnot } : undefined,
+                        snap.junctionHubIsNew ? cascadeExtras(leafTypeId, 'knots', [parentKnot]) : undefined,
                     );
                 });
                 leafPlacementStore.setJunctionHub(newParentKnotId, true);
@@ -733,7 +733,7 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
 
                 asOneSupportEdit(() => {
                     addKnot(parentKnot);
-                    addSupportEntityWithHistory(leafTypeId, markedLeaf, { knot: parentKnot });
+                    addSupportEntityWithHistory(leafTypeId, markedLeaf, cascadeExtras(leafTypeId, 'knots', [parentKnot]));
                 });
 
                 if (snap.sproutParentingLockHeld) {

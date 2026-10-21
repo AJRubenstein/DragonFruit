@@ -1137,6 +1137,24 @@ export function removalShapeFor(typeId: SupportTypeId): { self: string; cascade:
 }
 
 /**
+ * An add payload's extras for one cascade collection, under the field that
+ * type declares for it.
+ *
+ * The name differs per type -- a leaf declares `knot`, a branch `knots` -- and
+ * a caller that guesses records nothing its redo can restore. Positional slots
+ * (a brace's two knots) are named individually, so they are the caller's.
+ */
+export function cascadeExtras(
+    typeId: SupportTypeId,
+    collection: SupportCollectionKey,
+    entities: readonly unknown[],
+): Record<string, unknown> {
+    const field = removalShapeFor(typeId).cascade[collection];
+    if (typeof field !== 'string' || entities.length === 0) return {};
+    return { [field]: field.endsWith('s') ? [...entities] : entities[0] };
+}
+
+/**
  * The entity type living in each collection, so a removal result can be typed
  * from the declared shape rather than restated at every call site.
  */

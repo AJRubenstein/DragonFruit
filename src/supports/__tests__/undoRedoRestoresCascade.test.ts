@@ -5,7 +5,8 @@ import { clearHistory, redo, undo } from '../../history/historyStore';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
 import { addKnot, addRoot, addSupportEntityWithHistory, getSnapshot, resetStore } from '../state';
 import { inspectSupport } from '../supportInspector';
-import { SUPPORT_GRAPH_NODES } from '../supportTypeRegistry';
+import { cascadeExtras } from '../supportTypeRegistry';
+import { SUPPORT_GRAPH_NODES, SUPPORT_TYPES } from '../supportTypeRegistry';
 import type { Roots, Trunk } from '../types';
 
 const root = {
@@ -202,6 +203,42 @@ test('every placement path restores what its undo took', () => {
 
             redo();
             assert.deepEqual(census(), placed, `${name}: redo puts back what undo took`);
+        }
+    } finally {
+        unregister();
+        resetStore();
+        clearHistory();
+    }
+});
+
+test('every type that hosts on a knot records it under its own field name', () => {
+    // A leaf declares `knot`, a branch `knots`. A caller naming the wrong one
+    // records nothing, and redo brings the support back with no knot under it.
+    const unregister = registerSupportHistoryHandlers();
+    const hostsOnKnot = SUPPORT_GRAPH_NODES.filter((node) => node.edges.some(
+        (edge) => edge.to === 'knots' && edge.field === 'parentKnotId',
+    ));
+    assert.ok(hostsOnKnot.length > 0, 'some type hosts on a parent knot');
+
+    try {
+        for (const node of hostsOnKnot) {
+            const typeId = SUPPORT_TYPES.find((d) => d.location.key === node.key)!.id;
+            resetStore();
+            clearHistory();
+
+            const parentKnot = {
+                id: 'knot-1', parentShaftId: 'shaft-1', t: 0.5,
+                pos: { x: 0, y: 0, z: 5 }, diameter: 1.1,
+            };
+            addKnot(parentKnot as never);
+            addSupportEntityWithHistory(typeId, {
+                id: `probe-${typeId}`, modelId: 'model-1', parentKnotId: parentKnot.id,
+            } as never, cascadeExtras(typeId, 'knots', [parentKnot]));
+
+            undo();
+            assert.equal(Object.keys(getSnapshot().knots).length, 0, `${typeId}: undo takes the knot`);
+            redo();
+            assert.equal(Object.keys(getSnapshot().knots).length, 1, `${typeId}: redo puts the knot back`);
         }
     } finally {
         unregister();

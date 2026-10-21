@@ -20,7 +20,7 @@ import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { matchesConfiguredHotkeyUp } from '@/hotkeys/hotkeyConfig';
 import { asOneSupportEdit, subscribe, getSnapshot, addKnot, addSupportEntityWithHistory } from '../../state';
-import { buildContactBridge, parsePrefixedSegmentId, selectTypeForPlacement } from '../../supportTypeRegistry';
+import { buildContactBridge, cascadeExtras, parsePrefixedSegmentId, selectTypeForPlacement } from '../../supportTypeRegistry';
 import type { SupportTypeId } from '../../supportTypeRegistry';
 import { getClipBounds } from '@/components/scene/SceneCanvas/clipBoundsStore';
 import { SnapTarget } from '../../interaction/SnappingManager';
@@ -777,7 +777,7 @@ export function BranchPlacementController() {
             // redone branch came back without the knot it hangs from.
             asOneSupportEdit(() => {
                 addKnot(parentKnot);
-                addSupportEntityWithHistory('branch', markedBranch, { knots: [parentKnot] });
+                addSupportEntityWithHistory('branch', markedBranch, cascadeExtras('branch', 'knots', [parentKnot]));
             });
 
             // finalize() resets to idle + sets justFinalized to block stale useFrame
