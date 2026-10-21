@@ -2535,9 +2535,12 @@ function clamp01(value: number, min: number, max: number): number {
 
 /** The sizing reasoning for one placed support: island area + active band + height factor. */
 export function forestSizingNote(entry: ForestLedgerEntry, actualShaftMm: number): string {
-    const heightFactor = 1 + clamp01((entry.zHeight - 20) / 200, 0, 0.25);
     const areaInput = Math.max(entry.areaMm2, 0.01);
-    return `area ${areaInput.toFixed(2)}mm² · base Ø${entry.bandShaftMm.toFixed(2)} · h${heightFactor.toFixed(2)}` +
+    // The placed/sized ratio, including the height and model terms. The old
+    // note printed a display-only "height factor" that was not the factor the
+    // sizing used, so a 1.61 mm trunk read as "h1.14" and looked unexplained.
+    const sized = entry.bandShaftMm > 0 ? actualShaftMm / entry.bandShaftMm : 1;
+    return `area ${areaInput.toFixed(2)}mm² · base Ø${entry.bandShaftMm.toFixed(2)} · sized ×${sized.toFixed(2)}` +
         ` → Ø${actualShaftMm.toFixed(2)}mm`;
 }
 
