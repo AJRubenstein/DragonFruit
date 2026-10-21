@@ -271,6 +271,7 @@ export function buildGapFillCandidates(
                 zHeight: c.z,
                 priority: 0,
                 gridPoint: true,
+                interior: region.interior,
             });
         }
     }

@@ -101,6 +101,7 @@ export function candidateFromIsland(island: DetectedIsland): CandidatePoint {
         // and larger islands take the active band default (undefined) — until
         // `generateCandidates` runs the free-width cap over the batch.
         tipDiameterMm: area < SMALL_ISLAND_TIP_AREA_MM2 ? smallIslandTipDiameterMm() : undefined,
+        interior: island.interior,
     };
 }
 /**

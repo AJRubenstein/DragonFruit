@@ -22,7 +22,7 @@ import {
     type Vec3Like,
 } from './supportPlacementPreviewMath';
 import { buildSegmentPreviewBatch } from './previewGeometry/seam';
-import { createInteriorSideTester } from './interiorSupportGeometry';
+import { createCavityTester } from './interiorSupportGeometry';
 import './previewGeometry/registerBuiltinPreviewBuilders';
 import {
     anyContactMatches,
@@ -714,8 +714,8 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
     // Cavity classification for supports that carry no `placementSurface`
     // (auto-generated and imported ones). Built lazily per cavity and reused
     // for every contact.
-    const isOnInteriorSide = useMemo(
-        () => createInteriorSideTester(cavityGeometryByModelId, modelWorldInverseById),
+    const cavityTester = useMemo(
+        () => createCavityTester(cavityGeometryByModelId, modelWorldInverseById),
         [cavityGeometryByModelId, modelWorldInverseById],
     );
     const matchesInteriorContact = useMemo<InteriorContactFilter>(() => {
@@ -729,9 +729,9 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
             if (contact.placementSurface === 'interior') return true;
             if (contact.placementSurface === 'exterior') return false;
             // Unstamped: ask the cavity, the same test the Prepare proxy uses.
-            return isOnInteriorSide(contact.pos, modelId);
+            return cavityTester.isOnInteriorSide(contact.pos, modelId);
         };
-    }, [interiorView, cavityGeometryByModelId, isOnInteriorSide]);
+    }, [interiorView, cavityGeometryByModelId, cavityTester]);
     const matchesInteriorBrace = useMemo(() => {
         if (!interiorView) return (_brace: Brace) => true;
 

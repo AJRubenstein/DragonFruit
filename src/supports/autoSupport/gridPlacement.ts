@@ -596,6 +596,7 @@ export function generateGridCandidates(
                 zHeight: z,
                 priority: 0,
                 gridPoint: true,
+                interior: island.interior,
             });
         };
 

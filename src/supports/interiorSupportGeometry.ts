@@ -20,19 +20,36 @@ export function interiorSupportKey(entity: { id: string; typeId?: string }): str
     return `${entity.typeId}:${entity.id}`;
 }
 
+/** The cavity query surface: the side the renderer shows, plus the void test
+ *  the auto-support run uses to refuse a plate route out of a cavity. */
+export interface CavityTester {
+    /** On the cavity side of the wall, or within the shell thickness of it. */
+    isOnInteriorSide(pos: Vec3, modelId?: string): boolean;
+    /** Strictly in the cavity void (the face normal decides; no wall slack). */
+    isInsideVoid(pos: Vec3, modelId?: string): boolean;
+    /** Distance from the point to the nearest cavity triangle (mm), or Infinity. */
+    distanceToSurface(pos: Vec3, modelId?: string): number;
+}
+
 /**
- * Build the world-space test the interior view uses: is this point inside the
- * cavity, or within the shell of its wall?
+ * Build the world-space cavity queries the interior view and the auto-support
+ * run share.
  *
  * Contact positions are in WORLD space; the cavity geometry is in the model's
  * LOCAL space, so the model's world-inverse matrix is applied first. The BVH
  * and the face normals are built once and reused for every query.
  */
-export function createInteriorSideTester(
+export function createCavityTester(
     cavityGeometryByModelId?: Map<string, THREE.BufferGeometry>,
     modelWorldInverseById?: Map<string, THREE.Matrix4>,
-): (pos: Vec3, modelId?: string) => boolean {
-    if (!cavityGeometryByModelId || cavityGeometryByModelId.size === 0) return () => false;
+): CavityTester {
+    if (!cavityGeometryByModelId || cavityGeometryByModelId.size === 0) {
+        return {
+            isOnInteriorSide: () => false,
+            isInsideVoid: () => false,
+            distanceToSurface: () => Infinity,
+        };
+    }
 
     const tempVec = new THREE.Vector3();
     const queryTarget = { point: new THREE.Vector3(), distance: 0, faceIndex: -1 } as {
@@ -93,12 +110,12 @@ export function createInteriorSideTester(
         faceNormalsByGeometry.set(geometry, normals);
     }
 
-    return (pos: Vec3, modelId?: string): boolean => {
+    const query = (pos: Vec3, modelId?: string): { dot: number; distance: number } | null => {
         const geometry = modelId ? cavityGeometryByModelId.get(modelId) : null;
         const target = geometry ?? Array.from(cavityGeometryByModelId.values())[0] ?? null;
-        if (!target) return false;
+        if (!target) return null;
         const g = cavityBvhByGeometry.get(target);
-        if (!g?.boundsTree) return false;
+        if (!g?.boundsTree) return null;
 
         tempVec.set(pos.x, pos.y, pos.z);
         if (modelId && modelWorldInverseById) {
@@ -108,10 +125,10 @@ export function createInteriorSideTester(
         queryTarget.distance = Infinity;
         queryTarget.faceIndex = -1;
         const result = g.boundsTree.closestPointToPoint(tempVec, queryTarget);
-        if (!result || queryTarget.faceIndex < 0) return false;
+        if (!result || queryTarget.faceIndex < 0) return null;
 
         const normals = faceNormalsByGeometry.get(target);
-        if (!normals || queryTarget.faceIndex * 3 + 2 >= normals.length) return false;
+        if (!normals || queryTarget.faceIndex * 3 + 2 >= normals.length) return null;
 
         const dx = tempVec.x - queryTarget.point.x;
         const dy = tempVec.y - queryTarget.point.y;
@@ -119,11 +136,19 @@ export function createInteriorSideTester(
         const nx = normals[queryTarget.faceIndex * 3];
         const ny = normals[queryTarget.faceIndex * 3 + 1];
         const nz = normals[queryTarget.faceIndex * 3 + 2];
-        const dot = dx * nx + dy * ny + dz * nz;
+        return { dot: dx * nx + dy * ny + dz * nz, distance: result.distance };
+    };
 
-        // Cavity normals point into the cavity. dot > 0 is the void; otherwise
-        // the point is on the cavity-facing wall when it is close enough.
-        return dot > 0 || result.distance < INTERIOR_WALL_THRESHOLD_MM;
+    return {
+        isOnInteriorSide: (pos, modelId) => {
+            const hit = query(pos, modelId);
+            if (!hit) return false;
+            // Cavity normals point into the cavity. dot > 0 is the void;
+            // otherwise the point is on the cavity-facing wall when close.
+            return hit.dot > 0 || hit.distance < INTERIOR_WALL_THRESHOLD_MM;
+        },
+        isInsideVoid: (pos, modelId) => (query(pos, modelId)?.dot ?? 0) > 0,
+        distanceToSurface: (pos, modelId) => query(pos, modelId)?.distance ?? Infinity,
     };
 }
 

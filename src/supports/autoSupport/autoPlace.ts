@@ -75,6 +75,7 @@ import { draftAddEntity, draftAddPrimitive, draftCommitSupport } from './support
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
+import { createCavityTester } from '../interiorSupportGeometry';
 import { computeForestDiameterProfile, memberDiameterOf } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
 import type { BranchBuildInput, BranchBuildResult } from '../SupportTypes/Branch/branchBuilder';
@@ -975,6 +976,21 @@ function placeOneCandidate(
     // Determine preset band for analytics + empirical sizing.
     const area = candidate.islandAreaMm2;
     const preset = presetForArea(area);
+
+    if (candidate.interior) {
+        // Internal support: the only legal shape is a bridge that stays in the
+        // cavity. A plate trunk would leave through a wall or a bore, which is
+        // what put supports through the shell.
+        const band = activeSizingBand();
+        const bridge = mesh ? buildCavityBridge(tipPos, tipNormal, candidate.modelId, mesh, band) : null;
+        if (bridge) {
+            d = draftAddEntity(d, bridge.kind, bridge.entity);
+            logPlacement(`${bridge.kind} (interior) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+            return { kind: bridge.kind, preset, draft: d, entityId: bridge.entity.id };
+        }
+        logPlacement(`Rejected ${candidate.id}: interior tip has no cavity surface within reach`);
+        return { kind: 'reject', rejectedReason: 'trunk_build_error', preset, draft: d };
+    }
 
     // The fan pool is a walk of every host segment with its 10 samples, and
     // this function asks for it up to three times (island fan, overhang fan,
@@ -2529,10 +2545,6 @@ export function fanLeafToHost(
 // and branches). Shown in the Auto Supports panel after a run; the per-entity
 // placement log spam is off by default (see setAutoSupportVerboseLogging).
 
-function clamp01(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-}
-
 /** The sizing reasoning for one placed support: island area + active band + height factor. */
 export function forestSizingNote(entry: ForestLedgerEntry, actualShaftMm: number): string {
     const areaInput = Math.max(entry.areaMm2, 0.01);
@@ -2801,6 +2813,7 @@ export function computeAutoSupportPlan(
     baseState?: SupportState,
     mesh?: THREE.Mesh,
     onProgress?: AutoPlaceProgressCallback,
+    cavityMesh?: THREE.Mesh,
 ): AutoSupportPlan | null {
     // ------------------------------------------------------------------
     // 0. Settings
@@ -2845,6 +2858,30 @@ export function computeAutoSupportPlan(
     // placement pipeline (pathfinding + collision).
     const resolvedMesh: THREE.Mesh | undefined = mesh ?? (getModelMesh(modelId) ?? undefined);
     if (resolvedMesh) resolvedMesh.updateMatrixWorld();
+
+    // Classify internal contacts before anything reads the islands: a tip on
+    // a cavity surface must not be routed out to the build plate (that path
+    // crosses the shell or fills a bore). The cavity mesh is the void boundary,
+    // so a point offset 0.1 mm along the contact normal lies in the void only
+    // for an internal surface. The offset is below the minimum 0.2 mm shell.
+    if (cavityMesh && resolvedMesh) {
+        cavityMesh.updateMatrixWorld();
+        const cavityTester = createCavityTester(
+            new Map([[modelId, cavityMesh.geometry]]),
+            new Map([[modelId, new THREE.Matrix4().copy(cavityMesh.matrixWorld).invert()]]),
+        );
+        const OFFSET_MM = 0.1;
+        islands = islands.map((island) => {
+            if (island.interior !== undefined) return island;
+            const n = island.surfaceNormal ?? resolveSurfaceNormal(island.contact, resolvedMesh).normal;
+            const interior = cavityTester.isInsideVoid({
+                x: island.contact.x + n.x * OFFSET_MM,
+                y: island.contact.y + n.y * OFFSET_MM,
+                z: island.contact.z + n.z * OFFSET_MM,
+            }, modelId);
+            return interior ? { ...island, interior: true } : island;
+        });
+    }
 
     // ------------------------------------------------------------------
     // 1. Generate candidates
@@ -3576,6 +3613,9 @@ export function computeAutoSupportPlan(
 
         for (const island of islands) {
             if (supportedIds.has(island.id)) continue;
+            // An internal contact may not fan to an exterior host; its only
+            // legal support is the cavity bridge tried at placement time.
+            if (island.interior) continue;
             const fan = fanLeafToHost(
                 { x: island.contact.x, y: island.contact.y, z: island.contact.z },
                 modelId,
@@ -4089,6 +4129,7 @@ export function runAutoPlace(
     islands: DetectedIsland[],
     modelId: string,
     settingsOverride?: Partial<AutoSupportSettings>,
+    cavityMesh?: THREE.Mesh,
 ): AutoPlaceResult {
-    return commitAutoPlacePlan(computeAutoSupportPlan(islands, modelId, settingsOverride));
+    return commitAutoPlacePlan(computeAutoSupportPlan(islands, modelId, settingsOverride, undefined, undefined, undefined, cavityMesh));
 }

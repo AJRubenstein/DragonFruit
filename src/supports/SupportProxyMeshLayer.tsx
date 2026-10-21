@@ -22,7 +22,7 @@ import type { Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 import { SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import {
-    createInteriorSideTester,
+    createCavityTester,
     interiorSupportIds,
     interiorSupportKey,
     isAnySegmentPointInterior,
@@ -508,11 +508,11 @@ export function SupportProxyMeshLayer({
   // before the BVH query.
   const interiorSupportIdSet = React.useMemo<Set<string> | null>(() => {
     if (!interiorView || !cavityGeometryByModelId || cavityGeometryByModelId.size === 0) return null;
-    const isOnInteriorSide = createInteriorSideTester(cavityGeometryByModelId, modelWorldInverseById);
+    const cavityTester = createCavityTester(cavityGeometryByModelId, modelWorldInverseById);
     return interiorSupportIds(
       supportState,
-      (contact, modelId) => isInteriorContact(contact, modelId, isOnInteriorSide),
-      (segments, modelId) => isAnySegmentPointInterior(segments, isOnInteriorSide, modelId),
+      (contact, modelId) => isInteriorContact(contact, modelId, cavityTester.isOnInteriorSide),
+      (segments, modelId) => isAnySegmentPointInterior(segments, cavityTester.isOnInteriorSide, modelId),
     );
   }, [interiorView, cavityGeometryByModelId, modelWorldInverseById, supportState]);
 
