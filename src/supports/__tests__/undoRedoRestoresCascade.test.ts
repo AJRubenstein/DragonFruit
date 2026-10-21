@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { clearHistory, redo, undo } from '../../history/historyStore';
 import { registerSupportHistoryHandlers } from '../history/useSupportHistoryHandlers';
-import { addRoot, addSupportEntityWithHistory, getSnapshot, resetStore } from '../state';
+import { addKnot, addRoot, addSupportEntityWithHistory, getSnapshot, resetStore } from '../state';
 import { inspectSupport } from '../supportInspector';
 import { SUPPORT_GRAPH_NODES } from '../supportTypeRegistry';
 import type { Roots, Trunk } from '../types';
@@ -89,6 +89,49 @@ test('a second undo and redo round-trips the same way', () => {
             assert.deepEqual(census(), placed, `round ${round + 1} round-trips`);
             assert.deepEqual(danglingLinks(), [], `round ${round + 1} leaves no dangling link`);
         }
+    } finally {
+        unregister();
+        resetStore();
+        clearHistory();
+    }
+});
+
+test('redo restores the knot a branch hangs from', () => {
+    const unregister = registerSupportHistoryHandlers();
+    try {
+        resetStore();
+        clearHistory();
+
+        const parentKnot = {
+            id: 'knot-1',
+            parentShaftId: 'shaft-1',
+            t: 0.5,
+            pos: { x: 0, y: 0, z: 5 },
+            diameter: 1.1,
+        };
+        addKnot(parentKnot as never);
+        // The field name is the one `branch` declares for its knot cascade --
+        // `knots`, where a leaf declares `knot`. Sending the wrong one leaves
+        // redo nothing to restore.
+        addSupportEntityWithHistory('branch', {
+            id: 'branch-1',
+            modelId: 'model-1',
+            parentKnotId: parentKnot.id,
+            segments: [{
+                id: 'seg-1',
+                diameter: 1,
+                topJoint: { id: 'j-1', pos: { x: 2, y: 0, z: 8 }, diameter: 1.1 },
+            }],
+        } as never, { knots: [parentKnot] });
+
+        assert.equal(Object.keys(getSnapshot().knots).length, 1);
+
+        undo();
+        assert.equal(Object.keys(getSnapshot().knots).length, 0, 'undo takes the knot');
+
+        redo();
+        assert.equal(Object.keys(getSnapshot().branches).length, 1);
+        assert.equal(Object.keys(getSnapshot().knots).length, 1, 'redo puts the knot back');
     } finally {
         unregister();
         resetStore();
