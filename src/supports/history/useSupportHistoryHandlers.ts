@@ -8,6 +8,7 @@ import {
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
+import { installUndoRedoTrace } from './undoRedoTrace'; // TEMPORARY: delete with the trace file
 import { asOneSupportEdit, removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { setSupportBlockedTriangles } from '../autoSupport/supportBlockers';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
@@ -243,4 +244,6 @@ export function registerSupportHistoryHandlers(): () => void {
 /** Binds {@link registerSupportHistoryHandlers} to the lifetime of the app. */
 export function useSupportHistoryHandlers() {
   useEffect(() => registerSupportHistoryHandlers(), []);
+  // TEMPORARY undo/redo tracing. Delete with undoRedoTrace.ts.
+  useEffect(() => installUndoRedoTrace(), []);
 }
