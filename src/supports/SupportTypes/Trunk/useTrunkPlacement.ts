@@ -1,7 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { addSupportEntity, addKnot, addRoot, addSupportEntityWithHistory, asOneSupportEdit, getSnapshot, updateKnot } from '../../state';
-import { pushSupportHistory } from '@/supports/history/supportHistory';
+import { addKnot, addRoot, addSupportEntityWithHistory, asOneSupportEdit, getSnapshot, updateKnot } from '../../state';
 import { addAction } from '../../history/actionTypes';
 import { useInteractionStatus } from '../../interaction/useInteractionStatus';
 import { getSupportNavigationActive } from '../../interaction/navigationActiveStore';
@@ -292,22 +291,16 @@ export function useTrunkPlacementV2() {
 
     const commitTrunkBuild = useCallback((trunkBuild: ReturnType<typeof buildTrunkData>, placementSurface?: PlacementSurface) => {
         const markedBuild = markTrunkBuildPlacementSurface(trunkBuild, placementSurface);
+        // The action and the payload are both declared by the type, so neither
+        // is written here. Resolved before the write: an unstamped trunk used to
+        // land in the store with no history entry behind it.
+        const trunkTypeId = resolveSupportTypeIdOf(markedBuild.trunk);
+        if (!trunkTypeId) return;
         // One write: a root alone is a root no trunk claims, and the renderer culls those.
         asOneSupportEdit(() => {
             addRoot(markedBuild.root);
-            addSupportEntity(markedBuild.trunk);
+            addSupportEntityWithHistory(trunkTypeId, markedBuild.trunk);
         });
-        // The action and the payload key are both declared by the type, so
-        // neither is written here.
-        const trunkTypeId = resolveSupportTypeIdOf(markedBuild.trunk);
-        if (!trunkTypeId) return;
-        pushSupportHistory({
-            type: getSupportTypeDescriptor(trunkTypeId).historyAdd,
-            payload: {
-                trunk: markedBuild.trunk,
-                roots: [markedBuild.root],
-            },
-        } as Parameters<typeof pushSupportHistory>[0]);
         clearSupportSelection();
         clearPreview();
     }, [clearPreview]);

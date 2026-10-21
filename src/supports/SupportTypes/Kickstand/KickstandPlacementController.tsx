@@ -5,9 +5,7 @@ import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
 import { useActionActive } from '@/hotkeys/hotkeyStore';
 import { findClosestMeshToPoint } from '../../PlacementLogic/PlacementUtils';
-import { pushSupportHistory } from '@/supports/history/supportHistory';
-import { addAction } from '@/supports/history/actionTypes';
-import { addSupportEntity, addKnot, addRoot, asOneSupportEdit, subscribe, getSnapshot } from '../../state';
+import { addSupportEntityWithHistory, addKnot, addRoot, asOneSupportEdit, subscribe, getSnapshot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import { getGridSettings, getSettings } from '../../Settings/state';
 import { snapToGridIndex } from '../../PlacementLogic/Grid/gridMath';
@@ -708,21 +706,15 @@ export function KickstandPlacementController() {
             //
             // One write: a root alone is a root no kickstand claims, and the
             // renderer culls those.
+            // The root rides on the kickstand's own `owns` edge, so the adder
+            // records it. The host knot is `hostedBy` -- the cascade takes it,
+            // but only this caller knows which knot that was.
             asOneSupportEdit(() => {
                 addRoot(finalBuild.root);
                 addKnot(finalBuild.hostKnot);
-                addSupportEntity('kickstand', finalBuild.kickstand);
-            });
-
-            // Keyed by the registry's removal shape, which is what the undo
-            // handler reads: a nested build leaves it with nothing to restore.
-            pushSupportHistory({
-                type: addAction('kickstand'),
-                payload: {
-                    kickstand: finalBuild.kickstand,
-                    roots: finalBuild.root,
+                addSupportEntityWithHistory('kickstand', finalBuild.kickstand, {
                     knots: finalBuild.hostKnot,
-                },
+                });
             });
 
             clearSupportSelection();

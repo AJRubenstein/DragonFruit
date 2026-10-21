@@ -2,8 +2,7 @@ import { useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'r
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
-import { addSupportEntity, subscribe, getSnapshot, addKnot } from '../../state';
-import { pushSupportHistory } from '@/supports/history/supportHistory';
+import { addSupportEntityWithHistory, asOneSupportEdit, subscribe, getSnapshot, addKnot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import type { Vec3, Knot, Joint, Segment } from '../../types';
 import { leafPlacementStore, useLeafPlacementState } from './leafPlacementState';
@@ -12,7 +11,6 @@ import { buildLeafData } from './leafBuilder';
 import { getSettings } from '../../Settings/state';
 import type { SupportData } from '../../rendering/SupportBuilder';
 import { resolveTwigDiameterAtSegmentT, twigJointDiameterForLocalDiameter } from '../Twig/twigTaper';
-import { addAction } from '../../history/actionTypes';
 import { JOINT_DIAMETER_OFFSET_MM } from '../../constants';
 import { v4 as uuidv4 } from 'uuid';
 import { isContactDiskHudInteractionActive, shouldSuppressContactDiskHudPlacementCommit } from '../../SupportPrimitives/ContactDisk/contactDiskHudInteraction';
@@ -660,24 +658,23 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 const leafTypeId = resolveSupportTypeIdOf(leaf) ?? LEAF_PLACEMENT_OWNER;
                 const markedLeaf = markPlacementSurface(leafTypeId, leaf, placementSurface);
 
-                addSupportEntity(markedLeaf);
-
                 // Reload pattern: create new knot at the same position and lock junctionHubId to it
                 const newParentKnotId = uuidv4();
                 const newParentKnot: Knot = {
                     ...parentKnot,
                     id: newParentKnotId,
                 };
-                addKnot(newParentKnot);
-                leafPlacementStore.setJunctionHub(newParentKnotId, true);
-
-                pushSupportHistory({
-                    type: addAction(leafTypeId),
-                    payload: {
-                        leaf: markedLeaf,
-                        knot: snap.junctionHubIsNew ? parentKnot : undefined,
-                    },
+                // The knot recorded is the one the leaf hangs from, not the
+                // reload knot added here, and only when this click made it.
+                asOneSupportEdit(() => {
+                    addKnot(newParentKnot);
+                    addSupportEntityWithHistory(
+                        leafTypeId,
+                        markedLeaf,
+                        snap.junctionHubIsNew ? { knot: parentKnot } : undefined,
+                    );
                 });
+                leafPlacementStore.setJunctionHub(newParentKnotId, true);
 
                 clearSupportSelection();
                 e.stopPropagation();
@@ -734,15 +731,9 @@ export function LeafPlacementController({ activeModelId }: LeafPlacementControll
                 const leafTypeId = resolveSupportTypeIdOf(leaf) ?? LEAF_PLACEMENT_OWNER;
                 const markedLeaf = markPlacementSurface(leafTypeId, leaf, placementSurface);
 
-                addKnot(parentKnot);
-                addSupportEntity(markedLeaf);
-
-                pushSupportHistory({
-                    type: addAction(leafTypeId),
-                    payload: {
-                        leaf: markedLeaf,
-                        knot: parentKnot,
-                    },
+                asOneSupportEdit(() => {
+                    addKnot(parentKnot);
+                    addSupportEntityWithHistory(leafTypeId, markedLeaf, { knot: parentKnot });
                 });
 
                 if (snap.sproutParentingLockHeld) {

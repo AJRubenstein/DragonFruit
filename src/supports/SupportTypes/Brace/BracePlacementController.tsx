@@ -3,12 +3,10 @@ import { useFrame } from '@react-three/fiber';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHotkeyConfig } from '@/hotkeys/HotkeyContext';
-import { addSupportEntity, subscribe, getSnapshot, addKnot } from '../../state';
-import { pushSupportHistory } from '@/supports/history/supportHistory';
+import { addSupportEntityWithHistory, asOneSupportEdit, subscribe, getSnapshot, addKnot } from '../../state';
 import type { SnapTarget } from '../../interaction/SnappingManager';
 import type { Brace, Knot, Segment, Vec3 } from '../../types';
 import { braceSnapConeType, knotHostId, parseSegmentSelectionId, SUPPORT_TYPES, type SupportTypeId } from '../../supportTypeRegistry';
-import { addAction } from '../../history/actionTypes';
 import { getSettings, getAutoBracingSettings } from '../../Settings/state';
 import { bracePlacementStore, useBracePlacementState } from './bracePlacementState';
 import { branchPlacementStore } from '../Branch/branchPlacementState';
@@ -889,17 +887,12 @@ export function BracePlacementController() {
                     },
                 };
 
-                addKnot(startKnot);
-                addKnot(endKnot);
-                addSupportEntity(brace);
-
-                pushSupportHistory({
-                    type: addAction('brace'),
-                    payload: {
-                        brace,
-                        startKnot,
-                        endKnot,
-                    },
+                // One write, and the registry shapes the payload: a knot named here
+                // could stop matching the field a brace's cascade declares.
+                asOneSupportEdit(() => {
+                    addKnot(startKnot);
+                    addKnot(endKnot);
+                    addSupportEntityWithHistory('brace', brace, { startKnot, endKnot });
                 });
 
                 bracePlacementStore.finalize();
@@ -964,17 +957,12 @@ export function BracePlacementController() {
                 },
             };
 
-            addKnot(startKnot);
-            addKnot(endKnot);
-            addSupportEntity(brace);
-
-            pushSupportHistory({
-                type: addAction('brace'),
-                payload: {
-                    brace,
-                    startKnot,
-                    endKnot,
-                },
+            // One write, and the registry shapes the payload: a knot named here
+            // could stop matching the field a brace's cascade declares.
+            asOneSupportEdit(() => {
+                addKnot(startKnot);
+                addKnot(endKnot);
+                addSupportEntityWithHistory('brace', brace, { startKnot, endKnot });
             });
 
             bracePlacementStore.finalize();
@@ -1078,17 +1066,12 @@ export function BracePlacementController() {
                     },
                 };
 
-                addKnot(startKnot);
-                addKnot(endKnot);
-                addSupportEntity(brace);
-
-                pushSupportHistory({
-                    type: addAction('brace'),
-                    payload: {
-                        brace,
-                        startKnot,
-                        endKnot,
-                    },
+                // One write, and the registry shapes the payload: a knot named here
+                // could stop matching the field a brace's cascade declares.
+                asOneSupportEdit(() => {
+                    addKnot(startKnot);
+                    addKnot(endKnot);
+                    addSupportEntityWithHistory('brace', brace, { startKnot, endKnot });
                 });
 
                 bracePlacementStore.finalize();
@@ -1147,17 +1130,12 @@ export function BracePlacementController() {
                 },
             };
 
-            addKnot(startKnot);
-            addKnot(endKnot);
-            addSupportEntity(brace);
-
-            pushSupportHistory({
-                type: addAction('brace'),
-                payload: {
-                    brace,
-                    startKnot,
-                    endKnot,
-                },
+            // One write, and the registry shapes the payload: a knot named here
+            // could stop matching the field a brace's cascade declares.
+            asOneSupportEdit(() => {
+                addKnot(startKnot);
+                addKnot(endKnot);
+                addSupportEntityWithHistory('brace', brace, { startKnot, endKnot });
             });
 
             bracePlacementStore.finalize();

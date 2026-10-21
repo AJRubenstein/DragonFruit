@@ -138,3 +138,74 @@ test('redo restores the knot a branch hangs from', () => {
         clearHistory();
     }
 });
+
+test('every placement path restores what its undo took', () => {
+    const unregister = registerSupportHistoryHandlers();
+    const knot = (id: string, z = 5) => ({
+        id, parentShaftId: 'shaft-1', t: 0.5, pos: { x: 0, y: 0, z }, diameter: 1.1,
+    });
+    const segments = (id: string) => [{
+        id: `seg-${id}`, diameter: 1,
+        topJoint: { id: `joint-${id}`, pos: { x: 1, y: 0, z: 9 }, diameter: 1.1 },
+    }];
+
+    // Each case places the way its controller does, through the shared adder.
+    const cases: Array<{ name: string; place: () => void }> = [
+        {
+            name: 'brace spans two knots',
+            place: () => {
+                addKnot(knot('knot-start') as never);
+                addKnot(knot('knot-end', 7) as never);
+                addSupportEntityWithHistory('brace', {
+                    id: 'brace-1', modelId: 'model-1',
+                    startKnotId: 'knot-start', endKnotId: 'knot-end',
+                    profile: { diameter: 1 },
+                } as never, { startKnot: knot('knot-start'), endKnot: knot('knot-end', 7) });
+            },
+        },
+        {
+            name: 'leaf hangs from a knot',
+            place: () => {
+                addKnot(knot('knot-1') as never);
+                addSupportEntityWithHistory('leaf', {
+                    id: 'leaf-1', modelId: 'model-1', parentKnotId: 'knot-1',
+                } as never, { knot: knot('knot-1') });
+            },
+        },
+        {
+            name: 'kickstand owns a root and hosts on a knot',
+            place: () => {
+                addRoot(root);
+                addKnot(knot('knot-1') as never);
+                addSupportEntityWithHistory('kickstand', {
+                    id: 'kick-1', modelId: 'model-1', rootId: root.id,
+                    hostKnotId: 'knot-1', hostSegmentId: 'shaft-1', hostMinT: 0,
+                    segments: segments('kick-1'),
+                    profile: { bodyDiameterMm: 1, terminalStartDiameterMm: 1, terminalEndDiameterMm: 1 },
+                } as never, { knots: knot('knot-1') });
+            },
+        },
+    ];
+
+    try {
+        for (const { name, place } of cases) {
+            resetStore();
+            clearHistory();
+            place();
+            const placed = census();
+
+            undo();
+            assert.ok(
+                Object.values(census()).every((ids) => ids.length === 0),
+                `${name}: undo clears the scene`,
+            );
+
+            redo();
+            assert.deepEqual(census(), placed, `${name}: redo puts back what undo took`);
+        }
+    } finally {
+        unregister();
+        resetStore();
+        clearHistory();
+    }
+});
