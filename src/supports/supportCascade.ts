@@ -1,4 +1,4 @@
-import { SUPPORT_GRAPH_NODES, SUPPORT_TYPES, getSupportTypeDescriptor, type SupportCollectionKey, type SupportTypeId } from './supportTypeRegistry';
+import { SUPPORT_GRAPH_NODES, SUPPORT_TYPES, getSupportTypeDescriptor, type SupportCollectionKey, type SupportTypeDescriptor, type SupportTypeId } from './supportTypeRegistry';
 import type { Segment, SupportState } from './types';
 
 /**
@@ -204,6 +204,49 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
     }
 
     return doomed;
+}
+
+/**
+ * The collections a removal of `typeId` can drain, derived from the declared
+ * graph rather than listed per type.
+ *
+ * Walks `owns` edges, the segment a shafted type contributes, and every type
+ * declaring a `hostedBy` edge onto that segment or its knots. The seed's own
+ * collection is excluded: its removal reports the seed under `self`.
+ */
+export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollectionKey> {
+    const collections = new Set<SupportCollectionKey>();
+    const seed = getSupportTypeDescriptor(typeId);
+    const queue: SupportTypeDescriptor[] = [seed];
+    const visited = new Set<SupportTypeId>([seed.id]);
+
+    const include = (descriptor: SupportTypeDescriptor) => {
+        if (visited.has(descriptor.id)) return;
+        visited.add(descriptor.id);
+        collections.add(descriptor.location.key);
+        queue.push(descriptor);
+    };
+
+    while (queue.length > 0) {
+        const descriptor = queue.pop()!;
+
+        for (const edge of descriptor.edges) {
+            if (edge.ownership !== 'owns' || edge.to === 'segment') continue;
+            collections.add(edge.to);
+            const owner = SUPPORT_TYPES.find((candidate) => candidate.location.key === edge.to);
+            if (owner) include(owner);
+        }
+
+        if (!descriptor.hasSegments) continue;
+        collections.add('knots');
+        for (const hosted of SUPPORT_TYPES) {
+            const hostedByShaft = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
+                && (edge.to === 'segment' || edge.to === 'knots'));
+            if (hostedByShaft) include(hosted);
+        }
+    }
+
+    return collections;
 }
 
 /** Split a cascade result back into per-collection id sets. */
