@@ -117,10 +117,17 @@ export function createCavityTester(
         const g = cavityBvhByGeometry.get(target);
         if (!g?.boundsTree) return null;
 
+        // Distances come back in the model's LOCAL units; callers compare them
+        // in world millimetres. The inverse's basis length recovers the scale.
+        let worldScale = 1;
         tempVec.set(pos.x, pos.y, pos.z);
         if (modelId && modelWorldInverseById) {
             const inv = modelWorldInverseById.get(modelId);
-            if (inv) tempVec.applyMatrix4(inv);
+            if (inv) {
+                tempVec.applyMatrix4(inv);
+                const inverseScale = inv.getMaxScaleOnAxis();
+                if (inverseScale > 0) worldScale = 1 / inverseScale;
+            }
         }
         queryTarget.distance = Infinity;
         queryTarget.faceIndex = -1;
@@ -136,7 +143,7 @@ export function createCavityTester(
         const nx = normals[queryTarget.faceIndex * 3];
         const ny = normals[queryTarget.faceIndex * 3 + 1];
         const nz = normals[queryTarget.faceIndex * 3 + 2];
-        return { dot: dx * nx + dy * ny + dz * nz, distance: result.distance };
+        return { dot: dx * nx + dy * ny + dz * nz, distance: result.distance * worldScale };
     };
 
     return {

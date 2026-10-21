@@ -2861,26 +2861,31 @@ export function computeAutoSupportPlan(
 
     // Classify internal contacts before anything reads the islands: a tip on
     // a cavity surface must not be routed out to the build plate (that path
-    // crosses the shell or fills a bore). The cavity mesh is the void boundary,
-    // so a point offset 0.1 mm along the contact normal lies in the void only
-    // for an internal surface. The offset is below the minimum 0.2 mm shell.
+    // crosses the shell or fills a bore).
+    //
+    // The cavity mesh is literally the inner wall of the hollowed model mesh,
+    // so an interior contact lies ON it (distance ~0) and an exterior contact
+    // is at least one shell thickness away (minimum 0.2 mm). Distance is also
+    // normal-agnostic: a winding-convention mismatch cannot invert it.
     if (cavityMesh && resolvedMesh) {
         cavityMesh.updateMatrixWorld();
         const cavityTester = createCavityTester(
             new Map([[modelId, cavityMesh.geometry]]),
             new Map([[modelId, new THREE.Matrix4().copy(cavityMesh.matrixWorld).invert()]]),
         );
-        const OFFSET_MM = 0.1;
+        const ON_CAVITY_MM = 0.15;
+        let flagged = 0;
         islands = islands.map((island) => {
             if (island.interior !== undefined) return island;
-            const n = island.surfaceNormal ?? resolveSurfaceNormal(island.contact, resolvedMesh).normal;
-            const interior = cavityTester.isInsideVoid({
-                x: island.contact.x + n.x * OFFSET_MM,
-                y: island.contact.y + n.y * OFFSET_MM,
-                z: island.contact.z + n.z * OFFSET_MM,
-            }, modelId);
+            const interior = cavityTester.distanceToSurface(island.contact, modelId) <= ON_CAVITY_MM;
+            if (interior) flagged += 1;
             return interior ? { ...island, interior: true } : island;
         });
+        console.log(LOG_PREFIX,
+            `Interior classification: cavity mesh present, ${flagged}/${islands.length} islands inside the cavity.`);
+    } else if (resolvedMesh) {
+        console.log(LOG_PREFIX,
+            'Interior classification: no cavity mesh in this run (model not hollowed, or hollowing not applied).');
     }
 
     // ------------------------------------------------------------------
