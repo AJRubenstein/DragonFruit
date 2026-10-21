@@ -138,28 +138,27 @@ function asOneEdit(apply: () => void): true {
 }
 
 /**
- * Knot and trunk edits some payloads carry alongside the entity.
+ * The host entity a payload re-solved, applied BEFORE its knots return: a knot
+ * restored first would project onto the host's edited geometry.
  *
- * Adding a branch can resize its host knot and rewrite the trunk it hangs from;
- * those edits invert with the entity rather than separately.
+ * The host's own type travels WITH the repair, so this restores the right
+ * collection without naming one.
  */
-function applyHostEdits(payload: unknown, direction: 'undo' | 'redo'): void {
-  const fields = payload as {
-    knotUpdates?: { before: SupportEntityIn<'knots'>; after: SupportEntityIn<'knots'> }[];
+function applyHostUpdate(payload: unknown, direction: 'undo' | 'redo'): void {
+  const hostUpdate = (payload as {
     hostUpdate?: { typeId: SupportTypeId; before: { id: string }; after: { id: string } };
-  } | null | undefined;
-  if (!fields) return;
+  } | null | undefined)?.hostUpdate;
+  if (!hostUpdate) return;
+  updateSupportEntity(hostUpdate.typeId, direction === 'undo' ? hostUpdate.before : hostUpdate.after);
+}
 
-  for (const update of fields.knotUpdates ?? []) {
+/** Knot edits a payload carries, applied after the entities are back. */
+function applyKnotUpdates(payload: unknown, direction: 'undo' | 'redo'): void {
+  const knotUpdates = (payload as {
+    knotUpdates?: { before: SupportEntityIn<'knots'>; after: SupportEntityIn<'knots'> }[];
+  } | null | undefined)?.knotUpdates;
+  for (const update of knotUpdates ?? []) {
     updateKnot(direction === 'undo' ? update.before : update.after);
-  }
-  // The host's own type travels WITH the repair, so this restores the right
-  // collection without naming one. (It was `trunkUpdate`, and history is
-  // in-memory only -- nothing serialises a payload -- so the field was free to
-  // stop naming a type.)
-  const hostUpdate = fields.hostUpdate;
-  if (hostUpdate) {
-    updateSupportEntity(hostUpdate.typeId, direction === 'undo' ? hostUpdate.before : hostUpdate.after);
   }
 }
 
@@ -174,18 +173,30 @@ export function registerSupportHistoryHandlers(): () => void {
         const seed = seedEntity(descriptor, payload);
         if (!seed) return false;
         return asOneEdit(() => {
-          if (direction === 'undo') removeSupportEntity(descriptor.id, seed.id);
-          else restoreRemoved(descriptor, payload);
-          applyHostEdits(payload, direction);
+          if (direction === 'undo') {
+            removeSupportEntity(descriptor.id, seed.id);
+            applyHostUpdate(payload, direction);
+            applyKnotUpdates(payload, direction);
+          } else {
+            applyHostUpdate(payload, direction);
+            restoreRemoved(descriptor, payload);
+            applyKnotUpdates(payload, direction);
+          }
         });
       }),
       registerSupportHistoryHandler(descriptor.historyRemove, (payload, direction) => {
         const seed = seedEntity(descriptor, payload);
         if (!seed) return false;
         return asOneEdit(() => {
-          if (direction === 'undo') restoreRemoved(descriptor, payload);
-          else removeSupportEntity(descriptor.id, seed.id);
-          applyHostEdits(payload, direction);
+          if (direction === 'undo') {
+            applyHostUpdate(payload, direction);
+            restoreRemoved(descriptor, payload);
+            applyKnotUpdates(payload, direction);
+          } else {
+            removeSupportEntity(descriptor.id, seed.id);
+            applyHostUpdate(payload, direction);
+            applyKnotUpdates(payload, direction);
+          }
         });
       }),
     ]),

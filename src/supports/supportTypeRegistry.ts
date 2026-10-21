@@ -1116,12 +1116,12 @@ export function resolveKnotDiameter(
  */
 export const SUPPORT_REMOVAL_SHAPES = {
     trunk: { self: 'trunk', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
-    branch: { self: 'branch', cascade: { branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
+    branch: { self: 'branch', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
     leaf: { self: 'leaf', cascade: { knots: 'knot' } },
-    twig: { self: 'twig', cascade: { knots: 'knots', leaves: 'leaves' } },
-    stick: { self: 'stick', cascade: { knots: 'knots', leaves: 'leaves' } },
+    twig: { self: 'twig', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
+    stick: { self: 'stick', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
     brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'] } },
-    stump: { self: 'stump', cascade: { knots: 'knots', leaves: 'leaves' } },
+    stump: { self: 'stump', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
     kickstand: { self: 'kickstand', cascade: { roots: 'roots', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
     // `satisfies` keeps the literal narrowing the result types read, while
     // making a renamed type a compile error here rather than at the call site.
