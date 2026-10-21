@@ -110,7 +110,16 @@ function sortSupports(a: SupportSample, b: SupportSample): number {
     if (a.modelId !== b.modelId) return a.modelId.localeCompare(b.modelId);
     if (a.sortAnchor.x !== b.sortAnchor.x) return a.sortAnchor.x - b.sortAnchor.x;
     if (a.sortAnchor.y !== b.sortAnchor.y) return a.sortAnchor.y - b.sortAnchor.y;
-    return a.supportId.localeCompare(b.supportId);
+    // Generated kickstands carry random ids; comparing those first made the
+    // brace pass order-dependent on a uuid. Resolve coincident plan anchors by
+    // height and kind before falling back to the id.
+    if (a.topReferenceZ !== b.topReferenceZ) return a.topReferenceZ - b.topReferenceZ;
+    if (a.bottomReferenceZ !== b.bottomReferenceZ) return a.bottomReferenceZ - b.bottomReferenceZ;
+    if (a.supportKind !== b.supportKind) return a.supportKind.localeCompare(b.supportKind);
+    // Ids are random for generated supports. At equal geometry the stable sort
+    // keeps the insertion order, which is the placement order; comparing ids
+    // here made the brace pass differ between runs.
+    return 0;
 }
 
 function createUniqueIdFactory(prefix: string, existingIds: Set<string>) {
