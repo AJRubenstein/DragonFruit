@@ -183,6 +183,9 @@ export const SHARE_EXPONENT = 0.25;
 export const HEIGHT_REFERENCE_MM = 20;
 export const HEIGHT_EXPONENT = 0.35;
 
+/** Contact tip never narrower than this fraction of the shaft it sits on. */
+export const TIP_CONTACT_MIN_SHAFT_RATIO = 0.3;
+
 // The three caps are no longer constants: they are the `autoSupport`
 // `modelSizeFactorCap` / `modelLoadFactorCap` / `heightFactorCap` settings, so a
 // calibration has one home (`AUTO_SUPPORT_CONSTRAINTS` owns the defaults) and
@@ -369,7 +372,7 @@ export function sizeParameters(
     const tipContactDiameterMm = round(
         Math.max(
             MIN_CONTACT_TIP_DIAMETER_MM,
-            candidate.tipDiameterMm ?? Math.max(band.tipContactDiameterMm * angleFactor, shaftDiameterMm * 0.3),
+            candidate.tipDiameterMm ?? Math.max(band.tipContactDiameterMm * angleFactor, shaftDiameterMm * TIP_CONTACT_MIN_SHAFT_RATIO),
         ),
     3);
 

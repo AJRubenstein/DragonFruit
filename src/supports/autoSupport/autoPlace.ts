@@ -29,8 +29,8 @@ import { isLedgerKind } from './types';
 import type { Branch, Segment, SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
 import type { AutoPlaceTimings } from './types';
-import { normalizeAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS } from './settings';
-import { activeSizingBand } from './parameterSizing';
+import { normalizeAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS, MIN_CONTACT_TIP_DIAMETER_MM } from './settings';
+import { activeSizingBand, TIP_CONTACT_MIN_SHAFT_RATIO } from './parameterSizing';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates, shouldUseDensityGrid } from './gridPlacement';
 import { computeStabilizationAnchors } from './stabilization';
@@ -1876,8 +1876,10 @@ export function rehostLegacyKnots(draft: SupportState): SupportState {
  * (thickened) shaft and renders as a visible step; conversely a leaf fanned
  * while its host was temporarily thicker, a transplanted replacement profile,
  * or a re-run over a resized forest can leave a cone wider than its shaft.
- * Only the body moves — the tip contact diameter is a peel-force choice and
- * stays exactly as placed.
+ * The contact diameter moves only upward, to the same 30%-of-shaft floor the
+ * sizing applies: the forest resize can thicken a trunk long after its cone
+ * was built, and a fat trunk under a needle-thin contact is the visible
+ * mismatch this pass exists to stop. An explicit larger contact is kept.
  */
 export function syncContactConeDiameters(draft: SupportState): SupportState {
     // Which types contribute their segment diameters, from each type's declared
@@ -1904,9 +1906,12 @@ export function syncContactConeDiameters(draft: SupportState): SupportState {
     const syncCone = (cone: ContactCone | undefined, hostDia: number | undefined): ContactCone | undefined => {
         const body = cone?.profile?.bodyDiameterMm;
         if (!cone || body === undefined || hostDia === undefined) return cone;
-        if (Math.abs(body - hostDia) > 1e-6) {
+        const contact = cone.profile.contactDiameterMm ?? 0;
+        const minContact = Math.max(hostDia * TIP_CONTACT_MIN_SHAFT_RATIO, MIN_CONTACT_TIP_DIAMETER_MM);
+        const nextContact = Math.max(contact, minContact);
+        if (Math.abs(body - hostDia) > 1e-6 || Math.abs(contact - nextContact) > 1e-6) {
             changed = true;
-            return { ...cone, profile: { ...cone.profile, bodyDiameterMm: hostDia } };
+            return { ...cone, profile: { ...cone.profile, bodyDiameterMm: hostDia, contactDiameterMm: nextContact } };
         }
         return cone;
     };
