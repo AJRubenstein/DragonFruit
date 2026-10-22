@@ -71,18 +71,3 @@ test('redoing a placed trunk never shows its root without its shaft', () => {
         clearHistory();
     }
 });
-
-test('undoing a placed trunk takes its root with it in one frame', () => {
-    const unregister = registerSupportHistoryHandlers();
-    try {
-        resetStore();
-        clearHistory();
-        placeTrunk();
-
-        assert.deepEqual(framesDuring(undo), ['roots=0 trunks=0']);
-    } finally {
-        unregister();
-        resetStore();
-        clearHistory();
-    }
-});

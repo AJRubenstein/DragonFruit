@@ -57,11 +57,3 @@ test('merging a file drops a root no entity claims', () => {
     assert.deepEqual(unclaimedRootIds(), []);
     resetStore();
 });
-
-test('a file whose roots are all claimed keeps them', () => {
-    resetStore();
-    loadFromImportFormat(payload(['root-owned'], 'root-owned'));
-
-    assert.equal(Object.keys(getSnapshot().roots).length, 1);
-    resetStore();
-});

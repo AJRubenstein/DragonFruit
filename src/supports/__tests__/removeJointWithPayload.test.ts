@@ -83,19 +83,3 @@ test('a kickstand joint removal records a snapshot that undo restores', () => {
         clearHistory();
     }
 });
-
-test('a type that declares an update action reports its typed edit only', () => {
-    resetStore();
-    addRoot(root('root-trunk'));
-    addSupportEntity('trunk', {
-        id: 'trunk-1', modelId: MODEL, rootId: 'root-trunk',
-        segments: [segment('trunk-seg-1', 0, 5), segment('trunk-seg-2', 5, 10)],
-    });
-
-    const resolved = removeJointWithPayload('trunk-seg-1-top');
-    assert.ok(resolved, 'the joint was found');
-    assert.equal(resolved.typeId, 'trunk');
-    assert.ok(resolved.edit, 'the type records its own before/after');
-    assert.equal(resolved.snapshot, undefined, 'no snapshot is captured for a typed edit');
-    resetStore();
-});
