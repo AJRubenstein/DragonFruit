@@ -86,7 +86,50 @@ export function setHistoryOriginProvider(provider: (() => HistoryOrigin) | null)
   };
 }
 
+/**
+ * Domains that queue their own entries instead of pushing them straight away.
+ *
+ * Each is drained before any other push, so a queued entry cannot land above an
+ * edit the user made after it, and dropped when the stacks are cleared. A
+ * domain registers rather than being named here: the store owns the ordering
+ * guarantee, not the list of who defers.
+ */
+interface PendingHistorySource {
+  flush: () => void;
+  cancel: () => void;
+}
+
+const pendingSources = new Set<PendingHistorySource>();
+
+export function registerPendingHistorySource(source: PendingHistorySource) {
+  pendingSources.add(source);
+  return () => pendingSources.delete(source);
+}
+
+let flushingPending = false;
+
+/**
+ * Lands every queued entry, so what follows pushes on top of it. A flush
+ * pushes, which re-enters `pushHistory`, so the guard keeps that from recursing.
+ */
+function flushPendingSources() {
+  if (flushingPending) return;
+  flushingPending = true;
+  try {
+    pendingSources.forEach((source) => {
+      try {
+        source.flush();
+      } catch (err) {
+        console.error('[HistoryStore] pending source flush error', err);
+      }
+    });
+  } finally {
+    flushingPending = false;
+  }
+}
+
 export function pushHistory(action: HistoryAction) {
+  flushPendingSources();
   // An explicit origin wins — a domain that knows better than "wherever the user
   // happens to be" can say so; everything else gets stamped here.
   if (!action.origin && originProvider) {
@@ -159,6 +202,14 @@ export function redo() {
 }
 
 export function clearHistory() {
+  // A queued entry would otherwise land after the clear and refill the stack.
+  pendingSources.forEach((source) => {
+    try {
+      source.cancel();
+    } catch (err) {
+      console.error('[HistoryStore] pending source cancel error', err);
+    }
+  });
   undoStack.length = 0;
   redoStack.length = 0;
   appendHistoryDebugEvent('clear-history');

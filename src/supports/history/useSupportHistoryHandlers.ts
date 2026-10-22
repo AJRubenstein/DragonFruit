@@ -8,6 +8,8 @@ import {
   SupportReplaceStatePayload,
 } from './actionTypes';
 import { registerSupportHistoryHandler } from './supportHistory';
+import { registerPendingHistorySource } from '../../history/historyStore';
+import { cancelPendingSupportEditHistory, flushSupportEditHistory } from './supportEditHistory';
 import { asOneSupportEdit, removeSupportEntity, updateKnot, setSnapshot, getSnapshot } from '../state';
 import { setSupportBlockedTriangles } from '../autoSupport/supportBlockers';
 import { clearSupportSelection } from '../interaction/shared/selection/selectionController';
@@ -165,6 +167,12 @@ const snapshotActions = [
 
 export function registerSupportHistoryHandlers(): () => void {
   const unregisters = [
+    // Support snapshots are queued to an idle callback, so the store has to
+    // land them before any other push and drop them when it clears.
+    registerPendingHistorySource({
+      flush: flushSupportEditHistory,
+      cancel: cancelPendingSupportEditHistory,
+    }),
     // Add and remove handlers, derived from the registry.
     //
     // Every type's pair inverts the same way: an add undoes by removing the

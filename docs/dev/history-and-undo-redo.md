@@ -89,10 +89,13 @@ Payloads are `structuredClone`d on every push and every stack hop, so typed
 arrays (`Float32Array`, `Uint32Array`) survive and callers may mutate after
 pushing.
 
-One exception: `pushSupportEditHistory` queues its before/after pair and pushes
-it on an idle callback, cloning at that point rather than at capture. A caller
-that mutates support state in the same tick changes what the entry records, and
-a synchronous push in between lands *below* the later snapshot.
+A domain may defer its own pushes: `pushSupportEditHistory` queues its
+before/after pair and pushes it when the main thread idles, because the store
+clones each payload it keeps and that is tens of milliseconds on a large scene.
+Deferring is invisible to everyone else — a queued entry captures its snapshots
+immediately, and `registerPendingHistorySource` lets the store drain the queue
+before any other push and drop it on `clearHistory`, so stack order still
+follows real time.
 
 ## Dispatch semantics
 
