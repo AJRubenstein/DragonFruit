@@ -165,6 +165,7 @@ export const PASTE_SUPPORTS_LABEL = msg({ message: 'Paste supports', context: 'U
 export const ADJUST_CURVE_TENSION_LABEL = msg({ message: 'Adjust curve tension', context: 'Undo history entry' });
 export const ADJUST_CURVE_BIAS_LABEL = msg({ message: 'Adjust curve bias', context: 'Undo history entry' });
 export const REMOVE_CURVE_LABEL = msg({ message: 'Remove curve', context: 'Undo history entry' });
+export const REPLACE_SUPPORTS_LABEL = msg({ message: 'Replace supports', context: 'Undo history entry' });
 
 export function deleteSupportsLabel(count: number): MessageDescriptor {
   return msg({

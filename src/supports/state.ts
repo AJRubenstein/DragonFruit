@@ -290,7 +290,12 @@ function removeSupportEntityCascading(
     // Snapshot before deleting: the shape is what undo replays from.
     const result = cascadePayload(typeId, existing, byCollection, deepClone);
 
-    // Apply: one state write, one notify.
+    applyCascadeDeletion(byCollection);
+    return result;
+}
+
+/** Deletes a grouped cascade: one state write, one notify. */
+function applyCascadeDeletion(byCollection: Map<SupportCollectionKey, Set<string>>): void {
     const next: Record<string, unknown> = { ...state };
     for (const [key, ids] of byCollection) {
         const record = { ...state[key] } as Record<string, unknown>;
@@ -316,7 +321,28 @@ function removeSupportEntityCascading(
     }
 
     notify();
-    return result;
+}
+
+/**
+ * Removes every support of `modelId` and everything the graph says depends on
+ * them, in one cascade.
+ *
+ * The seeds are this model's entities; the cascade then reaches dependents of
+ * other models hanging off them, which a per-collection sweep leaves dangling.
+ */
+export function removeSupportEntitiesForModel(modelId: string): boolean {
+    const seeds: { collection: SupportCollectionKey; id: string }[] = [];
+    for (const descriptor of SUPPORT_TYPES) {
+        const collection = descriptor.location.key;
+        for (const entity of Object.values(state[collection])) {
+            const owned = entity as unknown as { id: string; modelId?: string };
+            if (owned.modelId === modelId) seeds.push({ collection, id: owned.id });
+        }
+    }
+    if (seeds.length === 0) return false;
+
+    applyCascadeDeletion(groupByCollection(collectCascade(state, seeds)));
+    return true;
 }
 
 function resolveLowerSegmentIndex(segments: Segment[], jointId: string) {
