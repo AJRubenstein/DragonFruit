@@ -343,7 +343,7 @@ function commitCascadeRemoval(doomed: ReadonlySet<string>): void {
  * The seeds are this model's entities; the cascade then reaches dependents of
  * other models hanging off them, which a per-collection sweep leaves dangling.
  */
-export function removeSupportEntitiesForModel(modelId: string): boolean {
+export function removeSupportEntitiesForModel(modelId: string): number {
     const seeds: EntityRef[] = [];
     for (const descriptor of SUPPORT_TYPES) {
         const collection = descriptor.location.key;
@@ -352,10 +352,10 @@ export function removeSupportEntitiesForModel(modelId: string): boolean {
             if (owned.modelId === modelId) seeds.push({ collection, id: owned.id });
         }
     }
-    if (seeds.length === 0) return false;
+    if (seeds.length === 0) return 0;
 
     removeSupportEntities(seeds);
-    return true;
+    return seeds.length;
 }
 
 function resolveLowerSegmentIndex(segments: Segment[], jointId: string) {

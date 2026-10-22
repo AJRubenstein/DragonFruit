@@ -191,7 +191,7 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
       // entry is a snapshot because the auto-place that follows pushes its
       // own, and this half has to be undoable on its own.
       const before = captureSupportEditSnapshot();
-      if (removeSupportEntitiesForModel(activeModelId)) {
+      if (removeSupportEntitiesForModel(activeModelId) > 0) {
         pushSupportEditHistory(REPLACE_SUPPORTS_LABEL, before, captureSupportEditSnapshot());
       }
       // rAF fires after React flushes the snapshot, giving us
