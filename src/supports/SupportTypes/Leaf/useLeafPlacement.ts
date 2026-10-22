@@ -8,13 +8,7 @@ import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 import { getSnapshot, removeKnotById } from '../../state';
 import { subscribeHistoryChanges } from '@/history/historyStore';
 
-/**
- * Drops the junction hub knot when the fan ends without a leaf on it.
- *
- * The hub is staged in the store so the renderer can draw it, but it is only
- * claimed when the next leaf commits. Called wherever a fan can end: the lock
- * released, Escape, or an undo taking the leaf that made it.
- */
+/** Drops the junction hub knot when the fan ends without a leaf on it. */
 function discardUnclaimedJunctionHub(): void {
     const snap = leafPlacementStore.getSnapshot();
     if (!snap.junctionHubId) return;

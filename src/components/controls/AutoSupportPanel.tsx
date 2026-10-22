@@ -186,10 +186,8 @@ export function AutoSupportPanel({ islands, hasGeometry, activeModelId, autoLift
   const doRun = React.useCallback((replace: boolean) => {
     if (!activeModelId) return;
     if (replace) {
-      // One cascade over this model's supports, so a dependent of another
-      // model hanging off one of them goes too rather than dangling. The
-      // entry is a snapshot because the auto-place that follows pushes its
-      // own, and this half has to be undoable on its own.
+      // One cascade, so a dependent of another model goes too; the entry is a
+      // snapshot because the auto-place that follows pushes its own.
       const before = captureSupportEditSnapshot();
       if (removeSupportEntitiesForModel(activeModelId) > 0) {
         pushSupportEditHistory(REPLACE_SUPPORTS_LABEL, before, captureSupportEditSnapshot());

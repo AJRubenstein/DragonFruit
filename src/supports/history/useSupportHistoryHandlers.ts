@@ -127,12 +127,8 @@ function restoreRemoved(descriptor: SupportTypeDescriptor, payload: unknown): vo
 }
 
 /**
- * Runs one inversion as a single store write, then reports it applied.
- *
- * The selection is checked inside the batch: an inversion can delete whatever
- * was selected -- or a joint or segment of it, which the id alone does not
- * reveal -- and a selection naming something gone drives gizmos onto an entity
- * that no longer exists.
+ * Runs one inversion as a single store write, then reports it applied. An
+ * inversion can delete what was selected, so the selection is checked too.
  */
 function asOneEdit(apply: () => void): true {
   asOneSupportEdit(() => {

@@ -52,12 +52,7 @@ export interface SupportInspection {
     dependents: { collection: SupportCollectionKey; id: string }[];
     /** Everything removing this would take, excluding the entity itself. */
     cascadeCount: number;
-    /**
-     * Any declared field this entity cannot stand on: one resolving to nothing,
-     * or to something whose own links are broken. Without the second case a
-     * support hanging off a floating knot reports healthy, because the knot
-     * exists -- which is the shape damage usually takes.
-     */
+    /** Any declared field resolving to nothing, or to something itself broken. */
     danglingLinks: SupportLink[];
 }
 
@@ -98,10 +93,7 @@ function linksOf(state: InspectorState, collection: SupportCollectionKey, id: st
 
 /**
  * The links an entity cannot stand on: unresolved, or naming something whose
- * own links are unresolved.
- *
- * Walks hosts until it runs out, so a chain of knots on a deleted shaft reports
- * at every level. `seen` stops a cycle; the depth is the graph's, not a limit.
+ * own links are. Walks hosts transitively; `seen` stops a cycle.
  */
 function brokenLinksOf(
     state: InspectorState,

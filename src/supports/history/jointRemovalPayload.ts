@@ -14,8 +14,7 @@ export interface ResolvedJointRemoval {
 
 /**
  * Removes one joint and resolves its undo entry. A type with no `historyUpdate`
- * cannot record a typed edit, so its snapshot is captured BEFORE the removal
- * mutates the entity and its knots.
+ * records a snapshot, captured BEFORE the removal rebinds its knots.
  */
 export function removeJointWithPayload(jointId: string): ResolvedJointRemoval | null {
     const owner = findShaftOwnerOfJoint(jointId);

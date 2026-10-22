@@ -225,12 +225,9 @@ export function removeSupportEntities(seeds: readonly EntityRef[]): void {
  */
 
 /**
- * One entity plus everything the graph says hangs off it, under the field
- * names its removal shape declares.
- *
- * The one payload builder for both directions: a remove records what it is
- * about to delete, an add records what its undo would delete. Sharing it is
- * what keeps redo able to restore exactly what undo took.
+ * One entity plus everything the graph says hangs off it, under the field names
+ * its removal shape declares. One builder for both directions, so redo
+ * restores exactly what undo took.
  */
 function cascadePayload(
     typeId: SupportTypeId,
@@ -245,10 +242,8 @@ function cascadePayload(
     const plural = (field: string) => field.endsWith('s');
 
     for (const [key, field] of Object.entries(shape.cascade as Record<string, string | readonly string[]>)) {
-        // The seed is included when its own collection is listed in `cascade`.
-        // removeBranch reports every doomed branch, itself among them, because
-        // undo replays the list wholesale; removeTrunk names the trunk
-        // separately via `self` and does not list `trunks` here.
+        // The seed is included when its own collection is listed in `cascade`,
+        // because undo replays that list wholesale.
         const ids = [...(byCollection.get(key as SupportCollectionKey) ?? [])];
         const entities = ids
             .map((entityId) => state[key as SupportCollectionKey][entityId])
@@ -337,11 +332,8 @@ function commitCascadeRemoval(doomed: ReadonlySet<string>): void {
 }
 
 /**
- * Removes every support of `modelId` and everything the graph says depends on
- * them, in one cascade.
- *
- * The seeds are this model's entities; the cascade then reaches dependents of
- * other models hanging off them, which a per-collection sweep leaves dangling.
+ * Removes every support of `modelId` in one cascade, which also reaches a
+ * dependent of another model hanging off one of them.
  */
 export function removeSupportEntitiesForModel(modelId: string): number {
     const seeds: EntityRef[] = [];
@@ -2839,9 +2831,8 @@ export function addSupportEntityWithHistory(
     extras?: Record<string, unknown>,
 ) {
     addSupportEntity(typeId, entity);
-    // Undo removes this entity by cascade, so the entry has to carry what that
-    // cascade takes -- the same payload a removal records. Nothing mutates a
-    // just-written entity, so the payload holds it rather than a copy.
+    // Undo removes this entity by cascade, so the entry carries what that
+    // cascade takes -- the same payload a removal records.
     const recorded = cascadePayload(
         typeId,
         entity,

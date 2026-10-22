@@ -205,12 +205,7 @@ export function BracePlacementController() {
         [twigBySegmentId]
     );
 
-    /**
-     * Writes a brace between two prepared endpoint knots, as one edit.
-     *
-     * The four click paths differ only in how each endpoint resolves -- a real
-     * segment or a cone host -- so everything downstream of that lives here.
-     */
+    /** Writes a brace between two prepared endpoint knots, as one edit. */
     const commitBrace = useCallback(
         (
             startKnotAt: Omit<Knot, 'id'>,

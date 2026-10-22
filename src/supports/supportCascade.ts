@@ -41,11 +41,7 @@ function buildSegmentOwners(state: CascadeState): Map<string, EntityRef> {
     return owners;
 }
 
-/**
- * The entity a segment id names, for a real segment or a knot host's cone or
- * span. Only an id a `hostedBy` edge actually names is parsed, so a scene's
- * leaves and braces cost nothing until something rides one.
- */
+/** The entity a segment id names: a real segment, or a cone or span host. */
 function segmentOwnerKey(
     owners: Map<string, EntityRef>,
     segmentId: string,
@@ -245,10 +241,6 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
 /**
  * The collections a removal of `typeId` can drain, derived from the declared
  * graph rather than listed per type.
- *
- * Walks `owns` edges, the segment a shafted type contributes, and every type
- * declaring a `hostedBy` edge onto that segment or its knots. The seed's own
- * collection is excluded: its removal reports the seed under `self`.
  */
 export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollectionKey> {
     const collections = new Set<SupportCollectionKey>();
@@ -270,9 +262,8 @@ export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollect
             if (owner) reach(owner);
         }
 
-        // A shaft carries knots, and so does a cone or span this type offers as
-        // a knot host. Whatever rides one of those comes with it: a type
-        // addressing the host as a segment, and anything hosted on its knots.
+        // A shaft carries knots, and so does a cone or span offered as a knot
+        // host; whatever rides one comes with it.
         const offersKnots = descriptor.hasSegments || descriptor.knotHostPrefix !== undefined;
         const offersSegment = descriptor.hasSegments || !!descriptor.segmentSelectionPrefix;
         if (offersKnots) collections.add('knots');
@@ -291,9 +282,8 @@ export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollect
         expand(descriptor);
     };
 
-    // A type reaches its own kind when it hosts what it is -- a branch off a
-    // knot its own shaft carries. `self` reports the seed, so its collection
-    // is listed only when reached that way.
+    // A type reaches its own kind when it hosts what it is. `self` reports the
+    // seed, so its collection is listed only when reached that way.
     const offersKnots = seed.hasSegments || seed.knotHostPrefix !== undefined;
     const selfHosted = (offersKnots && hostedBy(seed, 'knots'))
         || ((seed.hasSegments || !!seed.segmentSelectionPrefix) && hostedBy(seed, 'segment'));

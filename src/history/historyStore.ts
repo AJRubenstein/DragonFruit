@@ -86,14 +86,7 @@ export function setHistoryOriginProvider(provider: (() => HistoryOrigin) | null)
   };
 }
 
-/**
- * Domains that queue their own entries instead of pushing them straight away.
- *
- * Each is drained before any other push, so a queued entry cannot land above an
- * edit the user made after it, and dropped when the stacks are cleared. A
- * domain registers rather than being named here: the store owns the ordering
- * guarantee, not the list of who defers.
- */
+/** Domains that queue their own entries; drained before any push, dropped on clear. */
 interface PendingHistorySource {
   flush: () => void;
   cancel: () => void;
@@ -108,10 +101,7 @@ export function registerPendingHistorySource(source: PendingHistorySource) {
 
 let flushingPending = false;
 
-/**
- * Lands every queued entry, so what follows pushes on top of it. A flush
- * pushes, which re-enters `pushHistory`, so the guard keeps that from recursing.
- */
+/** Lands every queued entry, so what follows pushes on top of it. */
 function flushPendingSources() {
   if (flushingPending) return;
   flushingPending = true;
