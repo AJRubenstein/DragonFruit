@@ -76,6 +76,7 @@ import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
 import { createCavityTester } from '../interiorSupportGeometry';
+import { closestSurfaceNormal } from './closestSurfaceNormal';
 import { computeForestDiameterProfile, memberDiameterOf } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
 import type { BranchBuildInput, BranchBuildResult } from '../SupportTypes/Branch/branchBuilder';
@@ -318,9 +319,9 @@ function makeResult(
 function resolveSurfaceNormal(
     tipPos: CandidatePoint['tipPos'],
     mesh: THREE.Mesh | undefined,
-): { point: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } } {
+): { point: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number }; hit: boolean } {
     if (!mesh) {
-        return { point: tipPos, normal: { x: 0, y: 0, z: -1 } };
+        return { point: tipPos, normal: { x: 0, y: 0, z: -1 }, hit: false };
     }
 
     const raycaster = new THREE.Raycaster();
@@ -361,6 +362,7 @@ function resolveSurfaceNormal(
         return {
             point: { x: upHit.point.x, y: upHit.point.y, z: upHit.point.z },
             normal: calculateSmoothedNormal(upHit),
+            hit: true,
         };
     }
 
@@ -372,11 +374,13 @@ function resolveSurfaceNormal(
         return {
             point: { x: downHit.point.x, y: downHit.point.y, z: downHit.point.z },
             normal: { x: -smoothed.x, y: -smoothed.y, z: -smoothed.z },
+            hit: true,
         };
     }
 
-    // Fallback: keep the existing normal.
-    return { point: tipPos, normal: { x: 0, y: 0, z: -1 } };
+    // Fallback: keep the existing normal. `hit` says so, so the steepness
+    // check can ask the nearest triangle instead of trusting "down".
+    return { point: tipPos, normal: { x: 0, y: 0, z: -1 }, hit: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -2888,6 +2892,35 @@ export function computeAutoSupportPlan(
             'Interior classification: no cavity mesh in this run (model not hollowed, or hollowing not applied).');
     }
 
+    // A voxel island records that material starts with nothing below it; it
+    // does not record how steep the surface is. On a wall steeper than the
+    // self-support angle the layer shift is small enough to print, and a
+    // contact there spends a shaft to resist nothing — the "supports on the
+    // side of the bow" report. The mesh's nearest triangle gives the angle for
+    // any orientation; the vertical-ray resolver cannot.
+    if (resolvedMesh) {
+        const selfSupportDeg = autoSettings.overhangSelfSupportAngleDeg;
+        const before = islands.length;
+        islands = islands.filter((island) => {
+            if (island.source === 'overhang' || island.source === 'minima' || island.interior) return true;
+            // A hole-tolerant vertical ray is the right answer wherever it
+            // hits; only when both rays miss (a side wall) does the nearest
+            // triangle answer, so a punched ceiling is not mistaken for the
+            // hole's vertical rim.
+            const resolved = resolveSurfaceNormal(island.contact, resolvedMesh);
+            const normal = resolved.hit
+                ? resolved.normal
+                : (closestSurfaceNormal(resolvedMesh, island.contact) ?? resolved.normal);
+            const inclinationDeg = Math.acos(Math.min(1, Math.abs(normal.z))) * (180 / Math.PI);
+            return inclinationDeg <= selfSupportDeg + 0.5;
+        });
+        const dropped = before - islands.length;
+        if (dropped > 0) {
+            console.log(LOG_PREFIX,
+                `Skipped ${dropped} island(s) on surfaces steeper than ${selfSupportDeg}° (self-supporting).`);
+        }
+    }
+
     // ------------------------------------------------------------------
     // 1. Generate candidates
     // ------------------------------------------------------------------
@@ -3616,7 +3649,11 @@ export function computeAutoSupportPlan(
         let skippedCross = 0;
         let skippedOther = 0;
 
-        for (const island of islands) {
+        // `islandsToCover`, not `islands`: the steep-flat gate drops
+        // self-supporting walls from coverage when the pose is stable. Fanning
+        // the raw island list bypassed that gate and stuck leaves onto the
+        // steep side of a part, where the contact resists nothing.
+        for (const island of islandsToCover) {
             if (supportedIds.has(island.id)) continue;
             // An internal contact may not fan to an exterior host; its only
             // legal support is the cavity bridge tried at placement time.

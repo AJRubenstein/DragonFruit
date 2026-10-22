@@ -1308,3 +1308,29 @@ test('an internal contact is bridged inside the cavity, never routed to the plat
     setModelMesh('model-a', null);
     disposeHandlers();
 });
+
+test('a voxel island on a steep side wall gets no support', () => {
+    resetStore();
+    resetKickstandsInState();
+    clearHistory();
+    const disposeHandlers = registerSupportHistoryHandlers();
+    initializeBVH();
+
+    const geometry = new THREE.BoxGeometry(10, 10, 10).translate(0, 0, 20);
+    accelerateGeometry(geometry);
+    setModelMesh('model-a', new THREE.Mesh(geometry));
+
+    // Side contact, normal ±X, inclination 90° > the 45° self-support angle.
+    const result = runAutoPlace(
+        [makeIsland('side', 5, 0, 20, 10)],
+        'model-a',
+        { debugSkipAutoBracing: true },
+    );
+
+    assert.equal(result.placed.trunk, 0, 'no shaft is spent on a self-supporting wall');
+    assert.equal(Object.keys(getSnapshot().trunks).length, 0);
+    assert.equal(Object.keys(getSnapshot().sticks).length, 0);
+
+    setModelMesh('model-a', null);
+    disposeHandlers();
+});
