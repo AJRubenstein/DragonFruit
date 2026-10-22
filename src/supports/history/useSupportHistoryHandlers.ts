@@ -126,9 +126,19 @@ function restoreRemoved(descriptor: SupportTypeDescriptor, payload: unknown): vo
   if (seed) restoreToCollection(descriptor.location.key, seed);
 }
 
-/** Runs one inversion as a single store write, then reports it applied. */
+/**
+ * Runs one inversion as a single store write, then reports it applied.
+ *
+ * The selection is checked inside the batch: an inversion can delete whatever
+ * was selected -- or a joint or segment of it, which the id alone does not
+ * reveal -- and a selection naming something gone drives gizmos onto an entity
+ * that no longer exists.
+ */
 function asOneEdit(apply: () => void): true {
-  asOneSupportEdit(apply);
+  asOneSupportEdit(() => {
+    apply();
+    if (getSnapshot().selectedId && !selectionExistsInSnapshot()) clearSupportSelection();
+  });
   return true;
 }
 

@@ -1,6 +1,7 @@
 import type { MessageDescriptor } from '@lingui/core';
 import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_EDIT_REPLACE } from './actionTypes';
+import { SUPPORT_COLLECTION_KEYS } from '../supportTypeRegistry';
 import { getSnapshot, type SupportState } from '../state';
 
 export interface SupportEditHistorySnapshot {
@@ -77,18 +78,38 @@ function scheduleFlush() {
 }
 
 /**
+ * Whether an edit changed anything worth an undo step.
+ *
+ * Collection identity first, which is free: `normaliseSupportState` keeps it
+ * across a write that only moved hover or selection, so a click that grabbed a
+ * handle and let go is rejected without reading the state. Only when identity
+ * differs is the content compared, since a write can produce an equal value.
+ */
+function changedAnything(before: SupportState, after: SupportState): boolean {
+  const touched = SUPPORT_COLLECTION_KEYS.filter((key) => before[key] !== after[key]);
+  if (touched.length === 0) return false;
+  return touched.some((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+}
+
+/**
  * Records a whole-state support edit, pushed when the main thread next idles.
  *
  * Deferred because the store clones each payload it keeps, which is tens of
  * milliseconds on a large scene -- too much to spend at drag-end. The pair is
  * captured now, though: the snapshots are immutable, so what lands is what the
  * edit saw, whatever happens before the flush.
+ *
+ * An edit that changed nothing is dropped: every gizmo pushes at drag end
+ * whether or not the drag moved anything, and an empty entry costs the user an
+ * undo press and clears the redo stack.
  */
 export function pushSupportEditHistory(
   description: MessageDescriptor,
   before: SupportEditHistorySnapshot,
   after: SupportEditHistorySnapshot,
 ) {
+  if (!changedAnything(before.support, after.support)) return;
+
   pendingJobs.push({
     description,
     before: withoutInteractionState(before.support),

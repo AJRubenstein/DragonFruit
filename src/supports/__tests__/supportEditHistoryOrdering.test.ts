@@ -49,6 +49,7 @@ test('a queued snapshot lands below an edit pushed after it', () => {
         clearHistory();
 
         const before = captureSupportEditSnapshot();
+        seedTrunk('trunk-b');
         pushSupportEditHistory(label, before, captureSupportEditSnapshot());
         pushSupportHistory({
             type: SUPPORT_MULTI_DELETE,
@@ -74,6 +75,7 @@ test('clearing the stacks drops a queued snapshot', async () => {
     try {
         seedStore();
         const before = captureSupportEditSnapshot();
+        seedTrunk('trunk-b');
         pushSupportEditHistory(label, before, captureSupportEditSnapshot());
 
         clearHistory();
