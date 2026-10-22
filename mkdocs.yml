@@ -185,6 +185,7 @@ nav:
           - VOXL Version Semantics: adr/0042-voxl-version-semantics.md
           - VOXL V1 Support Removed: adr/0043-voxl-v1-removal.md
           - VOXL Plates and Printer: adr/0044-voxl-plates-and-printer.md
+          - Headless Scene Operations: adr/0045-headless-scene-operations.md
           - Organic Cut Surface Redesign: dev/organic-cut-surface-redesign.md
       - Integration and Operations:
           - The Site and the Landing Page: dev/site-and-landing.md

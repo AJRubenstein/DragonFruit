@@ -141,20 +141,36 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
         else dependents.set(hostKey, [ref]);
     };
 
+    // Target -> everything pointing at it, by ANY edge, built in the same pass.
+    // `isReferencedOutside` re-scans every collection per question, and the
+    // 'ifUnused' retry asks it once per deferred host: with 2 000 brace knots
+    // that was tens of millions of reads and seconds of main-thread time.
+    const referrers = new Map<string, EntityRef[]>();
+    const addReferrer = (targetKey: string, ref: EntityRef) => {
+        const existing = referrers.get(targetKey);
+        if (existing) existing.push(ref);
+        else referrers.set(targetKey, [ref]);
+    };
+
     for (const node of SUPPORT_GRAPH_NODES) {
         const collection = node.key;
         for (const entity of Object.values(state[collection])) {
             const ref = { collection, id: (entity as { id: string }).id };
             for (const link of outgoingIds(state, ref)) {
-                if (link.ownership !== 'hostedBy') continue;
                 // A knot names a segment; map it to the shaft that owns it.
                 const hostKey = link.edgeTo === 'segment'
                     ? segmentOwnerKey(segmentOwners, link.id)
                     : refKey({ collection: link.edgeTo, id: link.id });
-                if (hostKey) addDependent(hostKey, ref);
+                if (!hostKey) continue;
+                addReferrer(hostKey, ref);
+                if (link.ownership === 'hostedBy') addDependent(hostKey, ref);
             }
         }
     }
+
+    /** Whether an entity outside the doomed set still points at `target`. */
+    const isReferencedOutsideDoomed = (target: EntityRef): boolean =>
+        (referrers.get(refKey(target)) ?? []).some((ref) => !doomed.has(refKey(ref)));
 
     const queue: EntityRef[] = [...seed];
 
@@ -213,7 +229,7 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
                     deferredHosts.splice(i, 1);
                     continue;
                 }
-                if (!isReferencedOutside(state, target, doomed)) {
+                if (!isReferencedOutsideDoomed(target)) {
                     deferredHosts.splice(i, 1);
                     claim(target);
                     claimedAny = true;

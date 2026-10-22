@@ -138,3 +138,58 @@ test('the classification a VOXL writes is the one its loader consumes', async ()
     'the restored split must address the stored triangle order',
   );
 });
+
+/**
+ * A repair report's boundary addresses the mesh the pass *ended* with, so `post` is
+ * the count a reader checks — `pre` is the mesh that was sent in. Checking `pre` is
+ * what made a repaired model drop its split on every reload and reclassify, and the
+ * classifier reorders the soup as it reports.
+ */
+function repairedClassification(pre: number, post: number, modelTriangleCount: number | null): MeshHealthReport {
+  return { ...classification(modelTriangleCount), pre: analysis(pre, 9), post: analysis(post, 2) };
+}
+
+const fourTriangles = (): Uint8Array => binaryStl([
+  [0, 0, 0, 1, 0, 0, 0, 1, 0],
+  [0, 0, 1, 1, 0, 1, 0, 1, 1],
+  [0, 0, 2, 1, 0, 2, 0, 1, 2],
+  [0, 0, 3, 1, 0, 3, 0, 1, 3],
+]);
+
+async function loadStored(baked: MeshHealthReport) {
+  const parsed = await parseVoxlBinaryV2(await serializeVoxlDocumentV2(
+    testInput([testModel('m1', { classification: baked })]),
+    new Map<number, Uint8Array>([[0, fourTriangles()]]),
+  ));
+  const payload = parsed.meshBytes.get('m1');
+  assert.ok(payload);
+
+  let classifyCalled = false;
+  const geometry = await loadMeshGeometry(payload, 'm1.stl', {
+    bakedClassification: parsed.document.models[0].classification,
+    nativeProcessingMode: 'none',
+    _isTauriRuntime: () => true,
+    _classifyFromGeometry: async () => { classifyCalled = true; return null; },
+  });
+  return { geometry, classifyCalled };
+}
+
+test('a repaired classification is honoured: its post count is the payload', async () => {
+  const { geometry, classifyCalled } = await loadStored(repairedClassification(6, 4, 3));
+
+  assert.equal(classifyCalled, false, 'the boundary addresses these four triangles');
+  assert.equal(geometry.meshDefects?.nativeRepairReport?.model_triangle_count, 3);
+  assert.equal(geometry.meshDefects?.supportSectionGeometry?.getAttribute('position').count, 3);
+});
+
+test('a classification whose post count disagrees is dropped and the mesh reclassified', async () => {
+  const { geometry, classifyCalled } = await loadStored(repairedClassification(4, 5, 3));
+
+  assert.equal(
+    classifyCalled,
+    true,
+    'a boundary that addresses five triangles cannot slice a soup of four',
+  );
+  assert.equal(geometry.meshDefects?.nativeRepairReport?.model_triangle_count, undefined);
+});
+

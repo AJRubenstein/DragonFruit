@@ -27,6 +27,13 @@ import { createRequire } from 'module';
 import { v4 as uuidv4 } from 'uuid';
 import { parseVoxlAuto } from '../src/features/scene/voxl/codec';
 import { serializeVoxlDocumentV2 } from '../src/features/scene/voxl/codec-v2';
+import { reportAddressesTriangleSoup } from '../src/features/scene/voxl/classification';
+import {
+  DYNAMIC_PLATE_ORDERING,
+  VOXL_PLATE_ORDERING_EXTENSION,
+  readPlateOrdering,
+} from '../src/features/scene/plates/plateCascade';
+import { computePlateFrames, plateSliceScope, resolveModelPlateId, type PlateSliceScope } from '../src/features/scene/plates/plateLayout';
 import type {
   BuildVoxlDocumentInput,
   VoxlDocumentV1,
@@ -86,11 +93,14 @@ function toBuildInput(doc: VoxlDocumentV1): { input: BuildVoxlDocumentInput; mes
     models: doc.models,
     activeModelId: doc.scene.activeModelId,
     selectedModelIds: doc.scene.selectedModelIds,
+    plates: doc.scene.plates,
+    activePlateId: doc.scene.activePlateId,
     supports: doc.supports,
     extensions: doc.extensions,
     meta: {
       generator: doc.meta.generator,
       generatorVersion: doc.meta.generatorVersion,
+      printer: doc.meta.printer,
     },
   };
 
@@ -1396,11 +1406,44 @@ function loadSceneSliceMesh(): typeof import('./cli/sceneSliceMesh') {
   return requireSceneSliceModule('./cli/sceneSliceMesh');
 }
 
+/**
+ * The plate `scene slice` covers: `--plate` (an id, or a number from 1), else the
+ * plate the scene was being worked on, else the first. Plates are laid out the way
+ * the app lays them out, from the printer's footprint and the scene's ordering;
+ * the origin is taken as the plate's centre, the app's default.
+ */
+function resolveSlicePlate(
+  doc: VoxlDocumentV1,
+  footprint: { widthMm: number; depthMm: number },
+  plateFlag: string | undefined,
+): { scope: PlateSliceScope; number: number; plateCount: number; plateNumberOf: (model: VoxlModelEntry) => number } {
+  const plates = doc.scene.plates?.length ? doc.scene.plates : [{ id: 'plate-1' }];
+  const frames = computePlateFrames({
+    plates,
+    footprint: { ...footprint, originMode: 'center' },
+    ordering: readPlateOrdering(doc.extensions?.[VOXL_PLATE_ORDERING_EXTENSION]) ?? DYNAMIC_PLATE_ORDERING,
+  });
+  const frame = plateFlag !== undefined
+    ? frames.find((f) => f.id === plateFlag) ?? (/^\d+$/.test(plateFlag) ? frames[Number(plateFlag) - 1] : undefined)
+    : frames.find((f) => f.id === doc.scene.activePlateId) ?? frames[0];
+  if (!frame) {
+    throw new Error(`--plate ${plateFlag}: the scene has ${frames.length} plate(s); pass an id or a number from 1 to ${frames.length}`);
+  }
+  const indexOf = new Map(frames.map((f) => [f.id, f.index]));
+  return {
+    scope: plateSliceScope(frame, doc.models.filter((m) => m.visible), frames),
+    number: frame.index + 1,
+    plateCount: frames.length,
+    plateNumberOf: (model) => (indexOf.get(resolveModelPlateId(model, frames)) ?? 0) + 1,
+  };
+}
+
 async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
   const voxlPath = args.positional[0];
   if (!voxlPath) {
     throw new Error(
       'Usage: scene slice <scene.voxl> --o <output> [--mesh-dir <dir>]\n'
+      + '  [--plate <id|n>]                                 the plate to slice, by id or number from 1 (default: the active plate)\n'
       + '  [--printer <profile.json>] [--printer-id <id>]  preset, profile or app-exported bundle; builds the job the app would\n'
       + '  [--material <profile.json>]                      default: the bundle\'s first material, else the app\'s default\n'
       + '  [--aa-preset sharp|balanced|smooth|raw]          the panel\'s auto AA preset (default: balanced)\n'
@@ -1439,11 +1482,23 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
     ditherDeviceGamma: optionalFlag(args.flags, 'dither-device-gamma'),
   });
   const doc = await loadVoxl(voxlPath);
-  const visibleModels = doc.models.filter((m) => m.visible);
+  const plate = resolveSlicePlate(doc, {
+    widthMm: job.printer?.buildVolumeMm.width ?? parseFloat(job.buildWidth),
+    depthMm: job.printer?.buildVolumeMm.depth ?? parseFloat(job.buildDepth),
+  }, optionalFlag(args.flags, 'plate'));
+  const onPlate = new Set(plate.scope.modelIds);
+  const visibleModels = doc.models.filter((m) => m.visible && onPlate.has(m.id));
+  const leftOut = doc.models.filter((m) => m.visible && !onPlate.has(m.id));
 
-  if (visibleModels.length === 0) throw new Error('No visible models in scene');
+  if (visibleModels.length === 0) {
+    throw new Error(`No visible models on plate ${plate.number} of ${plate.plateCount}`);
+  }
 
-  console.error(`scene slice: ${visibleModels.length} visible models`);
+  console.error(`scene slice: plate ${plate.number} of ${plate.plateCount}, ${visibleModels.length} visible models`);
+  for (const model of leftOut) {
+    console.error(`  not sliced: '${model.name}' stands on plate ${plate.plateNumberOf(model)}`);
+  }
+  const { dxMm, dyMm } = plate.scope.offsetMm;
 
   // Phase 1: Load each model's STL and bake its scene transform into world
   // space. The vertices go to the orchestrator as-is (identity transform), so
@@ -1470,12 +1525,16 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
     const meshBytes = LOADED_MESH_BYTES.get(model.id);
     const origBytes = LOADED_ORIG_BYTES.get(model.id);
     const embedded = modifiersBaked ? (meshBytes ?? origBytes) : (origBytes ?? meshBytes);
+    // Which payload these triangles came from. Only the MESH chunk is written with
+    // the `classification` boundary beside it — the ORIG chunk is the pristine
+    // original's bytes, addressed by neither.
+    let source: 'orig' | 'mesh' | 'file' = 'file';
     if (embedded) {
       // `embedded-chunk`/`embedded-file`: the codec already decoded the geometry
       // to STL bytes — no filesystem lookup needed.
       positions = parseBinaryStl(Buffer.from(embedded.buffer, embedded.byteOffset, embedded.byteLength));
-      const src = embedded === origBytes ? 'orig' : 'mesh';
-      console.error(`  loading ${model.name}: <embedded ${src}${modifiersBaked ? ', baked-modifiers' : ''}>`);
+      source = embedded === origBytes ? 'orig' : 'mesh';
+      console.error(`  loading ${model.name}: <embedded ${source}${modifiersBaked ? ', baked-modifiers' : ''}>`);
     } else if (model.mesh.mode === 'external-file' || model.mesh.fileName) {
       const meshFileName = model.mesh.fileName ?? model.name + '.stl';
       // Try mesh-dir, then absolute path, then cwd
@@ -1506,6 +1565,46 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
       console.error(`    transform: pos=(${t.position.x.toFixed(1)},${t.position.y.toFixed(1)},${t.position.z.toFixed(1)}) rot=(${t.rotation.x.toFixed(3)},${t.rotation.y.toFixed(3)},${t.rotation.z.toFixed(3)}) scale=(${t.scale.x},${t.scale.y},${t.scale.z})`);
     }
 
+    // The file's own model/support split. The GUI slices a loaded model by
+    // `model_triangle_count` (see `effectiveModelTriangleCount`), so a headless slice
+    // has to place the same boundary: the first N triangles are model, the rest are
+    // support. Emitted as two inputs — a support-classified model contributes zero
+    // model triangles, and the orchestrator appends support-range triangles after
+    // every model's, which is the layout the engine expects. The rule that decides
+    // whether the boundary still addresses these bytes is shared with the app's own
+    // reader; see `reportAddressesTriangleSoup`.
+    const classification = source === 'mesh' ? model.classification : undefined;
+    const triangles = positions.length / 9;
+    const boundary = classification
+      && !(model.isSupportGeometry ?? false)
+      && reportAddressesTriangleSoup(classification, triangles)
+      && classification.model_triangle_count != null
+      && classification.model_triangle_count > 0
+      && classification.model_triangle_count < triangles
+      ? classification.model_triangle_count
+      : null;
+    if (boundary != null) {
+      const cut = boundary * 9;
+      console.error(`    classification: ${boundary} model + ${triangles - boundary} support triangles`);
+      modelInputs.push({
+        id: model.id,
+        name: model.name,
+        color: model.color,
+        polygonCount: boundary,
+        isSupportGeometry: false,
+        positions: positions.subarray(0, cut),
+      });
+      modelInputs.push({
+        id: `${model.id}#support`,
+        name: `${model.name} (support)`,
+        color: model.color,
+        polygonCount: triangles - boundary,
+        isSupportGeometry: true,
+        positions: positions.subarray(cut),
+      });
+      continue;
+    }
+
     modelInputs.push({
       id: model.id,
       name: model.name,
@@ -1533,6 +1632,7 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
       materialProfile: job.material,
       raftMode,
       raftSettings,
+      plateOffsetMm: plate.scope.offsetMm,
     });
     meshPositions = mesh.trianglesXYZ;
     modelTriangleCount = mesh.modelTriangleCount;
@@ -1545,11 +1645,13 @@ async function sceneSlice(args: ReturnType<typeof parseArgs>): Promise<void> {
     meshPositions = new Float32Array(totalFloats);
     let writeOffset = 0;
     for (const m of modelInputs) {
+      for (let i = 0; i < m.positions.length; i += 3) {
+        m.positions[i] -= dxMm;
+        m.positions[i + 1] -= dyMm;
+        if (m.positions[i + 2] > maxZMm) maxZMm = m.positions[i + 2];
+      }
       meshPositions.set(m.positions, writeOffset);
       writeOffset += m.positions.length;
-      for (let i = 2; i < m.positions.length; i += 3) {
-        if (m.positions[i] > maxZMm) maxZMm = m.positions[i];
-      }
     }
     modelTriangleCount = totalFloats / 9;
     console.error(`scene slice: ${modelTriangleCount} model triangles (no printer: supports not sliced)`);

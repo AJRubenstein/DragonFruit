@@ -2008,6 +2008,11 @@ pub async fn load_mesh_bytes(request: tauri::ipc::Request<'_>) -> Result<Respons
         .get("x-mesh-classify")
         .and_then(|value| value.to_str().ok())
         .map_or(true, |value| value.trim() != "0");
+    let refine = request
+        .headers()
+        .get("x-mesh-refine")
+        .and_then(|value| value.to_str().ok())
+        .map_or(true, |value| value.trim() != "0");
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
         tauri::ipc::InvokeBody::Json(_) => {
@@ -2018,7 +2023,7 @@ pub async fn load_mesh_bytes(request: tauri::ipc::Request<'_>) -> Result<Respons
         "[load_mesh_bytes] Starting native mesh load from {} bytes",
         bytes.len()
     );
-    load_mesh_bytes_response(&bytes, classify).map(Response::new)
+    load_mesh_bytes_response(&bytes, classify, refine).map(Response::new)
 }
 
 /// Parse a mesh that sits at a known offset inside a file on disk.
@@ -2042,6 +2047,7 @@ pub async fn load_mesh_range(
     length: u64,
     compression: u16,
     classify: Option<bool>,
+    refine: Option<bool>,
 ) -> Result<Response, String> {
     let started = std::time::Instant::now();
     let path = source_path.clone();
@@ -2078,7 +2084,11 @@ pub async fn load_mesh_range(
     .map_err(|e| format!("mesh range task panicked: {e}"))??;
 
     let started_parse = std::time::Instant::now();
-    let (bodies, metadata_json) = mesh_bodies(&bytes, classify.unwrap_or(true))?;
+    let (bodies, metadata_json) = mesh_bodies(
+        &bytes,
+        classify.unwrap_or(true),
+        refine.unwrap_or(true),
+    )?;
 
     // Keep the mesh for its AO bake. The bake needs exactly this mesh, and sending
     // one back costs 36 bytes a triangle; a single body is the VOXL case, and only a
@@ -2103,18 +2113,26 @@ pub async fn load_mesh_range(
         .map(Response::new)
 }
 
-/// Parse a file's bytes, refine its coarse faces, and classify when asked.
+/// Parse a file's bytes, refine its coarse faces when asked, and classify when asked.
 ///
 /// Split out of the encoders so a caller that wants to *keep* the refined mesh (the
 /// range loader does, for the AO bake — see the `registry` module) gets the same
 /// meshes the payload was built from, without a second parse.
+///
+/// `refine` is false for the mesh a VOXL stores. That payload is the scene geometry
+/// the app already refined, and refinement is not idempotent: on the reported scene it
+/// turned 81,282 triangles into 126,386 on the next load, so a `classification`
+/// written for the first count could never address the second, every load re-ran the
+/// classifier (which reorders the soup), and a save/load cycle grew the mesh by half.
+/// Refining what is already refined is the one thing a reader must not do.
 fn mesh_bodies(
     bytes: &[u8],
     classify: bool,
+    refine: bool,
 ) -> Result<(Vec<IndexedMesh>, Option<String>), String> {
     let mesh = io::stl::parse_bytes(bytes)
         .map_err(|e| format!("Failed to parse mesh bytes: {e}"))?;
-    let mesh = io::refine_coarse_faces(mesh);
+    let mesh = if refine { io::refine_coarse_faces(mesh) } else { mesh };
     Ok(if classify {
         classify_single_body(mesh)
     } else {
@@ -2124,9 +2142,13 @@ fn mesh_bodies(
 
 /// The pipeline behind `load_mesh_bytes`: parse the file's bytes, refine, classify
 /// when asked, and encode the same `DFMX` payload the path loader writes.
-fn load_mesh_bytes_response(bytes: &[u8], classify: bool) -> Result<Vec<u8>, String> {
+fn load_mesh_bytes_response(
+    bytes: &[u8],
+    classify: bool,
+    refine: bool,
+) -> Result<Vec<u8>, String> {
     let started = std::time::Instant::now();
-    let (bodies, metadata_json) = mesh_bodies(bytes, classify)?;
+    let (bodies, metadata_json) = mesh_bodies(bytes, classify, refine)?;
 
     let tri_count: usize = bodies.iter().map(|body| body.triangles.len()).sum();
     let encoded = encode_mesh_bodies(&bodies, tri_count as u32, false, None, metadata_json.as_deref(), None)?;
@@ -3162,6 +3184,7 @@ mod tests {
             packed.len() as u64,
             1,
             Some(false),
+            Some(true),
         )));
         assert_eq!(&bytes[0..4], b"DFMX");
         assert_eq!(
@@ -3173,10 +3196,10 @@ mod tests {
         // The same chunk read as raw bytes is not an STL, and a range that runs off
         // the end of the file is an error rather than a short payload.
         assert!(rt
-            .block_on(load_mesh_range(path.clone(), 64, packed.len() as u64, 7, None))
+            .block_on(load_mesh_range(path.clone(), 64, packed.len() as u64, 7, None, None))
             .is_err());
         assert!(rt
-            .block_on(load_mesh_range(path.clone(), 64, 100_000_000, 1, None))
+            .block_on(load_mesh_range(path.clone(), 64, 100_000_000, 1, None, None))
             .is_err());
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -3207,12 +3230,39 @@ mod tests {
     }
 
     #[test]
+    fn test_load_mesh_bytes_leaves_scene_geometry_unrefined_when_asked() {
+        // One 100 mm triangle: its longest edge is 70x the refine threshold
+        // (2% of the bbox diagonal), so the default pass splits it.
+        let corners = [[0.0f32, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 100.0, 0.0]];
+        let mut stl = vec![0u8; 84];
+        stl[80..84].copy_from_slice(&1u32.to_le_bytes());
+        stl.extend(std::iter::repeat_n(0u8, 12)); // face normal
+        for corner in corners {
+            for value in corner {
+                stl.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        stl.extend_from_slice(&[0u8; 2]); // attribute byte count
+        let triangle_count = |response: &[u8]| {
+            u32::from_le_bytes(response[16..20].try_into().unwrap()) as usize
+        };
+
+        let refined = load_mesh_bytes_response(&stl, false, true).unwrap();
+        assert!(triangle_count(&refined) > 1, "the coarse triangle should be split");
+
+        // A VOXL payload is already the scene's refined geometry; re-refining it
+        // invalidates the classification it carries and grows on every reload.
+        let as_stored = load_mesh_bytes_response(&stl, false, false).unwrap();
+        assert_eq!(triangle_count(&as_stored), 1);
+    }
+
+    #[test]
     fn test_load_mesh_bytes_parses_refines_and_classifies() {
         let mut stl = vec![0u8; 84];
         stl[80..84].copy_from_slice(&3u32.to_le_bytes());
         stl.extend(std::iter::repeat_n(0u8, 3 * 50));
 
-        let classified = load_mesh_bytes_response(&stl, true).unwrap();
+        let classified = load_mesh_bytes_response(&stl, true, true).unwrap();
         assert_eq!(&classified[0..4], b"DFMX");
         assert_eq!(u32::from_le_bytes(classified[12..16].try_into().unwrap()), 1);
         let metadata_len = u32::from_le_bytes(classified[24..28].try_into().unwrap()) as usize;
@@ -3221,7 +3271,7 @@ mod tests {
         assert!(json.starts_with("{\"version\""));
 
         // A caller that will repair asks for no report and gets no tail.
-        let plain = load_mesh_bytes_response(&stl, false).unwrap();
+        let plain = load_mesh_bytes_response(&stl, false, true).unwrap();
         assert_eq!(&plain[0..4], b"DFMX");
         assert_eq!(u32::from_le_bytes(plain[24..28].try_into().unwrap()), 0);
         let packed = u32::from_le_bytes(plain[36..40].try_into().unwrap()) as usize;

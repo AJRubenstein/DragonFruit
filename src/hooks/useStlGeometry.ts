@@ -28,6 +28,7 @@ import {
   type MeshHealthReport,
   type MeshRepairProgressSink,
 } from '@/utils/meshRepair';
+import { reportAddressesTriangleSoup } from '@/features/scene/voxl/classification';
 
 export type MeshDefects = {
   /** Whether any non-finite vertex position values were found */
@@ -194,15 +195,17 @@ export interface ProcessGeometryOptions {
    * from it before then misses the attribute. @internal
    */
   _deferOcclusionBake?: (bake: Promise<boolean>) => void;
-  /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
   /**
-   * The mesh the native loader kept for this geometry's AO bake, from the payload's
-   * header. Prep records it against the geometry's final position array (the bake
-   * asks for it by token instead of being sent the soup back — 36 bytes a triangle).
-   * A geometry that is not this one any more fails the native corner check and falls
-   * back to the soup. @internal
+   * Whether the native loader may refine coarse faces. Default true.
+   *
+   * A payload that is already a scene's own mesh — a VOXL `MESH` chunk — passes
+   * false: refinement is not idempotent, so refining a stored mesh changes the
+   * triangle count and order that any model/support boundary indexes, and a
+   * save/load cycle grows it every time (81,282 triangles came back as 126,386 on
+   * the reported scene). @internal
    */
-  _meshToken?: number;
+  _refine?: boolean;
+  /** Skip `computeVertexNormals()` - the geometry already has a `normal` attribute */
   _skipComputeNormals?: boolean;
   _isTauriRuntime?: () => boolean;
   _classifyFromGeometry?: typeof classifyFromGeometry;
@@ -648,13 +651,6 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   // already waiting beats stuttering while they are interacting. Moving the *wait*
   // is a different thing, and only a caller that owns the rest of the batch
   // (`_deferOcclusionBake`) does that.
-  const position = geometry.getAttribute('position');
-  if (options._meshToken && position) {
-    // Registered here rather than by the caller: the positions are final at this
-    // point (the centering translate above is the last write to them), which is what
-    // the token is validated against when the bake asks for the mesh.
-    rememberLoadedMeshMesh(geometry, { token: options._meshToken, positions: position.array });
-  }
   const occlusionBake = bakeAndAttachOcclusionForGeometry(geometry).catch((error) => {
     console.warn('[ao] bake during prep failed', error);
     return false;
@@ -1194,14 +1190,16 @@ export function skipsNativePassForModelOnly(
  * The loader's own report when it classified, since it describes exactly what it
  * built. Otherwise a caller's stored one — a VOXL model carries the report its
  * file was written with, and the format requires a reader that honours it *not*
- * to re-run the classifier — but only while it is still *this* geometry's report:
- * the triangle count has to agree. Refinement is deterministic but versioned, and
- * a section boundary is a triangle index, so a file written under a different
- * refinement rule describes a mesh this build does not produce.
+ * to re-run the classifier — but only while it still addresses this payload:
+ * `reportAddressesTriangleSoup` compares the boundary's `post.triangle_count`,
+ * the mesh the pass ended with, against the triangles just loaded. Refinement is
+ * deterministic but versioned, and a section boundary is a triangle index, so a
+ * file written under a different refinement rule describes a mesh this build does
+ * not produce.
  *
  * A split boundary in a stored report is honoured as written. The writer's rule
- * (same document) is that a report is stamped only when the classifier ran over
- * the exact payload stored — and the classifier reorders the mesh as it reports —
+ * (same document) is that a report is stamped only when that same predicate holds
+ * for the bytes it stores — and the classifier reorders the mesh as it reports —
  * so the payload is in the order the boundary addresses, and the sections can be
  * sliced by count alone.
  *
@@ -1216,10 +1214,10 @@ export function classificationForPayload(
 ): MeshHealthReport | undefined {
   if (loaderReport) return loaderReport;
   if (!storedReport) return undefined;
-  if (storedReport.pre.triangle_count !== triangles) {
+  if (!reportAddressesTriangleSoup(storedReport, triangles)) {
     console.warn(
-      `[loadMeshFile] Ignoring the stored mesh classification: it describes ` +
-      `${storedReport.pre.triangle_count} triangles and this mesh has ${triangles}. Running the classify pass.`,
+      `[loadMeshFile] Ignoring the stored mesh classification: its boundary addresses ` +
+      `${storedReport.post.triangle_count} triangles and this mesh has ${triangles}. Running the classify pass.`,
     );
     return undefined;
   }
@@ -1227,7 +1225,11 @@ export function classificationForPayload(
 }
 
 /** The byte-source twin of {@link loadNativeMeshBodies}: null means fall back. */
-async function loadNativeMeshBytes(buffer: Uint8Array, classify: boolean): Promise<DecodedMesh | null> {
+async function loadNativeMeshBytes(
+  buffer: Uint8Array,
+  classify: boolean,
+  refine: boolean,
+): Promise<DecodedMesh | null> {
   if (!isTauriRuntime()) return null;
   try {
     // The phase nobody else can see, and the one a scene of print-sized models
@@ -1238,7 +1240,7 @@ async function loadNativeMeshBytes(buffer: Uint8Array, classify: boolean): Promi
     // 3 ms of latency — so the interesting half of this number is the native side.
     // Logged to the file as well: it is what the import is argued with.
     const requested = performance.now();
-    const payload = await loadMeshBytes(buffer, classify);
+    const payload = await loadMeshBytes(buffer, classify, refine);
     const received = performance.now();
     const decoded = await decodeDfmx(payload);
     const timing =
@@ -1276,12 +1278,16 @@ export async function loadMeshGeometryFromRange(
     compressedSize: range.compressedSize,
     compression: range.compression,
     classify: wantsLoaderClassification(options),
+    refine: options._refine !== false,
   });
   const decoded = await decodeDfmx(payload);
-  return processGeometry(mergeBodyGeometries(decoded.bodies), {
+  const merged = mergeBodyGeometries(decoded.bodies);
+  // Before prep, while `merged` is still the loader's soup: a classify or repair pass
+  // below replaces the position attribute, and the token has to go stale with it.
+  if (decoded.meshToken) rememberLoadedMeshMesh(merged, decoded.meshToken);
+  return processGeometry(merged, {
     ...options,
     _skipComputeNormals: true,
-    ...(decoded.meshToken ? { _meshToken: decoded.meshToken } : {}),
     bakedClassification: classificationForPayload(
       decoded.report,
       options.bakedClassification,
@@ -1377,7 +1383,11 @@ export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: Pro
   // classifies the bytes, where the renderer path parses in JS and then stages the
   // mesh back for the classifier. A VOXL model or a file out of a zip arrives as
   // bytes, so it never has a path for `load_mesh_file` to use.
-  const decoded = await loadNativeMeshBytes(buffer, wantsLoaderClassification(options));
+  const decoded = await loadNativeMeshBytes(
+    buffer,
+    wantsLoaderClassification(options),
+    options._refine !== false,
+  );
   if (decoded) {
     return processGeometry(mergeBodyGeometries(decoded.bodies), {
       ...options,
@@ -1408,7 +1418,17 @@ export async function loadStlGeometryFromBuffer(buffer: Uint8Array, options: Pro
     }
   }
 
-  return processGeometry(geometry, refined ? { ...options, _skipComputeNormals: true } : options);
+  // No native decode here, so nothing produced a report to check the stored one
+  // against — check it against what three parsed: the same rule the native paths
+  // apply, because a boundary that does not address these triangles would slice them
+  // at the wrong index. Dropping it just means the classify pass runs.
+  const position = geometry.getAttribute('position');
+  const triangles = Math.floor((geometry.getIndex()?.count ?? position?.count ?? 0) / 3);
+  return processGeometry(geometry, {
+    ...options,
+    ...(refined ? { _skipComputeNormals: true } : {}),
+    bakedClassification: classificationForPayload(undefined, options.bakedClassification, triangles),
+  });
 }
 
 function collectMergedGeometryFromObject3d(root: THREE.Object3D, sourceLabel: '3MF' | 'OBJ'): THREE.BufferGeometry {

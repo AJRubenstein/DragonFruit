@@ -17,6 +17,14 @@ import {
   readPlateOrdering,
   type PlateOrdering,
 } from '@/features/scene/plates/plateCascade';
+import {
+  computePlateFrames,
+  modelsOnPlate,
+  plateLocalRect,
+  resolveModelPlateId as plateIdForModel,
+  withPlateMembership,
+  type PlateFrame,
+} from '@/features/scene/plates/plateLayout';
 import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef, type VoxlMeshRange } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
 import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, resetStore, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
@@ -1058,19 +1066,7 @@ export type ScenePlate = {
 };
 
 /** Where a plate is in the world, and the build volume it holds there. */
-export type PlateFrame = {
-  id: string;
-  /** Position in the cascade, which is also its display order. */
-  index: number;
-  /** World offset from the first plate's frame. */
-  dxMm: number;
-  dyMm: number;
-  /** The build volume in world coordinates. */
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-};
+export type { PlateFrame };
 
 export interface LoadedModel {
   id: string;
@@ -1526,27 +1522,26 @@ export function useSceneCollectionManager(options?: {
   const platesRef = useRef<ScenePlate[]>(plates);
   platesRef.current = plates;
   /**
-   * The plate resolver, in a ref because the guards and transform writers are
-   * declared above it and must read the live one rather than a stale closure.
-   * Until it is assigned, a model keeps whatever membership it already had.
+   * The plate frames, in a ref because the guards and transform writers are
+   * declared above them and must read the live ones rather than a stale closure.
+   * The rules that read them are plateLayout's; until the frames are computed, a
+   * model keeps whatever membership it already had.
    */
-  const resolveModelPlateIdRef = useRef<(model: LoadedModel) => string>(
-    (model) => model.plateId ?? '',
-  );
+  const plateFramesRef = useRef<readonly PlateFrame[]>([]);
   /**
    * The plate a model stands on. A model with no membership is on the scene's
    * first plate, which is what a scene written before plates meant by it.
    */
   const modelPlateId = useCallback(
-    (model: LoadedModel) => resolveModelPlateIdRef.current(model),
+    (model: LoadedModel) => plateIdForModel(model, plateFramesRef.current),
     [],
   );
   /** Whether the plate a model stands on refuses edits. */
   const isModelPlateLocked = useCallback((model: LoadedModel) => {
     const locked = lockedPlateIdsRef.current;
     if (locked.length === 0) return false;
-    return locked.includes(resolveModelPlateIdRef.current(model));
-  }, []);
+    return locked.includes(modelPlateId(model));
+  }, [modelPlateId]);
   /** Whether the plate new work would land on refuses edits. */
   const isActivePlateLocked = useCallback(
     () => lockedPlateIdsRef.current.includes(activePlateIdRef.current),
@@ -2010,8 +2005,7 @@ export function useSceneCollectionManager(options?: {
    * every caller.
    */
   const defaultImportCenterXY = useMemo(() => {
-    const localX = view3dSettings.originMode === 'front_left' ? view3dSettings.widthMm * 0.5 : 0;
-    const localY = view3dSettings.originMode === 'front_left' ? view3dSettings.depthMm * 0.5 : 0;
+    const { centerX: localX, centerY: localY } = plateLocalRect(view3dSettings);
     const index = Math.max(0, plates.findIndex((plate) => plate.id === activePlateId));
     const { dxMm, dyMm } = plateCascadeOffsetMm(index, {
       widthMm: view3dSettings.widthMm,
@@ -2040,8 +2034,9 @@ export function useSceneCollectionManager(options?: {
       widthMm: view3dSettings.widthMm,
       depthMm: view3dSettings.depthMm,
     }, plates.length, plateOrdering);
-    const minX = (view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5) + dxMm;
-    const minY = (view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5) + dyMm;
+    const local = plateLocalRect(view3dSettings);
+    const minX = local.minX + dxMm;
+    const minY = local.minY + dyMm;
     return {
       minX,
       maxX: minX + view3dSettings.widthMm,
@@ -2770,8 +2765,7 @@ export function useSceneCollectionManager(options?: {
     ): void => {
       if (!assignedCenter) return;
 
-      const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5;
-      const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5;
+      const { minX: localMinX, minY: localMinY } = plateLocalRect(view3dSettings);
       const insideAnyBed = platesRef.current.some((plate) => {
         const { dxMm, dyMm } = plateOffsetForRef.current(plate.id);
         const minX = localMinX + dxMm;
@@ -2793,8 +2787,7 @@ export function useSceneCollectionManager(options?: {
       if (!plate) return;
 
       const { dxMm, dyMm } = reserved.offsets.get(plate.id) ?? { dxMm: 0, dyMm: 0 };
-      const localCenterX = view3dSettings.originMode === 'front_left' ? view3dSettings.widthMm * 0.5 : 0;
-      const localCenterY = view3dSettings.originMode === 'front_left' ? view3dSettings.depthMm * 0.5 : 0;
+      const { centerX: localCenterX, centerY: localCenterY } = plateLocalRect(view3dSettings);
       model.transform.position.set(localCenterX + dxMm, localCenterY + dyMm, model.transform.position.z);
       model.plateId = plate.id;
     };
@@ -3082,7 +3075,7 @@ export function useSceneCollectionManager(options?: {
     // place for a side effect, and the active plate is a second piece of state.
     const current = modelsRef.current.find((m) => m.id === id);
     if (current) {
-      const plateId = resolveModelPlateIdRef.current({ ...current, transform });
+      const plateId = plateIdForModel({ ...current, transform }, plateFramesRef.current);
       if (plateId && plateId !== current.plateId && followLandedPlateRef.current) {
         setActivePlateId((active) => (active === plateId ? active : plateId));
       }
@@ -3090,10 +3083,8 @@ export function useSceneCollectionManager(options?: {
 
     setModels((prev) => prev.map((m) => {
       if (m.id !== id) return m;
-      const moved = { ...m, transform };
       // Membership follows the model: it stands on whichever plate it now does.
-      const plateId = resolveModelPlateIdRef.current(moved);
-      return plateId ? { ...moved, plateId } : moved;
+      return withPlateMembership({ ...m, transform }, plateFramesRef.current);
     }));
   }, []);
 
@@ -3207,7 +3198,7 @@ export function useSceneCollectionManager(options?: {
     for (const model of modelsRef.current) {
       const nextTransform = updateMap.get(model.id);
       if (!nextTransform) continue;
-      const plateId = resolveModelPlateIdRef.current({ ...model, transform: nextTransform });
+      const plateId = plateIdForModel({ ...model, transform: nextTransform }, plateFramesRef.current);
       if (plateId) landedPlateIds.add(plateId);
     }
     // A drag that lands on another bed makes that bed the one you are working on,
@@ -3221,10 +3212,8 @@ export function useSceneCollectionManager(options?: {
     setModels(prev => prev.map(m => {
       const nextTransform = updateMap.get(m.id);
       if (!nextTransform) return m;
-      const moved = { ...m, transform: nextTransform };
       // Membership follows the model: it stands on whichever plate it now does.
-      const plateId = options?.landedPlateId ?? resolveModelPlateIdRef.current(moved);
-      return plateId ? { ...moved, plateId } : moved;
+      return withPlateMembership({ ...m, transform: nextTransform }, plateFramesRef.current, options?.landedPlateId);
     }));
 
     if (followedPlateId && activePlateIdRef.current !== followedPlateId) {
@@ -3486,11 +3475,9 @@ export function useSceneCollectionManager(options?: {
     const nextModels = currentModels.map((m) => {
       const nextTransform = updateMap.get(m.id);
       if (!nextTransform) return m;
-      const moved = { ...m, transform: nextTransform };
       // Membership follows the model, folded into the same update so a drag does
       // not cost a second render.
-      const plateId = resolveModelPlateIdRef.current(moved);
-      return plateId ? { ...moved, plateId } : moved;
+      return withPlateMembership({ ...m, transform: nextTransform }, plateFramesRef.current);
     });
 
     // Follow the moved set when it lands wholly on one plate, which is a drag of one or a
@@ -5101,18 +5088,6 @@ export function useSceneCollectionManager(options?: {
       return !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
     };
 
-    const footprintFor = (size: THREE.Vector3, transform: ModelTransform) => {
-      const baseW = Math.max(2, Math.abs(size.x * transform.scale.x));
-      const baseD = Math.max(2, Math.abs(size.y * transform.scale.y));
-      const rz = transform.rotation.z;
-      const c = Math.abs(Math.cos(rz));
-      const s = Math.abs(Math.sin(rz));
-      return {
-        width: (baseW * c) + (baseD * s),
-        depth: (baseW * s) + (baseD * c),
-      };
-    };
-
     const supportRectForPayload = (payload: SupportClipboardPayload | null | undefined): Rect2D | null => {
       if (!payload) return null;
 
@@ -5214,11 +5189,13 @@ export function useSceneCollectionManager(options?: {
 
     const buildPlacementOffsets = (
       center: { x: number; y: number },
-      meshSize: THREE.Vector3,
+      geometry: Pick<GeometryWithBounds, 'geometry' | 'center'>,
       transform: ModelTransform,
       supportPayload: SupportClipboardPayload | null | undefined,
     ): PlacementOffsets => {
-      const meshFootprint = footprintFor(meshSize, transform);
+      // The footprint every other placement uses: projected through the whole rotation,
+      // so a model tipped on X or Y is not packed by its unrotated size.
+      const meshFootprint = footprintForTransform(geometry, transform);
       const meshRect: Rect2D = {
         minX: center.x - (meshFootprint.width * 0.5),
         maxX: center.x + (meshFootprint.width * 0.5),
@@ -5248,7 +5225,7 @@ export function useSceneCollectionManager(options?: {
 
     const entryPlacementOffsets = entries.map((entry) => buildPlacementOffsets(
       { x: entry.transform.position.x, y: entry.transform.position.y },
-      entry.geometry.size,
+      entry.geometry,
       entry.transform,
       entry.supportClipboard,
     ));
@@ -5261,7 +5238,7 @@ export function useSceneCollectionManager(options?: {
       .map((model) => {
         const meshPlacement = buildPlacementOffsets(
           { x: model.transform.position.x, y: model.transform.position.y },
-          model.geometry.size,
+          model.geometry,
           model.transform,
           null,
         );
@@ -5420,14 +5397,8 @@ export function useSceneCollectionManager(options?: {
     });
     pendingPlacements = activePlacements.unplaced;
 
-    const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5;
-    const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5;
-    const localPlateRect: Rect2D = {
-      minX: localMinX,
-      maxX: localMinX + view3dSettings.widthMm,
-      minY: localMinY,
-      maxY: localMinY + view3dSettings.depthMm,
-    };
+    const localPlateRect: Rect2D = plateLocalRect(view3dSettings);
+    const { minX: localMinX, minY: localMinY } = localPlateRect;
 
     // The beds the scene already has are filled next, in plate order: the run that spilled
     // onto plate 2 leaves room on it, and a paste that went straight to a new bed would add
@@ -5612,7 +5583,7 @@ export function useSceneCollectionManager(options?: {
     }
 
     return createdIds;
-  }, [_, activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
+  }, [_, activeModelId, cloneGeometryWithBounds, defaultImportCenterXY.x, defaultImportCenterXY.y, footprintForTransform, modelClipboard, models, pushSceneSnapshotHistory, selectedModelIds, view3dSettings.depthMm, view3dSettings.originMode, view3dSettings.widthMm]);
 
   const duplicateModelWithTransforms = useCallback((
     sourceId: string,
@@ -6063,8 +6034,7 @@ export function useSceneCollectionManager(options?: {
 
         const bedWidth = view3dSettings.widthMm;
         const bedDepth = view3dSettings.depthMm;
-        const localMinX = view3dSettings.originMode === 'front_left' ? 0 : -bedWidth * 0.5;
-        const localMinY = view3dSettings.originMode === 'front_left' ? 0 : -bedDepth * 0.5;
+        const { minX: localMinX, minY: localMinY } = plateLocalRect(view3dSettings);
 
         /** A model's footprint at a given Z, grown to the raft standing beside it. */
         const footprintAt = (model: LoadedModel, rotationZ: number, reach: { x: number; y: number }) => {
@@ -6402,11 +6372,22 @@ export function useSceneCollectionManager(options?: {
       // one model's serial phase run during another's. The hash is computed here once
       // per model and reused by the loop, so neither the content hash nor the
       // integrity check is paid twice.
+      //
+      // The `classification` a `MODL` entry carries is **not** used. It is a boundary
+      // into the soup the file stores, and a file written before the mesh chunk's
+      // signature could see a reordered soup pairs it with a different order: the
+      // boundary then cuts a slab out of the model and paints it as support. A count
+      // check cannot tell those apart, so the loader classifies the payload it just
+      // built and the sections come from that answer. Cost: one classify per model on
+      // load — the same pass a fresh STL import pays, done natively inside the loader
+      // rather than as a second round trip.
       const buildOptionsFor = (model: (typeof document.models)[number]): ProcessGeometryOptions => ({
-        ...(autoRepairScenes || !model.classification ? {} : { bakedClassification: model.classification }),
         nativeProcessingMode: autoRepairScenes ? 'auto' : 'none',
         assumeSupportGeometry: model.isSupportGeometry,
         skipClassification: model.isSupportGeometry,
+        // The payload is the scene's own mesh: refining it again changes the count and
+        // order every boundary indexes, and grows it on each round trip.
+        _refine: false,
       });
       const hashByModelId = new Map<string, string>();
       const uniqueBuilds = new Map<
@@ -6690,8 +6671,7 @@ export function useSceneCollectionManager(options?: {
       // on: reading the active one alone called every model on any other bed out of bounds,
       // which in a multi-plate scene is the whole point of the file. A file that names no
       // plates of its own leaves the beds already here in place, so those are the ones.
-      const localBedMinX = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.widthMm * 0.5;
-      const localBedMinY = view3dSettings.originMode === 'front_left' ? 0 : -view3dSettings.depthMm * 0.5;
+      const { minX: localBedMinX, minY: localBedMinY } = plateLocalRect(view3dSettings);
       const bedRectAt = (index: number, count: number): Rect2D => {
         const { dxMm, dyMm } = plateCascadeOffsetMm(index, {
           widthMm: view3dSettings.widthMm,
@@ -7656,8 +7636,7 @@ export function useSceneCollectionManager(options?: {
     const footprint = { widthMm, depthMm };
     const was = options?.laidOut ?? { widthMm, depthMm, originMode };
     const nowOrdering = plateOrderingRef.current;
-    const wasMinX = was.originMode === 'front_left' ? 0 : -was.widthMm * 0.5;
-    const wasMinY = was.originMode === 'front_left' ? 0 : -was.depthMm * 0.5;
+    const { minX: wasMinX, minY: wasMinY } = plateLocalRect(was);
 
     const shifts = new Map<string, { dxMm: number; dyMm: number }>();
     const frames = before.map((plate, index) => {
@@ -7960,48 +7939,16 @@ export function useSceneCollectionManager(options?: {
    */
   const plateFrames = useMemo<PlateFrame[]>(() => {
     const { widthMm, depthMm, originMode } = view3dSettings;
-    const localMinX = originMode === 'front_left' ? 0 : -widthMm * 0.5;
-    const localMinY = originMode === 'front_left' ? 0 : -depthMm * 0.5;
-    const footprint = { widthMm, depthMm };
-
-    return plates.map((plate, index) => {
-      const { dxMm, dyMm } = plateCascadeOffsetMm(index, footprint, plates.length, plateOrdering);
-      return {
-        id: plate.id,
-        index,
-        dxMm,
-        dyMm,
-        minX: localMinX + dxMm,
-        minY: localMinY + dyMm,
-        maxX: localMinX + dxMm + widthMm,
-        maxY: localMinY + dyMm + depthMm,
-      };
-    });
+    return computePlateFrames({ plates, footprint: { widthMm, depthMm, originMode }, ordering: plateOrdering });
   }, [plateOrdering, plates, view3dSettings]);
 
-  /**
-   * The plate a model stands on.
-   *
-   * Where it stands is what counts: every plate is a valid build volume, and a
-   * model dragged from one bed to the next belongs to the bed it landed on. A
-   * stored membership is only a hint, and it goes stale the moment a model is
-   * moved, which is how a model sitting on plate two came to be reported as
-   * outside the volume for not being on plate one.
-   *
-   * The hint is the fallback for a model that stands outside every plate, where
-   * position cannot answer; then the first plate.
-   */
-  const resolveModelPlateId = useCallback((model: LoadedModel): string => {
-    const x = model.transform.position.x;
-    const y = model.transform.position.y;
-    const containing = plateFrames.find(
-      (frame) => x >= frame.minX && x <= frame.maxX && y >= frame.minY && y <= frame.maxY,
-    );
-    if (containing) return containing.id;
-    if (model.plateId && plateFrames.some((frame) => frame.id === model.plateId)) return model.plateId;
-    return plateFrames[0]?.id ?? '';
-  }, [plateFrames]);
-  resolveModelPlateIdRef.current = resolveModelPlateId;
+  plateFramesRef.current = plateFrames;
+
+  /** The plate a model stands on; the rule is `resolveModelPlateId` in plateLayout. */
+  const resolveModelPlateId = useCallback(
+    (model: LoadedModel): string => plateIdForModel(model, plateFrames),
+    [plateFrames],
+  );
 
   /** The frame of the plate a model stands on. */
   const modelPlateFrame = useCallback((model: LoadedModel): PlateFrame | undefined => {
@@ -8025,9 +7972,7 @@ export function useSceneCollectionManager(options?: {
       return false;
     }
 
-    const doomed = modelsRef.current.filter(
-      (model) => resolveModelPlateIdRef.current(model) === plateId,
-    );
+    const doomed = modelsOnPlate(modelsRef.current, plateId, plateFramesRef.current);
     const nextActivePlateId = activePlateIdRef.current === plateId ? remaining[0].id : activePlateIdRef.current;
     // The supports too: the delete takes the doomed models' supports, and the shift moves the
     // others', so an undo without them would leave both where the delete put them.
@@ -8096,7 +8041,7 @@ export function useSceneCollectionManager(options?: {
 
     const doomed = new Set(idsInput);
     const survivorStandsOnExtraPlate = modelsRef.current.some(
-      (model) => !doomed.has(model.id) && resolveModelPlateIdRef.current(model) !== firstPlateId,
+      (model) => !doomed.has(model.id) && modelPlateId(model) !== firstPlateId,
     );
     if (survivorStandsOnExtraPlate) {
       await deleteModels(idsInput);
@@ -8127,7 +8072,7 @@ export function useSceneCollectionManager(options?: {
       includeSupportState: true,
     });
     pushSceneSnapshotHistory(before, after, DELETE_MODELS_AND_PLATES_LABEL);
-  }, [deleteModels, pushSceneSnapshotHistory, waitForUiYield]);
+  }, [deleteModels, modelPlateId, pushSceneSnapshotHistory, waitForUiYield]);
 
   /**
    * Move models to another plate, carrying them across the cascade so they keep
@@ -8146,7 +8091,7 @@ export function useSceneCollectionManager(options?: {
 
     for (const model of modelsRef.current) {
       if (!wanted.has(model.id)) continue;
-      const sourcePlateId = resolveModelPlateIdRef.current(model);
+      const sourcePlateId = modelPlateId(model);
       const sourceIndex = Math.max(0, plateList.findIndex((plate) => plate.id === sourcePlateId));
       const source = plateCascadeOffsetMm(sourceIndex, footprint, plateList.length, ordering);
       const dx = target.dxMm - source.dxMm;
@@ -8163,7 +8108,7 @@ export function useSceneCollectionManager(options?: {
     }
 
     setModels((prev) => prev.map((model) => (wanted.has(model.id) ? { ...model, plateId } : model)));
-  }, [updateModelTransform, view3dSettings.widthMm, view3dSettings.depthMm]);
+  }, [modelPlateId, updateModelTransform, view3dSettings.widthMm, view3dSettings.depthMm]);
 
   return {
     models,

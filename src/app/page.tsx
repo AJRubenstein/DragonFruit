@@ -249,6 +249,7 @@ import {
 } from '@/features/scene/arrange/highPrecisionArrange';
 import { computeHighPrecisionArrangeResultWorker } from '@/features/scene/arrange/highPrecisionArrangeWorkerClient';
 import { plateCascadeOffsetMm } from '@/features/scene/plates/plateCascade';
+import { modelsOnPlate } from '@/features/scene/plates/plateLayout';
 
 // Domain Features
 import { useSceneCollectionManager, getSceneSnapshotRegistryBytes } from '@/features/scene/useSceneCollectionManager';
@@ -826,11 +827,9 @@ export default function Home() {
    */
   const activePlateModelIds = React.useMemo(
     () => new Set(
-      scene.models
-        .filter((model) => scene.resolveModelPlateId(model) === scene.activePlateId)
-        .map((model) => model.id),
+      modelsOnPlate(scene.models, scene.activePlateId, scene.plateFrames).map((model) => model.id),
     ),
-    [scene.activePlateId, scene.models, scene.resolveModelPlateId],
+    [scene.activePlateId, scene.models, scene.plateFrames],
   );
 
   // Warn when an imported mesh fails the manifold_csg validity check — the same
@@ -2920,12 +2919,10 @@ export default function Home() {
    */
   const printingScrubPreviewModels = React.useMemo(() => {
     const activeFrame = scene.plateFrames.find((frame) => frame.id === scene.activePlateId);
-    const modelsOnPlate = scene.models.filter(
-      (model) => scene.resolveModelPlateId(model) === scene.activePlateId,
-    );
-    if (!activeFrame || (activeFrame.dxMm === 0 && activeFrame.dyMm === 0)) return modelsOnPlate;
+    const onPlate = modelsOnPlate(scene.models, scene.activePlateId, scene.plateFrames);
+    if (!activeFrame || (activeFrame.dxMm === 0 && activeFrame.dyMm === 0)) return onPlate;
 
-    return modelsOnPlate.map((model) => ({
+    return onPlate.map((model) => ({
       ...model,
       transform: {
         ...model.transform,
@@ -2934,7 +2931,7 @@ export default function Home() {
         ),
       },
     }));
-  }, [scene.activePlateId, scene.models, scene.plateFrames, scene.resolveModelPlateId]);
+  }, [scene.activePlateId, scene.models, scene.plateFrames]);
 
   /**
    * The scene shot a plate's file carries, framed on that plate.
@@ -10862,7 +10859,7 @@ export default function Home() {
               // An empty bed has nothing to lose, so it goes straight away; the
               // confirmation is for the models a delete takes with it.
               if (intent === 'delete'
-                && !scene.models.some((model) => scene.resolveModelPlateId(model) === plateId)) {
+                && modelsOnPlate(scene.models, plateId, scene.plateFrames).length === 0) {
                 scene.removePlate(plateId);
                 return;
               }
@@ -11700,9 +11697,7 @@ export default function Home() {
                 // The plate, not the scene: with more than one bed, the bin empties
                 // the one you are working on and leaves the others alone.
                 void scene.deleteModels(
-                  scene.models
-                    .filter((model) => scene.resolveModelPlateId(model) === scene.activePlateId)
-                    .map((model) => model.id),
+                  modelsOnPlate(scene.models, scene.activePlateId, scene.plateFrames).map((model) => model.id),
                 );
               }}
             >

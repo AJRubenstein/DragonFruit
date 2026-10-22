@@ -196,7 +196,8 @@ jobs:
         run: cargo build --release --locked --manifest-path rust/dragonfruit-cli/Cargo.toml
 
       # The TS CLI end to end, started the way its usage line says: a cube
-      # through create, add-model, place-on-platform and slice.
+      # through create, add-model, place-on-platform and slice, and a cube on
+      # each of two plates sliced one plate at a time.
       - name: Slice a scene with the TS CLI
         run: npm run check:scene-slice
 

@@ -41,7 +41,7 @@ import {
     GridSettingsCard,
     SidebarPanelTabs,
 } from './components';
-import { Card, CardHeader, IconButton } from '@/components/atoms';
+import { Card, CardHeader, IconButton, BlockingOverlay } from '@/components/atoms';
 import { PanelCollapseToggle } from '@/components/atoms/PanelCollapseToggle';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
@@ -76,6 +76,7 @@ import type { SidebarPanel } from './sidebarPanels';
 import { resetSupportSettingsScrollForTabChange } from './supportSidebarScroll';
 import { Trans } from '@lingui/react/macro';
 import { adjustSupportSettingsLabel } from '@/supports/history/supportHistoryLabels';
+import { useEscapeToClose } from '@/hotkeys/useEscapeToClose';
 
 const INPUT_CLASS = 'ui-input h-8 w-full px-2.5 text-xs sm:text-sm text-center no-spinners !bg-[var(--surface-0)]';
 const SECTION_CARD_STYLE: React.CSSProperties = {
@@ -179,12 +180,14 @@ export function SupportSidebar({ activeModelId = null }: { activeModelId?: strin
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
     const [presetSaveTrigger, setPresetSaveTrigger] = useState(0);
     const [autoBraceStatus, setAutoBraceStatus] = useState<{ kind: 'success' | 'warning' | 'error'; message: string } | null>(null);
+    const [clearingBraces, setClearingBraces] = useState(false);
     const [defaultsAnimating, setDefaultsAnimating] = useState(false);
     const [expanded, setExpanded] = React.useState(true);
     const [devToolsOpen, setDevToolsOpen] = useState(false);
     const saveStatusTimeoutRef = React.useRef<number | null>(null);
     const autoBraceStatusTimeoutRef = React.useRef<number | null>(null);
     const autoBracingHotkeyWasActiveRef = React.useRef(false);
+    const clearingBracesRef = React.useRef(false);
     const isAdaptiveConeAngle = (settings.tip.coneAngleMode ?? 'normal') === 'adaptive';
     const sidebarPanelState = React.useSyncExternalStore(subscribeToSidebarPanel, getSidebarPanelSnapshot, getSidebarPanelSnapshot);
     const activePanel = sidebarPanelState.panel;

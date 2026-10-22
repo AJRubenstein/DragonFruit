@@ -269,12 +269,27 @@ export function setBakedOcclusionIntensity(intensity: number): void {
 type LoadedMeshToken = { token: number; positions: ArrayLike<number> };
 const loadedMeshTokens = new WeakMap<THREE.BufferGeometry, LoadedMeshToken>();
 
-/** Record that `geometry` is `token`'s mesh, as the loader left it. */
+/**
+ * Record that `geometry` still holds `token`'s mesh, as the loader produced it.
+ *
+ * Call this in the loader, immediately after the soup is assembled and *before* any
+ * prep pass runs. The token names a mesh in the Rust registry, in the loader's triangle
+ * order; a classify, repair or refine pass replaces the position attribute with the
+ * reordered soup, so recording afterwards would sign off on the new order and the token
+ * bake would index the loader's order into it — a field that lands one triangle over,
+ * which reads as speckle. Recorded here, the array the guard compares is the loader's
+ * own and the reorder invalidates the token by itself.
+ *
+ * A translate (the centering in prep) mutates the array in place and correctly keeps
+ * the token: it moves the mesh the registry holds by the same amount.
+ */
 export function rememberLoadedMeshMesh(
   geometry: THREE.BufferGeometry,
-  entry: LoadedMeshToken,
+  token: number,
 ): void {
-  loadedMeshTokens.set(geometry, entry);
+  const position = geometry.getAttribute('position');
+  if (!position) return;
+  loadedMeshTokens.set(geometry, { token, positions: position.array });
 }
 
 /**

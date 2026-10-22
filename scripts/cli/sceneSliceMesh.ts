@@ -53,6 +53,8 @@ export type SceneSliceMeshOptions = {
    */
   raftMode?: RaftBottomMode;
   supportTipShrinkPercent?: number;
+  /** The sliced plate's cascade offset; the mesh is shifted back by it, as the app does. */
+  plateOffsetMm?: { dxMm: number; dyMm: number };
 };
 
 /** Resolves the raft config from the shorthand mode and/or full settings.
@@ -117,6 +119,7 @@ export async function buildSceneSliceMesh(options: SceneSliceMeshOptions): Promi
       materialProfile: options.materialProfile,
       filenameBase: 'scene-slice',
       supportTipShrinkPercent: options.supportTipShrinkPercent ?? 0,
+      plateOffsetMm: options.plateOffsetMm,
       outputMode: 'return',
     });
   } finally {
