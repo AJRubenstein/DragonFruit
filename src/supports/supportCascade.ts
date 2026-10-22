@@ -237,58 +237,58 @@ export function collectCascade(state: CascadeState, seed: EntityRef[]): Set<stri
 export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollectionKey> {
     const collections = new Set<SupportCollectionKey>();
     const seed = getSupportTypeDescriptor(typeId);
-    const visited = new Set<SupportTypeId>([seed.id]);
+    const expanded = new Set<SupportTypeId>();
 
-    /** Types a span host mounts: kickstands ride the span between two knots. */
-    const includeSpanHosted = (descriptor: SupportTypeDescriptor) => {
-        if (!descriptor.hostsKickstand || !descriptor.segmentSelectionPrefix) return;
-        for (const hosted of SUPPORT_TYPES) {
-            const hostedBySegment = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
-                && edge.to === 'segment');
-            if (hostedBySegment) include(hosted);
-        }
-    };
+    const hostedBy = (descriptor: SupportTypeDescriptor, target: 'segment' | 'knots') =>
+        descriptor.edges.some((edge) => edge.ownership === 'hostedBy' && edge.to === target);
 
-    /** An entity's owned primitives, and whatever rides a span it offers. */
-    const includeOwned = (descriptor: SupportTypeDescriptor) => {
+    /**
+     * Everything `descriptor` carries, recorded in `collections`.
+     *
+     * Walked once per type, but the seed's own collection is recorded only when
+     * something reaches it again: a removal reports the seed under `self`.
+     */
+    const expand = (descriptor: SupportTypeDescriptor) => {
+        if (expanded.has(descriptor.id)) return;
+        expanded.add(descriptor.id);
+
         for (const edge of descriptor.edges) {
             if (edge.ownership !== 'owns' || edge.to === 'segment') continue;
             collections.add(edge.to);
             const owner = SUPPORT_TYPES.find((candidate) => candidate.location.key === edge.to);
-            if (!owner) continue;
-            include(owner);
+            if (owner) reach(owner);
+        }
+
+        // A shaft carries knots, and so does a cone or span this type offers as
+        // a knot host. Whatever rides one of those comes with it: a type
+        // addressing the host as a segment, and anything hosted on its knots.
+        const offersKnots = descriptor.hasSegments || descriptor.knotHostPrefix !== undefined;
+        const offersSegment = descriptor.hasSegments || !!descriptor.segmentSelectionPrefix;
+        if (offersKnots) collections.add('knots');
+
+        for (const hosted of SUPPORT_TYPES) {
+            if ((offersSegment && hostedBy(hosted, 'segment'))
+                || (offersKnots && hostedBy(hosted, 'knots'))) {
+                reach(hosted);
+            }
         }
     };
 
-    const include = (descriptor: SupportTypeDescriptor) => {
-        if (visited.has(descriptor.id)) return;
-        visited.add(descriptor.id);
+    /** A type the cascade takes: its collection is recorded, then it expands. */
+    const reach = (descriptor: SupportTypeDescriptor) => {
         collections.add(descriptor.location.key);
-        includeOwned(descriptor);
-        includeSpanHosted(descriptor);
+        expand(descriptor);
     };
 
-    // The seed's own primitives, then what its shaft offers directly. A span
-    // an included type offers is walked by `includeSpanHosted`, but not the
-    // shafts of types reached that way.
-    includeOwned(seed);
-
-    const hostsSpans = seed.hasSegments
-        || (!!seed.segmentSelectionPrefix && seed.hostsKickstand);
-    const hostsKnots = seed.hasSegments || seed.knotHostPrefix !== undefined;
-    if (hostsKnots) collections.add('knots');
-
-    for (const hosted of SUPPORT_TYPES) {
-        const hostedBySegment = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
-            && edge.to === 'segment');
-        const hostedByKnot = hosted.edges.some((edge) => edge.ownership === 'hostedBy'
-            && edge.to === 'knots');
-        if ((hostsSpans && hostedBySegment)
-            || (seed.hasSegments && hostedByKnot)
-            || (seed.hostsBraceSnapCone && hosted.snapsToBraceCone)) {
-            include(hosted);
-        }
-    }
+    // The seed expands like any other type, so a type reaches its own kind
+    // whenever it hosts what it is: a branch hangs off a knot its own shaft
+    // carries, a leaf off a knot riding its own cone. `self` reports the seed
+    // itself, so its collection is listed only when reached that way.
+    const offersKnots = seed.hasSegments || seed.knotHostPrefix !== undefined;
+    const selfHosted = (offersKnots && hostedBy(seed, 'knots'))
+        || ((seed.hasSegments || !!seed.segmentSelectionPrefix) && hostedBy(seed, 'segment'));
+    expand(seed);
+    if (!selfHosted) collections.delete(seed.location.key);
 
     return collections;
 }

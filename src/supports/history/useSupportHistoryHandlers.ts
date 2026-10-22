@@ -107,7 +107,11 @@ function restoreRemoved(descriptor: SupportTypeDescriptor, payload: unknown): vo
 
   // Hosts first: a leaf cannot be re-added before the knot it hangs from.
   for (const [collection, field] of cascade) {
-    for (const name of Array.isArray(field) ? field : [field as string]) {
+    // A named slot carries the seed's own member; anything the cascade reached
+    // beyond it is recorded under the collection itself.
+    const slots = Array.isArray(field) ? [...field] : [field as string];
+    const names = slots.includes(collection) ? slots : [...slots, collection];
+    for (const name of names) {
       const value = fields[name];
       if (!value) continue;
       for (const entity of Array.isArray(value) ? value : [value]) {

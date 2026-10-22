@@ -213,10 +213,60 @@ function buildFixture(seedTypeId: SupportTypeId): { seedId: string; seedDescript
         addKickstand('dep-brace-start', knotHostId('brace', 'dep-brace'));
     } else if (seedTypeId === 'brace') {
         addKickstand(`${seedId}-start`, knotHostId('brace', seedId));
+        // A knot riding the span hosts supports of its own; the two named slots
+        // hold the brace's own knots, so this one has to travel separately.
+        addKnot(knot('dep-span-knot', knotHostId('brace', seedId), 7, 0.5, 0.9) as never);
+        addSupportEntity('branch', {
+            id: 'dep-span-branch', modelId: MODEL, parentKnotId: 'dep-span-knot',
+            segments: [segment('dep-span-branch-seg', 0, 3)],
+            contactCone: cone('dep-span-branch-cone', 8),
+        });
+        addSupportEntity('leaf', {
+            id: 'dep-span-leaf', modelId: MODEL, parentKnotId: 'dep-span-knot',
+            contactCone: cone('dep-span-leaf-cone', 7.5),
+        });
     }
 
     return { seedId, seedDescriptor };
 }
+
+test('a named knot slot holds the seed own knot, and the rest travel with it', () => {
+    // A leaf declares one `knot` slot, so a cascade reaching a second knot --
+    // one riding the leaf's own cone -- has nowhere to go but the collection.
+    resetStore();
+    try {
+        addRoot(root('root-base'));
+        addSupportEntity('trunk', {
+            id: 'base', modelId: MODEL, rootId: 'root-base',
+            segments: [segment('base-seg', 0, 10)], contactCone: cone('base-cone', 12),
+        });
+        addKnot(knot('parent-knot', 'base-seg', 3) as never);
+        addSupportEntity('leaf', {
+            id: 'leaf-1', modelId: MODEL, parentKnotId: 'parent-knot',
+            contactCone: cone('leaf-1-cone', 6),
+        });
+        addKnot(knot('cone-knot', knotHostId('leaf', 'leaf-1'), 5.8, 0.8, 0.8) as never);
+        addSupportEntity('branch', {
+            id: 'cone-branch', modelId: MODEL, parentKnotId: 'cone-knot',
+            segments: [segment('cone-branch-seg', 0, 3)], contactCone: cone('cone-branch-cone', 7),
+        });
+
+        const removed = removeSupportEntityWithPayload('leaf', 'leaf-1');
+        assert.ok(removed, 'the leaf was removed');
+        assert.equal(
+            (removed.payload.knot as { id: string }).id,
+            'parent-knot',
+            'the declared slot holds the knot the leaf hung from',
+        );
+        assert.deepEqual(
+            (removed.payload.knots as { id: string }[]).map((entry) => entry.id),
+            ['cone-knot'],
+            'the knot riding the cone travels under the collection',
+        );
+    } finally {
+        resetStore();
+    }
+});
 
 test('a brace removal names each knot slot after the seed field it mirrors', () => {
     const { seedId } = buildFixture('brace');

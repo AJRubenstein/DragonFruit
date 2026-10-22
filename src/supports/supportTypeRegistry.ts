@@ -308,11 +308,6 @@ export interface SupportTypeDescriptor {
      */
     hostsBraceSnapCone?: boolean;
     /**
-     * Whether this type snaps an endpoint to a cone a `hostsBraceSnapCone`
-     * type offers, so removing that cone host takes this type with it.
-     */
-    snapsToBraceCone?: boolean;
-    /**
      * The measurement range this type serves, when the type is chosen
      * automatically rather than picked by the user.
      *
@@ -868,7 +863,6 @@ const SUPPORT_TYPE_DECLARATIONS: readonly Omit<SupportTypeDescriptor, 'historyAd
         shaftFallback: { stubLengthMm: 5, startFallsBackToSplitPoint: false },
         segmentSelectionPrefix: 'braceSegment:',
         knotHostPrefix: 'braceSegment:',
-        snapsToBraceCone: true,
         hasOrigin: false,
         hasPlacementPreview: true,
         claimsModelSurfaceGestures: false,
@@ -1123,10 +1117,10 @@ export function resolveKnotDiameter(
 export const SUPPORT_REMOVAL_SHAPES = {
     trunk: { self: 'trunk', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
     branch: { self: 'branch', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', knots: 'knots' } },
-    leaf: { self: 'leaf', cascade: { knots: 'knot', braces: 'braces', kickstands: 'kickstands', roots: 'roots' } },
+    leaf: { self: 'leaf', cascade: { knots: 'knot', branches: 'branches', braces: 'braces', kickstands: 'kickstands', leaves: 'leaves', roots: 'roots' } },
     twig: { self: 'twig', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
     stick: { self: 'stick', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
-    brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'], kickstands: 'kickstands', roots: 'roots' } },
+    brace: { self: 'brace', cascade: { knots: ['startKnot', 'endKnot'], branches: 'branches', braces: 'braces', leaves: 'leaves', kickstands: 'kickstands', roots: 'roots' } },
     stump: { self: 'stump', cascade: { roots: 'roots', branches: 'branches', braces: 'braces', kickstands: 'kickstands', knots: 'knots', leaves: 'leaves' } },
     kickstand: { self: 'kickstand', cascade: { roots: 'roots', knots: 'knots', braces: 'braces', leaves: 'leaves', branches: 'branches', kickstands: 'kickstands' } },
     // `satisfies` keeps the literal narrowing the result types read, while

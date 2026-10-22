@@ -237,20 +237,34 @@ function cascadePayload(
             .filter(Boolean)
             .map((member) => copy(member));
 
-        if (typeof field === 'string') {
-            result[field] = plural(field) ? entities : (entities[0] ?? null);
-        } else {
-            // A named slot mirrors the seed field it came from -- `startKnot`
-            // reads `startKnotId` -- so it holds what the seed pointed at, not
-            // whichever member the cascade happened to claim first.
-            const seedFields = entity as unknown as Record<string, unknown>;
-            const entityById = new Map(ids.map((id, index) => [id, entities[index]]));
-            field.forEach((slot, index) => {
-                const seedId = seedFields[`${slot}Id`];
-                const named = typeof seedId === 'string' ? entityById.get(seedId) : undefined;
-                result[slot] = named ?? entities[index] ?? null;
-            });
+        if (typeof field === 'string' && plural(field)) {
+            result[field] = entities;
+            continue;
         }
+
+        // A named slot mirrors the seed field it came from -- `startKnot` reads
+        // `startKnotId`, a leaf's `knot` reads `parentKnotId` -- so it holds
+        // what the seed pointed at, not whichever member the cascade claimed
+        // first. Anything reached past those slots travels under the
+        // collection, or it is deleted with nothing to restore it from.
+        const slots = typeof field === 'string' ? [field] : field;
+        const seedFields = entity as unknown as Record<string, unknown>;
+        const entityById = new Map(ids.map((id, index) => [id, entities[index]]));
+        // The declared `hostedBy` fields for this collection, for a slot whose
+        // name is not the seed field plus `Id` -- a leaf's `knot` reads
+        // `parentKnotId`.
+        const hostFields = getSupportTypeDescriptor(typeId).edges
+            .filter((edge) => edge.to === key && edge.ownership === 'hostedBy')
+            .map((edge) => edge.field);
+        const claimed = new Set<unknown>();
+        slots.forEach((slot, index) => {
+            const seedId = seedFields[`${slot}Id`] ?? seedFields[hostFields[index] ?? ''];
+            const named = typeof seedId === 'string' ? entityById.get(seedId) : undefined;
+            const member = named ?? entities[index] ?? null;
+            result[slot] = member;
+            if (member) claimed.add(member);
+        });
+        result[key] = entities.filter((member) => !claimed.has(member));
     }
     return result;
 }
