@@ -12,11 +12,8 @@ import type { SupportState } from '../types';
 
 /**
  * A removal's history entry, replayed end to end: every collection the cascade
- * drains must come back on undo, and go again on redo.
- *
- * The fixtures attach one instance of every support type that can depend on the
- * seed, so a declared shape that omits a collection deletes it without
- * recording it and the undo comparison fails.
+ * drains comes back on undo and goes again on redo. The fixture attaches one of
+ * every type that can depend on the seed, so an omitted collection fails here.
  */
 
 const MODEL = 'model-1';
@@ -230,9 +227,9 @@ function buildFixture(seedTypeId: SupportTypeId): { seedId: string; seedDescript
     return { seedId, seedDescriptor };
 }
 
-test('a named knot slot holds the seed own knot, and the rest travel with it', () => {
-    // A leaf declares one `knot` slot, so a cascade reaching a second knot --
-    // one riding the leaf's own cone -- has nowhere to go but the collection.
+test('a leaf records the knot it hung from, not one riding its cone', () => {
+    // The slot is singular, so a cascade reaching a second knot would take it;
+    // the slot reads the type's declared host field, the rest travel as a list.
     resetStore();
     try {
         addRoot(root('root-base'));
@@ -246,22 +243,13 @@ test('a named knot slot holds the seed own knot, and the rest travel with it', (
             contactCone: cone('leaf-1-cone', 6),
         });
         addKnot(knot('cone-knot', knotHostId('leaf', 'leaf-1'), 5.8, 0.8, 0.8) as never);
-        addSupportEntity('branch', {
-            id: 'cone-branch', modelId: MODEL, parentKnotId: 'cone-knot',
-            segments: [segment('cone-branch-seg', 0, 3)], contactCone: cone('cone-branch-cone', 7),
-        });
 
         const removed = removeSupportEntityWithPayload('leaf', 'leaf-1');
-        assert.ok(removed, 'the leaf was removed');
-        assert.equal(
-            (removed.payload.knot as { id: string }).id,
-            'parent-knot',
-            'the declared slot holds the knot the leaf hung from',
-        );
+        assert.ok(removed);
+        assert.equal((removed.payload.knot as { id: string }).id, 'parent-knot');
         assert.deepEqual(
             (removed.payload.knots as { id: string }[]).map((entry) => entry.id),
             ['cone-knot'],
-            'the knot riding the cone travels under the collection',
         );
     } finally {
         resetStore();

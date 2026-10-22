@@ -242,12 +242,7 @@ export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollect
     const hostedBy = (descriptor: SupportTypeDescriptor, target: 'segment' | 'knots') =>
         descriptor.edges.some((edge) => edge.ownership === 'hostedBy' && edge.to === target);
 
-    /**
-     * Everything `descriptor` carries, recorded in `collections`.
-     *
-     * Walked once per type, but the seed's own collection is recorded only when
-     * something reaches it again: a removal reports the seed under `self`.
-     */
+    /** Everything `descriptor` carries, recorded in `collections`, once per type. */
     const expand = (descriptor: SupportTypeDescriptor) => {
         if (expanded.has(descriptor.id)) return;
         expanded.add(descriptor.id);
@@ -280,10 +275,9 @@ export function cascadeCollectionsFor(typeId: SupportTypeId): Set<SupportCollect
         expand(descriptor);
     };
 
-    // The seed expands like any other type, so a type reaches its own kind
-    // whenever it hosts what it is: a branch hangs off a knot its own shaft
-    // carries, a leaf off a knot riding its own cone. `self` reports the seed
-    // itself, so its collection is listed only when reached that way.
+    // A type reaches its own kind when it hosts what it is -- a branch off a
+    // knot its own shaft carries. `self` reports the seed, so its collection
+    // is listed only when reached that way.
     const offersKnots = seed.hasSegments || seed.knotHostPrefix !== undefined;
     const selfHosted = (offersKnots && hostedBy(seed, 'knots'))
         || ((seed.hasSegments || !!seed.segmentSelectionPrefix) && hostedBy(seed, 'segment'));

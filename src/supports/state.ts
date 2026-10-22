@@ -242,17 +242,11 @@ function cascadePayload(
             continue;
         }
 
-        // A named slot mirrors the seed field it came from -- `startKnot` reads
-        // `startKnotId`, a leaf's `knot` reads `parentKnotId` -- so it holds
-        // what the seed pointed at, not whichever member the cascade claimed
-        // first. Anything reached past those slots travels under the
-        // collection, or it is deleted with nothing to restore it from.
+        // A named slot holds what the seed pointed at, read from `<slot>Id` or
+        // the declared host field; the rest travel under the collection.
         const slots = typeof field === 'string' ? [field] : field;
         const seedFields = entity as unknown as Record<string, unknown>;
         const entityById = new Map(ids.map((id, index) => [id, entities[index]]));
-        // The declared `hostedBy` fields for this collection, for a slot whose
-        // name is not the seed field plus `Id` -- a leaf's `knot` reads
-        // `parentKnotId`.
         const hostFields = getSupportTypeDescriptor(typeId).edges
             .filter((edge) => edge.to === key && edge.ownership === 'hostedBy')
             .map((edge) => edge.field);
@@ -279,7 +273,6 @@ function removeSupportEntityCascading(
     id: string,
 ): Record<string, unknown> | null {
     const descriptor = getSupportTypeDescriptor(typeId);
-    const shape = removalShapeFor(typeId);
     const collection = descriptor.location.key;
     const existing = state[collection][id] as { id: string } | undefined;
     if (!existing) return null;

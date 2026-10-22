@@ -89,6 +89,11 @@ Payloads are `structuredClone`d on every push and every stack hop, so typed
 arrays (`Float32Array`, `Uint32Array`) survive and callers may mutate after
 pushing.
 
+One exception: `pushSupportEditHistory` queues its before/after pair and pushes
+it on an idle callback, cloning at that point rather than at capture. A caller
+that mutates support state in the same tick changes what the entry records, and
+a synchronous push in between lands *below* the later snapshot.
+
 ## Dispatch semantics
 
 When `undo()` / `redo()` pops an entry, dispatch runs every registered handler
