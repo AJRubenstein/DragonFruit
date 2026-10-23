@@ -175,6 +175,37 @@ the reported difference between 165 fps and 80 fps over the plate.
   fallback for a context without fences, and results that land while picking is
   paused are discarded rather than reported.
 
+## Known cost: every pick rendered the whole plate
+
+The picking pass clones every registered object and rendered them to a 3×3
+target. `clonePickObject` disabled frustum culling on **all** clones to keep
+gizmo handles near the screen edge pickable — so each pick also drew all 20
+models: 9.2M triangles for nine pixels, at up to 60 Hz while the pointer moved.
+That is a second full vertex pass hidden inside the hover path.
+
+**Fixed:** only gizmo clones stay unculled; model clones use the normal frustum
+test. The 3×3 sub-frustum still contains the model under the cursor, so hover
+identity is unchanged.
+
+## Known cost: support-edit history deep-clones the whole state, and the debug log walks it
+
+`pushSupportEditHistory` is the edit path for joints, knots, bezier handles and
+contact disks. On flush it runs `sanitizeSupportSnapshot` over the before and
+after states — two `structuredClone`s — and `pushHistory` then `structuredClone`s
+the action payload a third time. On the 83k-instance plate that is hundreds of
+milliseconds per edit, on a `requestIdleCallback` with a 250 ms deadline, which
+is exactly a frame gap.
+
+`appendHistoryDebugEvent` adds to it: on **every** push it computes
+`stackBytes` by walking every payload in both the undo and redo stacks with
+`estimatePayloadBytes` (`Object.entries` per object), and `page.tsx` copies the
+600-entry debug log into React state and re-renders the root even when the
+History Debug panel is closed.
+
+The repo already has the cheap primitives: `clonePlainData` (≈2.8× faster than
+`structuredClone` on support state), lazy `getHistoryStackBytes()`, and the
+panel-open ref. They are not used on this path yet.
+
 ## Known cost: a model selection rebuilt the raft
 
 Selecting a model took 19 seconds on that scene, and the whole of it was the
@@ -1370,14 +1401,16 @@ Fixed so far:
   shafts come from the visible set and are merged again, which is cheap now that
   each shaft's sweep is cached.
 
+**Fixed:** `SupportProxyMeshLayer`'s cache is keyed on the collections the walk
+reads (`SUPPORT_COLLECTION_KEYS`), not on the snapshot, so a hover write no
+longer rebuilds ~83k proxy primitives and re-lays out every instance.
+`RaftProxyMeshLayer` already keyed on `raftFootprintSourceRefs`.
+
 Still open:
 
-1. `RaftProxyMeshLayer` and `SupportProxyMeshLayer` each hold a single-entry
-   module cache keyed on the whole support-store snapshot, so any store write
-   (including hover and selection writes) rebuilds every proxy primitive.
-2. `sharedProxyCache`'s geometries are never disposed when the cache is
+1. `sharedProxyCache`'s geometries are never disposed when the cache is
    replaced; the raft cache leaks its per-model geometries the same way.
-3. A model drop offset (`modelDropOffsetsById`, live during a drag or a drop
+2. A model drop offset (`modelDropOffsetsById`, live during a drag or a drop
    animation) re-appends every primitive in the scene with the offset, so the
    base batch rebuilds and re-uploads all of its matrices per frame. The offset
    belongs on the group transform, as the overlays already do it.

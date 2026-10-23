@@ -20,7 +20,7 @@ import { emitSupportModelPointerHover } from './interaction/clickHandlers';
 import { bezierSegmentToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
-import { SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import {
     createCavityTester,
     interiorSupportIds,
@@ -199,10 +199,16 @@ export function createProxySupportTint(input: ProxySupportTintInput): (modelId?:
 /**
  * The one place the proxy primitives are built from the support state, shared by
  * every mounted layer: one identity per input is enough to reuse the walk.
+ *
+ * The key is the **collections**, not the snapshot. The store replaces the
+ * snapshot on every write, and a hover writes it (`setHoveredState`), so keying
+ * on the snapshot rebuilt all ~83k proxy primitives and re-laid out every
+ * instance on each hover-target change — the repo measured that at 25-50 ms.
+ * The walk reads the collections; every collection it can ask for is in
+ * `SUPPORT_COLLECTION_KEYS`.
  */
 type SharedProxyCacheEntry = {
-  /** The one input the walk reads, so one identity covers every collection. */
-  supportStateRef: SupportState;
+  collectionRefs: readonly unknown[];
   hasSolidBottom: boolean;
   raftThickness: number;
   includeDetailedPrimitives: boolean;
@@ -211,6 +217,14 @@ type SharedProxyCacheEntry = {
 };
 
 let sharedProxyCache: SharedProxyCacheEntry | null = null;
+
+function sameCollectionRefs(a: readonly unknown[], b: readonly unknown[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
 
 const MODEL_NONE_KEY = '__none__';
 
@@ -527,11 +541,15 @@ export function SupportProxyMeshLayer({
     );
   }, [interiorView, cavityGeometryByModelId, modelWorldInverseById, supportState]);
 
+  const supportCollectionRefs = React.useMemo(
+    () => SUPPORT_COLLECTION_KEYS.map((key) => supportState[key]),
+    [supportState],
+  );
+
   const baseProxyByModel = React.useMemo(() => {
-    // The snapshot is replaced on any change, so it alone decides a rebuild.
     if (
       sharedProxyCache
-      && sharedProxyCache.supportStateRef === supportState
+      && sameCollectionRefs(sharedProxyCache.collectionRefs, supportCollectionRefs)
       && sharedProxyCache.hasSolidBottom === hasSolidBottom
       && sharedProxyCache.raftThickness === raftThickness
       && sharedProxyCache.includeDetailedPrimitives === includeDetailedPrimitives
@@ -546,7 +564,7 @@ export function SupportProxyMeshLayer({
     });
 
     sharedProxyCache = {
-      supportStateRef: supportState,
+      collectionRefs: supportCollectionRefs,
       hasSolidBottom,
       raftThickness,
       includeDetailedPrimitives,
@@ -557,6 +575,7 @@ export function SupportProxyMeshLayer({
     return byModel;
   }, [
     supportState,
+    supportCollectionRefs,
     hasSolidBottom,
     raftThickness,
     includeDetailedPrimitives,

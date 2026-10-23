@@ -207,11 +207,11 @@ export function PickingRenderer({
       // this produces the wrong pick position. We manually copy source.matrixWorld in
       // syncPickObjectTransforms and must prevent Three.js from overwriting it.
       child.updateMatrixWorld = noop;
-      // Disable frustum culling on all pick clones. When setViewOffset narrows the
-      // pick camera to a 3x3 pixel patch, the bounding sphere of a gizmo handle near
-      // the screen edge can fail the frustum test even though the handle IS inside
-      // those pixels. This is especially visible for gizmos outside the build volume.
-      child.frustumCulled = false;
+      // Gizmo handles near the edge can fail the 3x3 sub-frustum test even though
+      // they are inside those pixels, so only they stay unculled. Everything else
+      // must be culled: the pick scene holds every model, and without culling each
+      // pick re-rendered the whole plate's 9.2M triangles to resolve nine pixels.
+      child.frustumCulled = !isGizmo;
       // Gizmo handles must always render after model geometry in the pick scene
       // so their depthTest=false color wins regardless of depth values.
       // This is set here (not relied on from the source) because React child
