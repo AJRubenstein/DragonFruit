@@ -1726,14 +1726,9 @@ export function resetKickstandsInState() {
 }
 
 /**
- * Transform kickstands owned by `modelId`, plus any connected to a touched
- * entity: a kickstand can be grafted onto another model's support, and moving
- * that support has to carry the kickstand with it.
- */
-/**
- * Transform kickstand SHAFTS only -- a kickstand grafted onto another model's
- * support moves with it. Roots and host knots are left to the main walk, which
- * already moves them; doing it here too applied the delta twice.
+ * Transform kickstand shafts: those owned by `modelId`, plus any grafted onto a
+ * support that moved. Roots and host knots are the main walk's, which already
+ * moves them.
  */
 function transformKickstandsForModelInState(
     modelId: string,
@@ -1830,10 +1825,8 @@ export function transformSupportsForModel(
     }
 
     let changed = false;
-    // Only the three collections computed here; the rest come from
-    // `nextByCollection`. Each copies on its own first write: one shared flag
-    // let the second and third loops write into the live collection, which a
-    // caller holding the pre-transform snapshot then saw change underneath it.
+    // Computed here; the rest come from `nextByCollection`. Each copies on its
+    // own first write, so a caller holding the earlier snapshot keeps it.
     let nextRoots = state.roots;
     let nextTrunks = state.trunks;
     let nextKnots = state.knots;
@@ -1910,14 +1903,6 @@ export function transformSupportsForModel(
         if (nextTrunks === state.trunks) nextTrunks = { ...state.trunks };
         changed = true;
 
-        trunk.segments.forEach((segment) => touchedSegmentIds.add(segment.id));
-        trunk.segments.forEach((segment) => {
-            if (segment.bottomJoint?.id) touchedJointIds.add(segment.bottomJoint.id);
-            if (segment.topJoint?.id) touchedJointIds.add(segment.topJoint.id);
-        });
-        if (trunk.contactCone?.socketJointId) {
-            touchedJointIds.add(trunk.contactCone.socketJointId);
-        }
         const nextTrunk = transformSupportRecord(
             'trunk',
             trunk as unknown as Record<string, unknown>,
@@ -1949,10 +1934,8 @@ export function transformSupportsForModel(
         }
     };
 
-    // A shaft standing on its own root is reached by no edge, so the knots
-    // riding it only follow the model if its segments are claimed here. Trunks
-    // are claimed above; a kickstand is written by its own pass further down,
-    // which runs after the knots have already been placed.
+    // A shaft on its own root is reached by no edge, so it claims its segments
+    // here or the knots riding them stay put when the model moves.
     for (const descriptor of SUPPORT_TYPES) {
         if (!descriptor.ownsRoot) continue;
         const collection = state[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
