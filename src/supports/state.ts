@@ -1830,7 +1830,10 @@ export function transformSupportsForModel(
     }
 
     let changed = false;
-    // Only the three collections computed here; the rest come from `nextByCollection`.
+    // Only the three collections computed here; the rest come from
+    // `nextByCollection`. Each copies on its own first write: one shared flag
+    // let the second and third loops write into the live collection, which a
+    // caller holding the pre-transform snapshot then saw change underneath it.
     let nextRoots = state.roots;
     let nextTrunks = state.trunks;
     let nextKnots = state.knots;
@@ -1892,10 +1895,8 @@ export function transformSupportsForModel(
 
     for (const root of Object.values(state.roots)) {
         if (root.modelId !== modelId) continue;
-        if (!changed) {
-            nextRoots = { ...state.roots };
-            changed = true;
-        }
+        if (nextRoots === state.roots) nextRoots = { ...state.roots };
+        changed = true;
         touchedRootIds.add(root.id);
         nextRoots[root.id] = transformSupportRecord(
             'roots',
@@ -1906,10 +1907,8 @@ export function transformSupportsForModel(
 
     for (const trunk of Object.values(state.trunks)) {
         if (trunk.modelId !== modelId) continue;
-        if (!changed) {
-            nextTrunks = { ...state.trunks };
-            changed = true;
-        }
+        if (nextTrunks === state.trunks) nextTrunks = { ...state.trunks };
+        changed = true;
 
         trunk.segments.forEach((segment) => touchedSegmentIds.add(segment.id));
         trunk.segments.forEach((segment) => {
@@ -2080,10 +2079,8 @@ export function transformSupportsForModel(
 
         if (!shouldTransform) continue;
 
-        if (!changed) {
-            nextKnots = { ...state.knots };
-            changed = true;
-        }
+        if (nextKnots === state.knots) nextKnots = { ...state.knots };
+        changed = true;
 
         nextKnots[knot.id] = transformSupportRecord(
             'knots',

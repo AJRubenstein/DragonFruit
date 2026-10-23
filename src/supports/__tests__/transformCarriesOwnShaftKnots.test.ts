@@ -72,3 +72,34 @@ test('a knot on a root-owning shaft moves with the model', () => {
     }
     resetStore();
 });
+
+test('a transform leaves a snapshot taken before it alone', () => {
+    // A caller records the pre-transform state as its undo entry and holds it
+    // across the write; writing into the live collections corrupted it.
+    resetStore();
+    try {
+        addRoot(root('root-1', 3) as never);
+        addSupportEntity('trunk', {
+            id: 'trunk-1', modelId: MODEL, rootId: 'root-1',
+            segments: [segment('seg-1', 3, 0, 40)],
+        } as never);
+        addKnot({
+            id: 'knot-1', parentShaftId: 'seg-1', t: 0.5,
+            pos: { x: 3, y: 0, z: 20 }, diameter: 1.3,
+        } as never);
+
+        const captured = getSnapshot();
+        const before = JSON.stringify(captured);
+
+        transformSupportsForModel(
+            MODEL,
+            { position: new THREE.Vector3(0, 0, 0), rotation: new THREE.Euler(), scale: new THREE.Vector3(1, 1, 1) },
+            { position: new THREE.Vector3(0, 0, 0), rotation: new THREE.Euler(), scale: new THREE.Vector3(-1, 1, 1) },
+        );
+
+        assert.equal(JSON.stringify(captured), before, 'the snapshot is untouched');
+        assert.equal(getSnapshot().knots['knot-1'].pos.x, -3, 'while the store did move');
+    } finally {
+        resetStore();
+    }
+});
