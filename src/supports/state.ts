@@ -1950,6 +1950,18 @@ export function transformSupportsForModel(
         }
     };
 
+    // A shaft standing on its own root is reached by no edge, so the knots
+    // riding it only follow the model if its segments are claimed here. Trunks
+    // are claimed above; a kickstand is written by its own pass further down,
+    // which runs after the knots have already been placed.
+    for (const descriptor of SUPPORT_TYPES) {
+        if (!descriptor.ownsRoot) continue;
+        const collection = state[descriptor.location.key] as unknown as Record<string, Record<string, unknown>>;
+        for (const entity of Object.values(collection)) {
+            if (entity.modelId === modelId) claimShaft(descriptor, entity);
+        }
+    }
+
     let expandedGraph = true;
     while (expandedGraph) {
         expandedGraph = false;
