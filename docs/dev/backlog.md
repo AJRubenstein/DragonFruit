@@ -213,6 +213,23 @@ debug log into React state even when the History Debug panel was closed.
   (`setHistoryDebugDetailsEnabled`), and the page's debug refresh is gated on the
   same flag, so a push with the panel closed touches no React state.
 
+## Fixed: a fast hover sweep re-rendered the whole canvas per model
+
+Sweeping the pointer across the plate dropped the frame rate to ~30. Two costs
+fired per model crossing, both avoidable:
+
+- **Every R3F pointer move raycast all twenty models**, and three-mesh-bvh
+  collected *all* hits per mesh. `SceneCanvasInteractionBits` now sets
+  `raycaster.firstHitOnly = true`: each object still contributes its nearest hit
+  (so ordering and behind-the-model checks hold), but the BVH stops at the first
+  triangle instead of walking the rest of a 460k-triangle model.
+- **`hoveredModelId` was applied on every animation frame while sweeping.** One
+  set re-renders the 8.3k-line canvas and remounts the hovered footprint border
+  (which builds a raft footprint and schedules a silhouette). Hover updates are
+  now throttled to one per 50 ms with the latest trailing, clearing to `null`
+  immediately, and the footprint border follows a hover that has settled for
+  140 ms instead of the raw one.
+
 ## Fixed: snapshot-keyed memos re-walked the support forest on a hover
 
 `SceneCanvas` subscribes to the whole support snapshot, and a hover replaces it.

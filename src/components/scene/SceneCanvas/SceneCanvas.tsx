@@ -428,6 +428,15 @@ const CROSS_SECTION_CAP_DEBUG_STORAGE_KEY = 'df:cross-section-cap-debug:v4';
 const CROSS_SECTION_CAP_DEBUG_HOTKEY_ENABLED = false;
 const SUPPORT_PATHFINDING_DEBUG_DOUBLE_TAP_WINDOW_MS = 420;
 
+/**
+ * Minimum time between hovered-model state changes.
+ *
+ * One change re-renders this whole canvas and remounts the hovered footprint
+ * border. At display rate a sweep across twenty models paid that ~165 times a
+ * second; 50 ms keeps the hover responsive while bounding the cost.
+ */
+const HOVER_MODEL_MIN_INTERVAL_MS = 50;
+
 const DEFAULT_CROSS_SECTION_CAP_DEBUG_STATE: CrossSectionCapDebugPanelState = {
   enabled: false,
   top: {
@@ -1500,6 +1509,7 @@ export function SceneCanvas({
   const hoveredMeshModelIdRef = React.useRef<string | null>(null);
   const hoverModelRafRef = React.useRef<number | null>(null);
   const pendingHoverModelIdRef = React.useRef<string | null>(null);
+  const lastHoverModelAppliedAtRef = React.useRef(0);
   const [hoveredRaftModelId, setHoveredRaftModelId] = React.useState<string | null>(null);
   const [hoveredSupportPointerModelId, setHoveredSupportPointerModelId] = React.useState<string | null>(null);
   const modelPickerEnabled = mode !== 'printing';
@@ -1516,6 +1526,22 @@ export function SceneCanvas({
     () => (modelPickerEnabled ? (hoveredMeshModelId ?? hoveredRaftModelId ?? hoveredSupportModelId) : null),
     [hoveredMeshModelId, hoveredRaftModelId, hoveredSupportModelId, modelPickerEnabled],
   );
+  /**
+   * The hover used by the footprint border. Mounting a border builds its raft
+   * footprint and schedules a silhouette; doing that for every model a fast
+   * sweep crosses is the churn, so the border follows a pointer that has settled
+   * for a moment instead of the raw hover.
+   */
+  const [settledHoveredModelId, setSettledHoveredModelId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (hoveredModelId === null) {
+      setSettledHoveredModelId(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setSettledHoveredModelId(hoveredModelId), 140);
+    return () => window.clearTimeout(timer);
+  }, [hoveredModelId]);
+
   const onModelHoverPointChange = React.useCallback((point: THREE.Vector3 | null) => {
     lastHoveredModelPointRef.current = point;
   }, []);
@@ -1526,7 +1552,7 @@ export function SceneCanvas({
   React.useEffect(() => {
     return () => {
       if (hoverModelRafRef.current !== null) {
-        cancelAnimationFrame(hoverModelRafRef.current);
+        window.clearTimeout(hoverModelRafRef.current);
         hoverModelRafRef.current = null;
       }
     };
@@ -1537,7 +1563,7 @@ export function SceneCanvas({
 
     pendingHoverModelIdRef.current = null;
     if (hoverModelRafRef.current !== null) {
-      cancelAnimationFrame(hoverModelRafRef.current);
+      window.clearTimeout(hoverModelRafRef.current);
       hoverModelRafRef.current = null;
     }
 
@@ -1552,7 +1578,7 @@ export function SceneCanvas({
 
     pendingHoverModelIdRef.current = null;
     if (hoverModelRafRef.current !== null) {
-      cancelAnimationFrame(hoverModelRafRef.current);
+      window.clearTimeout(hoverModelRafRef.current);
       hoverModelRafRef.current = null;
     }
 
@@ -1562,35 +1588,65 @@ export function SceneCanvas({
     emitImmediateModelHover(null);
   }, [modelPickerEnabled]);
 
+  // Hover changes at most once per `HOVER_MODEL_MIN_INTERVAL_MS`, with the first
+  // change applied immediately and the last one trailing. A sweep across twenty
+  // models used to set this state on every frame; each set re-renders the whole
+  // canvas (and its support/raft layers) and remounts the hovered footprint
+  // border, which is what a fast sweep paid for.
+  const applyHoveredModel = React.useCallback((nextId: string | null) => {
+    lastHoverModelAppliedAtRef.current = performance.now();
+    hoveredMeshModelIdRef.current = nextId;
+    setHoveredMeshModelId((prev) => (prev === nextId ? prev : nextId));
+    if (nextId) {
+      setHoveredRaftModelId((prev) => (prev === null ? prev : null));
+      setHoveredSupportPointerModelId((prev) => (prev === null ? prev : null));
+    }
+  }, []);
+
   const onModelHoverModelChange = React.useCallback((id: string | null) => {
     if (!modelPickerEnabled) {
       pendingHoverModelIdRef.current = null;
       if (hoverModelRafRef.current !== null) {
-        cancelAnimationFrame(hoverModelRafRef.current);
+        window.clearTimeout(hoverModelRafRef.current);
         hoverModelRafRef.current = null;
       }
-      setHoveredMeshModelId((prev) => (prev === null ? prev : null));
+      applyHoveredModel(null);
       setHoveredRaftModelId((prev) => (prev === null ? prev : null));
       setHoveredSupportPointerModelId((prev) => (prev === null ? prev : null));
       return;
     }
 
     const nextId = id ?? null;
+    if (nextId === null) {
+      pendingHoverModelIdRef.current = null;
+      if (hoverModelRafRef.current !== null) {
+        window.clearTimeout(hoverModelRafRef.current);
+        hoverModelRafRef.current = null;
+      }
+      applyHoveredModel(null);
+      return;
+    }
+
+    const elapsed = performance.now() - lastHoverModelAppliedAtRef.current;
+    if (elapsed >= HOVER_MODEL_MIN_INTERVAL_MS) {
+      pendingHoverModelIdRef.current = null;
+      if (hoverModelRafRef.current !== null) {
+        window.clearTimeout(hoverModelRafRef.current);
+        hoverModelRafRef.current = null;
+      }
+      applyHoveredModel(nextId);
+      return;
+    }
+
     pendingHoverModelIdRef.current = nextId;
     if (hoverModelRafRef.current !== null) return;
-
-    hoverModelRafRef.current = requestAnimationFrame(() => {
+    hoverModelRafRef.current = window.setTimeout(() => {
       hoverModelRafRef.current = null;
       const pending = pendingHoverModelIdRef.current;
       pendingHoverModelIdRef.current = null;
-      if (pending === hoveredMeshModelIdRef.current) return;
-      setHoveredMeshModelId((prev) => (prev === pending ? prev : pending));
-      if (pending) {
-        setHoveredRaftModelId((prev) => (prev === null ? prev : null));
-        setHoveredSupportPointerModelId((prev) => (prev === null ? prev : null));
-      }
-    });
-  }, [modelPickerEnabled]);
+      applyHoveredModel(pending);
+    }, HOVER_MODEL_MIN_INTERVAL_MS - elapsed);
+  }, [applyHoveredModel, modelPickerEnabled]);
 
   React.useEffect(() => {
     const handleModelPointerHoverImmediate = (event: Event) => {
@@ -1609,7 +1665,7 @@ export function SceneCanvas({
         if (modelId) {
           pendingHoverModelIdRef.current = null;
           if (hoverModelRafRef.current !== null) {
-            cancelAnimationFrame(hoverModelRafRef.current);
+            window.clearTimeout(hoverModelRafRef.current);
             hoverModelRafRef.current = null;
           }
           setHoveredMeshModelId((prev) => (prev === null ? prev : null));
@@ -1628,7 +1684,7 @@ export function SceneCanvas({
         if (modelId) {
           pendingHoverModelIdRef.current = null;
           if (hoverModelRafRef.current !== null) {
-            cancelAnimationFrame(hoverModelRafRef.current);
+            window.clearTimeout(hoverModelRafRef.current);
             hoverModelRafRef.current = null;
           }
           setHoveredMeshModelId((prev) => (prev === null ? prev : null));
@@ -4223,8 +4279,8 @@ export function SceneCanvas({
       ? selectedTransformableModelIds
       : activeModelId
         ? [activeModelId]
-        : hoveredModelId
-          ? [hoveredModelId]
+        : settledHoveredModelId
+          ? [settledHoveredModelId]
           : [];
 
     const seen = new Set<string>();
@@ -4251,9 +4307,9 @@ export function SceneCanvas({
     return targets;
   }, [
     activeModelId,
-    hoveredModelId,
     modelById,
     selectedTransformableModelIds,
+    settledHoveredModelId,
     transform,
   ]);
 
