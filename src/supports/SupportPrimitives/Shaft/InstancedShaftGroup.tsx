@@ -113,10 +113,22 @@ interface TaperBucket {
     shafts: InstancedShaft[];
 }
 
+/**
+ * Quantization of a tapered shaft's end-to-end ratio, in ratio units.
+ *
+ * The ratio is the one dimension the instance matrix cannot carry, so it is part
+ * of the bucket key — and a key is a draw call. At 0.001 a continuously varying
+ * taper profile would make one bucket per shaft; 0.05 is a 2.5% end-radius error
+ * (microns at print scale) and collapses it to a handful. Same trade, and the
+ * same number, as the cone batch.
+ */
+const TAPER_RATIO_STEP = 0.05;
+const TAPER_RATIO_BUCKETS_PER_UNIT = 1 / TAPER_RATIO_STEP;
+
 function taperBuckets(shafts: readonly InstancedShaft[]): TaperBucket[] {
     const grouped = new Map<string, TaperBucket>();
     for (const shaft of shafts) {
-        const ratio = quantizeToScale((shaft.diameterEnd ?? shaft.diameter) / shaft.diameter, 1000);
+        const ratio = quantizeToScale((shaft.diameterEnd ?? shaft.diameter) / shaft.diameter, TAPER_RATIO_BUCKETS_PER_UNIT);
         const key = String(ratio);
         const existing = grouped.get(key);
         if (existing) existing.shafts.push(shaft);

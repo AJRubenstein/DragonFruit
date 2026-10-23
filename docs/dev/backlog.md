@@ -187,24 +187,49 @@ That is a second full vertex pass hidden inside the hover path.
 test. The 3×3 sub-frustum still contains the model under the cursor, so hover
 identity is unchanged.
 
-## Known cost: support-edit history deep-clones the whole state, and the debug log walks it
+## Fixed: support-edit history deep-cloned the whole state, and the debug log walked it
 
 `pushSupportEditHistory` is the edit path for joints, knots, bezier handles and
-contact disks. On flush it runs `sanitizeSupportSnapshot` over the before and
-after states — two `structuredClone`s — and `pushHistory` then `structuredClone`s
-the action payload a third time. On the 83k-instance plate that is hundreds of
-milliseconds per edit, on a `requestIdleCallback` with a 250 ms deadline, which
-is exactly a frame gap.
+contact disks. On flush it ran `sanitizeSupportSnapshot` over the before and
+after states — two `structuredClone`s — and `pushHistory` then cloned the action
+payload a third time; undo/redo cloned it once more into the opposite stack, and
+`notifyHistoryOperation` cloned it once **per subscriber**. On the 83k-instance
+plate that was hundreds of milliseconds per edit, on a `requestIdleCallback`
+with a 250 ms deadline, which is exactly a frame gap.
 
-`appendHistoryDebugEvent` adds to it: on **every** push it computes
-`stackBytes` by walking every payload in both the undo and redo stacks with
-`estimatePayloadBytes` (`Object.entries` per object), and `page.tsx` copies the
-600-entry debug log into React state and re-renders the root even when the
-History Debug panel is closed.
+`appendHistoryDebugEvent` added to it: on every push it walked every payload in
+both stacks with `estimatePayloadBytes`, and `page.tsx` copied the 600-entry
+debug log into React state even when the History Debug panel was closed.
 
-The repo already has the cheap primitives: `clonePlainData` (≈2.8× faster than
-`structuredClone` on support state), lazy `getHistoryStackBytes()`, and the
-panel-open ref. They are not used on this path yet.
+**Fixed:**
+
+- support snapshots use `clonePlainData` (≈2.8× faster than `structuredClone`,
+  and the state is plain records by construction);
+- a payload a domain has just cloned is marked `payloadOwned`, so pushing,
+  undoing and redoing move the same object instead of cloning it again;
+- operation subscribers receive the stack's entry read-only instead of a clone
+  each;
+- byte accounting runs only while the History Debug panel is open
+  (`setHistoryDebugDetailsEnabled`), and the page's debug refresh is gated on the
+  same flag, so a push with the panel closed touches no React state.
+
+## Fixed: snapshot-keyed memos re-walked the support forest on a hover
+
+`SceneCanvas` subscribes to the whole support snapshot, and a hover replaces it.
+Three derivations were keyed on that identity even though they read collections:
+the raft base circles, the raft marquee rings and the marquee polylines for all
+supports. Each hover therefore re-walked the forest and allocated a new set of
+shapes. They now key on the collections they read (`SUPPORT_COLLECTION_KEYS` /
+`raftFootprintSourceRefs`) and return the cached result when those are unchanged.
+
+Deferred geometry work is also paused for pointer gestures now, not only for
+camera movement: the queue keeps a set of pause reasons (`camera`, `pointer`), so
+one owner's resume cannot restart a BVH build under the other. The build itself
+is one blocking call and still cannot be pre-empted once started.
+
+Tapered shafts bucket their end-to-end ratio at 0.05 instead of 0.001 — the same
+latent draw-call cliff the cone and root batches had, now closed before a taper
+profile can trigger it.
 
 ## Known cost: a model selection rebuilt the raft
 

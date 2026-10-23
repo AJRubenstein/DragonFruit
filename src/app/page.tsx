@@ -292,6 +292,7 @@ import {
   redo,
   subscribeHistory,
   subscribeHistoryDebug,
+  setHistoryDebugDetailsEnabled,
   setHistoryOriginProvider,
   subscribeHistoryOperations,
   undo,
@@ -2530,6 +2531,7 @@ export default function Home() {
   const rightClickGestureRef = React.useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const suppressEditorContextMenuUntilRef = React.useRef(0);
   const cameraResumeTimeoutRef = React.useRef<number | null>(null);
+  const backgroundWorkResumeTimeoutRef = React.useRef<number | null>(null);
   const { getHotkey } = useHotkeyConfig();
   const supportSpotlightHoldHotkey = getHotkey('SUPPORTS', 'TEMP_SPOTLIGHT_HOLD');
 
@@ -6414,17 +6416,17 @@ export default function Home() {
 
   React.useEffect(() => {
     const refreshHistoryDebug = () => {
+      // The panel is the only reader, and this copies up to 600 events into
+      // React state — a root re-render of this component on every push, even
+      // with the panel closed.
+      if (!isHistoryDebugOpenRef.current) return;
       setHistoryDebugEvents(getHistoryDebugEvents());
       setHistoryStackCounts({ undo: getUndoCount(), redo: getRedoCount() });
-      // Sizes only while the panel is open: both walk every entry, and the debug
-      // log updates on every push.
-      if (isHistoryDebugOpenRef.current) {
-        setHistoryStackBytes(getHistoryStackBytes());
-        setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
-      }
+      setHistoryStackBytes(getHistoryStackBytes());
+      setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
     };
 
-    refreshHistoryDebug();
+    if (isHistoryDebugOpenRef.current) refreshHistoryDebug();
 
     const unsubHistory = subscribeHistory(refreshHistoryDebug);
     const unsubHistoryDebug = subscribeHistoryDebug(refreshHistoryDebug);
@@ -6437,8 +6439,11 @@ export default function Home() {
 
   React.useEffect(() => {
     isHistoryDebugOpenRef.current = isHistoryDebugOpen;
+    setHistoryDebugDetailsEnabled(isHistoryDebugOpen);
     // Opening the panel must not wait for the next push to show a number.
     if (isHistoryDebugOpen) {
+      setHistoryDebugEvents(getHistoryDebugEvents());
+      setHistoryStackCounts({ undo: getUndoCount(), redo: getRedoCount() });
       setHistoryStackBytes(getHistoryStackBytes());
       setSceneSnapshotBytes(getSceneSnapshotRegistryBytes());
     }
@@ -9442,6 +9447,44 @@ export default function Home() {
         window.clearTimeout(cameraResumeTimeoutRef.current);
       }
       scene.setBackgroundGeometryWorkPaused(false);
+    };
+  }, [scene]);
+
+  // A deferred BVH build or chunk-store encode is a single blocking call; it
+  // cannot be interrupted once started, but it must not *start* under a gesture.
+  // The camera already pauses the queue; a pointer press pauses it too, and the
+  // reason set keeps one owner's resume from restarting it under the other.
+  React.useEffect(() => {
+    const pauseForPointer = () => {
+      if (backgroundWorkResumeTimeoutRef.current !== null) {
+        window.clearTimeout(backgroundWorkResumeTimeoutRef.current);
+        backgroundWorkResumeTimeoutRef.current = null;
+      }
+      scene.setBackgroundGeometryWorkPaused(true, 'pointer');
+    };
+
+    const resumeAfterPointer = () => {
+      if (backgroundWorkResumeTimeoutRef.current !== null) {
+        window.clearTimeout(backgroundWorkResumeTimeoutRef.current);
+      }
+      backgroundWorkResumeTimeoutRef.current = window.setTimeout(() => {
+        backgroundWorkResumeTimeoutRef.current = null;
+        scene.setBackgroundGeometryWorkPaused(false, 'pointer');
+      }, 350);
+    };
+
+    window.addEventListener('pointerdown', pauseForPointer, true);
+    window.addEventListener('pointerup', resumeAfterPointer, true);
+    window.addEventListener('pointercancel', resumeAfterPointer, true);
+    return () => {
+      window.removeEventListener('pointerdown', pauseForPointer, true);
+      window.removeEventListener('pointerup', resumeAfterPointer, true);
+      window.removeEventListener('pointercancel', resumeAfterPointer, true);
+      if (backgroundWorkResumeTimeoutRef.current !== null) {
+        window.clearTimeout(backgroundWorkResumeTimeoutRef.current);
+        backgroundWorkResumeTimeoutRef.current = null;
+      }
+      scene.setBackgroundGeometryWorkPaused(false, 'pointer');
     };
   }, [scene]);
 

@@ -38,8 +38,8 @@ import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types';
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
-import { collectRaftBaseCirclesByModel, raftFootprintSourceRefs, RAFT_UNASSIGNED_MODEL_KEY } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
-import { collectSupportMarqueeShapes } from './supportMarqueeShapes';
+import { collectRaftBaseCirclesByModel, raftFootprintSourceRefs, RAFT_UNASSIGNED_MODEL_KEY, type RaftBaseCirclesByModel } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
+import { collectSupportMarqueeShapes, type SupportMarqueeShape } from './supportMarqueeShapes';
 import type { SupportData } from '@/supports/rendering';
 import { subscribe as subscribeSupportState, getSnapshot as getSupportSnapshot } from '@/supports/state';
 import { getModelIdForSupportEntityId } from '@/supports/state';
@@ -447,6 +447,21 @@ const DEFAULT_CROSS_SECTION_CAP_DEBUG_STATE: CrossSectionCapDebugPanelState = {
     depthTest: false,
   },
 };
+
+/**
+ * Whether two ordered lists of collection references are the same collections.
+ *
+ * A support-store write (a hover included) replaces the snapshot but not the
+ * collections, so a memo that reads collections can compare these and keep its
+ * result instead of re-walking every entity.
+ */
+function sameCollectionRefs(a: readonly unknown[] | null | undefined, b: readonly unknown[]): boolean {
+  if (!a || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
 
 export function SceneCanvas({
   models: modelsProp = [],
@@ -1812,13 +1827,21 @@ export function SceneCanvas({
   // makes, and a new identity here poisoned the per-model bounds cache below -
   // which re-ran the raft's polygon booleans for every model, ~120 ms of blocking
   // work on a click in a production build.
-  const raftBaseCirclesByModelKey = React.useMemo(
-    () => collectRaftBaseCirclesByModel(supportStateForBounds, {
+  const raftBaseCirclesCacheRef = React.useRef<{
+    refs: readonly unknown[];
+    byModel: RaftBaseCirclesByModel;
+  } | null>(null);
+
+  const raftBaseCirclesByModelKey = React.useMemo(() => {
+    const refs = raftFootprintSourceRefs(supportStateForBounds);
+    const cached = raftBaseCirclesCacheRef.current;
+    if (cached && sameCollectionRefs(cached.refs, refs)) return cached.byModel;
+    const byModel = collectRaftBaseCirclesByModel(supportStateForBounds, {
       fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the collections the walk reads; the helper returns exactly those, in a fixed order.
-    raftFootprintSourceRefs(supportStateForBounds),
-  );
+    });
+    raftBaseCirclesCacheRef.current = { refs, byModel };
+    return byModel;
+  }, [supportStateForBounds]);
 
   /**
    * A model's support-and-raft extent, kept per model until the supports or the
@@ -3133,9 +3156,7 @@ export function SceneCanvas({
     // catches cannot disagree with the raft a user sees. This read only `roots`
     // before, which missed the types that carry their own inline root -- their
     // bases pushed the drawn raft out but not the grabbable outline.
-    const circlesByModelId = collectRaftBaseCirclesByModel(supportStateForBounds, {
-      fallbackModelKey: RAFT_UNASSIGNED_MODEL_KEY,
-    });
+    const circlesByModelId = new Map(raftBaseCirclesByModelKey);
     circlesByModelId.delete(RAFT_UNASSIGNED_MODEL_KEY);
 
     const thickness = raftSettingsForBounds.bottomMode === 'line'
@@ -3162,19 +3183,28 @@ export function SceneCanvas({
     }
 
     return map;
-    // The whole state, because the footprint walks the collections the registry
-    // names rather than `roots` alone. This memo only profiles circles, so it is
-    // cheap; the raft MESHES are the expensive part and they cache separately.
-  }, [raftSettingsForBounds, supportStateForBounds]);
+  }, [raftBaseCirclesByModelKey, raftSettingsForBounds]);
 
   // Every support drawn as the polyline that runs along it: root or host knot,
   // each joint in order, and the contact cone at the tip. Built once per state
   // change — the marquee walks this on every pointer move. A curved segment is
   // approximated by its chord.
-  const supportMarqueeShapes = React.useMemo(
-    () => collectSupportMarqueeShapes(supportStateForBounds),
-    [supportStateForBounds],
-  );
+  //
+  // Keyed on the collections, not the snapshot: a hover writes the store, and
+  // rebuilding this polyline for all ~7.5k supports on a hover it does not read
+  // was pure allocation pressure.
+  const supportMarqueeShapesCacheRef = React.useRef<{
+    refs: readonly unknown[];
+    shapes: SupportMarqueeShape[];
+  } | null>(null);
+  const supportMarqueeShapes = React.useMemo(() => {
+    const refs = SUPPORT_COLLECTION_KEYS.map((key) => supportStateForBounds[key]);
+    const cached = supportMarqueeShapesCacheRef.current;
+    if (cached && sameCollectionRefs(cached.refs, refs)) return cached.shapes;
+    const shapes = collectSupportMarqueeShapes(supportStateForBounds);
+    supportMarqueeShapesCacheRef.current = { refs, shapes };
+    return shapes;
+  }, [supportStateForBounds]);
 
   const supportMarqueeShapesByModelId = React.useMemo(() => {
     const map = new Map<string, typeof supportMarqueeShapes>();

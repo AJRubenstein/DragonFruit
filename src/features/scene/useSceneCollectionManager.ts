@@ -1628,7 +1628,9 @@ export function useSceneCollectionManager(options?: {
 
   const deferredAccelerationQueueRef = useRef<THREE.BufferGeometry[]>([]);
   const deferredAccelerationProcessingRef = useRef(false);
-  const deferredAccelerationPausedRef = useRef(false);
+  // Reasons, not a boolean: the camera and a pointer gesture can each pause this
+  // queue, and the first one to resume must not restart it under the other.
+  const deferredAccelerationPauseReasonsRef = useRef<Set<string>>(new Set());
   const deferredDisposalQueueRef = useRef<THREE.BufferGeometry[]>([]);
   const deferredDisposalProcessingRef = useRef(false);
   // Count of scheduled-but-unfinished flattening-plane computations (idle
@@ -2424,7 +2426,7 @@ export function useSceneCollectionManager(options?: {
 
   const processDeferredAccelerationQueue = useCallback(() => {
     if (deferredAccelerationProcessingRef.current) return;
-    if (deferredAccelerationPausedRef.current) return;
+    if (deferredAccelerationPauseReasonsRef.current.size > 0) return;
     if (deferredAccelerationQueueRef.current.length === 0) return;
 
     deferredAccelerationProcessingRef.current = true;
@@ -2438,7 +2440,7 @@ export function useSceneCollectionManager(options?: {
     };
 
     const step = () => {
-      if (deferredAccelerationPausedRef.current) {
+      if (deferredAccelerationPauseReasonsRef.current.size > 0) {
         deferredAccelerationProcessingRef.current = false;
         return;
       }
@@ -2469,9 +2471,11 @@ export function useSceneCollectionManager(options?: {
     processDeferredAccelerationQueue();
   }, [processDeferredAccelerationQueue]);
 
-  const setBackgroundGeometryWorkPaused = useCallback((paused: boolean) => {
-    deferredAccelerationPausedRef.current = paused;
-    if (!paused) {
+  const setBackgroundGeometryWorkPaused = useCallback((paused: boolean, reason = 'camera') => {
+    const reasons = deferredAccelerationPauseReasonsRef.current;
+    if (paused) reasons.add(reason);
+    else reasons.delete(reason);
+    if (reasons.size === 0) {
       processDeferredAccelerationQueue();
     }
   }, [processDeferredAccelerationQueue]);
