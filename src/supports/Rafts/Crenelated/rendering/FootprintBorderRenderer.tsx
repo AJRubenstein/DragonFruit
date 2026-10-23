@@ -127,10 +127,15 @@ function computeLocalModelFootprintHull(
   modelGeometry: GeometryWithBounds,
   modelTransform: ModelTransform,
 ): THREE.Vector2[] {
+  // The border is a visual aid, so it uses the cached 1024-point sample instead
+  // of a per-model scan of the position attribute. Placement sizing keeps the
+  // full scan (`computeProjectedFootprintSize`); one border per selected model
+  // must not cost milliseconds each.
   return computeProjectedFootprintHull(
     modelGeometry,
     modelTransform.rotation,
     modelTransform.scale,
+    { scan: 'sampled' },
   );
 }
 

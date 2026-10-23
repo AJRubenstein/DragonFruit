@@ -242,6 +242,10 @@
             {
               "label": "Performance Debugging",
               "slug": "dev/performance-debugging"
+            },
+            {
+              "label": "Render Profiler",
+              "slug": "dev/render-profiler"
             }
           ]
         },

@@ -79,6 +79,17 @@ const DEFAULT_SUPPORT_COLOR = '#9a9a9a';
 const ACTIVE_SUPPORT_COLOR = '#c8752a';
 const EMPTY_MARQUEE_CANDIDATES: readonly string[] = Object.freeze([]);
 const PROXY_JOINT_DIAMETER_BLEND_MM = JOINT_DIAMETER_OFFSET_MM * 0.75;
+/**
+ * Joint tessellation in the proxy view.
+ *
+ * A joint is a sub-millimetre ball and there are tens of thousands of them
+ * (16,004 on a 20-model plate). The full support view's 12x10 sphere is 216
+ * triangles per joint — 3.5M per layer — for a ball a few pixels wide. 8x6 is
+ * 80 triangles and reads the same at this size; the detail view keeps the
+ * denser sphere.
+ */
+const PROXY_JOINT_WIDTH_SEGMENTS = 8;
+const PROXY_JOINT_HEIGHT_SEGMENTS = 6;
 
 export type ProxyModelGeometry = {
   modelId?: string;
@@ -746,7 +757,13 @@ export function SupportProxyMeshLayer({
   // out of the frustum the moment the camera is on the bed being worked on, which
   // is the normal pose: the draw calls go from one set per kind to two, and the
   // second one is usually not drawn at all.
-  const batches = React.useMemo(() => {
+  // Geometry arrays are built once per walk and kept stable when only which
+  // models are *hidden* changes. That distinction is the frame: an exclusion
+  // change (the active model folding in or out of the world layer) used to
+  // rebuild every array, which made all four batches re-layout their ~83k
+  // instances — a 25-50 ms stall at an orbit's start and end. The base arrays
+  // now survive; only the small curved-shaft list is rebuilt per exclusion.
+  const buildFlatBatches = React.useCallback((entries: readonly VisibleModelEntry[], skipCurved: boolean) => {
     const empty = (): FlatProxyGeometry => ({ straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] });
     const live = empty();
     const scenery = empty();
@@ -801,17 +818,12 @@ export function SupportProxyMeshLayer({
       });
     };
 
-    // A layer that hides its excluded models keeps them in these arrays, so an
-    // activation change leaves them alone. Curved shafts are the exception: a
-    // merged tube cannot hide one shaft, so they come from the visible set, and
-    // merging them again is cheap because each shaft's sweep is cached.
-    const geometryEntries = hidesExcludedModels ? allModelEntries : visibleModelEntries;
-    for (const entry of geometryEntries) {
+    for (const entry of entries) {
       const { zOffset } = entry;
 
       for (const shaft of entry.geometry.shafts) {
         const curved = isCurvedBatchedShaft(shaft);
-        if (hidesExcludedModels && curved) continue;
+        if (skipCurved && curved) continue;
         const target = setFor(shaft.modelId);
         (curved ? target.curvedShafts : target.straightShafts).push(offsetShaft(shaft, zOffset));
       }
@@ -822,18 +834,53 @@ export function SupportProxyMeshLayer({
       }
     }
 
-    if (hidesExcludedModels) {
-      for (const entry of visibleModelEntries) {
-        for (const shaft of entry.geometry.shafts) {
-          if (isCurvedBatchedShaft(shaft)) {
-            setFor(shaft.modelId).curvedShafts.push(offsetShaft(shaft, entry.zOffset));
-          }
-        }
+    return { live, scenery };
+  }, [includeDetailedPrimitives, pointerSceneryModelIds]);
+
+  // The world layer's full set: every model, curved shafts filled in separately.
+  const worldBatches = React.useMemo(
+    () => (hidesExcludedModels ? buildFlatBatches(allModelEntries, true) : null),
+    [allModelEntries, buildFlatBatches, hidesExcludedModels],
+  );
+
+  // A layer with a model filter draws that model alone, curved shafts included.
+  const filteredBatches = React.useMemo(
+    () => (hidesExcludedModels ? null : buildFlatBatches(visibleModelEntries, false)),
+    [buildFlatBatches, hidesExcludedModels, visibleModelEntries],
+  );
+
+  // A merged tube cannot hide one shaft, so the world layer takes curved shafts
+  // from the visible set. This is the only pass an exclusion change re-runs.
+  const worldCurvedShafts = React.useMemo(() => {
+    if (!hidesExcludedModels) return null;
+    const live: InstancedShaft[] = [];
+    const scenery: InstancedShaft[] = [];
+    for (const entry of visibleModelEntries) {
+      for (const shaft of entry.geometry.shafts) {
+        if (!isCurvedBatchedShaft(shaft)) continue;
+        const target = supportAnswersPointer(shaft.modelId, pointerSceneryModelIds) ? live : scenery;
+        const pushed: InstancedShaft = Math.abs(entry.zOffset) < 1e-6
+          ? shaft
+          : {
+            ...shaft,
+            start: { x: shaft.start.x, y: shaft.start.y, z: shaft.start.z + entry.zOffset },
+            end: { x: shaft.end.x, y: shaft.end.y, z: shaft.end.z + entry.zOffset },
+          };
+        target.push(pushed);
       }
     }
-
     return { live, scenery };
-  }, [allModelEntries, visibleModelEntries, hidesExcludedModels, includeDetailedPrimitives, pointerSceneryModelIds]);
+  }, [hidesExcludedModels, pointerSceneryModelIds, visibleModelEntries]);
+
+  const batches = React.useMemo(() => {
+    if (!hidesExcludedModels || !worldBatches || !worldCurvedShafts) {
+      return filteredBatches ?? buildFlatBatches([], false);
+    }
+    return {
+      live: { ...worldBatches.live, curvedShafts: worldCurvedShafts.live },
+      scenery: { ...worldBatches.scenery, curvedShafts: worldCurvedShafts.scenery },
+    };
+  }, [buildFlatBatches, filteredBatches, hidesExcludedModels, worldBatches, worldCurvedShafts]);
 
   // A support a fraction of a pixel wide must still be grabbable, so the grab
   // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.
@@ -938,6 +985,8 @@ export function SupportProxyMeshLayer({
               transparent={proxyTransparent}
               opacity={proxyOpacity}
               clippingPlanes={clippingPlanes}
+              widthSegments={PROXY_JOINT_WIDTH_SEGMENTS}
+              heightSegments={PROXY_JOINT_HEIGHT_SEGMENTS}
               onJointClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
               onJointPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}

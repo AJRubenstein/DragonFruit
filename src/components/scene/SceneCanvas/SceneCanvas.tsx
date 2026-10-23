@@ -131,6 +131,7 @@ import {
   type ProjectedMesh,
 } from './marqueeHitTest';
 import { PickingEmptySpaceHoverResetter, SceneRenderBindings } from './SceneCanvasInteractionBits';
+import { SceneRenderProfiler } from './SceneRenderProfiler';
 
 import { PickingProviderWrapper, SelectionSync, useInteractionWarning } from './SceneSelectionAndPicking';
 import { CameraClipPlaneStabilizer, CameraProvider, EnableLocalClipping, Helpers, Lights, SceneMoodOverlay } from './SceneEnvironment';
@@ -4781,6 +4782,24 @@ export function SceneCanvas({
   const hideGridHelpers = false;
   const modifyToolActive = mode === 'prepare' && transformMode === 'transform';
   const navigationLodActive = isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || isGizmoRetargeting || isLayerScrubbing;
+  /**
+   * While the camera moves, nothing can drag a model, so the active model's
+   * supports and raft do not need their own attached copy. Folding them back
+   * into the world layer removes a second complete support/raft batch from the
+   * frame — 124 draw calls on a 20-model plate — while the attached layer stays
+   * mounted and is merely hidden, so nothing is rebuilt when the gesture ends.
+   * Deliberately excludes gizmo dragging: there the attached copy is what keeps
+   * supports locked to the live transform.
+   */
+  const foldActiveSupportsIntoWorld = !!activeModelId
+    && (isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive);
+  const worldSupportExcludeModelId = foldActiveSupportsIntoWorld ? null : activeModelId;
+  const worldSupportExcludeModelIds = React.useMemo(
+    () => (foldActiveSupportsIntoWorld
+      ? supportProxyExcludeModelIds.filter((id) => id !== activeModelId)
+      : supportProxyExcludeModelIds),
+    [activeModelId, foldActiveSupportsIntoWorld, supportProxyExcludeModelIds],
+  );
   const suppressSupportProxyPointerInteraction = supportCreationModeActive || suppressSupportSelectionAndHover || modifyToolActive;
 
   const updateOrbitControlSpeeds = React.useCallback(() => {
@@ -6388,6 +6407,7 @@ export function SceneCanvas({
         gl={{ stencil: true, logarithmicDepthBuffer: false, powerPreference: 'high-performance' }}
         onPointerMissed={handleScenePointerMissed}
       >
+        <SceneRenderProfiler />
         <SceneRenderBindings
           rendererRef={rendererRef}
           sceneRef={sceneRef}
@@ -6610,7 +6630,18 @@ export function SceneCanvas({
                       onSupportHover={handleSupportHover}
                       onActiveModelChange={onActiveModelChange}
                       onSelectModeDragStart={handleSelectModeDragStart}
-                      disableRaycast={disableRaycast || !answersPointer || !modelPickerEnabled || !cameraInteractionCycleEnabled}
+                      disableRaycast={
+                        disableRaycast
+                        || !answersPointer
+                        || !modelPickerEnabled
+                        || !cameraInteractionCycleEnabled
+                        // R3F raycasts every model with a handler on every pointer
+                        // move; while the camera moves no model can answer one, so
+                        // they leave the interaction list for the gesture.
+                        || isOrbitInteracting
+                        || isWheelZoomInteracting
+                        || spaceMouseNavigationActive
+                      }
                       blockSupportPlacement={!cameraInteractionCycleEnabled || isGizmoDragging || blockSupportPlacement}
                       suppressNextClickRef={suppressNextCanvasClickRef}
                       isSelected={isModelSelected}
@@ -6651,6 +6682,7 @@ export function SceneCanvas({
                           matrix={activeModelAttachedSupportLocalMatrix ?? undefined}
                           matrixAutoUpdate={false}
                           renderOrder={100000}
+                          visible={!foldActiveSupportsIntoWorld}
                         >
                           <ModelAttachedSupportLayer
                             plateClearanceTargets={plateClearanceTargets}
@@ -7109,8 +7141,8 @@ export function SceneCanvas({
                 <ModelAttachedSupportLayer
                   plateClearanceTargets={plateClearanceTargets}
                   mode={mode}
-                  excludeModelId={activeModelId}
-                  excludeModelIds={supportProxyExcludeModelIds}
+                  excludeModelId={worldSupportExcludeModelId}
+                  excludeModelIds={worldSupportExcludeModelIds}
                   hideRaftPrimitives={hideRaftPrimitives}
                   hidePlateContactPrimitives={hidePlateContactPrimitives}
                   clipLower={clipLower}
@@ -7124,7 +7156,7 @@ export function SceneCanvas({
                   marqueeCandidateModelIds={marqueeCandidateModelIds}
                   hoverModelId={supportHoverModelId}
                   modelDropOffsetsById={entryDropOffsets}
-                  navigationLodActive={transformMode !== 'select'}
+                  navigationLodActive={navigationLodActive}
                   disableSelectionAndHover={suppressSupportProxyPointerInteraction}
                   pointerSceneryModelIds={plateSceneryModelIds}
                   raftColorized={raftColorized}

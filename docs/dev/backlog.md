@@ -53,6 +53,128 @@ scale (`defaultnormal_vertex`, "in lieu of a per-instance normal-matrix"), so th
 frustum body shades correctly at any ratio. Measured on the same scene: **3282 ->
 291 draw calls per frame, 53 -> 163 fps**, median frame 18.2 -> 6.1 ms.
 
+## Known cost: the cone ratio key was still quantized to 0.001
+
+The fix above moved five parameters out of the cone batch key but left the sixth
+— the body-to-contact ratio — at 0.001 precision. On a plate whose supports come
+from mixed profiles that ratio varies continuously: the Ed_EF_Minis scene (20
+models, 9.2M model triangles, 10,904 contact cones) has **342 distinct ratios**,
+so the world layer plus the active model's layer mount **2023 instanced
+meshes**. Each mounts up to three primitives (disk, body, tip), and every one is
+a draw call on every frame.
+
+Measured with the [render profiler](render-profiler.md) on an RTX 3080 at
+165 Hz, during a normal orbit:
+
+| | value |
+| --- | --- |
+| draw calls per frame | **2111**, all in the main pass |
+| instanced meshes / instances | 2023 / 83,007 |
+| triangles per frame | **18.4M** |
+| CPU render (submit) p50 | **10.0 ms** |
+| frame p50 / p95 | 11.5 / 19.3 ms |
+| fps | 73 |
+
+The triangle total is roughly twice the models' 9.2M because the active model's
+supports are also drawn (zero-scaled) by the world batch, and the support
+primitives themselves add several million.
+
+**Fixed** by quantizing the ratio to **0.05**: a 2.5% error of the contact
+radius, microns on the plate, and 342 values collapse to 64 buckets (24 for the
+active model). Re-recorded on the same scene: **2111 -> 1254 draw calls, 2023 ->
+1150 instanced meshes, CPU render 10.0 -> 5.8 ms, 73 -> 128 fps**, frame p50
+11.5 -> 6.5 ms.
+
+## Known cost: the root batch keyed on size, not shape
+
+The same recording attributed the remaining calls. A root's key was
+`bottomRadius : diskHeight : topRadius : coneHeight`, each at 0.001 mm. The
+bottom radius is the support's root diameter, and that varies continuously with
+the sizing profile — the 20-model scene has 254 distinct root keys. Each key
+mounts up to three instanced meshes (disk, base cone, top ball) plus overlay
+copies, so the keys alone were ~762 draw calls.
+
+**Fixed** the way the cone batch was fixed: the geometries are unit-sized and
+the instance matrix carries every dimension. What a matrix cannot express is the
+base cone's taper, so the key is the top-to-bottom radius ratio quantized to
+0.05 (a 2.5% top-radius error). The scene's roots collapse to three buckets.
+`rootInstanceScales` builds the disk `(r, h, r)`, cone `(r, h, r)` and uniform
+sphere matrices.
+
+**Also reduced the proxy primitives' tessellation.** A joint was a 12x10 sphere
+(216 triangles) and the plate has 16,004 of them — 3.5M triangles per layer for
+balls a few pixels wide. The proxy view now uses 8x6 (80 triangles), and the
+contact-cone tips and root balls drop from 10x8 to 8x6. Projected saving is about
+3M of the 18.4M triangles per frame; the detail view keeps the denser spheres.
+
+With those three changes the same scene, nothing selected, records **165 fps
+stable** (p95 6.20 ms, max 9.61). Selecting all twenty models drops it to 159-161
+fps with 15-24 ms spikes.
+
+## Known cost: selecting a model queued a full-mesh footprint scan
+
+The all-selected slowdown was not rendering: draw calls rose by 124 (the active
+model's attached support layer) and CPU by 0.5 ms, but the spikes were ~10x
+that. `SceneCanvas` mounts one `FootprintBorderRenderer` per selected model, and
+each schedules an idle callback that computes a projected silhouette hull
+(`computeProjectedFootprintHull`). That scan read up to **160,000 corners** per
+model with `getX/getY/getZ` and an `atan2` each.
+
+Measured on a 460k-triangle model: **9 ms per hull**, so selecting a 20-model
+plate queued ~180 ms of main-thread work, landing in 16-24 ms frames exactly
+while the user was orbiting. The scan is cached per orientation, so it is a
+selection-time cost, not a per-frame one — but it is the reason "select all then
+orbit" chugged while "nothing selected then orbit" did not.
+
+**Fixed** by giving `computeProjectedFootprintHull` a `{ scan: 'sampled' }` mode
+and using it for the border: it reads the **1024-point sample the cache already
+builds** instead of scanning the position attribute, measured at **0.26 ms per
+model**. Placement sizing (`computeProjectedFootprintSize`) keeps the full scan,
+where an underestimated footprint would put a model over the plate edge. The
+hull cache key carries the mode, so the two cannot poison each other, and the
+previously dead `sampledCenteredPoints` array is now the thing it was built for.
+
+Selecting all twenty models therefore queues ~5 ms of work instead of ~180 ms,
+and the border still takes the farthest point per angular bin.
+
+## Known cost: a selected model kept every support answering the pointer during an orbit
+
+With nothing selected, prepare renders one support layer whose `navigationLodActive`
+is the live orbit state, so its pointer handlers unmount the moment the camera
+moves. With a model active, Select mode renders the world layer from a second
+branch that passed `navigationLodActive={transformMode !== 'select'}` — a
+constant `false` in Select mode. The handlers therefore stayed mounted through
+every orbit.
+
+R3F raycasts every object that carries a pointer handler on every pointer move,
+so moving the mouse while orbiting paid the support batches' walk: 16,004 joint
+instances (three's per-instance raycast, ~0.11 µs each), 10,904 contact cones,
+15,359 shafts and the rafts, in both the world and attached layers. The frame
+rate did not care what the pointer was over; it cared that a model was selected
+and the mouse moved.
+
+**Fixed** by giving that layer the live `navigationLodActive` too. The handlers
+still exist when the camera is still, which is what press-to-drag a model by its
+supports needs.
+
+## Known cost: GPU picking followed the display rate and read back synchronously
+
+Hover picking renders the hovered model into a 3x3 target and then calls
+`readRenderTargetPixels`, which stalls the main thread until the GPU has
+finished. The loop took `max(config.hoverUpdateRate, measuredFps)`, so on a
+165 Hz display it did that **up to 165 times a second** while the pointer moved —
+the reported difference between 165 fps and 80 fps over the plate.
+
+**Fixed** two ways:
+
+- hover picks are capped at **60 Hz** (drags keep the display rate); the pick
+  does not need to be resampled faster than a pointer hover can change;
+- the readback is **asynchronous**: WebGL2 fences a pixel-pack buffer and the
+  bytes are collected a frame or two later in `pollAsyncReadbacks`, so the GPU
+  wait stops being a main-thread stall. The synchronous read stays as the
+  fallback for a context without fences, and results that land while picking is
+  paused are discarded rather than reported.
+
 ## Known cost: a model selection rebuilt the raft
 
 Selecting a model took 19 seconds on that scene, and the whole of it was the

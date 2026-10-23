@@ -110,11 +110,30 @@ export function coneShapeRatio(cone: InstancedContactCone): number {
 }
 
 /**
+ * Quantization of the frustum's end-to-end ratio, in ratio units.
+ *
+ * The ratio is the only cone shape parameter an instance matrix cannot carry,
+ * so it is part of the bucket key — and the key is a draw-call count: each
+ * bucket mounts up to three instanced meshes, in every layer that draws it.
+ * A real plate's body-to-contact ratio varies continuously with the support
+ * profile (the 20-model scene has 342 distinct values at 0.001 precision), so
+ * 0.001 precision produced **2111 draw calls** and a 10 ms CPU render on an
+ * RTX 3080.
+ *
+ * 0.05 parts of the ratio is a body-radius error of at most 2.5% *of the
+ * contact radius* — microns at print resolution — and collapses those 342
+ * values to ~48 buckets. That is the same trade the batch already makes for
+ * every other dimension, which rides a quantized scale.
+ */
+const CONE_RATIO_BUCKET_STEP = 0.05;
+const CONE_RATIO_BUCKETS_PER_UNIT = 1 / CONE_RATIO_BUCKET_STEP;
+
+/**
  * The key one cone's mesh is grouped under: its profile type and shape ratio, and
  * nothing else. Two cones that differ only in size share a mesh.
  */
 export function coneBucketKey(cone: InstancedContactCone): string {
-    return `${getProfileType(cone.profile)}:${quantizeToScale(coneShapeRatio(cone), 1000)}`;
+    return `${getProfileType(cone.profile)}:${quantizeToScale(coneShapeRatio(cone), CONE_RATIO_BUCKETS_PER_UNIT)}`;
 }
 
 /**
@@ -489,7 +508,7 @@ function ConeBucketMesh({
                     {...sharedHandlers}
                     raycast={raycast ?? INSTANCED_MESH_RAYCAST}
                 >
-                    <sphereGeometry args={[1, 10, 8]} />
+                    <sphereGeometry args={[1, 8, 6]} />
                     <meshStandardMaterial
                         color={instanceColor ? '#ffffff' : (discColor ?? color)}
                         emissive={emissive}
@@ -525,7 +544,7 @@ function ConeBucketMesh({
                             renderOrder={100000}
                             material={outOfBoundsMaterial}
                         >
-                            <sphereGeometry args={[1, 10, 8]} />
+                            <sphereGeometry args={[1, 8, 6]} />
                         </instancedMesh>
                     )}
                     {bucket.profileType === 'disk' && (

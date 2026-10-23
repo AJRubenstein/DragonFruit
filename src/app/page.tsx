@@ -123,6 +123,8 @@ import { EditorContextMenu, MENU_ITEMS, type EditorMenuAction } from '@/componen
 import { StructuredDialogModal } from '@/components/ui/StructuredDialogModal';
 import { eulerFromGlobalEuler, quaternionFromGlobalEuler } from '@/utils/rotation';
 import { DiagnosticsModal } from '@/components/modals/DiagnosticsModal';
+import { RenderProfilerOverlay } from '@/components/debug/RenderProfilerOverlay';
+import { toggleRenderProfilerEnabled } from '@/utils/debug/renderProfiler';
 import { HistoryDebugModal } from '@/components/modals/HistoryDebugModal';
 import { ModelSupportsModal } from '@/components/modals/ModelSupportsModal';
 import { DestructiveTransformModal } from '@/components/modals/DestructiveTransformModal';
@@ -6505,6 +6507,7 @@ export default function Home() {
     let wasSliceMetrics = false;
     let wasPrintMonitor = false;
     let wasPrintRtsp = false;
+    let wasRenderProfiler = false;
 
     const unsubscribe = hotkeyStore.subscribe((state) => {
       const isDiagnosticsActive = isActionActiveSync('DEBUG', 'DIAGNOSTICS');
@@ -6513,6 +6516,7 @@ export default function Home() {
       const isSliceMetricsActive = isActionActiveSync('DEBUG', 'SLICE_METRICS');
       const isPrintMonitorActive = isActionActiveSync('DEBUG', 'PRINT_MONITOR');
       const isPrintRtspActive = isActionActiveSync('DEBUG', 'PRINT_RTSP');
+      const isRenderProfilerActive = isActionActiveSync('DEBUG', 'RENDER_PROFILER');
 
       if (isDiagnosticsActive && !wasDiagnostics) {
         setIsDiagnosticsOpen((prev) => !prev);
@@ -6538,6 +6542,9 @@ export default function Home() {
           setIsPrintingMonitorRtspDebugOpen((prev) => !prev);
         }
       }
+      if (isRenderProfilerActive && !wasRenderProfiler) {
+        toggleRenderProfilerEnabled();
+      }
 
       wasDiagnostics = isDiagnosticsActive;
       wasHistory = isHistoryActive;
@@ -6545,6 +6552,7 @@ export default function Home() {
       wasSliceMetrics = isSliceMetricsActive;
       wasPrintMonitor = isPrintMonitorActive;
       wasPrintRtsp = isPrintRtspActive;
+      wasRenderProfiler = isRenderProfilerActive;
     });
 
     return unsubscribe;
@@ -11213,6 +11221,8 @@ export default function Home() {
 
       {/* The cut's own right-click menu and its waypoint hover hint. */}
       <OrganicCutOverlay session={organicCut} toolActive={organicCutToolActive} />
+
+      <RenderProfilerOverlay />
 
       <DiagnosticsModals
         clearHistory={clearHistory}
