@@ -141,3 +141,26 @@ test('a clearance already built is reused instead of built again', () => {
         ColumnClearanceMap.build = build;
     }
 });
+
+test('columnBlocked gives the segment march verdict for vertical columns', () => {
+    const mesh = makeSphereMesh(); // r=2, centre (0,0,5)
+    const columnSdf = new SDFCache(mesh, { cellSize: 0.5 });
+    const segmentSdf = new SDFCache(mesh, { cellSize: 0.5 });
+
+    let checked = 0;
+    for (const clearance of [0.2, 0.6, 1.1]) {
+        for (let gx = -4; gx <= 4; gx += 0.7) {
+            for (let gy = -4; gy <= 4; gy += 0.7) {
+                for (const [top, bottom] of [[8, 0], [6.2, 3.1], [5, 4.5], [9, 8.2]] as const) {
+                    checked++;
+                    assert.equal(
+                        columnSdf.columnBlocked(gx, gy, top, bottom, clearance),
+                        segmentSdf.segmentBlocked(gx, gy, top, gx, gy, bottom, clearance),
+                        `column (${gx},${gy}) ${top}->${bottom} clearance ${clearance}`,
+                    );
+                }
+            }
+        }
+    }
+    assert.ok(checked > 100, 'the sweep must exercise the column path');
+});

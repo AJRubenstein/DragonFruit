@@ -29,8 +29,8 @@ import { isLedgerKind } from './types';
 import type { Branch, Segment, SupportState, SupportOrigin, Vec3 } from '../types';
 import type { AutoSupportSettings } from './settings';
 import type { AutoPlaceTimings } from './types';
-import { normalizeAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS } from './settings';
-import { activeSizingBand } from './parameterSizing';
+import { normalizeAutoSupportSettings, AUTO_SUPPORT_CONSTRAINTS, MIN_CONTACT_TIP_DIAMETER_MM } from './settings';
+import { activeSizingBand, TIP_CONTACT_MIN_SHAFT_RATIO } from './parameterSizing';
 import { generateCandidates, deduplicateCandidates } from './candidateGeneration';
 import { generateGridCandidates, shouldUseDensityGrid } from './gridPlacement';
 import { computeStabilizationAnchors } from './stabilization';
@@ -75,6 +75,8 @@ import { draftAddEntity, draftAddPrimitive, draftCommitSupport } from './support
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
+import { createCavityTester } from '../interiorSupportGeometry';
+import { closestSurfaceNormal } from './closestSurfaceNormal';
 import { computeForestDiameterProfile, memberDiameterOf } from '../SupportTypes/Trunk/TrunkReplacement/maxConnectedDiameter';
 import { buildBranchData } from '../SupportTypes/Branch/branchBuilder';
 import type { BranchBuildInput, BranchBuildResult } from '../SupportTypes/Branch/branchBuilder';
@@ -317,9 +319,9 @@ function makeResult(
 function resolveSurfaceNormal(
     tipPos: CandidatePoint['tipPos'],
     mesh: THREE.Mesh | undefined,
-): { point: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } } {
+): { point: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number }; hit: boolean } {
     if (!mesh) {
-        return { point: tipPos, normal: { x: 0, y: 0, z: -1 } };
+        return { point: tipPos, normal: { x: 0, y: 0, z: -1 }, hit: false };
     }
 
     const raycaster = new THREE.Raycaster();
@@ -360,6 +362,7 @@ function resolveSurfaceNormal(
         return {
             point: { x: upHit.point.x, y: upHit.point.y, z: upHit.point.z },
             normal: calculateSmoothedNormal(upHit),
+            hit: true,
         };
     }
 
@@ -371,11 +374,13 @@ function resolveSurfaceNormal(
         return {
             point: { x: downHit.point.x, y: downHit.point.y, z: downHit.point.z },
             normal: { x: -smoothed.x, y: -smoothed.y, z: -smoothed.z },
+            hit: true,
         };
     }
 
-    // Fallback: keep the existing normal.
-    return { point: tipPos, normal: { x: 0, y: 0, z: -1 } };
+    // Fallback: keep the existing normal. `hit` says so, so the steepness
+    // check can ask the nearest triangle instead of trusting "down".
+    return { point: tipPos, normal: { x: 0, y: 0, z: -1 }, hit: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -976,6 +981,21 @@ function placeOneCandidate(
     const area = candidate.islandAreaMm2;
     const preset = presetForArea(area);
 
+    if (candidate.interior) {
+        // Internal support: the only legal shape is a bridge that stays in the
+        // cavity. A plate trunk would leave through a wall or a bore, which is
+        // what put supports through the shell.
+        const band = activeSizingBand();
+        const bridge = mesh ? buildCavityBridge(tipPos, tipNormal, candidate.modelId, mesh, band) : null;
+        if (bridge) {
+            d = draftAddEntity(d, bridge.kind, bridge.entity);
+            logPlacement(`${bridge.kind} (interior) ${candidate.id} Z=${candidate.zHeight.toFixed(1)}mm`);
+            return { kind: bridge.kind, preset, draft: d, entityId: bridge.entity.id };
+        }
+        logPlacement(`Rejected ${candidate.id}: interior tip has no cavity surface within reach`);
+        return { kind: 'reject', rejectedReason: 'trunk_build_error', preset, draft: d };
+    }
+
     // The fan pool is a walk of every host segment with its 10 samples, and
     // this function asks for it up to three times (island fan, overhang fan,
     // cavity fan) against an unchanged draft. Build it once, lazily — each
@@ -1024,15 +1044,21 @@ function placeOneCandidate(
             }
         }
     }
-    // Stabilization anchors stay standalone: they are buttresses along a
-    // bearing edge, and fanning them onto a host collapses the base they exist
-    // to widen. Reinforcement points are not buttresses but ordinary contacts
-    // that happen to ring a minima, so they attach like any island contact:
-    // the minima's own tip pillar is 2.5mm away, and a crown of leaves on it
+    // Stabilization anchors attach only while the brace pass is running.
+    // Their job is to resist topple, and a member off a rooted host resists
+    // the same moment with one plate contact instead of one per tooth. With
+    // bracing off nothing else holds that moment, so an anchor stays a
+    // standalone buttress and keeps the base it widens; merging it there
+    // would trade the only thing resisting the tip for a shorter member.
+    // Reinforcement points are ordinary contacts that happen to ring a
+    // minima, so they attach like any island contact in either case: the
+    // minima's own tip pillar is 2.5mm away, and a crown of leaves on it
     // leaves ONE plate contact instead of seven. Ringing them standalone was
     // the rule until a mini report showed 18 of its 61 bare trunks were ring
     // points, all within 5mm of each other.
-    if (!gridEnabled && !candidate.gridPoint && candidate.source !== 'stabilization') {
+    const anchorsMayAttach = candidate.source !== 'stabilization'
+        || supportSettings.autoSupport?.debugSkipAutoBracing !== true;
+    if (!gridEnabled && !candidate.gridPoint && anchorsMayAttach) {
         // Overhang-derived candidates (sub-threshold, non-anchor regions)
         // attach via the regular leaf-fanning path — a standalone straight
         // trunk next to fan leaves reads as a misplaced island support. No
@@ -1870,8 +1896,10 @@ export function rehostLegacyKnots(draft: SupportState): SupportState {
  * (thickened) shaft and renders as a visible step; conversely a leaf fanned
  * while its host was temporarily thicker, a transplanted replacement profile,
  * or a re-run over a resized forest can leave a cone wider than its shaft.
- * Only the body moves — the tip contact diameter is a peel-force choice and
- * stays exactly as placed.
+ * The contact diameter moves only upward, to the same 30%-of-shaft floor the
+ * sizing applies: the forest resize can thicken a trunk long after its cone
+ * was built, and a fat trunk under a needle-thin contact is the visible
+ * mismatch this pass exists to stop. An explicit larger contact is kept.
  */
 export function syncContactConeDiameters(draft: SupportState): SupportState {
     // Which types contribute their segment diameters, from each type's declared
@@ -1898,9 +1926,12 @@ export function syncContactConeDiameters(draft: SupportState): SupportState {
     const syncCone = (cone: ContactCone | undefined, hostDia: number | undefined): ContactCone | undefined => {
         const body = cone?.profile?.bodyDiameterMm;
         if (!cone || body === undefined || hostDia === undefined) return cone;
-        if (Math.abs(body - hostDia) > 1e-6) {
+        const contact = cone.profile.contactDiameterMm ?? 0;
+        const minContact = Math.max(hostDia * TIP_CONTACT_MIN_SHAFT_RATIO, MIN_CONTACT_TIP_DIAMETER_MM);
+        const nextContact = Math.max(contact, minContact);
+        if (Math.abs(body - hostDia) > 1e-6 || Math.abs(contact - nextContact) > 1e-6) {
             changed = true;
-            return { ...cone, profile: { ...cone.profile, bodyDiameterMm: hostDia } };
+            return { ...cone, profile: { ...cone.profile, bodyDiameterMm: hostDia, contactDiameterMm: nextContact } };
         }
         return cone;
     };
@@ -2518,15 +2549,14 @@ export function fanLeafToHost(
 // and branches). Shown in the Auto Supports panel after a run; the per-entity
 // placement log spam is off by default (see setAutoSupportVerboseLogging).
 
-function clamp01(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-}
-
 /** The sizing reasoning for one placed support: island area + active band + height factor. */
 export function forestSizingNote(entry: ForestLedgerEntry, actualShaftMm: number): string {
-    const heightFactor = 1 + clamp01((entry.zHeight - 20) / 200, 0, 0.25);
     const areaInput = Math.max(entry.areaMm2, 0.01);
-    return `area ${areaInput.toFixed(2)}mm² · base Ø${entry.bandShaftMm.toFixed(2)} · h${heightFactor.toFixed(2)}` +
+    // The placed/sized ratio, including the height and model terms. The old
+    // note printed a display-only "height factor" that was not the factor the
+    // sizing used, so a 1.61 mm trunk read as "h1.14" and looked unexplained.
+    const sized = entry.bandShaftMm > 0 ? actualShaftMm / entry.bandShaftMm : 1;
+    return `area ${areaInput.toFixed(2)}mm² · base Ø${entry.bandShaftMm.toFixed(2)} · sized ×${sized.toFixed(2)}` +
         ` → Ø${actualShaftMm.toFixed(2)}mm`;
 }
 
@@ -2787,6 +2817,7 @@ export function computeAutoSupportPlan(
     baseState?: SupportState,
     mesh?: THREE.Mesh,
     onProgress?: AutoPlaceProgressCallback,
+    cavityMesh?: THREE.Mesh,
 ): AutoSupportPlan | null {
     // ------------------------------------------------------------------
     // 0. Settings
@@ -2797,6 +2828,14 @@ export function computeAutoSupportPlan(
     if (!autoSettings.enabled) {
         return null;
     }
+
+    // The modal's bar used to start at the placement pass, so the worker
+    // startup, the BVH build, the pose measurement and candidate generation
+    // looked like a freeze. Every pass reports its own short progress now.
+    const reportPhase = (phase: string, done: number, total: number) => {
+        onProgress?.({ phase, done, total });
+    };
+    reportPhase('Preparing model', 0, 1);
 
     const before = baseState ?? cloneSupportState(getSnapshot());
     let draft: SupportState = before;
@@ -2823,6 +2862,64 @@ export function computeAutoSupportPlan(
     // placement pipeline (pathfinding + collision).
     const resolvedMesh: THREE.Mesh | undefined = mesh ?? (getModelMesh(modelId) ?? undefined);
     if (resolvedMesh) resolvedMesh.updateMatrixWorld();
+
+    // Classify internal contacts before anything reads the islands: a tip on
+    // a cavity surface must not be routed out to the build plate (that path
+    // crosses the shell or fills a bore).
+    //
+    // The cavity mesh is literally the inner wall of the hollowed model mesh,
+    // so an interior contact lies ON it (distance ~0) and an exterior contact
+    // is at least one shell thickness away (minimum 0.2 mm). Distance is also
+    // normal-agnostic: a winding-convention mismatch cannot invert it.
+    if (cavityMesh && resolvedMesh) {
+        cavityMesh.updateMatrixWorld();
+        const cavityTester = createCavityTester(
+            new Map([[modelId, cavityMesh.geometry]]),
+            new Map([[modelId, new THREE.Matrix4().copy(cavityMesh.matrixWorld).invert()]]),
+        );
+        const ON_CAVITY_MM = 0.15;
+        let flagged = 0;
+        islands = islands.map((island) => {
+            if (island.interior !== undefined) return island;
+            const interior = cavityTester.distanceToSurface(island.contact, modelId) <= ON_CAVITY_MM;
+            if (interior) flagged += 1;
+            return interior ? { ...island, interior: true } : island;
+        });
+        console.log(LOG_PREFIX,
+            `Interior classification: cavity mesh present, ${flagged}/${islands.length} islands inside the cavity.`);
+    } else if (resolvedMesh) {
+        console.log(LOG_PREFIX,
+            'Interior classification: no cavity mesh in this run (model not hollowed, or hollowing not applied).');
+    }
+
+    // A voxel island records that material starts with nothing below it; it
+    // does not record how steep the surface is. On a wall steeper than the
+    // self-support angle the layer shift is small enough to print, and a
+    // contact there spends a shaft to resist nothing — the "supports on the
+    // side of the bow" report. The mesh's nearest triangle gives the angle for
+    // any orientation; the vertical-ray resolver cannot.
+    if (resolvedMesh) {
+        const selfSupportDeg = autoSettings.overhangSelfSupportAngleDeg;
+        const before = islands.length;
+        islands = islands.filter((island) => {
+            if (island.source === 'overhang' || island.source === 'minima' || island.interior) return true;
+            // A hole-tolerant vertical ray is the right answer wherever it
+            // hits; only when both rays miss (a side wall) does the nearest
+            // triangle answer, so a punched ceiling is not mistaken for the
+            // hole's vertical rim.
+            const resolved = resolveSurfaceNormal(island.contact, resolvedMesh);
+            const normal = resolved.hit
+                ? resolved.normal
+                : (closestSurfaceNormal(resolvedMesh, island.contact) ?? resolved.normal);
+            const inclinationDeg = Math.acos(Math.min(1, Math.abs(normal.z))) * (180 / Math.PI);
+            return inclinationDeg <= selfSupportDeg + 0.5;
+        });
+        const dropped = before - islands.length;
+        if (dropped > 0) {
+            console.log(LOG_PREFIX,
+                `Skipped ${dropped} island(s) on surfaces steeper than ${selfSupportDeg}° (self-supporting).`);
+        }
+    }
 
     // ------------------------------------------------------------------
     // 1. Generate candidates
@@ -2878,6 +2975,8 @@ export function computeAutoSupportPlan(
 
     console.log(LOG_PREFIX, `Input: ${islands.length} islands from scan`);
     resetRouterStats();
+    reportPhase('Preparing model', 1, 1);
+    reportPhase('Finding candidates', 0, 1);
     timingStart('candidates');
 
     let candidates = generateCandidates(islandsToCover, autoSettings, { mesh: resolvedMesh, modelId });
@@ -2885,8 +2984,9 @@ export function computeAutoSupportPlan(
 
     // Stabilization pass: when the oriented mesh bears on a point or edge,
     // formation detection sees nothing to support, so a dedicated bearing
-    // analysis adds anchor contacts to broaden the base. Standalone trunks —
-    // they never fan/merge onto a nearby host (the source gates that below).
+    // analysis adds anchor contacts to broaden the base. They attach to a
+    // nearby host when the brace pass will run, and stay standalone when it
+    // will not (see the placement gate below).
     let stabilizationAnchors = 0;
     if (autoSettings.stabilizationEnabled !== false && resolvedMesh) {
         const anchors = computeStabilizationAnchors(resolvedMesh, { hasRaft });
@@ -2978,6 +3078,8 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('candidates');
+    reportPhase('Finding candidates', 1, 1);
+    reportPhase('Removing duplicates', 0, 1);
     timingStart('dedup');
     // ------------------------------------------------------------------
     // 2. Deduplicate
@@ -3000,6 +3102,8 @@ export function computeAutoSupportPlan(
     // ------------------------------------------------------------------
 
     timingEnd('dedup');
+    reportPhase('Removing duplicates', 1, 1);
+    reportPhase('Filtering supports', 0, 1);
     timingStart('support-filter');
     const beforeSupportFilter = candidates.length;
     candidates = filterAlreadySupported(candidates, draft);
@@ -3101,6 +3205,8 @@ export function computeAutoSupportPlan(
     // convergence (gap-fill) passes. Each placement advances the local draft
     // (no store commit) so later candidates see earlier supports.
     timingEnd('support-filter');
+    reportPhase('Filtering supports', 1, 1);
+    reportPhase('Placing supports', 0, candidates.length);
     timingStart('placement');
 
     const placeOne = (candidate: CandidatePoint): string => {
@@ -3203,6 +3309,7 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('placement');
+    reportPhase('Consolidating supports', 0, 1);
     timingStart('consolidation');
 
     // ── Overhang→tree consolidation (order-independent) ──────────────
@@ -3365,6 +3472,8 @@ export function computeAutoSupportPlan(
         `| consolidation refusals: ${fmtRefusals(conRefusals)}`);
 
     timingEnd('consolidation');
+    reportPhase('Consolidating supports', 1, 1);
+    reportPhase('Filling gaps', 0, 1);
     timingStart('gap-fill');
 
     // ── Coverage convergence (gap-fill) ─────────────────────────────
@@ -3401,6 +3510,8 @@ export function computeAutoSupportPlan(
         `| presets: detail=${presets.detail} structure=${presets.structure} anchor=${presets.anchor}`);
 
     timingEnd('gap-fill');
+    reportPhase('Filling gaps', 1, 1);
+    reportPhase('Analysing supports', 0, 1);
     timingStart('analytics');
 
     // ── Coverage analytics ────────────────────────────────────────
@@ -3508,6 +3619,8 @@ export function computeAutoSupportPlan(
         `${analytics.islandsUncovered} islands uncovered.`);
 
     timingEnd('analytics');
+    reportPhase('Analysing supports', 1, 1);
+    reportPhase('Fanning leaves', 0, 1);
     timingStart('fanning');
 
     // ── Post-placement leaf fanning (iterative convergence) ──────────
@@ -3536,8 +3649,15 @@ export function computeAutoSupportPlan(
         let skippedCross = 0;
         let skippedOther = 0;
 
-        for (const island of islands) {
+        // `islandsToCover`, not `islands`: the steep-flat gate drops
+        // self-supporting walls from coverage when the pose is stable. Fanning
+        // the raw island list bypassed that gate and stuck leaves onto the
+        // steep side of a part, where the contact resists nothing.
+        for (const island of islandsToCover) {
             if (supportedIds.has(island.id)) continue;
+            // An internal contact may not fan to an exterior host; its only
+            // legal support is the cavity bridge tried at placement time.
+            if (island.interior) continue;
             const fan = fanLeafToHost(
                 { x: island.contact.x, y: island.contact.y, z: island.contact.z },
                 modelId,
@@ -3599,6 +3719,8 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('fanning');
+    reportPhase('Fanning leaves', 1, 1);
+    reportPhase('Checking coverage', 0, 1);
     timingStart('surface-coverage');
 
     // ── Overhang surface coverage ──────────────────────────────────
@@ -3760,6 +3882,8 @@ export function computeAutoSupportPlan(
     const changed = Object.values(placed).some((count) => count > 0);
 
     timingEnd('surface-coverage');
+    reportPhase('Checking coverage', 1, 1);
+    reportPhase('Resizing supports', 0, 1);
     timingStart('resize');
 
     // ------------------------------------------------------------------
@@ -3876,7 +4000,9 @@ export function computeAutoSupportPlan(
             }
 
             timingEnd('resize');
-            timingStart('report');
+    reportPhase('Resizing supports', 1, 1);
+            reportPhase('Compiling report', 0, 1);
+    timingStart('report');
 
             // ── Forest Report ───────────────────────────────────────
             // Structured per-run summary: every placed support's id, size,
@@ -3944,6 +4070,8 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('report');
+    reportPhase('Compiling report', 1, 1);
+    reportPhase('Bracing supports', 0, 1);
     timingStart('bracing');
 
     // ------------------------------------------------------------------
@@ -3968,6 +4096,7 @@ export function computeAutoSupportPlan(
     }
 
     timingEnd('bracing');
+    reportPhase('Bracing supports', 1, 1);
     const timings = collectTimings(perfEndFrame());
     if (timings) {
         // The distance field's own counters: the router's probes are most of a
@@ -4042,6 +4171,7 @@ export function runAutoPlace(
     islands: DetectedIsland[],
     modelId: string,
     settingsOverride?: Partial<AutoSupportSettings>,
+    cavityMesh?: THREE.Mesh,
 ): AutoPlaceResult {
-    return commitAutoPlacePlan(computeAutoSupportPlan(islands, modelId, settingsOverride));
+    return commitAutoPlacePlan(computeAutoSupportPlan(islands, modelId, settingsOverride, undefined, undefined, undefined, cavityMesh));
 }

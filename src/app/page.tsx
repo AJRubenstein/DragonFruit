@@ -9233,6 +9233,11 @@ export default function Home() {
 
   // Auto applies to the whole selection: every selected model is snapped again, and with
   // several selected they are lifted or dropped together, as a single model is on its own.
+  const getCavityGeometryForModel = React.useCallback(
+    (modelId: string) => cavityGeometryByModelIdRef.current.get(modelId)?.geometry ?? null,
+    [],
+  );
+
   const handleAutoLiftChange = React.useCallback((enabled: boolean) => {
     const targetIds = getSelectionTargetIds();
     // Placed before the overrides are cleared: the placement writes from the models as they
@@ -10623,6 +10628,7 @@ export default function Home() {
                   autoLift={transformMgr.autoLift}
                   onAutoLiftChange={handleAutoLiftChange}
                   onBeforeRun={requestModifierDecisionBeforeSupports}
+                  getCavityGeometry={getCavityGeometryForModel}
                 />
               </div>
             )}
