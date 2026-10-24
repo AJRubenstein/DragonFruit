@@ -784,25 +784,21 @@ export function SupportProxyMeshLayer({
   // restores the "singular mesh" performance characteristic that was lost when
   // per-model groups were introduced in the ZIP Import / Batch Export refactor.
   //
-  // Two sets, not one: the models the pointer can reach, and the ones standing on
-  // another bed. One batch per kind for the whole scene cannot be frustum culled —
-  // its bounds cover every plate, so three draws every bed's supports whenever any
-  // part of one is on screen. Split, the scenery set has its own bounds and falls
-  // out of the frustum the moment the camera is on the bed being worked on, which
-  // is the normal pose: the draw calls go from one set per kind to two, and the
-  // second one is usually not drawn at all.
+  // One set, not two. The live/scenery split existed so the other beds' batches
+  // could fall out of the frustum as a group, because a single batch per kind
+  // had bounds covering every plate. Tiles now give each handful of primitives
+  // its own bounds, so the split no longer buys culling — and it cost a full
+  // rebuild of every support array whenever the active plate or the selection
+  // changed, because that changes which models are scenery. Switching plates or
+  // clicking a bed therefore re-laid out ~78k instances inside the click. The
+  // pointer filter still uses `pointerSceneryModelIds` to answer hits and tint.
   // Geometry arrays are built once per walk and kept stable when only which
-  // models are *hidden* changes. That distinction is the frame: an exclusion
-  // change (the active model folding in or out of the world layer) used to
-  // rebuild every array, which made all four batches re-layout their ~83k
-  // instances — a 25-50 ms stall at an orbit's start and end. The base arrays
-  // now survive; only the small curved-shaft list is rebuilt per exclusion.
+  // models are *hidden* changes, so an exclusion change costs the instances that
+  // changed state rather than a full re-layout.
   const buildFlatBatches = React.useCallback((entries: readonly VisibleModelEntry[], skipCurved: boolean) => {
     const empty = (): FlatProxyGeometry => ({ straightShafts: [], curvedShafts: [], roots: [], joints: [], cones: [] });
     const live = empty();
     const scenery = empty();
-    const setFor = (modelId: string | undefined): FlatProxyGeometry =>
-      (supportAnswersPointer(modelId, pointerSceneryModelIds) ? live : scenery);
 
     const offsetShaft = (shaft: InstancedShaft, zOffset: number): InstancedShaft => {
       if (Math.abs(zOffset) < 1e-6) return shaft;
@@ -817,7 +813,7 @@ export function SupportProxyMeshLayer({
     };
 
     const appendRoot = (root: InstancedRoot, zOffset: number) => {
-      const target = setFor(root.modelId);
+      const target = live;
       if (Math.abs(zOffset) < 1e-6) {
         target.roots.push(root);
         return;
@@ -829,7 +825,7 @@ export function SupportProxyMeshLayer({
     };
 
     const appendJoint = (joint: InstancedJoint, zOffset: number) => {
-      const target = setFor(joint.modelId);
+      const target = live;
       if (Math.abs(zOffset) < 1e-6) {
         target.joints.push(joint);
         return;
@@ -841,7 +837,7 @@ export function SupportProxyMeshLayer({
     };
 
     const appendCone = (cone: InstancedContactCone, zOffset: number) => {
-      const target = setFor(cone.modelId);
+      const target = live;
       if (Math.abs(zOffset) < 1e-6) {
         target.cones.push(cone);
         return;
@@ -858,8 +854,7 @@ export function SupportProxyMeshLayer({
       for (const shaft of entry.geometry.shafts) {
         const curved = isCurvedBatchedShaft(shaft);
         if (skipCurved && curved) continue;
-        const target = setFor(shaft.modelId);
-        (curved ? target.curvedShafts : target.straightShafts).push(offsetShaft(shaft, zOffset));
+        (curved ? live.curvedShafts : live.straightShafts).push(offsetShaft(shaft, zOffset));
       }
       for (const root of entry.geometry.roots) appendRoot(root, zOffset);
       if (includeDetailedPrimitives) {
@@ -869,7 +864,7 @@ export function SupportProxyMeshLayer({
     }
 
     return { live, scenery };
-  }, [includeDetailedPrimitives, pointerSceneryModelIds]);
+  }, [includeDetailedPrimitives]);
 
   // The world layer's full set: every model, curved shafts filled in separately.
   const worldBatches = React.useMemo(
@@ -892,7 +887,6 @@ export function SupportProxyMeshLayer({
     for (const entry of visibleModelEntries) {
       for (const shaft of entry.geometry.shafts) {
         if (!isCurvedBatchedShaft(shaft)) continue;
-        const target = supportAnswersPointer(shaft.modelId, pointerSceneryModelIds) ? live : scenery;
         const pushed: InstancedShaft = Math.abs(entry.zOffset) < 1e-6
           ? shaft
           : {
@@ -900,11 +894,11 @@ export function SupportProxyMeshLayer({
             start: { x: shaft.start.x, y: shaft.start.y, z: shaft.start.z + entry.zOffset },
             end: { x: shaft.end.x, y: shaft.end.y, z: shaft.end.z + entry.zOffset },
           };
-        target.push(pushed);
+        live.push(pushed);
       }
     }
     return { live, scenery };
-  }, [hidesExcludedModels, pointerSceneryModelIds, visibleModelEntries]);
+  }, [hidesExcludedModels, visibleModelEntries]);
 
   const batches = React.useMemo(() => {
     if (!hidesExcludedModels || !worldBatches || !worldCurvedShafts) {

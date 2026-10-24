@@ -273,6 +273,13 @@ full-plate orbit holds 165 fps at 404 calls without the fold, so the 124 calls
 bought nothing; the attached layer now simply stays visible and the world layer
 always excludes its model.
 
+**The support batches are one tiled set.** Shafts, roots, joints and cones used
+to be split into a live set and a scenery set (models on other beds) so the
+scenery set could cull as a group. Tiles made that split redundant, and it made
+every change to the active plate or the selection rebuild all arrays and lay out
+~78k instances again — inside the click that switched plates. Scenery is now a
+per-instance pointer/tint decision; a single set is cut into tiles once.
+
 **Rafts are not the cost.** Measured by running `buildSolidRaftPreviewMeshes` over
 the scene's 20 root sets with the default raft settings: **10,340 triangles
 total** (about 500 per model). The raft proxy is 40 draw calls and almost no
