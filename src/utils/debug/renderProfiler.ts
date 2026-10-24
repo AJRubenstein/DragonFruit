@@ -409,7 +409,15 @@ function installIdleTaskCapture(): void {
         callback(deadline);
       } finally {
         const durationMs = performance.now() - start;
-        if (durationMs >= 20) recordRenderEvent('idle-task', `${durationMs.toFixed(0)}ms ${caller}`);
+        if (durationMs >= 20) {
+          recordRenderEvent('idle-task', `${durationMs.toFixed(0)}ms ${caller}`);
+          // Chrome reports every idle callback as `IdleRequestCallback`; print the
+          // caller when it is long enough to matter so a console report names it
+          // without needing the JSON.
+          if (durationMs >= 50) {
+            console.warn(`[idle] ${durationMs.toFixed(0)}ms at ${caller}`);
+          }
+        }
       }
     }, options);
   }) as Window['requestIdleCallback'];
