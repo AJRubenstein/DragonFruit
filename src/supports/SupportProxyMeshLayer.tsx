@@ -1006,6 +1006,7 @@ export function SupportProxyMeshLayer({
               clippingPlanes={clippingPlanes}
               widthSegments={PROXY_JOINT_WIDTH_SEGMENTS}
               heightSegments={PROXY_JOINT_HEIGHT_SEGMENTS}
+              grabRadiusAt={grabRadiusAt}
               onJointClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
               onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
               onJointPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}

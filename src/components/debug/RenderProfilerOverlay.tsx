@@ -333,8 +333,8 @@ export function RenderProfilerOverlay() {
       style={{ left: position.x, top: position.y, width: `min(${WINDOW_WIDTH}px, calc(100vw - 16px))` }}
     >
       <Card
-        className="overflow-hidden shadow-2xl backdrop-blur-sm"
-        style={{ background: 'color-mix(in srgb, var(--surface-0), transparent 4%)' }}
+        className="overflow-hidden shadow-2xl"
+        style={{ background: 'var(--surface-0)' }}
       >
       <div
         onPointerDown={handleDragStart}

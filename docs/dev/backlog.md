@@ -229,6 +229,32 @@ fired per model crossing, both avoidable:
   now throttled to one per 50 ms with the latest trailing, clearing to `null`
   immediately, and the footprint border follows a hover that has settled for
   140 ms instead of the raw one.
+- **The joint batch answered hover with three's per-instance walk.** Shafts and
+  contact cones already had a grid raycast; joints (16,004 on this plate) did
+  not, so a pointer move tested every instance (~1.8 ms). `InstancedJointGroup`
+  now builds a point index when it is given a grab radius, using the same
+  `proxyHoverIndex` as the other batches; a joint is indexed as a short vertical
+  segment so the ray-segment maths never sees a degenerate one.
+
+## Fixed: per-frame work that did not need to be per frame
+
+A scan for frame-path work found four items that ran every frame regardless of
+whether anyone could see the result:
+
+- `GizmoCenter` read `canvas.getBoundingClientRect()` inside `useFrame` while the
+  gizmo was visible (forced layout) and cloned the position vector. The rect is
+  now cached and refreshed by a `ResizeObserver`/scroll/resize, and the projection
+  uses a scratch vector.
+- `SpaceMouseController` polled the Gamepad API every frame even with no device
+  attached. Detection is throttled to 2 Hz while no candidate exists; a present
+  device (and the frame after it disappears) still polls every frame because the
+  axes live in the snapshot.
+- Every mounted model built a `ShaderMaterial` for the support-placement guide
+  and wrote its `uPlaneZ` uniform each frame, even though only the active model in
+  placement mode draws it. The material is now created only when enabled and the
+  frame write is guarded.
+- The render profiler's own card had `backdrop-blur` over the canvas; a
+  compositor blur runs every frame the panel is open. It is opaque now.
 
 ## Fixed: snapshot-keyed memos re-walked the support forest on a hover
 

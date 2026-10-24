@@ -827,6 +827,10 @@ if (uDitherAmount > 0.0) {
   }, [outOfBoundsMax, outOfBoundsMin, outOfBoundsStripeColor, showOutOfBoundsOverlay]);
 
   const supportPlacementGuideMaterial = React.useMemo(() => {
+    // Only the active model in placement mode draws the guide; every other mounted
+    // model used to build a ShaderMaterial it never rendered and then write its
+    // uniform on every frame.
+    if (!supportPlacementGuideEnabled) return null;
     const material = new THREE.ShaderMaterial({
       transparent: true,
       depthTest: true,
@@ -896,7 +900,7 @@ if (uDitherAmount > 0.0) {
     });
 
     return material;
-  }, [planes]);
+  }, [planes, supportPlacementGuideEnabled]);
 
   React.useEffect(() => {
     if (!supportPlacementGuideMaterial) return;
@@ -916,6 +920,7 @@ if (uDitherAmount > 0.0) {
   // a render pass quantizes it, which steps the line by z / tan(surface tilt)
   // on screen.
   useFrame(() => {
+    if (!supportPlacementGuideMaterial) return;
     const planeZ = getSupportPlacementGuideZ();
     supportPlacementGuideMaterial.uniforms.uPlaneZ.value =
       typeof planeZ === 'number' && Number.isFinite(planeZ) ? planeZ : 0;
