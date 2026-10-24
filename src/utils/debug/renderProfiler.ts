@@ -405,6 +405,12 @@ function installEventCapture(): void {
     recordRenderEvent('pointerup', `button=${pointer.button} buttons=${pointer.buttons} ${pointer.pointerType || 'mouse'}`);
   });
   listen('pointercancel', () => recordRenderEvent('pointercancel'));
+  listen('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const tag = target?.tagName.toLowerCase() ?? '?';
+    const label = target?.getAttribute('aria-label') || target?.textContent?.trim().slice(0, 24) || '';
+    recordRenderEvent('click', `${tag}${label ? `:${label}` : ''}`);
+  });
   listen('blur', () => recordRenderEvent('window-blur'));
   listen('visibilitychange', () => recordRenderEvent(`visibility=${document.visibilityState}`));
 }

@@ -118,7 +118,8 @@ store's notify rate — four times a second — so drawing it cannot pollute the
 numbers it reports.
 
 Input capture is installed with the sampler: `recordRenderEvent` is called from
-window listeners for the picking navigation events and for pointer down/up, so
+window listeners for the picking navigation events and for pointer down/up and
+clicks (with the target's tag and label), so
 the events exist even when the gesture never reaches React state (a right-drag
 orbit in transform mode is one). Long frames come from a `PerformanceObserver`
 that prefers `long-animation-frame`, falls back to `longtask`, and separately

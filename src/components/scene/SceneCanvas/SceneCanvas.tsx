@@ -491,7 +491,7 @@ function sameCollectionRefs(a: readonly unknown[] | null | undefined, b: readonl
 const FRAME_WAKE_TAIL_MS = 1200;
 const FRAME_WAKE_EVENTS = [
   'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel',
-  'keydown', 'keyup',
+  'keydown', 'keyup', 'click',
   'picking-orbit-start', 'picking-orbit-change', 'picking-orbit-end',
   'picking-pan-start', 'picking-pan-change', 'picking-pan-end',
   'picking-zoom-start', 'picking-zoom-change', 'picking-zoom-end',
