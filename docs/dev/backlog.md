@@ -293,26 +293,16 @@ view had a **median of 350 calls** (max 412), so the tiles are culling. The cone
 key change and the tiles roughly cancel at full plate (404 against 412 before),
 and the tiles are the win whenever the camera stops seeing the whole plate.
 
-## Rendering stops when nothing needs a frame
+## Tried: rendering on demand while idle (reverted)
 
-The workspace canvas runs with R3F's `frameloop="demand"`. A static plate with
-no pointer, camera, drop or intro activity now renders nothing at all — before,
-it shaded 14M triangles and issued ~300 draw calls at 165 fps indefinitely,
-which is heat, fan noise and a display-rate budget spent on an image that is not
-changing.
-
-`IdleFrameKeepAlive` (`SceneCanvas.tsx`) wakes the loop from window input and the
-picking navigation events and keeps it awake for a 1.2 s tail, which covers
-OrbitControls' damping after a release and the longest camera transition
-(700 ms). Pointer moves and wheel events over anything other than the canvas do
-not wake it. While the render profiler is open it stays awake: a demand loop
-would report the idle gaps as frame time, so the profiler's numbers are still
-full-rate measurements.
-
-Any new `useFrame` animation that can start **without** input (an async result
-moving the camera, a procedural idle effect) must call `invalidate()` while it
-runs, or it will freeze until the next input. The existing input-driven
-animations are covered by the tail.
+R3F's `frameloop="demand"` plus a wake gate stopped the 165 fps redraw of a
+static plate entirely, which is real power and fan noise saved. It also made the
+first and last frames of a camera gesture worse: the loop stops between gestures,
+so the GPU drops its clocks and the resumed frame pays for the wake, while the
+first frame after a long idle carries the whole idle interval in R3F's clock
+delta (animations that read `delta` jump). Users felt it as more lag at orbit
+start and end than the constant redraw had. Reverted to `frameloop="always"`;
+do not re-add demand without solving both the wake frame and the first delta.
 
 ## Fixed: per-frame work that did not need to be per frame
 

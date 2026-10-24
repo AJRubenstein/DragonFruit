@@ -9,8 +9,6 @@ import dynamic from 'next/dynamic';
 import * as THREE from 'three';
 import { AlertTriangle } from 'lucide-react';
 import { OrbitControls } from '@react-three/drei';
-import { useFrame, useThree } from '@react-three/fiber';
-import { isRenderProfilerEnabled, subscribeRenderProfilerEnabled } from '@/utils/debug/renderProfiler';
 import { ZUpGizmoViewcube } from './ZUpGizmoViewcube';
 import { ZUpGizmoHelper } from './ZUpGizmoHelper';
 import {
@@ -473,68 +471,6 @@ function sameCollectionRefs(a: readonly unknown[] | null | undefined, b: readonl
     if (a[i] !== b[i]) return false;
   }
   return true;
-}
-
-/**
- * Keeps frames flowing only while something needs them.
- *
- * The canvas runs with `frameloop="demand"`, so an idle plate costs no GPU: a
- * static scene renders once and then stops. Anything that can change it wakes
- * the loop for a short tail, which covers OrbitControls' damping after a release
- * and the camera transitions (260-700 ms). While the render profiler is open it
- * stays awake, because its whole measurement is frames and a demand loop would
- * report the idle gaps as the frame time.
- *
- * The tail is deliberately generous: input that ends a gesture is followed by
- * damping, and a 1.2 s tail covers the longest camera transition in the app.
- */
-const FRAME_WAKE_TAIL_MS = 1200;
-const FRAME_WAKE_EVENTS = [
-  'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel',
-  'keydown', 'keyup', 'click',
-  'picking-orbit-start', 'picking-orbit-change', 'picking-orbit-end',
-  'picking-pan-start', 'picking-pan-change', 'picking-pan-end',
-  'picking-zoom-start', 'picking-zoom-change', 'picking-zoom-end',
-  'spacemouse-navigation-start', 'spacemouse-navigation-change', 'spacemouse-navigation-end',
-  'visibilitychange',
-];
-
-function IdleFrameKeepAlive({ active }: { active: boolean }) {
-  const invalidate = useThree((state) => state.invalidate);
-  const profilerEnabled = React.useSyncExternalStore(
-    subscribeRenderProfilerEnabled,
-    isRenderProfilerEnabled,
-    () => false,
-  );
-  const wakeUntilRef = React.useRef(0);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const wake = (event: Event) => {
-      // A pointer moving over the sidebar does not change the scene; only the
-      // canvas (and a captured drag, whose target is the canvas) needs frames.
-      if (event.type === 'pointermove' || event.type === 'wheel') {
-        const target = event.target;
-        if (!(target instanceof Element) || !target.closest('canvas')) return;
-      }
-      wakeUntilRef.current = performance.now() + FRAME_WAKE_TAIL_MS;
-      invalidate();
-    };
-    for (const type of FRAME_WAKE_EVENTS) {
-      window.addEventListener(type, wake, { capture: true, passive: true });
-    }
-    return () => {
-      for (const type of FRAME_WAKE_EVENTS) {
-        window.removeEventListener(type, wake, { capture: true });
-      }
-    };
-  }, [invalidate]);
-
-  useFrame(() => {
-    if (active || profilerEnabled || performance.now() < wakeUntilRef.current) invalidate();
-  });
-
-  return null;
 }
 
 export function SceneCanvas({
@@ -6559,14 +6495,12 @@ export function SceneCanvas({
         style={{ width: '100%', height: '100%', backgroundColor: 'var(--surface-0)', display: 'block' }}
         camera={defaultCamera}
         shadows={!isLinux}
-        frameloop="demand"
         dpr={dynamicDpr}
         gl={{ stencil: true, logarithmicDepthBuffer: false, powerPreference: 'high-performance' }}
         onPointerMissed={handleScenePointerMissed}
       >
         <React.Profiler id="df-scene" onRender={handleProfilerRender}>
         <SceneRenderProfiler />
-        <IdleFrameKeepAlive active={navigationLodActive || isIntroAnimating || isDropAnimating || isMarqueeSelecting || isPlacementActive} />
         <SceneRenderBindings
           rendererRef={rendererRef}
           sceneRef={sceneRef}

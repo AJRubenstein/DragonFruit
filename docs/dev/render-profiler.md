@@ -88,9 +88,6 @@ dropouts.
   window that replaced it, until the next recording starts.
 - **Pause** stops sampling without unpatching anything; the renderer resumes
   normal behaviour on the next frame.
-- The workspace canvas renders on demand when idle; opening the profiler keeps
-  it awake so the frame numbers are full-rate measurements rather than the idle
-  gaps.
 
 The rolling window keeps 240 frames (about four seconds at 60 fps) so the live
 panel stays cheap. Recording is the path for a longer capture.
