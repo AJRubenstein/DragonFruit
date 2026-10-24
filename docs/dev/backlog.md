@@ -302,8 +302,8 @@ each copy as an un-edged model and rebuilt the overlay with
 `buildModelEdgeGeometry` — O(triangles), once per copy, inside an
 `IdleRequestCallback`. Duplicating eight models produced a **653 ms** idle task,
 605 ms of it blocking, measured by the render profiler's LoAF capture
-(`IdleRequestCallback`, `src_features_scene`), about 450 ms after the confirm
-click. The shared clone now carries the source's `edgeGeometry`; edges are
+(`IdleRequestCallback`, from the scene feature chunk), about 450 ms after the
+confirm click. The shared clone now carries the source's `edgeGeometry`; edges are
 read-only and the vertex data is literally the same object.
 
 ## Tried: rendering on demand while idle (reverted)
