@@ -313,6 +313,21 @@ is not rendered, and the idle ensure pass is skipped. The render path checks the
 same flag. Re-enabling it needs the work to leave the main thread, not another
 share or deferral.
 
+## Fixed: duplicates re-encoded the same mesh chunk
+
+The post-duplicate chunk sweep baked a preview chunk per model. A duplicate
+shares the source's `BufferGeometry` and the chunk is encoded in local space
+around the mesh centre, so its bytes are identical — but the store is keyed per
+owner model, so every copy missed and ran the whole encode (STL build, SHA,
+zlib-6) again. The 666 ms `IdleRequestCallback` in the duplicate capture is that
+work: the idle callback itself returns a promise, so the profiler's idle-task
+wrapper timed only the callback body and the encode landed in the continuations.
+
+`MeshChunkStore.adoptForModel` now reuses an owner's chunk for the same geometry
+signature, and `bakeModelGeometryChunk` / `resolveModelChunkForTick` try it
+before encoding. An eight-model duplicate encodes nothing when the source is
+already baked.
+
 ## Tried: rendering on demand while idle (reverted)
 
 R3F's `frameloop="demand"` plus a wake gate stopped the 165 fps redraw of a
