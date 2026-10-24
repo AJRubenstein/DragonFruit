@@ -120,12 +120,14 @@ export function coneShapeRatio(cone: InstancedContactCone): number {
  * 0.001 precision produced **2111 draw calls** and a 10 ms CPU render on an
  * RTX 3080.
  *
- * 0.05 parts of the ratio is a body-radius error of at most 2.5% *of the
- * contact radius* — microns at print resolution — and collapses those 342
- * values to ~48 buckets. That is the same trade the batch already makes for
- * every other dimension, which rides a quantized scale.
+ * 0.1 parts of the ratio is a body-radius error of at most 5% *of the contact
+ * radius* — microns at print resolution — and collapses those 342 values to
+ * 34 buckets (17 for the active model), where 0.05 left about twice as many.
+ * Cone draw calls are the support layer's bulk and, unlike shafts and joints,
+ * they cannot be split spatially without multiplying the buckets, so this is
+ * the direct lever on them.
  */
-const CONE_RATIO_BUCKET_STEP = 0.05;
+const CONE_RATIO_BUCKET_STEP = 0.1;
 const CONE_RATIO_BUCKETS_PER_UNIT = 1 / CONE_RATIO_BUCKET_STEP;
 
 /**

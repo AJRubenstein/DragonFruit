@@ -236,6 +236,28 @@ fired per model crossing, both avoidable:
   `proxyHoverIndex` as the other batches; a joint is indexed as a short vertical
   segment so the ray-segment maths never sees a degenerate one.
 
+## Fixed: support batches cull spatially
+
+Models cull per mesh; support batches did not. One mesh per kind carried the whole
+plate with `frustumCulled={false}`, so zooming into one model still vertex-shaded
+all 15.4k shafts and 16k joints — the asymmetry that makes "models are smooth,
+models with supports are not" feel so large. Shafts, roots and joints are now
+split into a 3x3 grid of tiles, each with a bounding sphere built from the
+primitives it actually holds, and `ProxyTileCuller` gives every instanced batch
+under a tile that sphere and enables culling. Cones stay unsplit: their batch is
+keyed on the cone shape ratio, and a tile would multiply the buckets.
+
+The cone key itself is coarser: 0.1 of the ratio instead of 0.05, which is a
+body-radius error of at most 5% of the contact radius (microns) and takes the 342
+live ratios to 34 buckets — about 90 fewer draw calls, which is the support
+layer's bulk.
+
+**Rafts are not the cost.** Measured by running `buildSolidRaftPreviewMeshes` over
+the scene's 20 root sets with the default raft settings: **10,340 triangles
+total** (about 500 per model). The raft proxy is 40 draw calls and almost no
+geometry, so merging it across models would buy ~0.2 ms at the cost of per-model
+pointer identity — not worth it.
+
 ## Fixed: per-frame work that did not need to be per frame
 
 A scan for frame-path work found four items that ran every frame regardless of

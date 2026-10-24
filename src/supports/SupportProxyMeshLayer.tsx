@@ -21,6 +21,7 @@ import { bezierSegmentToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 import { SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { buildProxyTiles, type FlatProxyGeometry } from './supportProxyTiles';
 import {
     createCavityTester,
     interiorSupportIds,
@@ -104,16 +105,6 @@ type VisibleModelEntry = {
   modelId?: string;
   zOffset: number;
   geometry: ProxyModelGeometry;
-};
-
-type FlatProxyGeometry = {
-  /** Straight shafts: one instanced cylinder each. */
-  straightShafts: InstancedShaft[];
-  /** Curved shafts: merged into one tube mesh, so they cannot hide per instance. */
-  curvedShafts: InstancedShaft[];
-  roots: InstancedRoot[];
-  joints: InstancedJoint[];
-  cones: InstancedContactCone[];
 };
 
 /**
@@ -372,6 +363,30 @@ export function collectProxyPrimitives(
 
 
   return byModel;
+}
+
+
+/**
+ * Gives every instanced batch under it the tile's sphere and turns culling on.
+ *
+ * The primitive groups keep `frustumCulled={false}` for their other callers, and
+ * an `InstancedMesh`'s bounds are computed from the unit geometry, not the
+ * instances. A layout effect runs after the children exist and after R3F has
+ * applied their props, so this is the one place that can set both correctly.
+ */
+function ProxyTileCuller({ sphere, children }: { sphere: THREE.Sphere | null; children: React.ReactNode }) {
+  const groupRef = React.useRef<THREE.Group>(null);
+  React.useLayoutEffect(() => {
+    const group = groupRef.current;
+    if (!group || !sphere) return;
+    group.traverse((object) => {
+      const instanced = object as THREE.InstancedMesh;
+      if (!instanced.isInstancedMesh) return;
+      instanced.frustumCulled = true;
+      instanced.boundingSphere = sphere;
+    });
+  });
+  return <group ref={groupRef}>{children}</group>;
 }
 
 export function SupportProxyMeshLayer({
@@ -901,6 +916,11 @@ export function SupportProxyMeshLayer({
     };
   }, [buildFlatBatches, filteredBatches, hidesExcludedModels, worldBatches, worldCurvedShafts]);
 
+  const proxyTiles = React.useMemo(
+    () => buildProxyTiles(batches.live, batches.scenery),
+    [batches],
+  );
+
   // A support a fraction of a pixel wide must still be grabbable, so the grab
   // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.
   // The shaft batch turns this into a hover index of its own, over the shafts it
@@ -940,27 +960,68 @@ export function SupportProxyMeshLayer({
 
   return (
     <group userData={{ dfPerfGroup: 'supports' }}>
-      {batchSets.map(({ key, geometry }) => hasBatch(geometry) && (
+      {batchSets.map(({ key, geometry }) => {
+        const tiles = key === 'live' ? proxyTiles.live : proxyTiles.scenery;
+        return hasBatch(geometry) && (
         <group key={`proxy-base-batch-${key}`}>
-          {geometry.straightShafts.length > 0 && (
-            <InstancedShaftGroup
-              pointerSceneryModelIds={pointerSceneryModelIds}
-              shafts={geometry.straightShafts}
-              color={DEFAULT_SUPPORT_COLOR}
-              instanceColor={selectionColorFor}
-              isHidden={isHiddenPrimitive}
-              transparent={proxyTransparent}
-              opacity={proxyOpacity}
-              radialSegments={10}
-              clippingPlanes={clippingPlanes}
-              outOfBoundsMaterial={outOfBoundsMaterial}
-              grabRadiusAt={grabRadiusAt}
-              onShaftClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
-              onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
-              onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
-              onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
+          {tiles.map((tile) => (tile.straightShafts.length + tile.roots.length + tile.joints.length) > 0 && (
+            <ProxyTileCuller key={tile.key} sphere={tile.sphere}>
+              {tile.straightShafts.length > 0 && (
+                <InstancedShaftGroup
+                  pointerSceneryModelIds={pointerSceneryModelIds}
+                  shafts={tile.straightShafts}
+                  color={DEFAULT_SUPPORT_COLOR}
+                  instanceColor={selectionColorFor}
+                  isHidden={isHiddenPrimitive}
+                  transparent={proxyTransparent}
+                  opacity={proxyOpacity}
+                  radialSegments={10}
+                  clippingPlanes={clippingPlanes}
+                  outOfBoundsMaterial={outOfBoundsMaterial}
+                  grabRadiusAt={grabRadiusAt}
+                  onShaftClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+                  onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
+                  onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+                  onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
+                />
+              )}
+              {tile.roots.length > 0 && (
+                <InstancedRootsGroup
+                  roots={tile.roots}
+                  color={DEFAULT_SUPPORT_COLOR}
+                  instanceColor={selectionColorFor}
+                  isHidden={isHiddenPrimitive}
+                  transparent={proxyTransparent}
+                  opacity={proxyOpacity}
+                  clippingPlanes={clippingPlanes}
+                  outOfBoundsMaterial={outOfBoundsMaterial}
+                  onRootClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+                  onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
+                  onRootPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+                  onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
+                />
+              )}
+              {includeDetailedPrimitives && tile.joints.length > 0 && (
+                <InstancedJointGroup
+                  joints={tile.joints}
+                  outOfBoundsMaterial={outOfBoundsMaterial}
+                  color={DEFAULT_SUPPORT_COLOR}
+                  instanceColor={selectionColorFor}
+                  isHidden={isHiddenPrimitive}
+                  transparent={proxyTransparent}
+                  opacity={proxyOpacity}
+                  clippingPlanes={clippingPlanes}
+                  widthSegments={PROXY_JOINT_WIDTH_SEGMENTS}
+                  heightSegments={PROXY_JOINT_HEIGHT_SEGMENTS}
+                  grabRadiusAt={grabRadiusAt}
+                  onJointClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
+                  onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
+                  onJointPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
+                  onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
+                />
+              )}
+            </ProxyTileCuller>
+          ))}
           {geometry.curvedShafts.length > 0 && (
             <InstancedShaftGroup
               pointerSceneryModelIds={pointerSceneryModelIds}
@@ -976,41 +1037,6 @@ export function SupportProxyMeshLayer({
               onShaftPointerDown={pointerDragStartEnabled ? (shaft, event) => reportModelDragStart(shaft.modelId, event) : undefined}
               onShaftPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
               onShaftPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-          {geometry.roots.length > 0 && (
-            <InstancedRootsGroup
-              roots={geometry.roots}
-              color={DEFAULT_SUPPORT_COLOR}
-              instanceColor={selectionColorFor}
-              isHidden={isHiddenPrimitive}
-              transparent={proxyTransparent}
-              opacity={proxyOpacity}
-              clippingPlanes={clippingPlanes}
-              outOfBoundsMaterial={outOfBoundsMaterial}
-              onRootClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
-              onRootPointerDown={pointerDragStartEnabled ? (root, event) => reportModelDragStart(root.modelId, event) : undefined}
-              onRootPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
-              onRootPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
-            />
-          )}
-          {includeDetailedPrimitives && geometry.joints.length > 0 && (
-            <InstancedJointGroup
-              joints={geometry.joints}
-              outOfBoundsMaterial={outOfBoundsMaterial}
-              color={DEFAULT_SUPPORT_COLOR}
-              instanceColor={selectionColorFor}
-              isHidden={isHiddenPrimitive}
-              transparent={proxyTransparent}
-              opacity={proxyOpacity}
-              clippingPlanes={clippingPlanes}
-              widthSegments={PROXY_JOINT_WIDTH_SEGMENTS}
-              heightSegments={PROXY_JOINT_HEIGHT_SEGMENTS}
-              grabRadiusAt={grabRadiusAt}
-              onJointClick={pointerSelectionEnabled ? handleProxyInstanceClick : undefined}
-              onJointPointerDown={pointerDragStartEnabled ? (joint, event) => reportModelDragStart(joint.modelId, event) : undefined}
-              onJointPointerMove={pointerHoverEnabled ? handleProxyInstanceMove : undefined}
-              onJointPointerOut={pointerHoverEnabled ? handleProxyPointerOut : undefined}
             />
           )}
           {includeDetailedPrimitives && geometry.cones.length > 0 && (
@@ -1032,7 +1058,8 @@ export function SupportProxyMeshLayer({
             />
           )}
         </group>
-      ))}
+        );
+      })}
 
     </group>
   );
