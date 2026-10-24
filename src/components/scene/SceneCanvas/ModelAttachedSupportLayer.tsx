@@ -10,8 +10,6 @@ import { getSettings, subscribeToSettings } from '@/supports/Settings/state';
 import type { SupportPlacementPreviews } from '@/supports/rendering';
 import type { PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
 import { noteActivity } from '@/utils/debug/heartbeatContext';
-const EMPTY_MODEL_IDS: string[] = [];
-
 export type ModelAttachedSupportLayerProps = {
   mode?: SupportMode;
   modelFilterId?: string | null;
@@ -118,15 +116,16 @@ export function ModelAttachedSupportLayer({
   // support workspace, where full editable primitives are required.
   const useUltraLazySupports = mode !== 'support';
   /**
-   * In Support mode the world layer used to draw every model with the detailed
-   * renderer. Only the active model's supports are editable; the rest are
-   * scenery, and mounting detail for them is what makes the first entry into the
-   * tab cold (thousands of per-primitive geometries and materials). Detail the
-   * active model, keep every other model on the instanced proxy the Prepare view
-   * already builds.
+   * Support mode shows the supports of the model being worked on, and nothing
+   * else. The world layer used to mount the detailed renderer for every model on
+   * the plate — non-selected models' supports stayed visible and made the first
+   * entry into the tab cold (thousands of per-primitive geometries and
+   * materials). The world layer now draws the active model only; per-model
+   * layers (ghost/preview) keep their own filter.
    */
-  const supportDetailSplit = mode === 'support' && !modelFilterId && !!activeModelId;
-  const useProxy = useUltraLazySupports || supportDetailSplit;
+  const supportWorldLayer = mode === 'support' && !modelFilterId;
+  const detailModelId = mode === 'support' ? (supportWorldLayer ? activeModelId : modelFilterId) : null;
+  const useProxy = useUltraLazySupports;
   const proxyPointerSelectionEnabled = mode === 'prepare' && !navigationLodActive && !disableSelectionAndHover && !passive;
   const proxyIncludeDetailedPrimitives = supportProxyIncludeDetailedPrimitives;
   // Both flags answer one question, and a preset switch rewrites the whole
@@ -229,10 +228,8 @@ export function ModelAttachedSupportLayer({
             hoverTintColor={hoverTintColor}
             hoverTintStrength={hoverTintStrength}
             modelFilterId={modelFilterId}
-            excludeModelId={supportDetailSplit ? null : excludeModelId}
-            excludeModelIds={supportDetailSplit
-              ? (excludeModelId ? [...excludeModelIds, excludeModelId, activeModelId] : [...excludeModelIds, activeModelId])
-              : excludeModelIds}
+            excludeModelId={excludeModelId}
+            excludeModelIds={excludeModelIds}
             modelDropOffsetsById={modelDropOffsetsById}
             ghostOpacity={ghostOpacity}
             showOutOfBoundsOverlay={showOutOfBoundsOverlay}
@@ -249,9 +246,9 @@ export function ModelAttachedSupportLayer({
             modelWorldInverseById={modelWorldInverseById}
           />
         ) : null}
-        {supportDetailSplit && activeModelId && (
+        {detailModelId && (
           <SupportRenderer
-            key={`support-detail-${supportRenderRefreshNonce}-${activeModelId}`}
+            key={`support-detail-${supportRenderRefreshNonce}-${detailModelId}`}
             mode={mode}
             navigationLodActive={navigationLodActive}
             hidePlateContactPrimitives={hidePlateContactPrimitives}
@@ -266,9 +263,9 @@ export function ModelAttachedSupportLayer({
             marqueeCandidateModelIds={marqueeCandidateModelIds}
             hoverModelId={hoverModelId}
             modelDropOffsetsById={modelDropOffsetsById}
-            modelFilterId={activeModelId}
-            excludeModelId={null}
-            excludeModelIds={EMPTY_MODEL_IDS}
+            modelFilterId={detailModelId}
+            excludeModelId={excludeModelId}
+            excludeModelIds={excludeModelIds}
             disableSelectionAndHover={disableSelectionAndHover}
             pointerSceneryModelIds={pointerSceneryModelIds}
             ghostOpacity={ghostOpacity}

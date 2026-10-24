@@ -336,11 +336,12 @@ the active model is editable; the others are scenery, and each detailed support
 primitive creates its own geometry and material. That cold mount is the lag on
 the first Support-tab click.
 
-The world layer now keeps the proxy and excludes the active model, while a
-second `SupportRenderer` mounted beside it filters to `activeModelId`. Entering
-Support no longer remounts the proxy either — it stays the same component for
-non-active models. A single-model plate still pays for that model's detail; the
-next step there is a deferred swap or instanced detail, not this split.
+The world layer now draws the **edited model only**; non-selected models'
+supports are not shown at all in Support mode, which is what the mode is for.
+Per-model layers (ghost/preview) still render their own filter. Nothing else is
+mounted for the other models' supports, so entering Support no longer remounts
+the proxy either. The active model's detail is the remaining cold cost; the next
+step there is a deferred swap or instanced detail, not this split.
 
 ## Tried: rendering on demand while idle (reverted)
 
