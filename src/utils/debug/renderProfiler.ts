@@ -269,6 +269,8 @@ let frames: RenderFrameSample[] = [];
 let activeFrame: MutableFrame | null = null;
 
 let recording: RenderFrameSample[] | null = null;
+/** The last finished recording, kept so Copy JSON reports the gesture, not the idle window after it. */
+let lastRecording: RenderFrameSample[] | null = null;
 let recordingLimit = DEFAULT_RECORD_FRAMES;
 
 let installed: InstalledPatch | null = null;
@@ -1036,15 +1038,39 @@ function buildFrameSample(frame: MutableFrame, now: number): RenderFrameSample {
   };
 }
 
+/** The clock range a frame window covers; null for an empty window. */
+function frameWindow(frames: readonly RenderFrameSample[]): { fromMs: number; toMs: number } | null {
+  if (frames.length === 0) return null;
+  const last = frames[frames.length - 1];
+  return { fromMs: frames[0].atMs, toMs: last.atMs + last.frameMs };
+}
+
+/** Keeps only the events and stalls that belong to the frames being reported. */
+function captureForWindow(
+  frames: readonly RenderFrameSample[],
+  events: readonly RenderEventSample[],
+  stalls: readonly RenderStallSample[],
+): { events: RenderEventSample[]; stalls: RenderStallSample[] } {
+  const window = frameWindow(frames);
+  if (!window) return { events: [], stalls: [] };
+  return {
+    events: events.filter((event) => event.atMs >= window.fromMs && event.atMs < window.toMs),
+    stalls: stalls.filter((stall) => (
+      stall.startMs < window.toMs && stall.startMs + stall.durationMs > window.fromMs
+    )),
+  };
+}
+
 function buildReport(source: readonly RenderFrameSample[]): RenderProfileReport {
-  const annotated = annotateRenderFrames(source, renderEvents, renderStalls);
+  const capture = captureForWindow(source, renderEvents, renderStalls);
+  const annotated = annotateRenderFrames(source, capture.events, capture.stalls);
   return {
     summary: summarizeRenderFrames(annotated, gpuTiming),
     sceneStats,
     gpuTiming,
     frames: annotated,
-    events: renderEvents.slice(),
-    stalls: renderStalls.slice(),
+    events: capture.events,
+    stalls: capture.stalls,
     viewport: readViewport(),
     renderer: readRendererName(),
   };
@@ -1054,6 +1080,7 @@ function finishRecording(): void {
   if (!recording) return;
   const captured = recording;
   recording = null;
+  lastRecording = captured;
   lastReport = formatRenderProfileLine(buildReport(captured));
   lastReportAtMs = performance.now();
   void logToNativeFile('info', lastReport);
@@ -1277,7 +1304,8 @@ export function subscribeRenderProfiler(listener: () => void): () => void {
 
 export function getRenderProfilerSnapshot(): RenderProfilerSnapshot {
   if (cachedSnapshot) return cachedSnapshot;
-  const window = annotateRenderFrames(frames.slice(), renderEvents, renderStalls);
+  const capture = captureForWindow(frames, renderEvents, renderStalls);
+  const window = annotateRenderFrames(frames.slice(), capture.events, capture.stalls);
   cachedSnapshot = {
     enabled,
     paused,
@@ -1285,8 +1313,8 @@ export function getRenderProfilerSnapshot(): RenderProfilerSnapshot {
     frames: window,
     summary: summarizeRenderFrames(window, gpuTiming),
     sceneStats,
-    events: renderEvents.slice(),
-    stalls: renderStalls.slice(),
+    events: capture.events,
+    stalls: capture.stalls,
     recording: recording
       ? { active: true, captured: recording.length, limit: recordingLimit }
       : { active: false, captured: 0, limit: 0 },
@@ -1300,6 +1328,7 @@ export function getRenderProfilerSnapshot(): RenderProfilerSnapshot {
 export function startRenderProfileRecording(limit = DEFAULT_RECORD_FRAMES): void {
   recordingLimit = Math.max(30, Math.min(10_000, Math.round(limit)));
   recording = [];
+  lastRecording = null;
   renderEvents = [];
   renderStalls = [];
   lastHeapUsedBytes = null;
@@ -1339,7 +1368,9 @@ function readRendererName(): string | null {
 
 /** The structured payload the overlay copies, and the report is built from. */
 export function buildRenderProfileReport(): RenderProfileReport {
-  const source = recording && recording.length > 0 ? recording : frames;
+  const source = recording && recording.length > 0
+    ? recording
+    : (lastRecording ?? frames);
   return buildReport(source);
 }
 

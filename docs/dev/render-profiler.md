@@ -82,8 +82,10 @@ dropouts.
   `events` and `stalls`, and each frame carries the overlapping `events`,
   `stallMs` and `heapDeltaMb`.
 - **Write log** writes the same line for the current rolling window.
-- **Copy JSON** puts the full report — every captured frame and both summaries —
-  on the clipboard.
+- **Copy JSON** puts the full report — every captured frame, both summaries, and
+  the events/long frames that fall inside that frame window — on the clipboard.
+  After a recording finishes it reports that recording, not the idle rolling
+  window that replaced it, until the next recording starts.
 - **Pause** stops sampling without unpatching anything; the renderer resumes
   normal behaviour on the next frame.
 
