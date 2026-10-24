@@ -118,6 +118,7 @@ export function PickingRenderer({
   }>>([]);
   const pboPoolRef = useRef<WebGLBuffer[]>([]);
   const asyncReadbackDisabledRef = useRef(false);
+  const lastSlowPickLogRef = useRef(0);
 
   const webgl2Context = useCallback((): WebGL2RenderingContext | null => {
     try {
@@ -498,6 +499,12 @@ export function PickingRenderer({
     }
 
     const pickDurationMs = Math.max(0, performance.now() - pickStartMs);
+    const logNowMs = performance.now();
+    if (!queued && pickDurationMs >= 8 && logNowMs - lastSlowPickLogRef.current >= 1000) {
+      lastSlowPickLogRef.current = logNowMs;
+      console.warn(`[picking] synchronous pick took ${pickDurationMs.toFixed(1)} ms (scene sync ${syncDurationMs.toFixed(1)} ms)`);
+    }
+
     reportPickingRenderSample({
       pickDurationMs,
       syncDurationMs,
