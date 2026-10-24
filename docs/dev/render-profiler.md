@@ -29,6 +29,7 @@ the stall detector, the diagnostics modal and external profilers.
 | Draw calls | `renderer.info.render.calls` | hundreds per frame: per-object or per-bucket meshes instead of batches |
 | Triangles | `renderer.info.render.triangles` | geometry drawn that is not on screen, or a missing LOD |
 | Passes | render calls per frame, one row per scene | more than the app intends (a picking pass that should be paused) |
+| Groups | triangles per top-level group (`models`, `supports`, `rafts`) | which half of the scene is actually heavy — a support plate adds geometry and draw calls the model count does not show |
 
 A React commit is main-thread work the renderer never sees, so a frame that
 renders cheaply and still misses vsync is attributed here before the GPU is

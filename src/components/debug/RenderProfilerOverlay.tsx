@@ -430,6 +430,13 @@ export function RenderProfilerOverlay() {
                 {snapshot.sceneStats.instances} instances) · {triangles(snapshot.sceneStats.triangles)} triangles
               </div>
               <div>
+                {(['models', 'supports', 'rafts'] as const).map((group) => (
+                  <span key={group} style={{ marginRight: 8 }}>
+                    {group} <span style={{ color: 'var(--text-strong)' }}>{triangles(snapshot.sceneStats?.byGroup[group]?.triangles)}</span>
+                  </span>
+                ))}
+              </div>
+              <div>
                 <span style={{ color: 'var(--text-strong)' }}>{count(lastFrame?.programs)}</span> programs ·{' '}
                 <span style={{ color: 'var(--text-strong)' }}>{count(lastFrame?.geometries)}</span> geometries ·{' '}
                 <span style={{ color: 'var(--text-strong)' }}>{count(lastFrame?.textures)}</span> textures

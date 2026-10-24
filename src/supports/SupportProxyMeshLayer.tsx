@@ -939,7 +939,7 @@ export function SupportProxyMeshLayer({
     || (includeDetailedPrimitives && (geometry.joints.length > 0 || geometry.cones.length > 0));
 
   return (
-    <group>
+    <group userData={{ dfPerfGroup: 'supports' }}>
       {batchSets.map(({ key, geometry }) => hasBatch(geometry) && (
         <group key={`proxy-base-batch-${key}`}>
           {geometry.straightShafts.length > 0 && (

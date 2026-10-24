@@ -136,6 +136,10 @@ test('the log line carries the frame, pass and scene summary in one line', () =>
       geometries: 30,
       materials: 12,
       triangles: 12_100_000,
+      byGroup: {
+        models: { triangles: 12_000_000, objects: 21 },
+        supports: { triangles: 100_000, objects: 3 },
+      },
     },
     frames: [],
     viewport: null,
@@ -150,6 +154,7 @@ test('the log line carries the frame, pass and scene summary in one line', () =>
   assert.match(line, /main:0\.50x/);
   assert.match(line, /picking:0\.50x/);
   assert.match(line, /scene objects=120 meshes=24/);
+  assert.match(line, /groups models=12\.00M,supports=100\.0k/);
   assert.doesNotMatch(line, /undefined|NaN/);
 });
 

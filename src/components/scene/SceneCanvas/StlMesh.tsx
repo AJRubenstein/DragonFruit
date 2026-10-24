@@ -995,6 +995,7 @@ if (uDitherAmount > 0.0) {
 
   return (
     <group
+      userData={{ dfPerfGroup: 'models' }}
       ref={(node) => {
         groupRef.current = node;
         if (typeof meshRef === 'function') meshRef(node);

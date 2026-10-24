@@ -133,6 +133,11 @@ export type RenderSceneStats = {
   materials: number;
   /** Triangle count of everything the meshes draw, instances included. */
   triangles: number;
+  /**
+   * The same inventory split by the top-level group that owns each object:
+   * `models`, `supports`, `rafts`, or `other`. Tagged with `userData.dfPerfGroup`.
+   */
+  byGroup: Record<string, { triangles: number; objects: number }>;
 };
 
 export type RenderRecordingState = {
@@ -441,6 +446,10 @@ export function formatRenderProfileLine(report: RenderProfileReport): string {
       `scene objects=${stats.objects} meshes=${stats.meshes} instanced=${stats.instancedMeshes}`
       + ` instances=${stats.instances} triangles=${formatTriangles(stats.triangles)}`,
     );
+    const groups = Object.entries(stats.byGroup)
+      .map(([group, entry]) => `${group}=${formatTriangles(entry.triangles)}`)
+      .join(',');
+    if (groups.length > 0) parts.push(`groups ${groups}`);
   }
 
   if (report.renderer) parts.push(`renderer=${report.renderer}`);
@@ -453,9 +462,26 @@ export function formatRenderProfileLine(report: RenderProfileReport): string {
 
 // ── Scene statistics ─────────────────────────────────────────────────────
 
+function perfGroupOf(object: THREE.Object3D): string {
+  let node: THREE.Object3D | null = object;
+  while (node) {
+    const group = node.userData?.dfPerfGroup;
+    if (typeof group === 'string' && group.length > 0) return group;
+    node = node.parent;
+  }
+  return 'other';
+}
+
 function collectSceneStats(scene: THREE.Scene): RenderSceneStats {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
+  const byGroup: Record<string, { triangles: number; objects: number }> = {};
+  const bumpGroup = (object: THREE.Object3D, triangles: number) => {
+    const key = perfGroupOf(object);
+    const entry = byGroup[key] ?? (byGroup[key] = { triangles: 0, objects: 0 });
+    entry.objects += 1;
+    entry.triangles += triangles;
+  };
   let objects = 0;
   let meshes = 0;
   let instancedMeshes = 0;
@@ -480,7 +506,11 @@ function collectSceneStats(scene: THREE.Scene): RenderSceneStats {
         const position = mesh.geometry.getAttribute('position');
         const index = mesh.geometry.getIndex();
         const perMesh = index ? index.count / 3 : (position?.count ?? 0) / 3;
-        triangles += perMesh * instanceCount;
+        const meshTriangles = perMesh * instanceCount;
+        triangles += meshTriangles;
+        bumpGroup(object, meshTriangles);
+      } else {
+        bumpGroup(object, 0);
       }
       const material = mesh.material;
       if (Array.isArray(material)) for (const item of material) materials.add(item);
@@ -489,6 +519,7 @@ function collectSceneStats(scene: THREE.Scene): RenderSceneStats {
     }
     if ((object as THREE.LineSegments).isLine || (object as THREE.Line).isLine) lines += 1;
     if ((object as THREE.Points).isPoints) points += 1;
+    if (!mesh.isMesh) bumpGroup(object, 0);
   });
 
   return {
@@ -501,6 +532,7 @@ function collectSceneStats(scene: THREE.Scene): RenderSceneStats {
     geometries: geometries.size,
     materials: materials.size,
     triangles,
+    byGroup,
   };
 }
 
