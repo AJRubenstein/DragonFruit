@@ -390,6 +390,7 @@ export function RenderProfilerOverlay() {
           <MetricCard label="FPS" value={summary.fps > 0 ? summary.fps.toFixed(1) : 'n/a'} detail={p95(summary.frameMs, ms)} />
           <MetricCard label="Frame time" value={ms(summary.frameMs?.p50)} detail={p95(summary.frameMs, ms)} />
           <MetricCard label="CPU render" value={ms(summary.cpuMs?.p50)} detail={p95(summary.cpuMs, ms)} />
+          <MetricCard label="React commit" value={ms(summary.reactMs?.p50)} detail={p95(summary.reactMs, ms)} />
           <MetricCard label="GPU render" value={ms(summary.gpuMs?.p50)} detail={p95(summary.gpuMs, ms)} />
           <MetricCard label="Draw calls" value={count(summary.calls?.p50)} detail={`max ${count(summary.calls?.max)}`} />
           <MetricCard label="Triangles" value={triangles(summary.triangles?.p50)} detail={`max ${triangles(summary.triangles?.max)}`} />

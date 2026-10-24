@@ -24,12 +24,15 @@ the stall detector, the diagnostics modal and external profilers.
 | FPS | frames per second over the sampled window | below the display refresh while nothing moves — a frame budget problem |
 | Frame time | interval between frame marks (p50, p95) | p95 far above p50 — intermittent work, not a steady cost |
 | CPU render | time inside `WebGLRenderer.render`, summed over passes | high: draw-call setup, matrix/skinning updates, shader switches |
+| React commit | time React spent committing the scene subtree, from a `<Profiler>` | high: a state write re-rendering the scene, not the renderer |
 | GPU render | timer-query result, when available | high with low CPU: fill rate, vertex load or a heavy fragment shader |
 | Draw calls | `renderer.info.render.calls` | hundreds per frame: per-object or per-bucket meshes instead of batches |
 | Triangles | `renderer.info.render.triangles` | geometry drawn that is not on screen, or a missing LOD |
 | Passes | render calls per frame, one row per scene | more than the app intends (a picking pass that should be paused) |
 
-`frameMs` includes the wait for the display, and CPU and GPU time overlap;
+A React commit is main-thread work the renderer never sees, so a frame that
+renders cheaply and still misses vsync is attributed here before the GPU is
+blamed. `frameMs` includes the wait for the display, and CPU and GPU time overlap;
 subtracting one from another gives a bound, not a breakdown. The React commit
 is not in either column — a frame that renders cheaply and still feels slow is
 a React or layout problem, not a renderer one.
@@ -57,7 +60,7 @@ dropouts.
 - **Record** captures the next 600 frames into a separate buffer. While it runs
   the panel stops refreshing, so its own four-renders-a-second cost cannot show
   up as the p95 the recording is meant to explain. When the buffer fills, one
-  `[render]` line is written to `dragonfruit.log`: frame, CPU and GPU
+  `[render]` line is written to `dragonfruit.log`: frame, CPU, React and GPU
   percentiles, draw-call and triangle percentiles, a line per pass, and the
   scene inventory. That is the line to ask a user for in a report.
 - **Write log** writes the same line for the current rolling window.

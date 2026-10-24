@@ -34,6 +34,7 @@ function frame(frameMs: number, passes: RenderPassSample[]): RenderFrameSample {
     atMs: 0,
     frameMs,
     cpuMs,
+    reactMs: 0,
     gpuMs: gpuTimes.length > 0 ? gpuTimes.reduce((sum, value) => sum + value, 0) : null,
     calls: passes.reduce((sum, entry) => sum + entry.calls, 0),
     triangles: passes.reduce((sum, entry) => sum + entry.triangles, 0),
@@ -90,6 +91,15 @@ test('GPU statistics are absent when the context has no timer query', () => {
 
   assert.equal(summary.gpuMs, null);
   assert.equal(summary.passes[0].gpuMs, null);
+});
+
+test('React commit time is aggregated apart from CPU render time', () => {
+  const withReact = frame(16, [pass()]);
+  withReact.reactMs = 11;
+  const summary = summarizeRenderFrames([withReact], 'available');
+
+  assert.equal(summary.reactMs?.p50, 11);
+  assert.equal(summary.cpuMs?.p50, 3);
 });
 
 test('a sync probe contributes GPU statistics like a timer query', () => {

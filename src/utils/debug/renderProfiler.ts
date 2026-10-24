@@ -76,6 +76,8 @@ export type RenderFrameSample = {
   /** Interval since the previous frame began, in milliseconds. */
   frameMs: number;
   cpuMs: number;
+  /** React commit time attributed to this frame (see `recordReactCommit`). */
+  reactMs: number;
   /** Sum of the passes' resolved GPU times; null when none resolved. */
   gpuMs: number | null;
   calls: number;
@@ -111,6 +113,7 @@ export type RenderProfilerSummary = {
   fps: number;
   frameMs: ValueStats | null;
   cpuMs: ValueStats | null;
+  reactMs: ValueStats | null;
   gpuMs: ValueStats | null;
   calls: ValueStats | null;
   triangles: ValueStats | null;
@@ -173,6 +176,7 @@ type DrawCounters = {
 type MutableFrame = {
   atMs: number;
   passes: RenderPassSample[];
+  reactMs: number;
 };
 
 type GpuQueryHandle = object;
@@ -232,6 +236,7 @@ let sceneStats: RenderSceneStats | null = null;
 let lastSceneStatsAtMs = 0;
 
 let lastNotifyAtMs = 0;
+let pendingReactMs = 0;
 let lastReport: string | null = null;
 let lastReportAtMs: number | null = null;
 
@@ -386,6 +391,7 @@ export function summarizeRenderFrames(
     fps: frameMs && frameMs.avg > 0 ? 1000 / frameMs.avg : 0,
     frameMs,
     cpuMs: statsOf(cpuTimes),
+    reactMs: statsOf(samples.map((frame) => frame.reactMs)),
     gpuMs: gpuValuesAvailable(gpuState) ? statsOf(gpuTimes) : null,
     calls: statsOf(callCounts),
     triangles: statsOf(triangleCounts),
@@ -416,6 +422,7 @@ export function formatRenderProfileLine(report: RenderProfileReport): string {
     `[render] frames=${summary.frameCount} fps=${summary.fps.toFixed(1)}`,
     `frame p50=${formatMs(summary.frameMs?.p50)} p95=${formatMs(summary.frameMs?.p95)} max=${formatMs(summary.frameMs?.max)}`,
     `cpu p50=${formatMs(summary.cpuMs?.p50)} p95=${formatMs(summary.cpuMs?.p95)}`,
+    `react p50=${formatMs(summary.reactMs?.p50)} p95=${formatMs(summary.reactMs?.p95)}`,
     `gpu=${gpuState}${summary.gpuMs ? ` p50=${formatMs(summary.gpuMs.p50)} p95=${formatMs(summary.gpuMs.p95)}` : ''}`,
     `calls p50=${formatCount(summary.calls?.p50)} max=${formatCount(summary.calls?.max)}`,
     `tris p50=${formatTriangles(summary.triangles?.p50)} max=${formatTriangles(summary.triangles?.max)}`,
@@ -676,6 +683,7 @@ function buildFrameSample(frame: MutableFrame, now: number): RenderFrameSample {
     atMs: frame.atMs,
     frameMs: Math.max(0, now - frame.atMs),
     cpuMs,
+    reactMs: frame.reactMs,
     gpuMs: gpuResolved ? gpuMs : null,
     calls,
     triangles,
@@ -831,7 +839,23 @@ export function markRenderFrame(): void {
   if (!enabled || paused) return;
   const now = performance.now();
   if (activeFrame) finalizeFrame(now);
-  activeFrame = { atMs: now, passes: [] };
+  activeFrame = { atMs: now, passes: [], reactMs: pendingReactMs };
+  pendingReactMs = 0;
+}
+
+/**
+ * React commit time reported by a `<Profiler>` around the scene.
+ *
+ * A commit is main-thread work that `gl.render` does not see, so a frame that
+ * renders cheaply and still misses vsync can only be explained by it (or by the
+ * GPU). Commits are attributed to the frame whose mark encloses them; a commit
+ * that lands before the first mark is carried into it.
+ */
+export function recordReactCommit(actualDurationMs: number): void {
+  if (!enabled || paused) return;
+  if (!Number.isFinite(actualDurationMs) || actualDurationMs <= 0) return;
+  if (activeFrame) activeFrame.reactMs += actualDurationMs;
+  else pendingReactMs += actualDurationMs;
 }
 
 // ── Public store ─────────────────────────────────────────────────────────

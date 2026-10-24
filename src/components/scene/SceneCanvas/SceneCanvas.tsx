@@ -132,6 +132,7 @@ import {
 } from './marqueeHitTest';
 import { PickingEmptySpaceHoverResetter, SceneRenderBindings } from './SceneCanvasInteractionBits';
 import { SceneRenderProfiler } from './SceneRenderProfiler';
+import { recordReactCommit } from '@/utils/debug/renderProfiler';
 
 import { PickingProviderWrapper, SelectionSync, useInteractionWarning } from './SceneSelectionAndPicking';
 import { CameraClipPlaneStabilizer, CameraProvider, EnableLocalClipping, Helpers, Lights, SceneMoodOverlay } from './SceneEnvironment';
@@ -6411,6 +6412,14 @@ export function SceneCanvas({
     clearSelectDragCandidate();
   }, [clearSelectDragCandidate, interactionResetNonce, mode, transformMode]);
 
+  const handleProfilerRender = React.useCallback((
+    _id: string,
+    _phase: 'mount' | 'update' | 'nested-update',
+    actualDuration: number,
+  ) => {
+    recordReactCommit(actualDuration);
+  }, []);
+
   const [showCrossSectionCapDebugPanel, setShowCrossSectionCapDebugPanel] = React.useState(false);
   const [crossSectionCapDebugState, setCrossSectionCapDebugState] = React.useState<CrossSectionCapDebugPanelState>(
     DEFAULT_CROSS_SECTION_CAP_DEBUG_STATE,
@@ -6493,6 +6502,7 @@ export function SceneCanvas({
         gl={{ stencil: true, logarithmicDepthBuffer: false, powerPreference: 'high-performance' }}
         onPointerMissed={handleScenePointerMissed}
       >
+        <React.Profiler id="df-scene" onRender={handleProfilerRender}>
         <SceneRenderProfiler />
         <SceneRenderBindings
           rendererRef={rendererRef}
@@ -8092,6 +8102,7 @@ export function SceneCanvas({
           <SupportPathfindingDebugOverlay snapshot={supportPathfindingDebugState.snapshot} />
         )}
         {children}
+        </React.Profiler>
       </Canvas>
 
       {mode === 'support' && supportPathfindingDebugState.enabled && (
