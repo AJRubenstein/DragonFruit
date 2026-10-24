@@ -293,6 +293,19 @@ view had a **median of 350 calls** (max 412), so the tiles are culling. The cone
 key change and the tiles roughly cancel at full plate (404 against 412 before),
 and the tiles are the win whenever the camera stops seeing the whole plate.
 
+## Fixed: duplicating models rebuilt their edge overlays
+
+A duplicate shares the source model's geometry, so it must share the edge overlay
+derived from it too. `cloneGeometryWithBounds(..., { shared: true })` returned
+every other derived field but dropped `edgeGeometry`, so the idle edge pass saw
+each copy as an un-edged model and rebuilt the overlay with
+`buildModelEdgeGeometry` — O(triangles), once per copy, inside an
+`IdleRequestCallback`. Duplicating eight models produced a **653 ms** idle task,
+605 ms of it blocking, measured by the render profiler's LoAF capture
+(`IdleRequestCallback`, `src_features_scene`), about 450 ms after the confirm
+click. The shared clone now carries the source's `edgeGeometry`; edges are
+read-only and the vertex data is literally the same object.
+
 ## Tried: rendering on demand while idle (reverted)
 
 R3F's `frameloop="demand"` plus a wake gate stopped the 165 fps redraw of a

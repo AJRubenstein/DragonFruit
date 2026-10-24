@@ -2390,6 +2390,12 @@ export function useSceneCollectionManager(options?: {
           center: plane.center.clone(),
         })),
         meshDefects: source.meshDefects,
+        // A duplicate shares the source's vertex data, so it shares the edge
+        // overlay derived from it. Leaving this out made every duplicated model
+        // look like it had never been edged: the idle edge pass rebuilt the
+        // overlay for each copy, which is O(triangles) and blocked the main
+        // thread for most of a second on an 8-model duplicate.
+        ...(source.edgeGeometry ? { edgeGeometry: source.edgeGeometry } : {}),
       };
     }
 
