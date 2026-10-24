@@ -252,6 +252,15 @@ body-radius error of at most 5% of the contact radius (microns) and takes the 34
 live ratios to 34 buckets — about 90 fewer draw calls, which is the support
 layer's bulk.
 
+**Tiles must survive an exclusion change.** `batches` is a new object whenever
+the active model folds in or out of the world layer at an orbit's start and end;
+its straight/root/joint arrays are stable and only the curved list changes.
+`buildProxyTiles` is therefore memoized on the base sets (`worldBatches` /
+`filteredBatches`), not on `batches`. Cutting tiles from `batches` handed every
+shaft, root and joint group new arrays on release, which rebuilt their hover
+indexes over ~33k primitives — the release hitch, on top of the 124 draw calls
+the fold exists to save.
+
 **Rafts are not the cost.** Measured by running `buildSolidRaftPreviewMeshes` over
 the scene's 20 root sets with the default raft settings: **10,340 triangles
 total** (about 500 per model). The raft proxy is 40 draw calls and almost no

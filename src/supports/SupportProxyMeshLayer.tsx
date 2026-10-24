@@ -916,9 +916,18 @@ export function SupportProxyMeshLayer({
     };
   }, [buildFlatBatches, filteredBatches, hidesExcludedModels, worldBatches, worldCurvedShafts]);
 
+  // Tiles are cut from the base batch sets, not from `batches`: that object is
+  // rebuilt whenever an exclusion changes (the active model folding in or out
+  // at an orbit's start and end), and its only changed arrays are the curved
+  // shafts, which tiles do not hold. Cutting again would hand every shaft, root
+  // and joint group new arrays on release, which rebuilds their hover indexes
+  // and is exactly the release hitch this memo must not reintroduce.
+  const proxyTileSource = hidesExcludedModels ? worldBatches : filteredBatches;
   const proxyTiles = React.useMemo(
-    () => buildProxyTiles(batches.live, batches.scenery),
-    [batches],
+    () => (proxyTileSource
+      ? buildProxyTiles(proxyTileSource.live, proxyTileSource.scenery)
+      : { live: [], scenery: [] }),
+    [proxyTileSource],
   );
 
   // A support a fraction of a pixel wide must still be grabbable, so the grab
