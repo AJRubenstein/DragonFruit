@@ -306,6 +306,13 @@ each copy as an un-edged model and rebuilt the overlay with
 confirm click. The shared clone now carries the source's `edgeGeometry`; edges are
 read-only and the vertex data is literally the same object.
 
+**Disabled anyway.** Sharing the overlay did not remove the reported spike, so
+the feature is off behind `MODEL_EDGE_OVERLAY_ENABLED` in
+`src/hooks/useStlGeometry.ts`: the builder returns undefined, the settings control
+is not rendered, and the idle ensure pass is skipped. The render path checks the
+same flag. Re-enabling it needs the work to leave the main thread, not another
+share or deferral.
+
 ## Tried: rendering on demand while idle (reverted)
 
 R3F's `frameloop="demand"` plus a wake gate stopped the 165 fps redraw of a

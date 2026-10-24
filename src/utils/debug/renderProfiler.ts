@@ -310,6 +310,7 @@ const MAX_RENDER_STALLS = 120;
 let stallObservers: PerformanceObserver[] = [];
 let eventCaptureInstalled = false;
 let lastHeapUsedBytes: number | null = null;
+let originalRequestIdleCallback: Window['requestIdleCallback'] | null = null;
 
 // ── Small helpers ────────────────────────────────────────────────────────
 
@@ -379,6 +380,46 @@ function detailOf(event: Event): string | undefined {
   const detail = (event as CustomEvent<{ resumeAfterMs?: number }>).detail;
   if (detail && typeof detail.resumeAfterMs === 'number') return `resume=${Math.round(detail.resumeAfterMs)}ms`;
   return undefined;
+}
+
+/**
+ * Labels idle tasks with their duration and caller.
+ *
+ * The browser reports an idle task as `IdleRequestCallback`, which names the
+ * mechanism but not the work; on a 650 ms post-duplicate stall that is not
+ * enough to know whether it was edges, BVH, AO or planes. Wrapping the schedule
+ * call is the only place the caller's stack is available, so only the profiler
+ * does it, and only while enabled.
+ */
+function installIdleTaskCapture(): void {
+  if (typeof window === 'undefined' || typeof window.requestIdleCallback !== 'function') return;
+  if (originalRequestIdleCallback) return;
+  originalRequestIdleCallback = window.requestIdleCallback.bind(window);
+  window.requestIdleCallback = ((callback: IdleRequestCallback, options?: IdleRequestOptions) => {
+    let caller = 'idle';
+    try {
+      const frame = new Error().stack?.split('\n')[2]?.trim() ?? '';
+      caller = frame.replace(/^at\s+/, '').slice(0, 120) || 'idle';
+    } catch {
+      // A blocked stack must not break the callback.
+    }
+    return originalRequestIdleCallback!((deadline) => {
+      const start = performance.now();
+      try {
+        callback(deadline);
+      } finally {
+        const durationMs = performance.now() - start;
+        if (durationMs >= 20) recordRenderEvent('idle-task', `${durationMs.toFixed(0)}ms ${caller}`);
+      }
+    }, options);
+  }) as Window['requestIdleCallback'];
+}
+
+function uninstallIdleTaskCapture(): void {
+  if (typeof window !== 'undefined' && originalRequestIdleCallback) {
+    window.requestIdleCallback = originalRequestIdleCallback;
+  }
+  originalRequestIdleCallback = null;
 }
 
 function installEventCapture(): void {
@@ -1210,6 +1251,7 @@ export function installRenderProfiler(gl: THREE.WebGLRenderer, scene: THREE.Scen
   installed = { gl, original };
   installEventCapture();
   installStallObservers();
+  installIdleTaskCapture();
   initGpuTimer(gl);
   sceneStats = collectSceneStats(scene);
   lastSceneStatsAtMs = performance.now();
@@ -1233,6 +1275,7 @@ export function uninstallRenderProfiler(): void {
   syncProbeRemaining = 0;
   uninstallEventCapture();
   uninstallStallObservers();
+  uninstallIdleTaskCapture();
   cachedSnapshot = null;
   for (const listener of snapshotListeners) listener();
 }

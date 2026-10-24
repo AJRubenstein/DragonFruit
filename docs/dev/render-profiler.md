@@ -12,7 +12,8 @@ render pass:
 - the scene-graph inventory behind them (objects, meshes, instances, programs,
   geometries, textures),
 - the input and navigation events that landed in each frame, so a hot frame says
-  which gesture it belongs to,
+  which gesture it belongs to, plus any idle task that took 20 ms or more with
+  its caller and duration,
 - browser-reported long frames (Long Animation Frame, long-task, and Event Timing
   entries) that overlap it, with the scripts the browser blames,
 - the used JS heap change since the previous frame, so a GC pause is visible.

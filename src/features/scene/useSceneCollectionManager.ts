@@ -139,7 +139,7 @@ import {
   unlinkModelsLabel,
 } from '@/features/scene/sceneHistoryLabels';
 import { registerMeshForAutoBrace, unregisterMeshForAutoBrace } from '@/supports/autoBracing/meshGeometryStore';
-import { buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
+import { MODEL_EDGE_OVERLAY_ENABLED, buildModelEdgeGeometry } from '@/hooks/useStlGeometry';
 import { MESH_SHADER_TYPES, type MatcapVariant, type MeshShaderType } from '@/features/shaders/mesh';
 import {
   getSavedWorkspaceCameraSettings,
@@ -3907,7 +3907,7 @@ export function useSceneCollectionManager(options?: {
   ).higherContrastModelEdges;
 
   useEffect(() => {
-    if (!higherContrastModelEdges) return;
+    if (!MODEL_EDGE_OVERLAY_ENABLED || !higherContrastModelEdges) return;
 
     const queue = modelsRef.current
       .filter((model) => !model.geometry.edgeGeometry && model.geometry.geometry.getAttribute('position'))
