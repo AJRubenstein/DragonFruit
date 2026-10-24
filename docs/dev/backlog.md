@@ -253,15 +253,25 @@ live ratios to 34 buckets — about 90 fewer draw calls, which is the support
 layer's bulk.
 
 **Tiles must survive an exclusion change.** `batches` is a new object whenever
-the active model folds in or out of the world layer at an orbit's start and end;
-its straight/root/joint arrays are stable and only the curved list changes.
+the visible set changes (activating a model, a model drop offset); its
+straight/root/joint arrays are stable and only the curved list changes.
 `buildProxyTiles` is therefore memoized on the base sets (`worldBatches` /
 `filteredBatches`), not on `batches`. Cutting tiles from `batches` handed every
-shaft, root and joint group new arrays on release, which rebuilt their hover
-indexes over ~33k primitives — the release hitch, on top of the 124 draw calls
-the fold exists to save. Measured on the 20-model plate's primitive mix: the
-partition alone is **6.6 ms** per exclusion change (15,359 shafts, 16,004
-joints, 2,169 roots), inside a 12–14 ms release commit.
+shaft, root and joint group new arrays, which rebuilt their hover indexes over
+~33k primitives. Measured on the 20-model plate's primitive mix: the partition
+alone is **6.6 ms** per exclusion change (15,359 shafts, 16,004 joints, 2,169
+roots), inside a 12–14 ms commit.
+
+**The orbit fold is gone.** The active model's supports/raft used to fold into
+the world layer for the duration of an orbit, saving 124 draw calls while the
+camera moved. The exclusion change at each end re-rendered the support layer and
+ran its per-instance hide pass over ~78k instances inside the pointerdown/
+pointerup task. The profiler's long-frame capture named it: a **62 ms long
+animation frame at orbit start, 48 ms blocking, `three-stdlib onPointerDown` on
+the stack** (the nested listeners and the React flush live under it). A
+full-plate orbit holds 165 fps at 404 calls without the fold, so the 124 calls
+bought nothing; the attached layer now simply stays visible and the world layer
+always excludes its model.
 
 **Rafts are not the cost.** Measured by running `buildSolidRaftPreviewMeshes` over
 the scene's 20 root sets with the default raft settings: **10,340 triangles

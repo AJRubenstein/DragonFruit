@@ -4870,23 +4870,20 @@ export function SceneCanvas({
   const modifyToolActive = mode === 'prepare' && transformMode === 'transform';
   const navigationLodActive = isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || isGizmoRetargeting || isLayerScrubbing;
   /**
-   * While the camera moves, nothing can drag a model, so the active model's
-   * supports and raft do not need their own attached copy. Folding them back
-   * into the world layer removes a second complete support/raft batch from the
-   * frame — 124 draw calls on a 20-model plate — while the attached layer stays
-   * mounted and is merely hidden, so nothing is rebuilt when the gesture ends.
-   * Deliberately excludes gizmo dragging: there the attached copy is what keeps
-   * supports locked to the live transform.
+   * The active model's supports/raft always live in their own attached layer;
+   * the world layer always excludes that model.
+   *
+   * They used to fold into the world layer for the duration of an orbit, which
+   * saved 124 draw calls while the camera moved. That saving was not free: the
+   * exclusion change at the start and end of every gesture re-rendered the whole
+   * support layer and ran its per-instance hide pass over ~78k instances, and
+   * the React flush happens inside the pointerdown/pointerup task. The profiler
+   * measured a 62 ms long animation frame at orbit start, 48 ms of it blocking,
+   * with `onPointerDown` on the stack. Full-plate orbit holds 165 fps at 404
+   * calls without the fold, so the 124 calls were not buying anything.
    */
-  const foldActiveSupportsIntoWorld = !!activeModelId
-    && (isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive);
-  const worldSupportExcludeModelId = foldActiveSupportsIntoWorld ? null : activeModelId;
-  const worldSupportExcludeModelIds = React.useMemo(
-    () => (foldActiveSupportsIntoWorld
-      ? supportProxyExcludeModelIds.filter((id) => id !== activeModelId)
-      : supportProxyExcludeModelIds),
-    [activeModelId, foldActiveSupportsIntoWorld, supportProxyExcludeModelIds],
-  );
+  const worldSupportExcludeModelId = activeModelId;
+  const worldSupportExcludeModelIds = supportProxyExcludeModelIds;
   const suppressSupportProxyPointerInteraction = supportCreationModeActive || suppressSupportSelectionAndHover || modifyToolActive;
 
   const updateOrbitControlSpeeds = React.useCallback(() => {
@@ -6778,7 +6775,6 @@ export function SceneCanvas({
                           matrix={activeModelAttachedSupportLocalMatrix ?? undefined}
                           matrixAutoUpdate={false}
                           renderOrder={100000}
-                          visible={!foldActiveSupportsIntoWorld}
                         >
                           <ModelAttachedSupportLayer
                             plateClearanceTargets={plateClearanceTargets}
