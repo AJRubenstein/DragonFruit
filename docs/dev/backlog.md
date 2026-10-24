@@ -328,6 +328,19 @@ signature, and `bakeModelGeometryChunk` / `resolveModelChunkForTick` try it
 before encoding. An eight-model duplicate encodes nothing when the source is
 already baked.
 
+## Fixed: a joint drag committed a different position than it showed
+
+The live drag published a **clamped** joint position (against the host or the
+model contacts) through the preview stores, but the release committed from the
+**raw camera-plane hit**. The commit then re-solved the contacts from that other
+point, which could land away from what the user saw — the release snap. The
+release also ran before the final pointermove's rAF, so the last few pixels of a
+drag were never part of the commit.
+
+`useJointInteraction` now resolves the pending pointer hit at release and
+commits from `lastPreviewedJointPosRef` (the position the preview actually
+showed), falling back to the raw hit only when no preview was emitted.
+
 ## Fixed: hovering a support re-rendered the whole support scene
 
 `SupportRenderer` subscribes to the whole support store, so a hover write handed

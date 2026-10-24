@@ -49,6 +49,13 @@ export function useJointInteraction(enabled: boolean = true) {
     const dragOffset = useRef<THREE.Vector3>(new THREE.Vector3());
     const planeIntersectionRef = useRef<THREE.Vector3>(new THREE.Vector3());
     const lastDragPos = useRef<Vec3 | null>(null);
+    /**
+     * The clamped joint position the preview last showed. The commit re-solves
+     * the contacts, so it must start from what the user saw rather than from the
+     * raw pointer plane hit; otherwise the release can land somewhere else and
+     * read as a snap-back.
+     */
+    const lastPreviewedJointPosRef = useRef<Vec3 | null>(null);
     /** Where the joint sat when the drag began, to tell a drag from a click. */
     const dragStartJointPos = useRef<Vec3 | null>(null);
     const forceEndDragRef = useRef(false);
@@ -369,6 +376,7 @@ export function useJointInteraction(enabled: boolean = true) {
                 lastAppliedDragPosRef.current = null;
                 lastResolvedJointPosRef.current = null;
                 lastPublishedClampedJointPosRef.current = null;
+                lastPreviewedJointPosRef.current = null;
                 lastWarningRef.current = null;
                 lastWarningEvalAtRef.current = 0;
                 activeJointBindingRef.current = resolveJointBinding((foundParent as { segments: Array<{ topJoint?: { id: string; pos: Vec3 }; bottomJoint?: { id: string; pos: Vec3 } }> }).segments, jointId);
@@ -463,7 +471,23 @@ export function useJointInteraction(enabled: boolean = true) {
             //
             // Gated on real movement: this recompute re-solves the contact cone, which the
             // drag preview skips, so a click would otherwise move a tip it never dragged.
-            const committedDragPos = lastDragPos.current;
+            // The release can land between the last pointermove and its rAF.
+            // Resolve that final hit now so the release uses where the pointer
+            // actually stopped, not the previous frame.
+            if (jointDragUpdatePendingRef.current && activeJointIdAtEnd) {
+                jointDragUpdatePendingRef.current = false;
+                setPickRayFromCamera(raycaster, pointer, camera);
+                const releaseIntersection = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(dragPlane.current, releaseIntersection)) {
+                    const releasePos = snapDragPos(releaseIntersection.add(dragOffset.current));
+                    lastDragPos.current = { x: releasePos.x, y: releasePos.y, z: releasePos.z };
+                }
+            }
+
+            // Re-solve from the joint position the preview actually showed. The
+            // preview is clamped against the host / contacts; committing the raw
+            // plane hit re-solves from a different point and lands elsewhere.
+            const committedDragPos = lastPreviewedJointPosRef.current ?? lastDragPos.current;
             if (committedDragPos && shouldCommitJointDrag(dragStartJointPos.current, committedDragPos)) {
                 if (JOINT_DRAG_HOSTED_SHAFT_TYPES.has(activeSupport.current?.typeId as SupportTypeId)) {
                     // A hosted shaft recomputes identically; the arms differed
@@ -552,6 +576,7 @@ export function useJointInteraction(enabled: boolean = true) {
             lastResolvedJointPosRef.current = null;
             lastPublishedClampedJointPosRef.current = null;
             lastEmittedPreviewJointPosRef.current = null;
+            lastPreviewedJointPosRef.current = null;
             lastWarningEvalAtRef.current = 0;
             activeConstraintRootRef.current = undefined;
             activeConstraintStartRef.current = undefined;
@@ -589,6 +614,7 @@ export function useJointInteraction(enabled: boolean = true) {
 
         lastResolvedJointPosRef.current = { x: stablePos.x, y: stablePos.y, z: stablePos.z };
         lastEmittedPreviewJointPosRef.current = { x: stablePos.x, y: stablePos.y, z: stablePos.z };
+        lastPreviewedJointPosRef.current = { x: stablePos.x, y: stablePos.y, z: stablePos.z };
         emitJointDragPositionPreview(activeJointId.current!, stablePos);
     };
 
