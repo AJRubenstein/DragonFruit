@@ -258,6 +258,13 @@ total** (about 500 per model). The raft proxy is 40 draw calls and almost no
 geometry, so merging it across models would buy ~0.2 ms at the cost of per-model
 pointer identity — not worth it.
 
+**Measured on the 20-model plate** (14.18M triangles, 4.87M of them supports):
+a full-plate spin holds a flat **165 fps, p95 6.125 ms, max 6.32 ms** over 240
+frames with 404 draw calls; a 600-frame run in which part of the plate left the
+view had a **median of 350 calls** (max 412), so the tiles are culling. The cone
+key change and the tiles roughly cancel at full plate (404 against 412 before),
+and the tiles are the win whenever the camera stops seeing the whole plate.
+
 ## Fixed: per-frame work that did not need to be per frame
 
 A scan for frame-path work found four items that ran every frame regardless of
