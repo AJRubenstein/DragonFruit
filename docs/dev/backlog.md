@@ -259,7 +259,9 @@ its straight/root/joint arrays are stable and only the curved list changes.
 `filteredBatches`), not on `batches`. Cutting tiles from `batches` handed every
 shaft, root and joint group new arrays on release, which rebuilt their hover
 indexes over ~33k primitives — the release hitch, on top of the 124 draw calls
-the fold exists to save.
+the fold exists to save. Measured on the 20-model plate's primitive mix: the
+partition alone is **6.6 ms** per exclusion change (15,359 shafts, 16,004
+joints, 2,169 roots), inside a 12–14 ms release commit.
 
 **Rafts are not the cost.** Measured by running `buildSolidRaftPreviewMeshes` over
 the scene's 20 root sets with the default raft settings: **10,340 triangles
