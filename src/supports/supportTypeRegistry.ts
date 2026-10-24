@@ -1454,6 +1454,19 @@ type LateralStabiliserGenerator = (request: LateralStabiliserRequest) => unknown
 const LATERAL_STABILISERS = new Map<SupportTypeId, LateralStabiliserGenerator>();
 
 /**
+ * Derived type lists, computed on first use and invalidated by a registration.
+ *
+ * Auto-bracing asks these per sample; rebuilding the filter+map+Set each time
+ * was measurable. The arrays depend only on the static `SUPPORT_TYPES` and the
+ * stabiliser registrations, so a registration is the one thing that can change
+ * an answer, and it drops the caches.
+ */
+let lateralStabiliserIdsCache: SupportTypeId[] | null = null;
+let lateralStabiliserIdSet: Set<string> | null = null;
+let autoBraceableIdsCache: SupportTypeId[] | null = null;
+let autoBraceableIdSet: Set<string> | null = null;
+
+/**
  * Registered from the type's own folder. A type that can stand a shaft up
  * without a partner registers here; auto-bracing asks rather than importing.
  */
@@ -1462,16 +1475,23 @@ export function registerLateralStabiliser(
     generate: LateralStabiliserGenerator,
 ): void {
     LATERAL_STABILISERS.set(typeId, generate);
+    lateralStabiliserIdsCache = null;
+    lateralStabiliserIdSet = null;
+    autoBraceableIdsCache = null;
+    autoBraceableIdSet = null;
 }
 
 /** Every registered stabiliser, in registry order. */
 export function lateralStabiliserTypes(): readonly SupportTypeId[] {
-    return SUPPORT_TYPES.filter((d) => LATERAL_STABILISERS.has(d.id)).map((d) => d.id);
+    return (lateralStabiliserIdsCache ??= SUPPORT_TYPES
+        .filter((d) => LATERAL_STABILISERS.has(d.id))
+        .map((d) => d.id));
 }
 
 /** Whether this type is a lateral stabiliser, generated beside a group. */
 export function isLateralStabiliserType(typeId: SupportTypeId | string): boolean {
-    return (lateralStabiliserTypes() as readonly string[]).includes(typeId);
+    lateralStabiliserIdSet ??= new Set(lateralStabiliserTypes());
+    return lateralStabiliserIdSet.has(typeId);
 }
 
 /** The type whose brace snap target is its contact cone (leaf), if any. */
@@ -1488,15 +1508,19 @@ export function braceSnapConeType(): SupportTypeId | null {
  * after load, and a test pins it.
  */
 export function autoBraceableShaftTypes(): readonly SupportTypeId[] {
-    const stabilisers = new Set(lateralStabiliserTypes());
-    return SUPPORT_TYPES
-        .filter((d) => d.isAutoBraceable && d.hasSegments && !stabilisers.has(d.id))
-        .map((d) => d.id);
+    if (!autoBraceableIdsCache) {
+        const stabilisers = new Set(lateralStabiliserTypes());
+        autoBraceableIdsCache = SUPPORT_TYPES
+            .filter((d) => d.isAutoBraceable && d.hasSegments && !stabilisers.has(d.id))
+            .map((d) => d.id);
+    }
+    return autoBraceableIdsCache;
 }
 
 /** Whether this type's shafts may be braced to each other. */
 export function isAutoBraceableShaftType(typeId: SupportTypeId | string): boolean {
-    return (autoBraceableShaftTypes() as readonly string[]).includes(typeId);
+    autoBraceableIdSet ??= new Set(autoBraceableShaftTypes());
+    return autoBraceableIdSet.has(typeId);
 }
 
 /** Runs one type's generator, or returns nothing when it registers none. */
