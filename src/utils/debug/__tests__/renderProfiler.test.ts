@@ -256,3 +256,13 @@ test('a hot frame is labelled with the input it contains and the browser-reporte
   assert.match(line, /stalls=1 worst=40\.0ms\(loaf\) blocking=38\.0ms scripts=onOrbitEnd@chunk\.js:30\.0/);
   assert.match(line, /events=pointerdown>orbit-end/);
 });
+
+test('stall time merges the same block reported by two APIs', () => {
+  const slow = { ...frame(44, [pass()]), atMs: 1000 };
+  const stalls = [
+    { kind: 'event' as const, name: 'click', startMs: 1005, durationMs: 40 },
+    { kind: 'loaf' as const, name: 'long-animation-frame', startMs: 1004, durationMs: 42 },
+  ];
+  const [annotated] = annotateRenderFrames([slow], [], stalls);
+  assert.equal(annotated.stallMs, 40, 'the union clipped to the frame [1004,1044], not the summed overlaps');
+});

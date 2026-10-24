@@ -554,13 +554,29 @@ export function annotateRenderFrames(
   return frames.map((frame) => {
     const end = frame.atMs + frame.frameMs;
     const frameEvents = eventsInFrame(events, frame.atMs, end);
-    let stallMs = 0;
+    // One block is reported by several APIs (Event Timing, LoAF), so summing
+    // their overlaps double-counts it - a 374 ms frame could read 1110 ms. Merge
+    // the clipped intervals first.
+    const intervals: Array<[number, number]> = [];
     for (const stall of stalls) {
-      const stallStart = stall.startMs;
-      const stallEnd = stall.startMs + stall.durationMs;
-      if (stallStart >= end || stallEnd <= frame.atMs) continue;
-      stallMs += Math.min(stallEnd, end) - Math.max(stallStart, frame.atMs);
+      const start = Math.max(stall.startMs, frame.atMs);
+      const finish = Math.min(stall.startMs + stall.durationMs, end);
+      if (finish > start) intervals.push([start, finish]);
     }
+    intervals.sort((a, b) => a[0] - b[0]);
+    let stallMs = 0;
+    let openStart = -1;
+    let openEnd = -1;
+    for (const [start, finish] of intervals) {
+      if (start > openEnd) {
+        if (openEnd > openStart) stallMs += openEnd - openStart;
+        openStart = start;
+        openEnd = finish;
+      } else if (finish > openEnd) {
+        openEnd = finish;
+      }
+    }
+    if (openEnd > openStart) stallMs += openEnd - openStart;
     if (frameEvents.length === 0 && stallMs === 0) return frame;
     const annotated: RenderFrameSample = { ...frame, events: frameEvents };
     if (stallMs > 0) annotated.stallMs = stallMs;
