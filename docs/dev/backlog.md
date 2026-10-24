@@ -328,6 +328,20 @@ signature, and `bakeModelGeometryChunk` / `resolveModelChunkForTick` try it
 before encoding. An eight-model duplicate encodes nothing when the source is
 already baked.
 
+## Fixed: entering Support mounted detail for the whole plate
+
+`useUltraLazySupports` was `mode !== 'support'`, so the Support tab swapped the
+instanced proxy for `SupportRenderer` across **every** model on the plate. Only
+the active model is editable; the others are scenery, and each detailed support
+primitive creates its own geometry and material. That cold mount is the lag on
+the first Support-tab click.
+
+The world layer now keeps the proxy and excludes the active model, while a
+second `SupportRenderer` mounted beside it filters to `activeModelId`. Entering
+Support no longer remounts the proxy either — it stays the same component for
+non-active models. A single-model plate still pays for that model's detail; the
+next step there is a deferred swap or instanced detail, not this split.
+
 ## Tried: rendering on demand while idle (reverted)
 
 R3F's `frameloop="demand"` plus a wake gate stopped the 165 fps redraw of a

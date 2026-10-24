@@ -10,6 +10,8 @@ import { getSettings, subscribeToSettings } from '@/supports/Settings/state';
 import type { SupportPlacementPreviews } from '@/supports/rendering';
 import type { PlateFootprintSource } from '@/supports/Rafts/Crenelated/geometry/modelPlateFootprint';
 import { noteActivity } from '@/utils/debug/heartbeatContext';
+const EMPTY_MODEL_IDS: string[] = [];
+
 export type ModelAttachedSupportLayerProps = {
   mode?: SupportMode;
   modelFilterId?: string | null;
@@ -115,6 +117,16 @@ export function ModelAttachedSupportLayer({
   // Performance policy: use proxy support/raft rendering everywhere except
   // support workspace, where full editable primitives are required.
   const useUltraLazySupports = mode !== 'support';
+  /**
+   * In Support mode the world layer used to draw every model with the detailed
+   * renderer. Only the active model's supports are editable; the rest are
+   * scenery, and mounting detail for them is what makes the first entry into the
+   * tab cold (thousands of per-primitive geometries and materials). Detail the
+   * active model, keep every other model on the instanced proxy the Prepare view
+   * already builds.
+   */
+  const supportDetailSplit = mode === 'support' && !modelFilterId && !!activeModelId;
+  const useProxy = useUltraLazySupports || supportDetailSplit;
   const proxyPointerSelectionEnabled = mode === 'prepare' && !navigationLodActive && !disableSelectionAndHover && !passive;
   const proxyIncludeDetailedPrimitives = supportProxyIncludeDetailedPrimitives;
   // Both flags answer one question, and a preset switch rewrites the whole
@@ -204,7 +216,7 @@ export function ModelAttachedSupportLayer({
       )}
 
       <group ref={supportRendererRef ?? undefined}>
-        {useUltraLazySupports ? (
+        {useProxy ? (
           <SupportProxyMeshLayer
             mode={mode}
             clipLower={clipLower}
@@ -217,8 +229,10 @@ export function ModelAttachedSupportLayer({
             hoverTintColor={hoverTintColor}
             hoverTintStrength={hoverTintStrength}
             modelFilterId={modelFilterId}
-            excludeModelId={excludeModelId}
-            excludeModelIds={excludeModelIds}
+            excludeModelId={supportDetailSplit ? null : excludeModelId}
+            excludeModelIds={supportDetailSplit
+              ? (excludeModelId ? [...excludeModelIds, excludeModelId, activeModelId] : [...excludeModelIds, activeModelId])
+              : excludeModelIds}
             modelDropOffsetsById={modelDropOffsetsById}
             ghostOpacity={ghostOpacity}
             showOutOfBoundsOverlay={showOutOfBoundsOverlay}
@@ -234,9 +248,10 @@ export function ModelAttachedSupportLayer({
             cavityGeometryByModelId={cavityGeometryByModelId}
             modelWorldInverseById={modelWorldInverseById}
           />
-        ) : (
+        ) : null}
+        {supportDetailSplit && activeModelId && (
           <SupportRenderer
-            key={`support-renderer-${supportRenderRefreshNonce}`}
+            key={`support-detail-${supportRenderRefreshNonce}-${activeModelId}`}
             mode={mode}
             navigationLodActive={navigationLodActive}
             hidePlateContactPrimitives={hidePlateContactPrimitives}
@@ -251,9 +266,9 @@ export function ModelAttachedSupportLayer({
             marqueeCandidateModelIds={marqueeCandidateModelIds}
             hoverModelId={hoverModelId}
             modelDropOffsetsById={modelDropOffsetsById}
-            modelFilterId={modelFilterId}
-            excludeModelId={excludeModelId}
-            excludeModelIds={excludeModelIds}
+            modelFilterId={activeModelId}
+            excludeModelId={null}
+            excludeModelIds={EMPTY_MODEL_IDS}
             disableSelectionAndHover={disableSelectionAndHover}
             pointerSceneryModelIds={pointerSceneryModelIds}
             ghostOpacity={ghostOpacity}
