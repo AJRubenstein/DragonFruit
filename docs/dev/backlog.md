@@ -328,6 +328,27 @@ signature, and `bakeModelGeometryChunk` / `resolveModelChunkForTick` try it
 before encoding. An eight-model duplicate encodes nothing when the source is
 already baked.
 
+## Fixed: hovering a support re-rendered the whole support scene
+
+`SupportRenderer` subscribes to the whole support store, so a hover write handed
+it a new snapshot: every collection-derived memo recomputed, the clipping pass
+re-traversed the scene, and a ~1000-element tree was reconciled — 84–112 ms of
+React commit per hovered support, 33 fps while sweeping across supports.
+
+Two changes:
+
+- heavy derivations (`renderListByType`, model resolution, the clipping pass)
+  take `getSnapshotWithoutHover`, a snapshot that keeps its identity when only
+  `hoveredId`/`hoveredCategory` moved. Measured commit p95 fell from 84.6 ms to
+  **32 ms**.
+- hover writes are trailing-coalesced at 80 ms (`setHoveredState`): a pointer
+  crossing several supports renders the last one instead of each one. Clearing
+  stays immediate.
+
+The remaining 32 ms is the element tree itself; the structural fix is to move
+hover into its own store and render the hover overlays from a small layer, so
+the world tree does not re-render at all.
+
 ## Fixed: entering Support mounted detail for the whole plate
 
 `useUltraLazySupports` was `mode !== 'support'`, so the Support tab swapped the

@@ -2669,13 +2669,54 @@ export function setSelectedId(id: string | null) {
 }
 
 
-export function setHoveredState(
+/**
+ * Hover writes are trailing-coalesced.
+ *
+ * A hover changes the support snapshot, and in Support mode that snapshot feeds
+ * a large detailed renderer: one hovered support cost 84–112 ms of React commit
+ * before the non-hover derivations were stabilised, and still ~32 ms after. A
+ * pointer sweep crosses several supports in 30 ms, each one paying that. Applying
+ * only the last hover after the pointer has been still for a moment keeps the
+ * highlight responsive enough (80 ms is below the threshold where a hover feels
+ * delayed) while a sweep costs one render instead of one per support.
+ *
+ * Clearing is immediate: leaving a support must not leave its highlight behind.
+ */
+const HOVER_COALESCE_MS = 80;
+let hoverTimer: number | null = null;
+let pendingHover: { category: 'model' | 'support' | 'contactDisk' | 'segment' | 'joint' | 'knot' | 'raft' | 'gizmo'; id: string } | null = null;
+
+function applyHoveredState(
     category: 'model' | 'support' | 'contactDisk' | 'segment' | 'joint' | 'knot' | 'raft' | 'gizmo' | 'none',
     id: string | null,
 ) {
     if (state.hoveredCategory === category && state.hoveredId === id) return;
     setState({ ...state, hoveredCategory: category, hoveredId: id });
     notify();
+}
+
+export function setHoveredState(
+    category: 'model' | 'support' | 'contactDisk' | 'segment' | 'joint' | 'knot' | 'raft' | 'gizmo' | 'none',
+    id: string | null,
+) {
+    if (category === 'none' || id === null || typeof window === 'undefined') {
+        if (hoverTimer !== null) {
+            window.clearTimeout(hoverTimer);
+            hoverTimer = null;
+        }
+        pendingHover = null;
+        applyHoveredState(category, id);
+        return;
+    }
+
+    pendingHover = { category, id };
+    if (hoverTimer !== null) window.clearTimeout(hoverTimer);
+    hoverTimer = window.setTimeout(() => {
+        hoverTimer = null;
+        const next = pendingHover;
+        pendingHover = null;
+        if (next) applyHoveredState(next.category, next.id);
+    }, HOVER_COALESCE_MS);
 }
 
 export function setInteractionWarning(warning: import('./types').WarningCode | null) {

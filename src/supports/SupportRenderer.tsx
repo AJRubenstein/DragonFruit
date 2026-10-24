@@ -563,8 +563,42 @@ function supportCollectionRefs(state: SupportState, ...extra: unknown[]): readon
     return [...SUPPORT_COLLECTION_KEYS.map((key) => state[key]), ...extra];
 }
 
+/**
+ * A snapshot that only changes when something other than hover changes.
+ *
+ * SupportRenderer reads the whole support store, so a hover write used to hand
+ * it a new snapshot, invalidate every collection-derived memo, re-traverse the
+ * scene for clipping and rebuild a ~1000-element tree — measured at 84–112 ms of
+ * React commit per hovered support. Hover is visual state; the world does not
+ * change, so the heavy derivations take this snapshot instead. Live `state` is
+ * still read for the hover overlays and the selected-support primitive hover.
+ */
+function statesEqualExceptHover(a: SupportState, b: SupportState): boolean {
+    if (a === b) return true;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const key of aKeys) {
+        if (key === 'hoveredId' || key === 'hoveredCategory') continue;
+        if ((a as unknown as Record<string, unknown>)[key]
+            !== (b as unknown as Record<string, unknown>)[key]) return false;
+    }
+    return true;
+}
+
+let cachedNonHoverSnapshot: SupportState | null = null;
+function getSnapshotWithoutHover(): SupportState {
+    const next = getSnapshot();
+    if (cachedNonHoverSnapshot && statesEqualExceptHover(cachedNonHoverSnapshot, next)) {
+        return cachedNonHoverSnapshot;
+    }
+    cachedNonHoverSnapshot = next;
+    return next;
+}
+
 export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ mode, navigationLodActive = false, hidePlateContactPrimitives = false, clipLower, clipUpper, activeModelId = null, selectedModelIds = [], marqueeCandidateModelIds = EMPTY_SUPPORT_ID_LIST, hoverModelId = null, modelDropOffsetsById, modelFilterId = null, excludeModelId = null, excludeModelIds = [], passive = false, disableSelectionAndHover = false, ghostOpacity = 1, ghostRenderOrder = 100000, placementPreviews = EMPTY_PLACEMENT_PREVIEWS, interiorView = false, cavityGeometryByModelId, modelWorldInverseById, pointerSceneryModelIds }, ref) => {
     const state = useSyncExternalStore(subscribe, getSnapshot);
+    const stableState = useSyncExternalStore(subscribe, getSnapshotWithoutHover);
     noteActivity('support-mode:renderer');
     const resolvedSelection = useResolvedSelectionState();
     // These debug flags are all this renderer reads from the support settings, and
@@ -788,7 +822,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         };
         // The loop above walks every shafted type from the registry, so the
         // whole snapshot is the dependency.
-    }, [interiorView, state, matchesInteriorContact]);
+    }, [interiorView, stableState, matchesInteriorContact]);
 
     const knotList = useMemo(() => Object.values(state.knots), [state.knots]);
     const kickstandKnotList = useMemo(() => Object.values(kickstandKnotsById), [kickstandKnotsById]);
@@ -829,7 +863,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return undefined;
-    }, [state, entityModelIdByKnotId]);
+    }, [stableState, entityModelIdByKnotId]);
 
     const isModelVisible = React.useCallback((modelId?: string, supportId?: string) => {
         const resolvedModelId = resolveSupportModelId(modelId, supportId);
@@ -1705,7 +1739,7 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         }
 
         return lists;
-    }, [state, knotDragOverridesById, activePreviewEntity, interiorView, matchesInteriorContact, matchesInteriorBrace]);
+    }, [stableState, knotDragOverridesById, activePreviewEntity, interiorView, matchesInteriorContact, matchesInteriorBrace]);
 
     /*
      * Thin typed reads of `renderListByType`, for the call sites below that
@@ -3249,9 +3283,10 @@ export const SupportRenderer = forwardRef<THREE.Group, SupportRendererProps>(({ 
         // Without this, newly added meshes can miss clipping until some other
         // dependency (like slider movement) forces a re-run.
         //
-        // `state` is the whole store snapshot, so one identity covers every
-        // collection the effect reads.
-        state,
+        // `stableState` is the whole store snapshot without hover, so one
+        // identity covers every collection the effect reads and a hover does
+        // not re-traverse the whole support scene.
+        stableState,
         kickstandRootsById,
         kickstandKnotsById,
     ]);
