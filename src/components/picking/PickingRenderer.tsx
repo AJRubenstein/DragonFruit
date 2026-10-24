@@ -311,17 +311,19 @@ export function PickingRenderer({
       : majorityVote(pixelBufferRef.current, previousWinnerRef.current, isPriorityPickId);
   }, [config.patchSize, registrations]);
 
-  const startAsyncReadback = useCallback((context: WebGL2RenderingContext, ndcX: number, ndcY: number): boolean => {
-    if (asyncReadbackDisabledRef.current) return false;
-    // Do not let reads pile up behind a GPU that is a frame or two behind; the
-    // sync path is still cheaper than an unbounded fence queue.
-    if (asyncReadbacksRef.current.length >= 3) return false;
+  const startAsyncReadback = useCallback((context: WebGL2RenderingContext, ndcX: number, ndcY: number): 'queued' | 'skipped' | 'unavailable' => {
+    if (asyncReadbackDisabledRef.current) return 'unavailable';
+    // Never let reads pile up behind a GPU that is a frame or two behind. The
+    // old fallback was the synchronous read, which stalls the main thread until
+    // the GPU catches up; skipping this pick leaves the previous hit in place
+    // for a frame and costs nothing.
+    if (asyncReadbacksRef.current.length >= 3) return 'skipped';
 
     try {
       let pbo = pboPoolRef.current.pop();
       if (!pbo) {
         pbo = context.createBuffer() ?? undefined;
-        if (!pbo) return false;
+        if (!pbo) return 'unavailable';
         context.bindBuffer(context.PIXEL_PACK_BUFFER, pbo);
         context.bufferData(context.PIXEL_PACK_BUFFER, pixelBufferRef.current.byteLength, context.STREAM_READ);
       }
@@ -336,15 +338,15 @@ export function PickingRenderer({
       const sync = context.fenceSync(context.SYNC_GPU_COMMANDS_COMPLETE, 0);
       if (!sync) {
         pboPoolRef.current.push(pbo);
-        return false;
+        return 'unavailable';
       }
       context.flush();
       asyncReadbacksRef.current.push({ pbo, sync, ndcX, ndcY });
-      return true;
+      return 'queued';
     } catch {
       // The context lost the extension or the buffer; never try again this session.
       asyncReadbackDisabledRef.current = true;
-      return false;
+      return 'unavailable';
     }
   }, []);
 
@@ -364,6 +366,13 @@ export function PickingRenderer({
       }
 
       if (status === context.ALREADY_SIGNALED || status === context.CONDITION_SATISFIED) {
+        // A pixel-pack buffer that is written (readPixels), fenced, and then
+        // written again before the bytes are read makes the driver discard the
+        // shadow copy it keeps to accelerate the readback - Chrome warns about
+        // exactly that, and the lost copy turns the next read into a stall.
+        // So a slot may only return to the pool after its bytes were read; a
+        // slot collected while paused is destroyed instead.
+        let reusable = false;
         if (report) {
           try {
             context.bindBuffer(context.PIXEL_PACK_BUFFER, slot.pbo);
@@ -372,18 +381,31 @@ export function PickingRenderer({
             const winnerId = resolveWinner();
             previousWinnerRef.current = winnerId;
             onPick(winnerId, slot.ndcX, slot.ndcY);
+            reusable = true;
           } catch {
             // Drop this result; the next pick will resolve the hit.
           }
         }
+        if (reusable) {
+          pboPoolRef.current.push(slot.pbo);
+        } else {
+          try {
+            context.deleteBuffer(slot.pbo);
+          } catch {
+            // Already invalid; nothing to release.
+          }
+        }
         context.deleteSync(slot.sync);
-        pboPoolRef.current.push(slot.pbo);
         continue;
       }
 
       if (status === context.WAIT_FAILED) {
         context.deleteSync(slot.sync);
-        pboPoolRef.current.push(slot.pbo);
+        try {
+          context.deleteBuffer(slot.pbo);
+        } catch {
+          // Already invalid; nothing to release.
+        }
         continue;
       }
       remaining.push(slot);
@@ -479,8 +501,8 @@ export function PickingRenderer({
     // which is what normally binds the framebuffer for the read.
     gl.setRenderTarget(renderTargetRef.current);
     const context = webgl2Context();
-    const queued = context ? startAsyncReadback(context, ndcX, ndcY) : false;
-    if (!queued) {
+    const readback = context ? startAsyncReadback(context, ndcX, ndcY) : 'unavailable';
+    if (readback === 'unavailable') {
       gl.readRenderTargetPixels(
         renderTargetRef.current,
         0, 0,
@@ -492,7 +514,7 @@ export function PickingRenderer({
     // Restore render target
     gl.setRenderTarget(currentRenderTarget);
 
-    if (!queued) {
+    if (readback === 'unavailable') {
       const winnerId = resolveWinner();
       previousWinnerRef.current = winnerId;
       onPick(winnerId, ndcX, ndcY);
@@ -500,7 +522,7 @@ export function PickingRenderer({
 
     const pickDurationMs = Math.max(0, performance.now() - pickStartMs);
     const logNowMs = performance.now();
-    if (!queued && pickDurationMs >= 8 && logNowMs - lastSlowPickLogRef.current >= 1000) {
+    if (readback === 'unavailable' && pickDurationMs >= 8 && logNowMs - lastSlowPickLogRef.current >= 1000) {
       lastSlowPickLogRef.current = logNowMs;
       console.warn(`[picking] synchronous pick took ${pickDurationMs.toFixed(1)} ms (scene sync ${syncDurationMs.toFixed(1)} ms)`);
     }

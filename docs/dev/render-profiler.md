@@ -10,7 +10,12 @@ render pass:
 - how many `WebGLRenderer.render` passes a frame issued, attributed to the
   scene each one drew,
 - the scene-graph inventory behind them (objects, meshes, instances, programs,
-  geometries, textures).
+  geometries, textures),
+- the input and navigation events that landed in each frame, so a hot frame says
+  which gesture it belongs to,
+- browser-reported long frames (Long Animation Frame, long-task, and Event Timing
+  entries) that overlap it, with the scripts the browser blames,
+- the used JS heap change since the previous frame, so a GC pause is visible.
 
 Toggle it with **Ctrl+Shift+P**. It is off by default and costs nothing while
 closed. The window remembers where you left it. See
@@ -38,6 +43,14 @@ subtracting one from another gives a bound, not a breakdown. The React commit
 is not in either column — a frame that renders cheaply and still feels slow is
 a React or layout problem, not a renderer one.
 
+**Hot frames and input** is the section below the pass table. It lists the four
+hottest frames in the window with the events inside each, then the browser's
+long-frame entries and the recent inputs. The decisive split is whether a hot
+frame has a long-frame entry: if it does, the browser names the script (or the
+style/layout span) that held the main thread; if it does not, the block is
+outside JS — GPU, compositor, or a synchronous driver wait — and no amount of
+React or renderer optimisation will move it.
+
 ### GPU timing
 
 GPU rows come from `EXT_disjoint_timer_query_webgl2`. When the context does not
@@ -62,8 +75,12 @@ dropouts.
   the panel stops refreshing, so its own four-renders-a-second cost cannot show
   up as the p95 the recording is meant to explain. When the buffer fills, one
   `[render]` line is written to `dragonfruit.log`: frame, CPU, React and GPU
-  percentiles, draw-call and triangle percentiles, a line per pass, and the
-  scene inventory. That is the line to ask a user for in a report.
+  percentiles, draw-call and triangle percentiles, a line per pass, the scene
+  inventory, the hottest frame with its stall time and events, and the worst
+  browser-reported long frame with its top scripts. That is the line to ask a
+  user for in a report. The copied JSON carries every event and long frame as
+  `events` and `stalls`, and each frame carries the overlapping `events`,
+  `stallMs` and `heapDeltaMb`.
 - **Write log** writes the same line for the current rolling window.
 - **Copy JSON** puts the full report — every captured frame and both summaries —
   on the clipboard.
@@ -95,6 +112,16 @@ reconciler and stay readable while the scene is throttled. It refreshes at the
 store's notify rate — four times a second — so drawing it cannot pollute the
 numbers it reports.
 
+Input capture is installed with the sampler: `recordRenderEvent` is called from
+window listeners for the picking navigation events and for pointer down/up, so
+the events exist even when the gesture never reaches React state (a right-drag
+orbit in transform mode is one). Long frames come from a `PerformanceObserver`
+that prefers `long-animation-frame`, falls back to `longtask`, and separately
+observes `event` entries at 40 ms for input names only (pointer moves would flood it). `annotateRenderFrames` attaches
+the overlapping stall time and event names when frames are read, not when they
+are recorded, so a long-frame entry that arrives a frame late still lands on the
+frame that overlapped it.
+
 The picking scene is named `picking` (`createPickScene` in
 `src/components/picking/PickingRenderer.tsx`), which is what gives that pass a
 readable label instead of `aux1`. Any other unnamed scene gets a stable `auxN`
@@ -113,6 +140,11 @@ label per scene identity.
   renderer (a raw `gl.drawElements` in a custom pass) is not in them.
 - Scene inventory is a traversal of the main scene, refreshed every two seconds
   while the profiler is open.
+- Long-frame attribution is whatever the browser exposes. Chromium gives scripts,
+  blocking, render and style/layout time; an older engine without those APIs
+  reports only that a long task happened (or nothing at all). A missing entry is
+  evidence that the block was not main-thread script, not proof that nothing
+  happened.
 
 ## Related pages
 

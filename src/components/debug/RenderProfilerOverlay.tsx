@@ -199,6 +199,69 @@ function PassTable({ snapshot }: { snapshot: RenderProfilerSnapshot }) {
   // i18n-ignore-end
 }
 
+// i18n-ignore-start: developer-only render profiler table, kept in English
+/**
+ * The attribution the frame table cannot give: which frame was hot, which input
+ * landed in it, and which script the browser blamed. Recording freezes the panel,
+ * so this is read after the gesture (or from the copied report).
+ */
+function StallSection({ snapshot }: { snapshot: RenderProfilerSnapshot }) {
+  const frames = snapshot.frames;
+  if (frames.length === 0) return null;
+  const origin = frames[0].atMs;
+  const hottest = [...frames].sort((a, b) => b.frameMs - a.frameMs).slice(0, 4);
+  const events = snapshot.events.slice(-8).reverse();
+  const stalls = snapshot.stalls.slice(-4).reverse();
+  const worstStall = snapshot.stalls.reduce((worst, stall) => (worst == null || stall.durationMs > worst.durationMs ? stall : worst), null as typeof snapshot.stalls[number] | null);
+
+  return (
+    <div className="mt-3">
+      <SectionTitle trailing={worstStall ? `worst ${worstStall.durationMs.toFixed(1)} ms (${worstStall.kind})` : 'none recorded'}>
+        Hot frames and input
+      </SectionTitle>
+      <div className="space-y-1.5 rounded-md border px-2.5 py-2 text-[11px]" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}>
+        <div className="text-[10px] font-semibold" style={{ color: 'var(--text-strong)' }}>Worst frames</div>
+        {hottest.map((frame, index) => (
+          <div key={`hot-${index}-${frame.atMs}`} className="flex items-baseline justify-between gap-2 tabular-nums">
+            <span>
+              <span style={{ color: frame.frameMs >= 20 ? 'var(--warning)' : 'var(--text-strong)' }}>{frame.frameMs.toFixed(1)} ms</span>
+              {frame.stallMs ? <span> · stall {frame.stallMs.toFixed(1)} ms</span> : null}
+              {frame.heapDeltaMb != null && frame.heapDeltaMb < -2 ? <span> · heap {frame.heapDeltaMb.toFixed(1)} MiB</span> : null}
+            </span>
+            <span className="truncate text-right" style={{ maxWidth: '62%' }}>
+              +{Math.max(0, frame.atMs - origin).toFixed(0)} ms
+              {frame.events?.length ? ` · ${frame.events.join(' > ')}` : ''}
+            </span>
+          </div>
+        ))}
+
+        <div className="pt-1 text-[10px] font-semibold" style={{ color: 'var(--text-strong)' }}>Browser long frames</div>
+        {stalls.length === 0 ? (
+          <div>None. A long frame with no entry here is not main-thread script or layout.</div>
+        ) : stalls.map((stall, index) => (
+          <div key={`stall-${index}-${stall.startMs}`} className="tabular-nums">
+            <span style={{ color: 'var(--text-strong)' }}>{stall.durationMs.toFixed(1)} ms</span>
+            {' '}{stall.kind}
+            {stall.blockingMs ? ` · blocking ${stall.blockingMs.toFixed(1)} ms` : ''}
+            {' '}· +{Math.max(0, stall.startMs - origin).toFixed(0)} ms
+            {stall.scripts?.length ? ` · ${stall.scripts.map((script) => `${script.name} ${script.durationMs.toFixed(1)} ms`).join(', ')}` : ''}
+          </div>
+        ))}
+
+        <div className="pt-1 text-[10px] font-semibold" style={{ color: 'var(--text-strong)' }}>Input</div>
+        {events.length === 0 ? <div>No input recorded.</div> : events.map((event, index) => (
+          <div key={`event-${index}-${event.atMs}`} className="tabular-nums">
+            <span style={{ color: 'var(--text-strong)' }}>{event.name}</span>
+            {event.detail ? ` ${event.detail}` : ''}
+            {' '}· +{Math.max(0, event.atMs - origin).toFixed(0)} ms
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  // i18n-ignore-end
+}
+
 function seriesOf(frames: readonly RenderFrameSample[], pick: (frame: RenderFrameSample) => number): number[] {
   return frames.map(pick).filter((value) => Number.isFinite(value));
 }
@@ -418,6 +481,8 @@ export function RenderProfilerOverlay() {
           <SectionTitle trailing={`${summary.passesPerFrame.toFixed(2)} passes/frame`}>Render passes</SectionTitle>
           <PassTable snapshot={snapshot} />
         </div>
+
+        <StallSection snapshot={snapshot} />
 
         {snapshot.sceneStats && (
           <div className="mt-3">

@@ -88,6 +88,50 @@ export type RenderFrameSample = {
   programs: number;
   geometries: number;
   textures: number;
+  /**
+   * Events that landed inside this frame's interval, with their details, for
+   * example `orbit-end(resume=220ms)`. Filled in when frames are read, so a frame
+   * that missed vsync is labelled with the input that preceded it.
+   */
+  events?: string[];
+  /** Main-thread long-frame/long-task time overlapping this frame, in ms. */
+  stallMs?: number;
+  /**
+   * Change in used JS heap since the previous frame, in MiB. A large negative
+   * value on a stalled frame is what a GC pause looks like from the outside.
+   */
+  heapDeltaMb?: number | null;
+};
+
+/** One input or navigation event observed while the profiler is enabled. */
+export type RenderEventSample = {
+  atMs: number;
+  name: string;
+  detail?: string;
+};
+
+export type RenderStallScript = {
+  name: string;
+  source?: string;
+  durationMs: number;
+};
+
+/**
+ * A long frame or long event reported by the browser, with whatever attribution
+ * the platform provides. `loaf` is the Long Animation Frame API (scripts and
+ * style/layout included); `longtask` is its older fallback; `event` is the Event
+ * Timing API, which names an input handler that ran long.
+ */
+export type RenderStallSample = {
+  kind: 'loaf' | 'longtask' | 'event';
+  name: string;
+  startMs: number;
+  durationMs: number;
+  /** Time the main thread was blocked, when the API reports it. */
+  blockingMs?: number;
+  renderMs?: number;
+  styleLayoutMs?: number;
+  scripts?: RenderStallScript[];
 };
 
 export type ValueStats = {
@@ -154,6 +198,10 @@ export type RenderProfilerSnapshot = {
   summary: RenderProfilerSummary;
   sceneStats: RenderSceneStats | null;
   recording: RenderRecordingState;
+  /** Input/navigation events in the current capture. */
+  events: RenderEventSample[];
+  /** Long frames and long input events in the current capture. */
+  stalls: RenderStallSample[];
   /** Frames left in an explicit `gl.finish()` GPU probe, 0 when none is running. */
   gpuProbeRemaining: number;
   /** Set when a recording finished or the summary was logged. */
@@ -167,6 +215,8 @@ export type RenderProfileReport = {
   sceneStats: RenderSceneStats | null;
   gpuTiming: GpuTimingState;
   frames: RenderFrameSample[];
+  events: RenderEventSample[];
+  stalls: RenderStallSample[];
   viewport: { width: number; height: number; dpr: number } | null;
   renderer: string | null;
 };
@@ -249,6 +299,16 @@ let cachedSnapshot: RenderProfilerSnapshot | null = null;
 const snapshotListeners = new Set<() => void>();
 const enabledListeners = new Set<() => void>();
 
+/** Input and navigation events captured while the profiler is enabled. */
+let renderEvents: RenderEventSample[] = [];
+/** Long frames/events reported by the browser while the profiler is enabled. */
+let renderStalls: RenderStallSample[] = [];
+const MAX_RENDER_EVENTS = 500;
+const MAX_RENDER_STALLS = 120;
+let stallObservers: PerformanceObserver[] = [];
+let eventCaptureInstalled = false;
+let lastHeapUsedBytes: number | null = null;
+
 // ── Small helpers ────────────────────────────────────────────────────────
 
 function readStoredEnabled(): boolean {
@@ -298,6 +358,206 @@ function averageOf(values: readonly number[]): number {
   let total = 0;
   for (const value of values) total += value;
   return total / values.length;
+}
+
+// ── Input events ─────────────────────────────────────────────────────────
+
+/** Records one input or navigation event for the frame it lands in. */
+export function recordRenderEvent(name: string, detail?: string): void {
+  if (!enabled) return;
+  renderEvents.push({ atMs: performance.now(), name, detail });
+  if (renderEvents.length > MAX_RENDER_EVENTS) renderEvents.shift();
+}
+
+type EventCaptureHandler = (event: Event) => void;
+
+const eventCaptureHandlers: Array<[string, EventCaptureHandler]> = [];
+
+function detailOf(event: Event): string | undefined {
+  const detail = (event as CustomEvent<{ resumeAfterMs?: number }>).detail;
+  if (detail && typeof detail.resumeAfterMs === 'number') return `resume=${Math.round(detail.resumeAfterMs)}ms`;
+  return undefined;
+}
+
+function installEventCapture(): void {
+  if (eventCaptureInstalled || typeof window === 'undefined') return;
+  eventCaptureInstalled = true;
+  const listen = (type: string, handler: EventCaptureHandler) => {
+    window.addEventListener(type, handler, true);
+    eventCaptureHandlers.push([type, handler]);
+  };
+  for (const type of [
+    'picking-orbit-start', 'picking-orbit-end',
+    'picking-pan-start', 'picking-pan-end',
+    'picking-zoom-start', 'picking-zoom-end',
+    'spacemouse-navigation-start', 'spacemouse-navigation-end',
+  ]) {
+    listen(type, (event) => recordRenderEvent(type, detailOf(event)));
+  }
+  listen('pointerdown', (event) => {
+    const pointer = event as PointerEvent;
+    recordRenderEvent('pointerdown', `button=${pointer.button} buttons=${pointer.buttons} ${pointer.pointerType || 'mouse'}`);
+  });
+  listen('pointerup', (event) => {
+    const pointer = event as PointerEvent;
+    recordRenderEvent('pointerup', `button=${pointer.button} buttons=${pointer.buttons} ${pointer.pointerType || 'mouse'}`);
+  });
+  listen('pointercancel', () => recordRenderEvent('pointercancel'));
+  listen('blur', () => recordRenderEvent('window-blur'));
+  listen('visibilitychange', () => recordRenderEvent(`visibility=${document.visibilityState}`));
+}
+
+function uninstallEventCapture(): void {
+  if (typeof window !== 'undefined') {
+    for (const [type, handler] of eventCaptureHandlers) window.removeEventListener(type, handler, true);
+  }
+  eventCaptureHandlers.length = 0;
+  eventCaptureInstalled = false;
+}
+
+// ── Browser-reported long frames ─────────────────────────────────────────
+
+/** Structural shape of a Long Animation Frame entry, which TS lib may not know. */
+type LoafEntry = PerformanceEntry & {
+  blockingDuration?: number;
+  renderStart?: number;
+  styleAndLayoutStart?: number;
+  scripts?: Array<{
+    invoker?: string;
+    sourceURL?: string;
+    sourceFunctionName?: string;
+    duration?: number;
+  }>;
+};
+
+function pushStall(sample: RenderStallSample): void {
+  if (!enabled) return;
+  renderStalls.push(sample);
+  if (renderStalls.length > MAX_RENDER_STALLS) renderStalls.shift();
+}
+
+function installStallObservers(): void {
+  if (stallObservers.length > 0 || typeof PerformanceObserver === 'undefined') return;
+
+  // The Long Animation Frame API is the useful one: it lists the scripts that
+  // ran and separates render and style/layout time from script time.
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as LoafEntry[]) {
+        const end = entry.startTime + entry.duration;
+        const renderStart = entry.renderStart ?? 0;
+        const layoutStart = entry.styleAndLayoutStart ?? 0;
+        const scripts = (entry.scripts ?? [])
+          .filter((script) => (script.duration ?? 0) > 0)
+          .sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0))
+          .slice(0, 8)
+          .map((script) => ({
+            name: script.sourceFunctionName || script.invoker || '(anonymous)',
+            source: script.sourceURL,
+            durationMs: script.duration ?? 0,
+          }));
+        pushStall({
+          kind: 'loaf',
+          name: entry.name,
+          startMs: entry.startTime,
+          durationMs: entry.duration,
+          blockingMs: entry.blockingDuration,
+          renderMs: renderStart > 0 ? Math.max(0, (layoutStart > 0 ? layoutStart : end) - renderStart) : undefined,
+          styleLayoutMs: layoutStart > 0 ? Math.max(0, end - layoutStart) : undefined,
+          scripts,
+        });
+      }
+    });
+    observer.observe({ type: 'long-animation-frame', buffered: false } as PerformanceObserverInit);
+    stallObservers.push(observer);
+  } catch {
+    // Older engine: fall back to long tasks below.
+    try {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          pushStall({ kind: 'longtask', name: entry.name, startMs: entry.startTime, durationMs: entry.duration });
+        }
+      });
+      observer.observe({ type: 'longtask', buffered: false });
+      stallObservers.push(observer);
+    } catch {
+      // Neither API is available; frame times and events still work.
+    }
+  }
+
+  // Event Timing names an input handler that ran long, independently of LoAF.
+  // The threshold is deliberately high: pointermove fires at display rate and a
+  // 16 ms cut-off would fill the buffer with hover entries and evict the long
+  // frames this list exists for. Only real input events count.
+  const eventNames = new Set(['pointerdown', 'pointerup', 'pointercancel', 'click', 'contextmenu', 'keydown', 'keyup', 'wheel']);
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as PerformanceEventTiming[]) {
+        if (entry.duration < 40 || !eventNames.has(entry.name)) continue;
+        pushStall({
+          kind: 'event',
+          name: entry.name,
+          startMs: entry.startTime,
+          durationMs: entry.duration,
+          blockingMs: Math.max(0, entry.processingEnd - entry.processingStart),
+        });
+      }
+    });
+    observer.observe({ type: 'event', durationThreshold: 40, buffered: false } as PerformanceObserverInit);
+    stallObservers.push(observer);
+  } catch {
+    // Event Timing is optional.
+  }
+}
+
+function uninstallStallObservers(): void {
+  for (const observer of stallObservers) {
+    try {
+      observer.disconnect();
+    } catch {
+      // Already disconnected.
+    }
+  }
+  stallObservers = [];
+}
+
+function readHeapUsedBytes(): number | null {
+  if (typeof performance === 'undefined') return null;
+  const used = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize;
+  return typeof used === 'number' && Number.isFinite(used) ? used : null;
+}
+
+/** Names only, for the frame interval a reader sees next to `frameMs`. */
+function eventsInFrame(events: readonly RenderEventSample[], fromMs: number, toMs: number): string[] {
+  const names: string[] = [];
+  for (const event of events) {
+    if (event.atMs < fromMs || event.atMs >= toMs) continue;
+    names.push(event.detail ? `${event.name}(${event.detail})` : event.name);
+  }
+  return names;
+}
+
+/** Attaches the events and browser-reported stall time that overlap each frame. */
+export function annotateRenderFrames(
+  frames: readonly RenderFrameSample[],
+  events: readonly RenderEventSample[],
+  stalls: readonly RenderStallSample[],
+): RenderFrameSample[] {
+  return frames.map((frame) => {
+    const end = frame.atMs + frame.frameMs;
+    const frameEvents = eventsInFrame(events, frame.atMs, end);
+    let stallMs = 0;
+    for (const stall of stalls) {
+      const stallStart = stall.startMs;
+      const stallEnd = stall.startMs + stall.durationMs;
+      if (stallStart >= end || stallEnd <= frame.atMs) continue;
+      stallMs += Math.min(stallEnd, end) - Math.max(stallStart, frame.atMs);
+    }
+    if (frameEvents.length === 0 && stallMs === 0) return frame;
+    const annotated: RenderFrameSample = { ...frame, events: frameEvents };
+    if (stallMs > 0) annotated.stallMs = stallMs;
+    return annotated;
+  });
 }
 
 // ── Draw counters ────────────────────────────────────────────────────────
@@ -450,6 +710,54 @@ export function formatRenderProfileLine(report: RenderProfileReport): string {
       .map(([group, entry]) => `${group}=${formatTriangles(entry.triangles)}`)
       .join(',');
     if (groups.length > 0) parts.push(`groups ${groups}`);
+  }
+
+  const hottest = report.frames.reduce<RenderFrameSample | null>(
+    (worst, frame) => (worst == null || frame.frameMs > worst.frameMs ? frame : worst),
+    null,
+  );
+  if (hottest) {
+    const frameEnd = hottest.atMs + hottest.frameMs;
+    let hottestStall: RenderStallSample | null = null;
+    let hottestOverlap = 0;
+    for (const stall of report.stalls) {
+      const overlap = Math.min(stall.startMs + stall.durationMs, frameEnd) - Math.max(stall.startMs, hottest.atMs);
+      if (overlap > hottestOverlap) {
+        hottestOverlap = overlap;
+        hottestStall = stall;
+      }
+    }
+    const script = hottestStall?.scripts?.[0];
+    const blame = hottestStall
+      ? `stall=${hottestOverlap.toFixed(1)}ms(${hottestStall.kind}${script ? `:${script.name}` : ''})`
+      : '';
+    const labels = [
+      `hotFrame=${hottest.frameMs.toFixed(1)}ms@${Math.round(hottest.atMs)}`,
+      blame,
+      hottest.events?.length ? `[${hottest.events.join('>')}]` : '',
+      hottest.heapDeltaMb != null && hottest.heapDeltaMb < -2 ? `heap=${hottest.heapDeltaMb.toFixed(1)}MiB` : '',
+    ].filter(Boolean);
+    parts.push(labels.join(' '));
+  }
+
+  if (report.stalls.length > 0) {
+    const worst = [...report.stalls].sort((a, b) => b.durationMs - a.durationMs)[0];
+    const scripts = (worst.scripts ?? [])
+      .slice(0, 3)
+      .map((script) => {
+        const file = script.source ? script.source.split('/').pop() : '';
+        return `${script.name}${file ? `@${file}` : ''}:${script.durationMs.toFixed(1)}`;
+      })
+      .join(',');
+    parts.push(
+      `stalls=${report.stalls.length} worst=${worst.durationMs.toFixed(1)}ms(${worst.kind})`
+      + (worst.blockingMs ? ` blocking=${worst.blockingMs.toFixed(1)}ms` : '')
+      + (scripts ? ` scripts=${scripts}` : ''),
+    );
+  }
+
+  if (report.events.length > 0) {
+    parts.push(`events=${report.events.slice(-10).map((event) => event.name).join('>')}`);
   }
 
   if (report.renderer) parts.push(`renderer=${report.renderer}`);
@@ -728,18 +1036,25 @@ function buildFrameSample(frame: MutableFrame, now: number): RenderFrameSample {
   };
 }
 
+function buildReport(source: readonly RenderFrameSample[]): RenderProfileReport {
+  const annotated = annotateRenderFrames(source, renderEvents, renderStalls);
+  return {
+    summary: summarizeRenderFrames(annotated, gpuTiming),
+    sceneStats,
+    gpuTiming,
+    frames: annotated,
+    events: renderEvents.slice(),
+    stalls: renderStalls.slice(),
+    viewport: readViewport(),
+    renderer: readRendererName(),
+  };
+}
+
 function finishRecording(): void {
   if (!recording) return;
   const captured = recording;
   recording = null;
-  lastReport = formatRenderProfileLine({
-    summary: summarizeRenderFrames(captured, gpuTiming),
-    sceneStats,
-    gpuTiming,
-    frames: captured,
-    viewport: readViewport(),
-    renderer: readRendererName(),
-  });
+  lastReport = formatRenderProfileLine(buildReport(captured));
   lastReportAtMs = performance.now();
   void logToNativeFile('info', lastReport);
   notify();
@@ -750,6 +1065,13 @@ function finalizeFrame(now: number): void {
   if (!frame) return;
   activeFrame = null;
   const sample = buildFrameSample(frame, now);
+  const heapUsed = readHeapUsedBytes();
+  if (heapUsed != null) {
+    sample.heapDeltaMb = lastHeapUsedBytes == null
+      ? null
+      : (heapUsed - lastHeapUsedBytes) / (1024 * 1024);
+    lastHeapUsedBytes = heapUsed;
+  }
 
   frames.push(sample);
   if (frames.length > FRAME_WINDOW) frames.shift();
@@ -837,6 +1159,8 @@ export function installRenderProfiler(gl: THREE.WebGLRenderer, scene: THREE.Scen
 
   gl.render = patched as THREE.WebGLRenderer['render'];
   installed = { gl, original };
+  installEventCapture();
+  installStallObservers();
   initGpuTimer(gl);
   sceneStats = collectSceneStats(scene);
   lastSceneStatsAtMs = performance.now();
@@ -858,6 +1182,8 @@ export function uninstallRenderProfiler(): void {
   gpuTimer = null;
   gpuTiming = 'untested';
   syncProbeRemaining = 0;
+  uninstallEventCapture();
+  uninstallStallObservers();
   cachedSnapshot = null;
   for (const listener of snapshotListeners) listener();
 }
@@ -951,7 +1277,7 @@ export function subscribeRenderProfiler(listener: () => void): () => void {
 
 export function getRenderProfilerSnapshot(): RenderProfilerSnapshot {
   if (cachedSnapshot) return cachedSnapshot;
-  const window = frames.slice();
+  const window = annotateRenderFrames(frames.slice(), renderEvents, renderStalls);
   cachedSnapshot = {
     enabled,
     paused,
@@ -959,6 +1285,8 @@ export function getRenderProfilerSnapshot(): RenderProfilerSnapshot {
     frames: window,
     summary: summarizeRenderFrames(window, gpuTiming),
     sceneStats,
+    events: renderEvents.slice(),
+    stalls: renderStalls.slice(),
     recording: recording
       ? { active: true, captured: recording.length, limit: recordingLimit }
       : { active: false, captured: 0, limit: 0 },
@@ -972,6 +1300,9 @@ export function getRenderProfilerSnapshot(): RenderProfilerSnapshot {
 export function startRenderProfileRecording(limit = DEFAULT_RECORD_FRAMES): void {
   recordingLimit = Math.max(30, Math.min(10_000, Math.round(limit)));
   recording = [];
+  renderEvents = [];
+  renderStalls = [];
+  lastHeapUsedBytes = null;
   lastReport = null;
   lastReportAtMs = null;
   notify();
@@ -1009,14 +1340,7 @@ function readRendererName(): string | null {
 /** The structured payload the overlay copies, and the report is built from. */
 export function buildRenderProfileReport(): RenderProfileReport {
   const source = recording && recording.length > 0 ? recording : frames;
-  return {
-    summary: summarizeRenderFrames(source, gpuTiming),
-    sceneStats,
-    gpuTiming,
-    frames: source.slice(),
-    viewport: readViewport(),
-    renderer: readRendererName(),
-  };
+  return buildReport(source);
 }
 
 /** Writes one summary line to `dragonfruit.log` and returns it. */

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 import {
+  annotateRenderFrames,
   formatRenderProfileLine,
   getRenderProfilerSnapshot,
   installRenderProfiler,
@@ -142,6 +143,8 @@ test('the log line carries the frame, pass and scene summary in one line', () =>
       },
     },
     frames: [],
+    events: [],
+    stalls: [],
     viewport: null,
     renderer: null,
   };
@@ -213,4 +216,43 @@ test('the installed sampler attributes each render call to its pass and restores
     uninstallRenderProfiler();
     setRenderProfilerEnabled(false);
   }
+});
+
+test('a hot frame is labelled with the input it contains and the browser-reported stall', () => {
+  const slow = { ...frame(44, [pass({ cpuMs: 2.8 })]), atMs: 1006.1 };
+  const fast = { ...frame(6.1, [pass()]), atMs: 1000 };
+  const events = [
+    { atMs: 1004, name: 'pointerdown', detail: 'button=2 buttons=2 mouse' },
+    { atMs: 1040, name: 'orbit-end', detail: 'resume=220ms' },
+  ];
+  const stalls = [{
+    kind: 'loaf' as const,
+    name: 'long-animation-frame',
+    startMs: 1007,
+    durationMs: 40,
+    blockingMs: 38,
+    scripts: [{ name: 'onOrbitEnd', source: 'https://example/chunk.js', durationMs: 30 }],
+  }];
+
+  const annotated = annotateRenderFrames([fast, slow], events, stalls);
+
+  assert.deepEqual(annotated[0].events, ['pointerdown(button=2 buttons=2 mouse)']);
+  assert.equal(annotated[0].stallMs, undefined);
+  assert.deepEqual(annotated[1].events, ['orbit-end(resume=220ms)']);
+  assert.equal(annotated[1].stallMs, 40, 'the frame overlaps the whole 40 ms long frame');
+
+  const report = {
+    summary: summarizeRenderFrames(annotated, 'unavailable'),
+    gpuTiming: 'unavailable' as const,
+    sceneStats: null,
+    frames: annotated,
+    events,
+    stalls,
+    viewport: null,
+    renderer: null,
+  };
+  const line = formatRenderProfileLine(report);
+  assert.match(line, /hotFrame=44\.0ms@1006 stall=40\.0ms\(loaf:onOrbitEnd\) \[orbit-end\(resume=220ms\)\]/);
+  assert.match(line, /stalls=1 worst=40\.0ms\(loaf\) blocking=38\.0ms scripts=onOrbitEnd@chunk\.js:30\.0/);
+  assert.match(line, /events=pointerdown>orbit-end/);
 });
