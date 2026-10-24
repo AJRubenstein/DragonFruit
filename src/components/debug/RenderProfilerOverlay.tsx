@@ -219,7 +219,10 @@ function StallSection({ snapshot }: { snapshot: RenderProfilerSnapshot }) {
       <SectionTitle trailing={worstStall ? `worst ${worstStall.durationMs.toFixed(1)} ms (${worstStall.kind})` : 'none recorded'}>
         Hot frames and input
       </SectionTitle>
-      <div className="space-y-1.5 rounded-md border px-2.5 py-2 text-[11px]" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}>
+      <div
+        className="custom-scrollbar h-[196px] space-y-1.5 overflow-y-auto rounded-md border px-2.5 py-2 text-[11px]"
+        style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)', color: 'var(--text-muted)' }}
+      >
         <div className="text-[10px] font-semibold" style={{ color: 'var(--text-strong)' }}>Worst frames</div>
         {hottest.map((frame, index) => (
           <div key={`hot-${index}-${frame.atMs}`} className="flex items-baseline justify-between gap-2 tabular-nums">
