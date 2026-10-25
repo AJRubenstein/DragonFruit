@@ -56,6 +56,14 @@ export function useJointInteraction(enabled: boolean = true) {
      * read as a snap-back.
      */
     const lastPreviewedJointPosRef = useRef<Vec3 | null>(null);
+    /**
+     * The support preview re-renders the dragged support synchronously through
+     * `flushSync`. Publishing it every frame costs more than the frame budget;
+     * 40 Hz still looks continuous while the joint/gizmo position, which is the
+     * part the eye tracks, keeps updating every frame.
+     */
+    const lastPreviewPublishAtRef = useRef(0);
+    const DRAG_PREVIEW_MIN_INTERVAL_MS = 25;
     /** Where the joint sat when the drag began, to tell a drag from a click. */
     const dragStartJointPos = useRef<Vec3 | null>(null);
     const forceEndDragRef = useRef(false);
@@ -377,6 +385,7 @@ export function useJointInteraction(enabled: boolean = true) {
                 lastResolvedJointPosRef.current = null;
                 lastPublishedClampedJointPosRef.current = null;
                 lastPreviewedJointPosRef.current = null;
+                lastPreviewPublishAtRef.current = 0;
                 lastWarningRef.current = null;
                 lastWarningEvalAtRef.current = 0;
                 activeJointBindingRef.current = resolveJointBinding((foundParent as { segments: Array<{ topJoint?: { id: string; pos: Vec3 }; bottomJoint?: { id: string; pos: Vec3 } }> }).segments, jointId);
@@ -577,6 +586,7 @@ export function useJointInteraction(enabled: boolean = true) {
             lastPublishedClampedJointPosRef.current = null;
             lastEmittedPreviewJointPosRef.current = null;
             lastPreviewedJointPosRef.current = null;
+            lastPreviewPublishAtRef.current = 0;
             lastWarningEvalAtRef.current = 0;
             activeConstraintRootRef.current = undefined;
             activeConstraintStartRef.current = undefined;
@@ -686,8 +696,12 @@ export function useJointInteraction(enabled: boolean = true) {
                     const clamped = resolveJointPosById(next.segments, activeJointId.current!);
                     if (shouldPublishForClampedPos(clamped) && !previewAlreadyShown(typeId, id, next)) {
                         if (getSupportTypeDescriptor(typeId).jointDragUsesLivePreview) setLivePreview(next);
-                        publishJointDragSupportPreview(typeId as never, next as never);
-                        markPublishedClampedPos(clamped);
+                        const nowMs = performance.now();
+                        if (nowMs - lastPreviewPublishAtRef.current >= DRAG_PREVIEW_MIN_INTERVAL_MS) {
+                            lastPreviewPublishAtRef.current = nowMs;
+                            publishJointDragSupportPreview(typeId as never, next as never);
+                            markPublishedClampedPos(clamped);
+                        }
                     }
 
                     emitPreviewJointPos(clamped, newPosVec3);
@@ -702,8 +716,12 @@ export function useJointInteraction(enabled: boolean = true) {
                     const clamped = resolveJointPosById(next.segments, activeJointId.current!);
                     if (shouldPublishForClampedPos(clamped) && !previewAlreadyShown(typeId, id, next)) {
                         if (getSupportTypeDescriptor(typeId).jointDragUsesLivePreview) setLivePreview(next);
-                        emitSupportDragPreview(typeId, next.id, next);
-                        markPublishedClampedPos(clamped);
+                        const nowMs = performance.now();
+                        if (nowMs - lastPreviewPublishAtRef.current >= DRAG_PREVIEW_MIN_INTERVAL_MS) {
+                            lastPreviewPublishAtRef.current = nowMs;
+                            emitSupportDragPreview(typeId, next.id, next);
+                            markPublishedClampedPos(clamped);
+                        }
                     }
 
                     emitPreviewJointPos(clamped, newPosVec3);

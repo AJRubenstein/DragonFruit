@@ -2695,10 +2695,28 @@ function applyHoveredState(
     notify();
 }
 
+/** Whether a support-edit drag owns the pointer right now. */
+function supportEditDragActive(): boolean {
+    if (typeof window === 'undefined') return false;
+    const w = window as unknown as Record<string, unknown>;
+    if (w.__jointGizmoDragging || w.__knotGizmoDragging || w.__bezierGizmoDragging) return true;
+    const guardUntil = Math.max(
+        Number(w.__jointGizmoGuardUntil ?? 0),
+        Number(w.__knotGizmoGuardUntil ?? 0),
+        Number(w.__bezierGizmoGuardUntil ?? 0),
+    );
+    return guardUntil > Date.now();
+}
+
 export function setHoveredState(
     category: 'model' | 'support' | 'contactDisk' | 'segment' | 'joint' | 'knot' | 'raft' | 'gizmo' | 'none',
     id: string | null,
 ) {
+    // A hover render (25 ms in Support mode) has no place under a drag: the
+    // pointer is captured, the hovered primitive is the one being moved, and the
+    // coalescing timer would otherwise fire a React render mid-drag.
+    if (supportEditDragActive() && category !== 'none' && id !== null) return;
+
     if (category === 'none' || id === null || typeof window === 'undefined') {
         if (hoverTimer !== null) {
             window.clearTimeout(hoverTimer);

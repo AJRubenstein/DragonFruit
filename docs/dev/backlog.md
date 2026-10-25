@@ -341,6 +341,26 @@ drag were never part of the commit.
 commits from `lastPreviewedJointPosRef` (the position the preview actually
 showed), falling back to the raw hit only when no preview was emitted.
 
+## Joint drags no longer pay for hover or 165 Hz support previews
+
+A joint drag re-renders the dragged support synchronously (`usePartDragUpdate`
+flushes the preview to keep the cone attached to the socket), which is 20–26 ms
+of React commit per preview in Support mode. Two things were adding to it:
+
+- the hover coalescing timer fired during the drag (`TimerHandler:setTimeout`,
+  `src_supports_state`), applying a hover render 23–38 ms after a drag had
+  already started. Hover writes are ignored while a joint/knot/bezier drag owns
+  the pointer (and through its 180 ms guard).
+- the support preview was published every frame. It is now throttled to 40 Hz;
+  the joint/gizmo *position* preview still updates every frame, which is the part
+  the eye tracks, while the shaft geometry catches up at 40 Hz. The release
+  still commits from the last position preview, so throttling cannot lose the
+  final pose.
+
+The remaining cost is the synchronous preview render itself; making it
+imperative (mutating the dragged segment meshes from a frame callback) is the
+next step if 40 Hz still feels uneven.
+
 ## Fixed: hovering a support re-rendered the whole support scene
 
 `SupportRenderer` subscribes to the whole support store, so a hover write handed
