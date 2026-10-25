@@ -347,8 +347,8 @@ A joint drag re-renders the dragged support synchronously (`usePartDragUpdate`
 flushes the preview to keep the cone attached to the socket), which is 20–26 ms
 of React commit per preview in Support mode. Two things were adding to it:
 
-- the hover coalescing timer fired during the drag (`TimerHandler:setTimeout`,
-  `src_supports_state`), applying a hover render 23–38 ms after a drag had
+- the hover coalescing timer fired during the drag (`TimerHandler:setTimeout`, from the
+  support state chunk), applying a hover render 23–38 ms after a drag had
   already started. Hover writes are ignored while a joint/knot/bezier drag owns
   the pointer (and through its 180 ms guard).
 - the support preview was published every frame. It is now throttled to 40 Hz;
