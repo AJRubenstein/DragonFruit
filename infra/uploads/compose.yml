@@ -17,9 +17,18 @@ services:
       UPLOADS_TOTP_SECRET: ${UPLOADS_TOTP_SECRET:?set it in .env}
     volumes:
       - ./config.yaml:/config/config.yaml:ro
+      # The database stays on local disk: SQLite over a network share is asking
+      # for corruption.
       - ./data:/home/filebrowser/data
-      - ./files:/srv/uploads
+      # The files go wherever .env says, typically a NAS mount. Docker would
+      # otherwise create a missing path as an empty local folder, and with the
+      # NAS unmounted the uploads would quietly fill the machine's own disk.
+      - type: bind
+        source: ${UPLOADS_FILES_DIR:?set it in .env}
+        target: /srv/uploads
+        bind:
+          create_host_path: false
     # Loopback only: whatever publishes the HTTPS hostname (tunnel or reverse
     # proxy) runs on this machine and forwards here.
     ports:
-      - 127.0.0.1:8080:80
+      - 127.0.0.1:8081:80

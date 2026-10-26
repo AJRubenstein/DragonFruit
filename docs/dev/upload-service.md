@@ -19,7 +19,7 @@ history is in issue #597.
 | ---- | ---- |
 | `infra/uploads/compose.yml` | The container: image version, volumes, the loopback port. |
 | `infra/uploads/config.yaml` | FileBrowser's config: the `uploads` source, password + enforced TOTP, the public address. |
-| `infra/uploads/.env.example` | The three values the host must supply. Copied to `.env`, never committed. |
+| `infra/uploads/.env.example` | The values the host must supply. Copied to `.env`, never committed. |
 | `.github/uploads/uploads.mjs` | Opens (or reuses) and closes an issue's link through FileBrowser's API. |
 | `.github/workflows/uploads.yml` | Runs the script on `/upload` comments and on closed issues, and posts the replies. |
 
@@ -72,7 +72,14 @@ publish it over HTTPS.
 1. Copy `infra/uploads/` to the machine, then `cp .env.example .env` and fill
    it in. `UPLOADS_EXTERNAL_URL` is the public HTTPS address: FileBrowser
    builds the share links from it.
-2. `mkdir data files`, owned by UID 1000 (the container's user).
+2. `mkdir data`, owned by UID 1000 (the container's user): the database lives
+   there, on local disk. The files go to `UPLOADS_FILES_DIR`, normally a
+   folder on a NAS share, which UID 1000 must be able to write.
+
+   Point `UPLOADS_FILES_DIR` at a folder *inside* the share, not at its mount
+   point. With the share unmounted that folder does not exist, and the
+   container refuses to start instead of filling the local disk. Keep it that
+   way: never create the folder on the local disk by hand.
 3. `docker compose up -d`, then point the tunnel or proxy at
    `http://127.0.0.1:8080`. The upload page sends 5 MB chunks, well under
    Cloudflare's 100 MB limit per request.
