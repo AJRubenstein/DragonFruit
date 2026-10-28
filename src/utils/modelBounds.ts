@@ -84,11 +84,6 @@ export function forgetCenteredPositions(geometry: THREE.BufferGeometry): void {
  * model was held by React's development fiber tree, so a WeakMap value keyed by
  * its geometry stayed alive and duplicated every vertex buffer (~20 MB a model).
  */
-/** Drop the derived bounds cache for a geometry that is being released. */
-export function forgetCenteredPositions(geometry: THREE.BufferGeometry): void {
-  geometryCache.delete(geometry);
-}
-
 export function getCenteredPositionSource(geometryData: GeometryLike): CenteredPositionSource | null {
   const positionAttribute = geometryData.geometry.getAttribute('position');
   if (!(positionAttribute instanceof THREE.BufferAttribute) || positionAttribute.count === 0) return null;

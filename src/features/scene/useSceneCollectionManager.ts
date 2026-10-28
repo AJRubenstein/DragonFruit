@@ -34,6 +34,7 @@ import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import { forgetCenteredPositions } from '@/utils/modelBounds';
 import { releaseGeometryStorage as releaseGeometryStorageBase } from '@/utils/releaseGeometry';
+import { disposeSpilledSceneSnapshot, hasSpilledSceneSnapshot, pruneSpilledSceneSnapshots, rehydrateSceneSnapshotPair, spillSceneSnapshotPair } from './sceneSnapshotSpill';
 import type { DragonfruitImportFormat, SupportMode, SupportState } from '@/supports/types';
 import { getBuiltinComplexPluginDefinitions } from '@/features/plugins/builtinComplexPlugins';
 import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/builtinComplexPluginFileTypeHandlers';
@@ -301,7 +302,7 @@ const sceneHistory = createTypedHistory<SceneHistoryPayloadMap>({
   [SCENE_MODELS_SNAPSHOT_APPLY]: SCENE_CHANGE_LABEL,
 });
 
-type SceneSnapshot = {
+export type SceneSnapshot = {
   models: LoadedModel[];
   activeModelId: string | null;
   selectedModelIds: string[];
@@ -346,7 +347,7 @@ type TransformHistorySupportSnapshotOptions = {
   includeSupportState?: boolean;
 };
 
-type SceneSnapshotPair = {
+export type SceneSnapshotPair = {
   before: SceneSnapshot;
   after: SceneSnapshot;
 };
@@ -587,9 +588,63 @@ function disposeEvictedSnapshot(pair: SceneSnapshotPair, ignoredLiveModelIds?: R
 /** Drops every history snapshot and frees geometry only the registry held. */
 function resetSceneSnapshotRegistry(ignoredLiveModelIds?: ReadonlySet<string>): void {
   const pairs = [...sceneSnapshotRegistry.values()];
+  for (const key of sceneSnapshotRegistry.keys()) disposeSpilledSceneSnapshot(key);
   sceneSnapshotRegistry.clear();
   sceneSnapshotOrder.length = 0;
   for (const pair of pairs) disposeEvictedSnapshot(pair, ignoredLiveModelIds);
+}
+
+/** Geometry another snapshot, a live model or the clipboard still needs. */
+function retainedSnapshotGeometries(excludeKey: string): Set<THREE.BufferGeometry> {
+  const retained = new Set<THREE.BufferGeometry>();
+  for (const [key, pair] of sceneSnapshotRegistry) {
+    if (key === excludeKey) continue;
+    pair.before.models.forEach((model) => modelGeometries(model).forEach((geometry) => retained.add(geometry)));
+    pair.after.models.forEach((model) => modelGeometries(model).forEach((geometry) => retained.add(geometry)));
+  }
+  for (const model of liveModelsProvider?.() ?? []) {
+    modelGeometries(model).forEach((geometry) => retained.add(geometry));
+  }
+  for (const geometry of extraRetainedGeometriesProvider?.() ?? []) retained.add(geometry);
+  return retained;
+}
+
+async function spillSceneSnapshotKey(key: string): Promise<boolean> {
+  const pair = sceneSnapshotRegistry.get(key);
+  if (!pair || hasSpilledSceneSnapshot(key)) return false;
+  const spilled = await spillSceneSnapshotPair(
+    key,
+    pair,
+    (geometry) => !retainedSnapshotGeometries(key).has(geometry),
+  );
+  if (spilled && !sceneSnapshotRegistry.has(key)) disposeSpilledSceneSnapshot(key);
+  return spilled;
+}
+
+let spillingSnapshots = false;
+
+/**
+ * Keeps the in-RAM history inside its budget by moving the oldest snapshots to
+ * the scratch store. Undo remains available; the geometry is re-read on demand.
+ */
+async function spillSnapshotsOverBudget(): Promise<void> {
+  if (spillingSnapshots) return;
+  spillingSnapshots = true;
+  try {
+    while (
+      sceneSnapshotOrder.length > 1
+      && estimateSceneSnapshotRegistryBytes() > SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES
+    ) {
+      const key = sceneSnapshotOrder.find((candidate) => (
+        sceneSnapshotRegistry.has(candidate) && !hasSpilledSceneSnapshot(candidate)
+      ));
+      if (!key) break;
+      const spilled = await spillSceneSnapshotKey(key);
+      if (!spilled) break;
+    }
+  } finally {
+    spillingSnapshots = false;
+  }
 }
 
 // Counts each distinct BufferGeometry ONCE, because that is what the process
@@ -638,6 +693,7 @@ function storeSceneSnapshotPair(pair: SceneSnapshotPair): string {
     if (removed) {
       const evicted = sceneSnapshotRegistry.get(removed);
       sceneSnapshotRegistry.delete(removed);
+      disposeSpilledSceneSnapshot(removed);
       if (evicted) disposeEvictedSnapshot(evicted);
     }
   }
@@ -652,10 +708,12 @@ function storeSceneSnapshotPair(pair: SceneSnapshotPair): string {
     if (removed) {
       const evicted = sceneSnapshotRegistry.get(removed);
       sceneSnapshotRegistry.delete(removed);
+      disposeSpilledSceneSnapshot(removed);
       if (evicted) disposeEvictedSnapshot(evicted);
     }
   }
 
+  void spillSnapshotsOverBudget();
   return key;
 }
 
@@ -1556,6 +1614,9 @@ export function useSceneCollectionManager(options?: {
     installLiveModelsProvider(() => modelsRef.current);
     return () => installLiveModelsProvider(null);
   }, []);
+  useEffect(() => {
+    void pruneSpilledSceneSnapshots(new Set(sceneSnapshotRegistry.keys()));
+  }, []);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   /**
@@ -2446,6 +2507,16 @@ export function useSceneCollectionManager(options?: {
         const pair = sceneSnapshotRegistry.get(payload.key);
         if (!pair) return false;
 
+        if (hasSpilledSceneSnapshot(payload.key)) {
+          void rehydrateSceneSnapshotPair(payload.key, pair)
+            .then((restored) => {
+              if (restored) applySceneSnapshot(direction === 'undo' ? pair.before : pair.after);
+              else console.warn('[UndoSpill] Scene snapshot scratch data is missing; undo was not applied.');
+            })
+            .catch((error) => console.warn('[UndoSpill] Failed restoring scene snapshot.', error));
+          return true;
+        }
+
         applySceneSnapshot(direction === 'undo' ? pair.before : pair.after);
         return true;
       },
@@ -2456,13 +2527,14 @@ export function useSceneCollectionManager(options?: {
     };
   }, [applySceneSnapshot]);
 
-  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: MessageDescriptor, modelId?: string) => {
+  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: MessageDescriptor, modelId?: string): string => {
     const key = storeSceneSnapshotPair({ before, after });
     sceneHistory.push({
       type: SCENE_MODELS_SNAPSHOT_APPLY,
       description,
       payload: { key, ...(modelId ? { modelId } : {}) },
     });
+    return key;
   }, []);
 
   const cloneGeometryWithBounds = useCallback((source: GeometryWithBounds, options?: { accelerate?: boolean; shared?: boolean }): GeometryWithBounds => {
@@ -5022,7 +5094,8 @@ export function useSceneCollectionManager(options?: {
       const deletedLabel = existing.length === 1
         ? deleteModelLabel(existing[0].name)
         : deleteModelsLabel(existing.length);
-      pushSceneSnapshotHistory(before, after, deletedLabel);
+      const deleteHistoryKey = pushSceneSnapshotHistory(before, after, deletedLabel);
+      if (nextModels.length === 0) void spillSceneSnapshotKey(deleteHistoryKey);
     }
 
     console.log(`[SceneCollection] Deleted ${ids.size} model(s) and ${totalRemovedSupports} associated supports.`);
@@ -8203,7 +8276,8 @@ export function useSceneCollectionManager(options?: {
       activePlateId: firstPlateId,
       includeSupportState: true,
     });
-    pushSceneSnapshotHistory(before, after, DELETE_MODELS_AND_PLATES_LABEL);
+    const historyKey = pushSceneSnapshotHistory(before, after, DELETE_MODELS_AND_PLATES_LABEL);
+    if (modelsRef.current.length === 0) void spillSceneSnapshotKey(historyKey);
   }, [deleteModels, modelPlateId, pushSceneSnapshotHistory, waitForUiYield]);
 
   /**

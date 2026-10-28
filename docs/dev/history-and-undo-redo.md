@@ -216,6 +216,33 @@ Three payload patterns exist:
   `sceneSnapshotRegistry` (in `useSceneCollectionManager.ts`), which stores the
   heavy `{ before, after }` pairs with a 200-entry + ~300 MB-eviction budget.
 
+### Disk-backed geometry spill
+
+A scene snapshot keeps its model objects, transforms and support state in RAM,
+but the geometry arrays can be moved to the **OPFS scratch store**
+(`dragonfruit-undo/`, written by `src/features/scene/sceneSnapshotSpill.ts`).
+Only `BufferGeometry` attributes and indices move; model IDs, transforms, plates,
+printer and support state stay in the pair, so the existing
+`applySceneSnapshot` restore path does not change.
+
+- Snapshots spill when the registry's in-RAM geometry estimate exceeds the
+  ~300 MB budget, and scene-wide clears spill their snapshot immediately.
+  Undo stays available; rehydration reads the arrays back asynchronously.
+- A geometry still referenced by a live model, the clipboard or another
+  snapshot is not released, so sharing is preserved.
+- Rehydration is lazy: the history handler applies the snapshot inside the
+  `before`/`after` pair after the scratch file is read. Missing scratch data
+  declines the restore rather than applying a half-empty mesh.
+- `releaseGeometryStorage` drops attributes, index, morph data, BVH and the
+  centered-position cache after the write. GPU disposal alone left the arrays
+  alive behind stale fibers and render lists.
+- Scratch files are removed when an entry is evicted or the snapshot registry is
+  reset, and `pruneSpilledSceneSnapshots` removes orphans on startup.
+
+Spill is best-effort: when OPFS is unavailable, quota is exhausted, or a geometry
+uses an unsupported layout (interleaved/morph attributes), the snapshot stays in
+memory and the old bounded-history behaviour applies.
+
 ### Plates on the scene snapshot
 
 Beds ride on the same snapshot as the models, so an entry that changes the plate
