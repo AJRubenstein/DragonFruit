@@ -32,6 +32,8 @@ import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { peekUndo } from '@/history/historyStore';
 import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
+import { forgetCenteredPositions } from '@/utils/modelBounds';
+import { releaseGeometryStorage as releaseGeometryStorageBase } from '@/utils/releaseGeometry';
 import type { DragonfruitImportFormat, SupportMode, SupportState } from '@/supports/types';
 import { getBuiltinComplexPluginDefinitions } from '@/features/plugins/builtinComplexPlugins';
 import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/builtinComplexPluginFileTypeHandlers';
@@ -523,6 +525,73 @@ function estimateGeometryBytes(geometry: THREE.BufferGeometry): number {
   return total;
 }
 
+let liveModelsProvider: (() => LoadedModel[]) | null = null;
+let extraRetainedGeometriesProvider: (() => Iterable<THREE.BufferGeometry>) | null = null;
+
+function installLiveModelsProvider(provider: (() => LoadedModel[]) | null): void {
+  liveModelsProvider = provider;
+}
+
+function installExtraRetainedGeometries(provider: (() => Iterable<THREE.BufferGeometry>) | null): void {
+  extraRetainedGeometriesProvider = provider;
+}
+
+function modelGeometries(model: Pick<LoadedModel, 'geometry'>): THREE.BufferGeometry[] {
+  const geometries: THREE.BufferGeometry[] = [model.geometry.geometry];
+  if (model.geometry.edgeGeometry) geometries.push(model.geometry.edgeGeometry);
+  const defects = model.geometry.meshDefects;
+  if (defects?.supportSectionGeometry) geometries.push(defects.supportSectionGeometry);
+  if (defects?.modelSectionGeometry) geometries.push(defects.modelSectionGeometry);
+  return geometries;
+}
+
+/**
+ * Releases everything a geometry owns, not just its GPU buffers. `dispose()`
+ * alone leaves the typed arrays reachable while any stale fiber, render list or
+ * module cache still points at the geometry — which is what kept a cleared scene
+ * resident. Attributes are dropped too, so those references become cheap.
+ */
+function releaseGeometryStorage(geometry: THREE.BufferGeometry): void {
+  forgetCenteredPositions(geometry);
+  releaseGeometryStorageBase(geometry);
+}
+
+/**
+ * Disposes the geometry a history pair owned once no snapshot, live model or
+ * clipboard still references it. Deleting a registry entry alone leaves the
+ * renderer's attribute buffers and the mesh arrays resident for the rest of the
+ * session, which is why an emptied scene used to keep its whole RAM footprint.
+ */
+function disposeEvictedSnapshot(pair: SceneSnapshotPair, ignoredLiveModelIds?: ReadonlySet<string>): void {
+  const retained = new Set<THREE.BufferGeometry>();
+  for (const remaining of sceneSnapshotRegistry.values()) {
+    for (const model of remaining.before.models) modelGeometries(model).forEach((geometry) => retained.add(geometry));
+    for (const model of remaining.after.models) modelGeometries(model).forEach((geometry) => retained.add(geometry));
+  }
+  for (const model of liveModelsProvider?.() ?? []) {
+    if (ignoredLiveModelIds?.has(model.id)) continue;
+    for (const geometry of modelGeometries(model)) retained.add(geometry);
+  }
+  for (const geometry of extraRetainedGeometriesProvider?.() ?? []) retained.add(geometry);
+
+  const candidates = new Set<THREE.BufferGeometry>();
+  for (const model of pair.before.models) modelGeometries(model).forEach((geometry) => candidates.add(geometry));
+  for (const model of pair.after.models) modelGeometries(model).forEach((geometry) => candidates.add(geometry));
+
+  for (const geometry of candidates) {
+    if (retained.has(geometry)) continue;
+    releaseGeometryStorage(geometry);
+  }
+}
+
+/** Drops every history snapshot and frees geometry only the registry held. */
+function resetSceneSnapshotRegistry(ignoredLiveModelIds?: ReadonlySet<string>): void {
+  const pairs = [...sceneSnapshotRegistry.values()];
+  sceneSnapshotRegistry.clear();
+  sceneSnapshotOrder.length = 0;
+  for (const pair of pairs) disposeEvictedSnapshot(pair, ignoredLiveModelIds);
+}
+
 // Counts each distinct BufferGeometry ONCE, because that is what the process
 // actually holds: cloneLoadedModel is a shallow clone, so every snapshot that
 // didn't change the mesh shares the same geometry object. A move stores two
@@ -537,10 +606,11 @@ function estimateSceneSnapshotRegistryBytes(): number {
   const counted = new Set<THREE.BufferGeometry>();
   let total = 0;
   const add = (model: LoadedModel) => {
-    const geometry = model.geometry.geometry;
-    if (counted.has(geometry)) return;
-    counted.add(geometry);
-    total += estimateGeometryBytes(geometry);
+    for (const geometry of modelGeometries(model)) {
+      if (counted.has(geometry)) continue;
+      counted.add(geometry);
+      total += estimateGeometryBytes(geometry);
+    }
   };
   for (const pair of sceneSnapshotRegistry.values()) {
     pair.before.models.forEach(add);
@@ -565,7 +635,11 @@ function storeSceneSnapshotPair(pair: SceneSnapshotPair): string {
 
   while (sceneSnapshotOrder.length > SCENE_HISTORY_MAX_SNAPSHOTS) {
     const removed = sceneSnapshotOrder.shift();
-    if (removed) sceneSnapshotRegistry.delete(removed);
+    if (removed) {
+      const evicted = sceneSnapshotRegistry.get(removed);
+      sceneSnapshotRegistry.delete(removed);
+      if (evicted) disposeEvictedSnapshot(evicted);
+    }
   }
 
   // Always keep at least one snapshot so undo of the most recent action
@@ -575,7 +649,11 @@ function storeSceneSnapshotPair(pair: SceneSnapshotPair): string {
     && estimateSceneSnapshotRegistryBytes() > SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES
   ) {
     const removed = sceneSnapshotOrder.shift();
-    if (removed) sceneSnapshotRegistry.delete(removed);
+    if (removed) {
+      const evicted = sceneSnapshotRegistry.get(removed);
+      sceneSnapshotRegistry.delete(removed);
+      if (evicted) disposeEvictedSnapshot(evicted);
+    }
   }
 
   return key;
@@ -1474,6 +1552,10 @@ export function useSceneCollectionManager(options?: {
   );
 
   const [models, setModels] = useState<LoadedModel[]>([]);
+  useEffect(() => {
+    installLiveModelsProvider(() => modelsRef.current);
+    return () => installLiveModelsProvider(null);
+  }, []);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   /**
@@ -1604,6 +1686,15 @@ export function useSceneCollectionManager(options?: {
     scheduleChunkStoreSweep(() => modelsRef.current);
   }, [models]);
   const [modelClipboard, setModelClipboard] = useState<ModelClipboardEntry[]>([]);
+
+  useEffect(() => {
+    installExtraRetainedGeometries(() => {
+      const geometries: THREE.BufferGeometry[] = [];
+      for (const entry of modelClipboard) modelGeometries(entry).forEach((geometry) => geometries.push(geometry));
+      return geometries;
+    });
+    return () => installExtraRetainedGeometries(null);
+  }, [modelClipboard]);
   const [recentOpenedFiles, setRecentOpenedFiles] = useState<RecentOpenedFileEntry[]>([]);
   const [importProgress, setImportProgress] = useState<ImportProgressState>({
     active: false,
@@ -2529,16 +2620,7 @@ export function useSceneCollectionManager(options?: {
         return;
       }
 
-      try {
-        disposeGeometryBVH(geometry);
-      } catch {
-        // ignore disposal failures
-      }
-      try {
-        geometry.dispose();
-      } catch {
-        // ignore disposal failures
-      }
+      releaseGeometryStorage(geometry);
 
       if (deferredDisposalQueueRef.current.length === 0) {
         deferredDisposalProcessingRef.current = false;
@@ -7515,19 +7597,16 @@ export function useSceneCollectionManager(options?: {
   // Cleanup on unmount
   useEffect(() => {
     const previous = trackedGeometriesRef.current;
-    const next = new Set<THREE.BufferGeometry>(models.map((model) => model.geometry.geometry));
+    const next = new Set<THREE.BufferGeometry>();
+    for (const model of models) modelGeometries(model).forEach((geometry) => next.add(geometry));
 
     for (const clipboardEntry of modelClipboard) {
-      next.add(clipboardEntry.geometry.geometry);
+      modelGeometries(clipboardEntry).forEach((geometry) => next.add(geometry));
     }
 
     for (const snapshot of sceneSnapshotRegistry.values()) {
-      for (const model of snapshot.before.models) {
-        next.add(model.geometry.geometry);
-      }
-      for (const model of snapshot.after.models) {
-        next.add(model.geometry.geometry);
-      }
+      for (const model of snapshot.before.models) modelGeometries(model).forEach((geometry) => next.add(geometry));
+      for (const model of snapshot.after.models) modelGeometries(model).forEach((geometry) => next.add(geometry));
     }
 
     const removed: THREE.BufferGeometry[] = [];

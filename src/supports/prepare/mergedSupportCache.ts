@@ -13,6 +13,7 @@ import { collectProxyPrimitives, type ProxyModelGeometry } from '@/supports/Supp
 import { SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
 import type { SupportState } from '@/supports/types';
 import { buildMergedSupportGeometry } from './mergedSupportGeometry';
+import { releaseGeometryStorage } from '@/utils/releaseGeometry';
 
 /**
  * The Prepare view's merged support layer, one entry per model.
@@ -239,7 +240,7 @@ function requeue(keys: Iterable<string>): void {
 
 function disposeEntry(entry: PrepareMergedSupportEntry): void {
   // No BVH: nothing raycasts this geometry.
-  entry.geometry.dispose();
+  releaseGeometryStorage(entry.geometry);
 }
 
 function buildEntry(modelKey: string): void {
