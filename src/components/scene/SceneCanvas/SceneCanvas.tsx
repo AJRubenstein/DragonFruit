@@ -194,7 +194,7 @@ import {
 import { computeLowestZ, countTriangles } from '@/utils/geometry';
 import { quaternionFromGlobalEuler } from '@/utils/rotation';
 import { Toast } from '@/components/atoms';
-import { getCenteredPositions } from '@/utils/modelBounds';
+import { getCenteredPositionSource, type CenteredPositionSource } from '@/utils/modelBounds';
 import { emitImmediateModelHover } from '@/supports/interaction/pointerOcclusion';
 import { SupportPathfindingDebugHud, SupportPathfindingDebugOverlay } from '@/components/scene/SupportPathfindingDebugOverlay';
 import {
@@ -260,7 +260,7 @@ function formatOutOfBoundsLabel(
  * result is reused for every pointer move.
  */
 function projectModelMesh(
-  positions: Float32Array,
+  source: CenteredPositionSource,
   modelMatrix: THREE.Matrix4,
   camera: THREE.Camera,
   rect: DOMRect,
@@ -270,7 +270,12 @@ function projectModelMesh(
     .multiply(modelMatrix);
   const m = clip.elements;
 
-  const count = positions.length / 3;
+  const count = source.count;
+  const positions = source.array;
+  const itemSize = source.itemSize;
+  const centerX = source.center.x;
+  const centerY = source.center.y;
+  const centerZ = source.center.z;
   const xs = new Float32Array(count);
   const ys = new Float32Array(count);
 
@@ -281,9 +286,10 @@ function projectModelMesh(
   let dropped = false;
 
   for (let i = 0; i < count; i += 1) {
-    const px = positions[i * 3];
-    const py = positions[(i * 3) + 1];
-    const pz = positions[(i * 3) + 2];
+    const offset = i * itemSize;
+    const px = positions[offset] - centerX;
+    const py = positions[offset + 1] - centerY;
+    const pz = positions[offset + 2] - centerZ;
 
     const w = (m[3] * px) + (m[7] * py) + (m[11] * pz) + m[15];
     if (w <= 0) {
@@ -3254,10 +3260,10 @@ export function SceneCanvas({
       if (!model.visible) continue;
 
       const matrix = modelMarqueeMatrices.get(model.id);
-      const positions = getCenteredPositions(model.geometry);
-      if (!matrix || !positions) continue;
+      const source = getCenteredPositionSource(model.geometry);
+      if (!matrix || !source) continue;
 
-      meshes.set(model.id, projectModelMesh(positions, matrix, camera, rect));
+      meshes.set(model.id, projectModelMesh(source, matrix, camera, rect));
     }
 
     projectedModelMeshesRef.current = { matrices: modelMarqueeMatrices, cameraKey, viewportKey, meshes };
