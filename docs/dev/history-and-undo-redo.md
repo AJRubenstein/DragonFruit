@@ -226,18 +226,22 @@ printer and support state stay in the pair, so the existing
 `applySceneSnapshot` restore path does not change.
 
 - Snapshots spill when the registry's in-RAM geometry estimate exceeds the
-  ~300 MB budget, and scene-wide clears spill their snapshot immediately.
-  Undo stays available; rehydration reads the arrays back asynchronously.
+  ~300 MB budget. A model delete spills its entry immediately: the undo pair is
+  the only thing still holding the deleted meshes, so waiting for the budget
+  would keep a deleted model's geometry resident. Undo stays available;
+  rehydration reads the arrays back asynchronously.
 - A geometry still referenced by a live model, the clipboard or another
-  snapshot is not released, so sharing is preserved.
+  snapshot is not released, so sharing is preserved. The delete path passes the
+  surviving model list explicitly, because the scene ref has not committed yet
+  and the deleted models would still count as live.
 - Rehydration is lazy: the history handler applies the snapshot inside the
   `before`/`after` pair after the scratch file is read. Missing scratch data
   declines the restore rather than applying a half-empty mesh.
 - `releaseGeometryStorage` drops attributes, index, morph data, BVH and the
   centered-position cache after the write. GPU disposal alone left the arrays
   alive behind stale fibers and render lists.
-- Scratch files are removed when an entry is evicted or the snapshot registry is
-  reset, and `pruneSpilledSceneSnapshots` removes orphans on startup.
+- Scratch files are removed when an entry is evicted, and
+  `pruneSpilledSceneSnapshots` removes orphans on startup.
 
 Spill is best-effort: when OPFS is unavailable, quota is exhausted, or a geometry
 uses an unsupported layout (interleaved/morph attributes), the snapshot stays in

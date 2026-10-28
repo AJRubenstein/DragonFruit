@@ -563,14 +563,13 @@ function releaseGeometryStorage(geometry: THREE.BufferGeometry): void {
  * renderer's attribute buffers and the mesh arrays resident for the rest of the
  * session, which is why an emptied scene used to keep its whole RAM footprint.
  */
-function disposeEvictedSnapshot(pair: SceneSnapshotPair, ignoredLiveModelIds?: ReadonlySet<string>): void {
+function disposeEvictedSnapshot(pair: SceneSnapshotPair): void {
   const retained = new Set<THREE.BufferGeometry>();
   for (const remaining of sceneSnapshotRegistry.values()) {
     for (const model of remaining.before.models) modelGeometries(model).forEach((geometry) => retained.add(geometry));
     for (const model of remaining.after.models) modelGeometries(model).forEach((geometry) => retained.add(geometry));
   }
   for (const model of liveModelsProvider?.() ?? []) {
-    if (ignoredLiveModelIds?.has(model.id)) continue;
     for (const geometry of modelGeometries(model)) retained.add(geometry);
   }
   for (const geometry of extraRetainedGeometriesProvider?.() ?? []) retained.add(geometry);
@@ -585,22 +584,19 @@ function disposeEvictedSnapshot(pair: SceneSnapshotPair, ignoredLiveModelIds?: R
   }
 }
 
-/** Drops every history snapshot and frees geometry only the registry held. */
-function resetSceneSnapshotRegistry(ignoredLiveModelIds?: ReadonlySet<string>): void {
-  const pairs = [...sceneSnapshotRegistry.values()];
-  for (const key of sceneSnapshotRegistry.keys()) disposeSpilledSceneSnapshot(key);
-  sceneSnapshotRegistry.clear();
-  sceneSnapshotOrder.length = 0;
-  for (const pair of pairs) disposeEvictedSnapshot(pair, ignoredLiveModelIds);
-}
-
 /** Geometry another snapshot, a live model or the clipboard still needs. */
-function retainedSnapshotGeometries(excludeKey: string): Set<THREE.BufferGeometry> {
+function retainedSnapshotGeometries(excludeKey: string, liveModels?: readonly LoadedModel[]): Set<THREE.BufferGeometry> {
   const retained = new Set<THREE.BufferGeometry>();
   for (const [key, pair] of sceneSnapshotRegistry) {
     if (key === excludeKey) continue;
     pair.before.models.forEach((model) => modelGeometries(model).forEach((geometry) => retained.add(geometry)));
     pair.after.models.forEach((model) => modelGeometries(model).forEach((geometry) => retained.add(geometry)));
+  }
+  // The caller's list is the scene the action is about to commit; the provider
+  // is whatever is drawn RIGHT NOW. A spill awaits disk writes, so an undo can
+  // land in between — both sets have to be treated as live.
+  for (const model of liveModels ?? []) {
+    modelGeometries(model).forEach((geometry) => retained.add(geometry));
   }
   for (const model of liveModelsProvider?.() ?? []) {
     modelGeometries(model).forEach((geometry) => retained.add(geometry));
@@ -609,13 +605,19 @@ function retainedSnapshotGeometries(excludeKey: string): Set<THREE.BufferGeometr
   return retained;
 }
 
-async function spillSceneSnapshotKey(key: string): Promise<boolean> {
+/**
+ * Moves a snapshot's geometry to the scratch store. `liveModels` is the set that
+ * will be standing after the action that pushed the pair; pass it explicitly when
+ * the ref has not committed yet (a delete), or the deleted meshes still look live
+ * and nothing is released.
+ */
+async function spillSceneSnapshotKey(key: string, liveModels?: readonly LoadedModel[]): Promise<boolean> {
   const pair = sceneSnapshotRegistry.get(key);
   if (!pair || hasSpilledSceneSnapshot(key)) return false;
   const spilled = await spillSceneSnapshotPair(
     key,
     pair,
-    (geometry) => !retainedSnapshotGeometries(key).has(geometry),
+    (geometry) => !retainedSnapshotGeometries(key, liveModels).has(geometry),
   );
   if (spilled && !sceneSnapshotRegistry.has(key)) disposeSpilledSceneSnapshot(key);
   return spilled;
@@ -2692,7 +2694,16 @@ export function useSceneCollectionManager(options?: {
         return;
       }
 
-      releaseGeometryStorage(geometry);
+      try {
+        disposeGeometryBVH(geometry);
+      } catch {
+        // ignore disposal failures
+      }
+      try {
+        geometry.dispose();
+      } catch {
+        // ignore disposal failures
+      }
 
       if (deferredDisposalQueueRef.current.length === 0) {
         deferredDisposalProcessingRef.current = false;
@@ -5095,7 +5106,11 @@ export function useSceneCollectionManager(options?: {
         ? deleteModelLabel(existing[0].name)
         : deleteModelsLabel(existing.length);
       const deleteHistoryKey = pushSceneSnapshotHistory(before, after, deletedLabel);
-      if (nextModels.length === 0) void spillSceneSnapshotKey(deleteHistoryKey);
+      // A delete must actually give the mesh memory back. The undo pair is the
+      // only thing still holding the deleted geometry, so move that geometry to
+      // the scratch store now instead of letting it sit in RAM until the history
+      // budget evicts the pair. Undo re-reads it; shared meshes are skipped.
+      void spillSceneSnapshotKey(deleteHistoryKey, nextModels);
     }
 
     console.log(`[SceneCollection] Deleted ${ids.size} model(s) and ${totalRemovedSupports} associated supports.`);
@@ -8277,7 +8292,7 @@ export function useSceneCollectionManager(options?: {
       includeSupportState: true,
     });
     const historyKey = pushSceneSnapshotHistory(before, after, DELETE_MODELS_AND_PLATES_LABEL);
-    if (modelsRef.current.length === 0) void spillSceneSnapshotKey(historyKey);
+    void spillSceneSnapshotKey(historyKey, modelsRef.current);
   }, [deleteModels, modelPlateId, pushSceneSnapshotHistory, waitForUiYield]);
 
   /**
