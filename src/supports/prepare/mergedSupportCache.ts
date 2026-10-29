@@ -14,6 +14,7 @@ import { changedSupportModels, getSupportModelIndex, type SupportModelIndex } fr
 import { SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
 import type { SupportState } from '@/supports/types';
 import { releaseGeometryStorage } from '@/utils/releaseGeometry';
+import { perfEnabled, perfMark, perfMeasure } from '@/utils/perfProbe';
 import { buildMergedSupportGeometry } from './mergedSupportGeometry';
 
 /**
@@ -328,41 +329,47 @@ function dropEntriesFor(modelKeys: Iterable<string>): void {
 }
 
 function buildEntry(modelKey: string): void {
-  const model = state.walk?.get(modelKey);
-  const previous = state.entries.get(modelKey);
+  const perfStart = perfMark('merged:build');
+  try {
+    const model = state.walk?.get(modelKey);
+    const previous = state.entries.get(modelKey);
 
-  if (!model) {
-    if (previous) {
-      state.entries.delete(modelKey);
-      releaseGoneEntry(previous);
+    if (!model) {
+      if (previous) {
+        state.entries.delete(modelKey);
+        releaseGoneEntry(previous);
+      }
+      return;
     }
-    return;
-  }
 
-  const localInverse = model.modelId ? state.inverses?.get(model.modelId) ?? null : null;
-  const built = buildMergedSupportGeometry(model, {
-    ...(state.resolvePenetration ? { resolvePenetration: state.resolvePenetration } : {}),
-    localInverse,
-  });
+    const localInverse = model.modelId ? state.inverses?.get(model.modelId) ?? null : null;
+    const built = buildMergedSupportGeometry(model, {
+      ...(state.resolvePenetration ? { resolvePenetration: state.resolvePenetration } : {}),
+      localInverse,
+    });
 
-  if (built.triangles === 0) {
-    built.geometry.dispose();
-    if (previous) {
-      state.entries.delete(modelKey);
-      disposeEntry(previous);
+    if (built.triangles === 0) {
+      built.geometry.dispose();
+      if (previous) {
+        state.entries.delete(modelKey);
+        disposeEntry(previous);
+      }
+      return;
     }
-    return;
-  }
 
-  state.builds += 1;
-  const entry: PrepareMergedSupportEntry = {
-    modelId: model.modelId ?? null,
-    geometry: built.geometry,
-    triangles: built.triangles,
-    status: 'ready',
-  };
-  state.entries.set(modelKey, entry);
-  if (previous) disposeEntry(previous);
+    state.builds += 1;
+    const entry: PrepareMergedSupportEntry = {
+      modelId: model.modelId ?? null,
+      geometry: built.geometry,
+      triangles: built.triangles,
+      status: 'ready',
+    };
+    state.entries.set(modelKey, entry);
+    if (previous) disposeEntry(previous);
+  } finally {
+    perfMeasure('merged:build', perfStart);
+    if (perfEnabled() && perfStart !== 0) console.log('[df] merged build', modelKey, (performance.now() - perfStart).toFixed(1));
+  }
 }
 
 /** The proxy's interior filter for the current walk: supports touching the cavity. */
@@ -523,7 +530,11 @@ export function requestPrepareMergedSupports(request: {
       // on the proxy forever.
       skipNextTransformRebuild = false;
       state.key = nextKey;
-      publish();
+      // No publish: the entries, their statuses and `finalizing` are unchanged,
+      // and every consumer keys on the view's identity. Publishing here handed
+      // the world proxy a fresh `readyModelIds`, which re-cut its batches and
+      // tiles and re-uploaded every support instance for a move that changed no
+      // support geometry.
       return;
     }
     skipNextTransformRebuild = false;

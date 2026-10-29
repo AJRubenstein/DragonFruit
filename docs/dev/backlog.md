@@ -1740,57 +1740,59 @@ gesture: the profile of that window is `(program)` (IPC deserialization) and
 render work, not JS copies. Making that non-blocking means receiving the buffers
 in pieces, which is a change to the command's shape, not to this effect.
 
-## Known: a move commit stalls ~250 ms outside JavaScript
+## Known: a model's *first* commit stalls ~250 ms outside JavaScript
 
 Measured with opt-in marks (`src/utils/perfProbe.ts`: set `window.__dfPerf = true`,
 then read `performance.getEntriesByType('measure')`) on the 20-model,
-20,683-support scene in a production build, for a one-model drag:
+20,683-support scene in a production build.
+
+Per commit, the JavaScript is small:
 
 | piece | per commit |
 | --- | ---: |
-| `proxy:collect` (the support proxy walk) | 2.9–4.5 ms, one model |
-| `proxy:tiles` | 3.3–4.1 ms |
-| `bounds:models` | 1.0–7.9 ms |
-| `bounds:support` | 0.8–7.7 ms, one model |
+| `proxy:collect` (the support proxy walk) | 2.4–5.7 ms, one model |
+| `proxy:tiles` | 3.6–15.6 ms |
+| `bounds:models` | 0–7.9 ms |
+| `bounds:support` | 0.7–7.7 ms, one model |
+| `merged:build` (the merged support re-merge) | does not run |
 
-And the same commit still leaves a 250 ms gap in `requestAnimationFrame`, p95
-6.2 ms — one hitch, on a model move only:
+The hitch is **per model, once**, not per commit:
 
 | input | worst frame |
 | --- | ---: |
 | click (no move) | 12 ms |
 | drag on empty canvas | 6 ms |
-| drag a model | 250–345 ms |
+| first drag of a model this session | 250–375 ms |
+| the same drag again | 6–12 ms |
 
-**The bisect is the useful part.** `window.__dfLayers = { merged | proxy: false }`
-drops one layer (`perfLayerEnabled`):
+Toggling the merged layer off and on again, which forces a full rebuild, then
+dragging immediately: 12 ms. A model that has been dragged once never stalls
+again.
 
-| layers | worst frame on a model move |
-| --- | ---: |
-| both (default) | 250–345 ms |
-| merged off (proxy draws everything) | 6.2 ms |
-| proxy off (merged draws everything) | 6–12 ms |
+It is not JavaScript: ~4 ms of V8 samples in the window, the trace's largest task
+is 64 ms with none over 80 ms, viewport size does not change it (700×560,
+1100×880, 1718×1420 all ~250 ms), and no probe accounts for it. The frame the
+compositor fails to produce is the stall, and the work that causes it happens
+once per model.
 
-So the cost lives in the *combination*, not in either layer's work: the same
-first-vertex uploads and the same plate-wide batch rebuild happen in the
-"merged off" case and cost nothing.
+**The bisect that narrowed it** (`window.__dfLayers = { merged | mergedMesh | proxy | shapes | rafts | overlay: false }`,
+via `perfLayerEnabled`): `merged: false` (cache disabled) is 6 ms; `mergedMesh: false`
+(cache on, meshes hidden) is 230–255 ms. So the *cache*, not the mesh, is what
+makes the first commit expensive — but it charges nothing on later commits, and
+`merged:build` never fires during the stall.
 
-It is not JavaScript: a V8 profile of the window holds ~4 ms of samples, a Chrome
-trace's largest task is 64 ms with none over 80 ms, and viewport size does not
-change it (700×560, 1100×880, 1718×1420 all ~250 ms). The frame the compositor
-fails to produce is the stall.
+**What changed along the way, all measured:**
 
-**What changed anyway:** `mergedSupportCache` used to answer any support write
-with a whole-plate walk plus a full re-merge. It now re-collects and re-merges
-only the models whose entities the write replaced, using `supportModelIndex`
-(`changedSupportModels`), and keeps every other entry's geometry. That is a real
-saving on a support edit and is pinned by the merged-cache tests, but it does not
-explain the 250 ms: a pure XY move already skipped the rebuild.
+- `mergedSupportCache` re-collects and re-merges only the models a write touched
+  (`changedSupportModels`), instead of a whole-plate walk and a full re-merge.
+- Its transform-skip branch no longer calls `publish()`. Nothing changed for
+  consumers, but a fresh `readyModelIds` made the world proxy re-cut its batches
+  and tiles and re-upload every support instance.
+- The walks behind the proxy and the bounds are per-model (earlier commits).
 
-Next: instrument the *renderer*, not the walks — `WebGLRenderer.info` and
-`onBeforeRender`/`onAfterRender` timings per layer, or bisect per-object (raft vs
-shafts vs joints vs cones) — since the stall is on the GPU/present side and the
-layer pair is the trigger.
+Next: instrument the first-commit path per model — the merged entry's first
+build, the model geometry's first GPU upload, and the proxy's first tile upload —
+rather than the steady-state commit, which is already clean.
 
 ## Known: selecting a model costs one frame on its own
 

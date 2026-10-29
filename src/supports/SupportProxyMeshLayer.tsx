@@ -22,7 +22,7 @@ import type { Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 import { SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
 import { changedSupportModels, getSupportModelIndex, type SupportModelIndex } from './supportModelIndex';
-import { perfMark, perfMeasure } from '@/utils/perfProbe';
+import { perfLayerEnabled, perfMark, perfMeasure } from '@/utils/perfProbe';
 import { buildProxyTiles, type FlatProxyGeometry } from './supportProxyTiles';
 import {
     createCavityTester,
@@ -992,7 +992,7 @@ export function SupportProxyMeshLayer({
     };
   }, [camera, size.height]);
 
-  if (visibleModelEntries.length === 0) {
+  if (visibleModelEntries.length === 0 || !perfLayerEnabled('shapes')) {
     return null;
   }
 

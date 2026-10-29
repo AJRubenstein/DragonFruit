@@ -6962,7 +6962,7 @@ export function SceneCanvas({
                         </group>
                       )}
 
-                      {PREPARE_MERGED_SUPPORTS && mode === 'prepare' && (
+                      {PREPARE_MERGED_SUPPORTS && mode === 'prepare' && perfLayerEnabled('mergedMesh') && (
                         <PrepareMergedSupportMesh
                           entry={prepareMergedSupports.entries.get(model.id) ?? null}
                           clipLower={clipLower}
@@ -7296,7 +7296,7 @@ export function SceneCanvas({
                   onModelPointerDragStart={handleSelectModeSupportDragStart}
                   supportRendererRef={supportsRef as React.Ref<THREE.Group>}
                   supportRenderRefreshNonce={supportRenderRefreshNonce}
-                  showOutOfBoundsOverlay={!!activeBuildVolumeSettings?.enabled && outOfBoundsModelIds.size > 0}
+                  showOutOfBoundsOverlay={!!activeBuildVolumeSettings?.enabled && outOfBoundsModelIds.size > 0 && perfLayerEnabled('overlay')}
                   outOfBoundsMin={shaderOutOfBoundsBounds?.min ?? null}
                   outOfBoundsMax={shaderOutOfBoundsBounds?.max ?? null}
                   outOfBoundsStripeColor={outOfBoundsStripeColor}

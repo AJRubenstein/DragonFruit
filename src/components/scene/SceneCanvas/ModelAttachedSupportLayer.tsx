@@ -199,7 +199,7 @@ export function ModelAttachedSupportLayer({
         />
       )}
 
-      {!hideRaftPrimitivesEffective && !interiorView && !useUltraLazySupports && (
+      {!hideRaftPrimitivesEffective && !interiorView && !useUltraLazySupports && perfLayerEnabled('rafts') && (
         <>
           <RaftRenderer
             clipLower={clipLower}
