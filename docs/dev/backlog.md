@@ -1777,6 +1777,23 @@ iterating records with `in` instead of allocating `Object.entries` pairs). The
 next step is a surgical `setSupportEntity(key, id, entity)` that touches one id
 instead of rebuilding the map.
 
+## Fixed: Ctrl+A, Delete rebuilt the support store once per model
+
+`deleteModels` deleted supports model by model, and each
+`deleteSupportsForModel` ends in `setSnapshot`, so a select-all delete on a
+supported plate normalised the whole support store once per model on top of a
+full scan each.
+
+`deleteSupportsForModelIds` plans the removal for every model in one pass and
+applies it with one write; both delete paths use it. Measured on a synthetic
+20-model, 20k-entity plate: **241 ms → 145 ms**, and the store now normalises
+once instead of twenty times.
+
+The remaining O(models × entities) is in the planning step (`getSupportsForModel`
+per model); it can read the per-model index from `supportModelIndex.ts` instead.
+`deleteModels` also captures a whole support-state snapshot before and after for
+undo, which on the real scene is the larger cost.
+
 ## Known: a model's *first* commit stalls ~250 ms outside JavaScript
 
 Measured with opt-in marks (`src/utils/perfProbe.ts`: set `window.__dfPerf = true`,
