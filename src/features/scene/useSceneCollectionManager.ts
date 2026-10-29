@@ -352,9 +352,26 @@ type TransformHistorySupportSnapshotOptions = {
   includeSupportState?: boolean;
 };
 
+/**
+ * One model whose supports were moved with it, recorded instead of a copy of the
+ * whole support store. A transform rewrites positions by a delta, so undo is the
+ * same call with the ends swapped; cloning ~20k entities twice per drag bell was
+ * the single biggest cost of committing a move.
+ */
+export type SupportTransformMove = {
+  modelId: string;
+  from: ModelTransform;
+  to: ModelTransform;
+};
+
 export type SceneSnapshotPair = {
   before: SceneSnapshot;
   after: SceneSnapshot;
+  /**
+   * Present on a pure transform step: the pair carries no support state, and the
+   * history handler replays these transforms instead (inverse on undo).
+   */
+  supportMoves?: SupportTransformMove[];
 };
 
 const sceneSnapshotRegistry = new Map<string, SceneSnapshotPair>();
@@ -721,10 +738,18 @@ function estimateSnapshotSupportBytes(snapshot: SceneSnapshot): number {
 // once per half.
 function estimateSceneSnapshotRegistryBytes(): number {
   const counted = new Set<THREE.BufferGeometry>();
+  const live = new Set<THREE.BufferGeometry>();
+  for (const model of liveModelsProvider?.() ?? []) {
+    for (const geometry of modelGeometries(model)) live.add(geometry);
+  }
   let total = 0;
   const add = (model: LoadedModel) => {
     for (const geometry of modelGeometries(model)) {
-      if (counted.has(geometry)) continue;
+      // A mesh the scene is drawing right now is not history cost: the budget is
+      // there to bound what only the undo stack holds. Counting the live plate
+      // kept the estimate permanently over budget, so every commit tried to spill
+      // and none of it could ever be released.
+      if (counted.has(geometry) || live.has(geometry)) continue;
       counted.add(geometry);
       total += estimateGeometryBytes(geometry);
     }
@@ -2577,16 +2602,30 @@ export function useSceneCollectionManager(options?: {
         const pair = sceneSnapshotRegistry.get(payload.key);
         if (!pair) return false;
 
+        const moveSupports = () => {
+          if (!pair.supportMoves || pair.supportMoves.length === 0) return;
+          for (const move of pair.supportMoves) {
+            // Undo puts the supports back where they were; redo moves them again.
+            if (direction === 'undo') transformSupportsForModel(move.modelId, move.to, move.from);
+            else transformSupportsForModel(move.modelId, move.from, move.to);
+          }
+        };
+
         if (hasSpilledSceneSnapshot(payload.key)) {
           void rehydrateSceneSnapshotPair(payload.key, pair)
             .then((restored) => {
-              if (restored) applySceneSnapshot(direction === 'undo' ? pair.before : pair.after);
-              else console.warn('[UndoSpill] Scene snapshot scratch data is missing; undo was not applied.');
+              if (!restored) {
+                console.warn('[UndoSpill] Scene snapshot scratch data is missing; undo was not applied.');
+                return;
+              }
+              moveSupports();
+              applySceneSnapshot(direction === 'undo' ? pair.before : pair.after);
             })
             .catch((error) => console.warn('[UndoSpill] Failed restoring scene snapshot.', error));
           return true;
         }
 
+        moveSupports();
         applySceneSnapshot(direction === 'undo' ? pair.before : pair.after);
         return true;
       },
@@ -2597,8 +2636,12 @@ export function useSceneCollectionManager(options?: {
     };
   }, [applySceneSnapshot]);
 
-  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: MessageDescriptor, modelId?: string): string => {
-    const key = storeSceneSnapshotPair({ before, after });
+  const pushSceneSnapshotHistory = useCallback((before: SceneSnapshot, after: SceneSnapshot, description?: MessageDescriptor, modelId?: string, supportMoves?: SupportTransformMove[]): string => {
+    const key = storeSceneSnapshotPair({
+      before,
+      after,
+      ...(supportMoves && supportMoves.length > 0 ? { supportMoves } : {}),
+    });
     sceneHistory.push({
       type: SCENE_MODELS_SNAPSHOT_APPLY,
       description,
@@ -3555,33 +3598,43 @@ export function useSceneCollectionManager(options?: {
       return m;
     });
 
+    // A transform moves supports by the same delta as the model; the store already
+    // holds them at the "after" position, so the undo step only needs the two
+    // transforms. An explicit support state (a caller that also changed support
+    // content) still takes the snapshot path.
     const includeSupportByOption = supportSnapshotOptions?.includeSupportState === true
       || !!supportSnapshotOptions?.supportBefore
-      || !!supportSnapshotOptions?.supportAfter
-;
-
-    const includeSupportByState = (() => {
+      || !!supportSnapshotOptions?.supportAfter;
+    const supportMoves: SupportTransformMove[] = [];
+    if (!includeSupportByOption) {
       const supportStateNow = getSnapshot();
-      return hasSupportsForModel(id, supportStateNow);
-    })();
-
-    const includeSupportHistory = includeSupportByOption || includeSupportByState;
+      if (hasSupportsForModel(id, supportStateNow)) {
+        supportMoves.push({ modelId: id, from: beforeTransform, to: afterTransform });
+      }
+      for (const model of beforeModels) {
+        if (model.id === id) continue;
+        const current = currentModels.find((candidate) => candidate.id === model.id);
+        if (!current || transformsEqual(model.transform, current.transform)) continue;
+        if (!hasSupportsForModel(model.id, supportStateNow)) continue;
+        supportMoves.push({ modelId: model.id, from: model.transform, to: current.transform });
+      }
+    }
 
     const spawn = supportSnapshotOptions?.plateSpawn;
     const before = captureSceneSnapshot(beforeModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
+      includeSupportState: includeSupportByOption,
       supportStateOverride: supportSnapshotOptions?.supportBefore,
       supportStateOwned: !!supportSnapshotOptions?.supportBefore,
       ...(spawn ? { plates: spawn.platesBefore, activePlateId: spawn.activePlateIdBefore } : {}),
     });
     const after = captureSceneSnapshot(afterModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
+      includeSupportState: includeSupportByOption,
       supportStateOverride: supportSnapshotOptions?.supportAfter,
       supportStateOwned: !!supportSnapshotOptions?.supportAfter,
       ...(spawn ? { plates: platesRef.current, activePlateId: activePlateIdRef.current } : {}),
     });
     const targetModelName = targetModel.name ?? id;
-    pushSceneSnapshotHistory(before, after, description ?? transformModelLabel(targetModelName));
+    pushSceneSnapshotHistory(before, after, description ?? transformModelLabel(targetModelName), undefined, supportMoves);
     return true;
   }, [pushSceneSnapshotHistory]);
 
@@ -3611,19 +3664,26 @@ export function useSceneCollectionManager(options?: {
     const includeSupportByOption = supportSnapshotOptions?.includeSupportState === true
       || !!supportSnapshotOptions?.supportBefore
       || !!supportSnapshotOptions?.supportAfter;
-    const supportStateNow = getSnapshot();
-    const includeSupportByState = changedIds.some((id) => hasSupportsForModel(id, supportStateNow));
-    const includeSupportHistory = includeSupportByOption || includeSupportByState;
+    const supportMoves: SupportTransformMove[] = [];
+    if (!includeSupportByOption) {
+      const supportStateNow = getSnapshot();
+      for (const model of currentModels) {
+        const beforeTransform = beforeTransformMap.get(model.id);
+        if (!beforeTransform || transformsEqual(beforeTransform, model.transform)) continue;
+        if (!hasSupportsForModel(model.id, supportStateNow)) continue;
+        supportMoves.push({ modelId: model.id, from: beforeTransform, to: model.transform });
+      }
+    }
 
     const before = captureSceneSnapshot(beforeModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
+      includeSupportState: includeSupportByOption,
       supportStateOverride: supportSnapshotOptions?.supportBefore,
     });
     const after = captureSceneSnapshot(currentModels, currentActiveModelId, currentSelectedModelIds, {
-      includeSupportState: includeSupportHistory,
+      includeSupportState: includeSupportByOption,
       supportStateOverride: supportSnapshotOptions?.supportAfter,
     });
-    pushSceneSnapshotHistory(before, after, description ?? transformModelsLabel(beforeTransforms.length));
+    pushSceneSnapshotHistory(before, after, description ?? transformModelsLabel(beforeTransforms.length), undefined, supportMoves);
     return true;
   }, [pushSceneSnapshotHistory]);
 

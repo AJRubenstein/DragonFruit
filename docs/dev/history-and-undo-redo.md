@@ -216,6 +216,17 @@ Three payload patterns exist:
   `sceneSnapshotRegistry` (in `useSceneCollectionManager.ts`), which stores the
   heavy `{ before, after }` pairs with a 200-entry + ~300 MB-eviction budget.
 
+**A move is a delta, not a copy.** A transform step stores the model's before and
+after transform as `supportMoves` on the pair, and the history handler replays
+`transformSupportsForModel` (inverse on undo) instead of restoring a support
+state. The old path deep-cloned the whole support store twice per commit — tens
+of thousands of entities on a supported plate — which was the bulk of the
+pointerup stall on a drag. Only a caller that also changes support *content*
+(an explicit `supportBefore`/`supportAfter`) still takes the snapshot path. The
+same rule makes a transform pair cost no history budget: the geometry it shares
+with the live scene is not history memory, so the estimator skips live geometry
+and the pair never triggers a spill.
+
 ### Disk-backed geometry spill
 
 A scene snapshot keeps its model objects, transforms and support state in RAM,
