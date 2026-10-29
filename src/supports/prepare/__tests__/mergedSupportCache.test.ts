@@ -221,7 +221,7 @@ test('an entry bakes its geometry into the committed model frame', () => {
   assert.equal(view().entries.get(MODEL_A), entryA);
 });
 
-test('a support edit invalidates every entry and disposes the replaced geometry', () => {
+test('a support edit re-merges only the model it touched', () => {
   reset();
   request(getSnapshot());
   drain();
@@ -236,22 +236,26 @@ test('a support edit invalidates every entry and disposes the replaced geometry'
       original();
     };
   }
+  const walks = getPrepareMergedSupportCacheStats().walks;
   const builds = getPrepareMergedSupportCacheStats().builds;
 
-  // One placement rewrites the roots collection; the cache invalidates all.
+  // One placement rewrites the roots collection. The store carries every other
+  // model's entities through by reference, so only MODEL_A is stale.
   seedLimb('trunk-a2', MODEL_A, 12);
   request(getSnapshot());
 
   assert.equal(view().entries.get(MODEL_A)?.status, 'rebuilding');
-  assert.equal(view().entries.get(MODEL_B)?.status, 'rebuilding');
+  assert.equal(view().entries.get(MODEL_B)?.status, 'ready', 'the untouched model is not rebuilt');
   assert.equal(view().entries.get(MODEL_A), previousA, 'the old entry stays drawn');
 
   drain();
 
-  assert.equal(getPrepareMergedSupportCacheStats().builds, builds + 2, 'every model re-merges');
+  assert.equal(getPrepareMergedSupportCacheStats().walks, walks, 'no second walk of the plate');
+  assert.equal(getPrepareMergedSupportCacheStats().builds, builds + 1, 'one model re-merges');
   assert.equal(view().entries.get(MODEL_A)?.status, 'ready');
   assert.equal(disposed.get(MODEL_A), 1, 'the replaced geometry is disposed once');
-  assert.equal(disposed.get(MODEL_B), 1);
+  assert.equal(disposed.get(MODEL_B) ?? 0, 0);
+  assert.equal(view().entries.get(MODEL_B), previousB, 'B keeps its entry');
   assert.notEqual(view().entries.get(MODEL_A), previousA);
   assert.notEqual(view().entries.get(MODEL_A)!.geometry, previousA.geometry);
 });

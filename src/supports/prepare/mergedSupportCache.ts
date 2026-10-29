@@ -10,6 +10,7 @@ import {
 } from '@/supports/interiorSupportGeometry';
 import { getSnapshot as getSupportSnapshot, subscribe as subscribeSupportState } from '@/supports/state';
 import { collectProxyPrimitives, type ProxyModelGeometry } from '@/supports/SupportProxyMeshLayer';
+import { changedSupportModels, getSupportModelIndex, type SupportModelIndex } from '@/supports/supportModelIndex';
 import { SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
 import type { SupportState } from '@/supports/types';
 import { releaseGeometryStorage } from '@/utils/releaseGeometry';
@@ -143,6 +144,12 @@ const state = {
   snapshot: null as SupportState | null,
   resolvePenetration: null as ResolvePenetration | null,
   walk: null as Map<string, ProxyModelGeometry> | null,
+  /** The per-model index the walk reflects, so a later write can re-collect one model. */
+  walkIndex: null as SupportModelIndex | null,
+  /** The interior filter the walk was collected with; reused for a per-model refresh. */
+  walkInteriorSet: null as Set<string> | null,
+  /** Models whose walk entry must be re-collected before their merge. */
+  walkRefresh: null as Set<string> | null,
   entries: new Map<string, PrepareMergedSupportEntry>(),
   /** Models still to merge for the current walk; `null` until the walk lands. */
   pending: null as string[] | null,
@@ -384,6 +391,9 @@ function runSlice(): void {
       includeDetailedPrimitives: state.key.includeDetailedPrimitives,
       interiorSupportIdSet,
     });
+    state.walkIndex = getSupportModelIndex(state.snapshot as unknown as Record<string, unknown>);
+    state.walkInteriorSet = interiorSupportIdSet;
+    state.walkRefresh = null;
     state.walks += 1;
     const pending = new Set<string>();
     for (const [modelKey, geometry] of state.walk) {
@@ -407,6 +417,18 @@ function runSlice(): void {
 
   const modelKey = pending[state.pendingIndex];
   state.pendingIndex += 1;
+  const refresh = state.walkRefresh?.delete(modelKey) ?? false;
+  if (refresh && state.snapshot && state.key && state.walk) {
+    // One model's primitives moved: re-collect that model, not the plate. The
+    // filter still reads every entity, which is why a plate-wide change takes
+    // the full walk instead.
+    const fresh = collectProxyPrimitives(state.snapshot, {
+      includeDetailedPrimitives: state.key.includeDetailedPrimitives,
+      interiorSupportIdSet: state.walkInteriorSet,
+    }, modelKey).get(modelKey);
+    if (fresh) state.walk.set(modelKey, fresh);
+    else state.walk.delete(modelKey);
+  }
   buildEntry(modelKey);
 
   if (state.pendingIndex >= pending.length) {
@@ -505,12 +527,52 @@ export function requestPrepareMergedSupports(request: {
       return;
     }
     skipNextTransformRebuild = false;
-    // Every model's merge depends on the whole walk, and a support edit rewrites
-    // whole collections; a per-model diff is a later optimisation. The old
-    // entries stay drawn (and keep their own inverses) until each replacement
-    // lands.
+    // A support write replaces the entities of the models it touched and carries
+    // every other entity through by reference, so the walk and the merge can
+    // follow that split: only the touched models are re-collected and re-merged,
+    // and the rest keep their geometry. The old entries stay drawn while their
+    // replacement lands either way.
+    //
+    // The filter still reads every entity, so a write that touched most of the
+    // plate takes the whole walk instead: twenty filtered passes would read the
+    // plate twenty times.
+    const nextIndex = getSupportModelIndex(request.snapshot as unknown as Record<string, unknown>);
+    const sameWalkOptions = state.walk !== null
+      && state.walkIndex !== null
+      && state.key !== null
+      && state.key.includeDetailedPrimitives === nextKey.includeDetailedPrimitives
+      && state.key.interiorView === nextKey.interiorView
+      && state.key.cavityGeometryByModelId === nextKey.cavityGeometryByModelId
+      && state.key.interiorModelWorldInverseById === nextKey.interiorModelWorldInverseById;
+
     state.key = nextKey;
+
+    if (sameWalkOptions) {
+      const changed = changedSupportModels(state.walkIndex, nextIndex);
+      const vanished = Array.from(state.entries.keys()).filter((modelKey) => !nextIndex.byModel.has(modelKey));
+      for (const modelKey of vanished) state.walk?.delete(modelKey);
+      if (changed.size * 2 <= nextIndex.modelKeys.length) {
+        state.walkRefresh = changed;
+        state.pending = [
+          ...changed,
+          ...nextIndex.modelKeys.filter((modelKey) => !state.walk!.has(modelKey) && !changed.has(modelKey)),
+          ...vanished,
+        ];
+        state.pendingIndex = 0;
+        for (const modelKey of state.pending) {
+          const entry = state.entries.get(modelKey);
+          if (entry) entry.status = 'rebuilding';
+        }
+        state.walkIndex = nextIndex;
+        publish();
+        scheduleNextSlice();
+        return;
+      }
+    }
+
     state.walk = null;
+    state.walkIndex = nextIndex;
+    state.walkRefresh = null;
     state.pending = null;
     state.pendingIndex = 0;
     for (const entry of state.entries.values()) entry.status = 'rebuilding';

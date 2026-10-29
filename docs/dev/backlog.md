@@ -1749,12 +1749,12 @@ then read `performance.getEntriesByType('measure')`) on the 20-model,
 | piece | per commit |
 | --- | ---: |
 | `proxy:collect` (the support proxy walk) | 2.9–4.5 ms, one model |
+| `proxy:tiles` | 3.3–4.1 ms |
 | `bounds:models` | 1.0–7.9 ms |
 | `bounds:support` | 0.8–7.7 ms, one model |
-| the store transform (`store:transform`) | never fires |
 
-And the same commit still leaves a 250 ms gap in `requestAnimationFrame`, with
-p95 at 6.2 ms — one hitch, on a model move only:
+And the same commit still leaves a 250 ms gap in `requestAnimationFrame`, p95
+6.2 ms — one hitch, on a model move only:
 
 | input | worst frame |
 | --- | ---: |
@@ -1762,18 +1762,35 @@ p95 at 6.2 ms — one hitch, on a model move only:
 | drag on empty canvas | 6 ms |
 | drag a model | 250–345 ms |
 
-It is not JavaScript: a V8 profile of the window holds ~4 ms of samples, and a
-Chrome trace's largest task is 64 ms (`ProxyMain::BeginMainFrame`), with no task
-over 80 ms. It is not the viewport either — 700×560, 1100×880 and 1718×1420 all
-produce the same ~250 ms. And the store transform does not run at all: supports
-ride the model frame on this branch, so a translation never rewrites them.
+**The bisect is the useful part.** `window.__dfLayers = { merged | proxy: false }`
+drops one layer (`perfLayerEnabled`):
 
-What is left is the frame's presentation: the commit rebuilds
-`buildFlatBatches` for the whole plate (`SupportProxyMeshLayer`) and
-`buildProxyTiles` cuts it again, so every support instance batch is handed new
-arrays and re-rendered. That is where to bisect next — drag with the merged
-support layer hidden, then with the proxy layer hidden, using the same probe —
-rather than optimising the walks further.
+| layers | worst frame on a model move |
+| --- | ---: |
+| both (default) | 250–345 ms |
+| merged off (proxy draws everything) | 6.2 ms |
+| proxy off (merged draws everything) | 6–12 ms |
+
+So the cost lives in the *combination*, not in either layer's work: the same
+first-vertex uploads and the same plate-wide batch rebuild happen in the
+"merged off" case and cost nothing.
+
+It is not JavaScript: a V8 profile of the window holds ~4 ms of samples, a Chrome
+trace's largest task is 64 ms with none over 80 ms, and viewport size does not
+change it (700×560, 1100×880, 1718×1420 all ~250 ms). The frame the compositor
+fails to produce is the stall.
+
+**What changed anyway:** `mergedSupportCache` used to answer any support write
+with a whole-plate walk plus a full re-merge. It now re-collects and re-merges
+only the models whose entities the write replaced, using `supportModelIndex`
+(`changedSupportModels`), and keeps every other entry's geometry. That is a real
+saving on a support edit and is pinned by the merged-cache tests, but it does not
+explain the 250 ms: a pure XY move already skipped the rebuild.
+
+Next: instrument the *renderer*, not the walks — `WebGLRenderer.info` and
+`onBeforeRender`/`onAfterRender` timings per layer, or bisect per-object (raft vs
+shafts vs joints vs cones) — since the stall is on the GPU/present side and the
+layer pair is the trigger.
 
 ## Known: selecting a model costs one frame on its own
 

@@ -959,12 +959,16 @@ export function SupportProxyMeshLayer({
   // and joint group new arrays on release, which rebuilds their hover indexes
   // and is exactly the release hitch this memo must not reintroduce.
   const proxyTileSource = hidesExcludedModels ? worldBatches : filteredBatches;
-  const proxyTiles = React.useMemo(
-    () => (proxyTileSource
-      ? buildProxyTiles(proxyTileSource.live, proxyTileSource.scenery)
-      : { live: [], scenery: [] }),
-    [proxyTileSource],
-  );
+  const proxyTiles = React.useMemo(() => {
+    const perfStart = perfMark('proxy:tiles');
+    try {
+      return proxyTileSource
+        ? buildProxyTiles(proxyTileSource.live, proxyTileSource.scenery)
+        : { live: [], scenery: [] };
+    } finally {
+      perfMeasure('proxy:tiles', perfStart);
+    }
+  }, [proxyTileSource]);
 
   // A support a fraction of a pixel wide must still be grabbable, so the grab
   // radius grows with the distance: `GRAB_RADIUS_PX` of the viewport at the hit.

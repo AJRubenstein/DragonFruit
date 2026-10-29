@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { SupportMode } from '@/supports/types';
 import { SupportRenderer } from '@/supports/SupportRenderer';
 import { SupportProxyMeshLayer } from '@/supports/SupportProxyMeshLayer';
+import { perfLayerEnabled } from '@/utils/perfProbe';
 import { RaftProxyMeshLayer } from '@/supports/RaftProxyMeshLayer';
 import RaftRenderer from '@/supports/Rafts/Crenelated/rendering/RaftRenderer';
 import LineRaftRenderer from '@/supports/Rafts/Crenelated/rendering/LineRaftRenderer';
@@ -240,7 +241,7 @@ export function ModelAttachedSupportLayer({
       )}
 
       <group ref={supportRendererRef ?? undefined}>
-        {useProxy && !hideSupports ? (
+        {useProxy && !hideSupports && perfLayerEnabled('proxy') ? (
           <SupportProxyMeshLayer
             mode={mode}
             clipLower={clipLower}

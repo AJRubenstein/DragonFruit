@@ -38,7 +38,7 @@ import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types';
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { changedSupportModels, EMPTY_SUPPORT_ENTITIES, EMPTY_SUPPORT_MODELS, getSupportModelIndex, type SupportModelIndex } from '@/supports/supportModelIndex';
-import { perfMark, perfMeasure } from '@/utils/perfProbe';
+import { perfLayerEnabled, perfMark, perfMeasure } from '@/utils/perfProbe';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
 import { collectRaftBaseCirclesByModel, raftFootprintSourceRefs, RAFT_UNASSIGNED_MODEL_KEY, type RaftBaseCirclesByModel } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
 import { collectSupportMarqueeShapes, type SupportMarqueeShape } from './supportMarqueeShapes';
@@ -3936,7 +3936,7 @@ export function SceneCanvas({
   // Support never merges anything; the builds drain in idle slices after the
   // frame that entered Prepare.
   const prepareMergedSupports = usePrepareMergedSupportCache({
-    enabled: PREPARE_MERGED_SUPPORTS && mode === 'prepare',
+    enabled: PREPARE_MERGED_SUPPORTS && mode === 'prepare' && perfLayerEnabled('merged'),
     includeDetailedPrimitives: true,
     interiorView,
     cavityGeometryByModelId,
