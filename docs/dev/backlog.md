@@ -1740,6 +1740,43 @@ gesture: the profile of that window is `(program)` (IPC deserialization) and
 render work, not JS copies. Making that non-blocking means receiving the buffers
 in pieces, which is a change to the command's shape, not to this effect.
 
+## Known: remaining serial work on the open, generate and commit paths
+
+A scan of the three heaviest paths found the following still blocking the main
+thread. None of it is speculative; each entry names the loop and its scale.
+
+**Scene open** (`src/features/scene/useSceneCollectionManager.ts:6692`): the whole
+file is wrapped in `new Uint8Array(await file.arrayBuffer())` — 677 MB on the
+13-model test scene — and every `subarray` in the parser aliases it, so it stays
+resident until the last chunk settles. The desktop path has a ranged read
+(`readSidecarFileBytes`); header + directory + the non-mesh chunks could come
+from it the same way the mesh chunks already do.
+
+**Scene open** (`src/features/scene/voxl/codec-v2.ts:1174-1182`): `SUPP`, `MODL`
+and `EXTD` are inflate + `JSON.parse` synchronously, one task. Only
+MESH/HSRC/CAVT/PSRC are in the async bulk path. Moving their `unzlibSync` to the
+existing async inflate removes the blocking decompress; the parse order stays.
+
+**Auto-support generate** (`src/supports/autoSupport/autoPlaceWorkerClient.ts:244`):
+every run posts `baseState: getSnapshot()` — the whole plate's support state,
+structured-cloned in the calling task — plus `mesh`/`cavityMesh` slices that the
+worker already caches by key (`autoPlace.worker.shared.ts:213-218`). Omitting
+what the worker already holds, and transferring the first copies, removes the
+per-run clone.
+
+**Auto-support generate** (`src/components/controls/AutoSupportPanel.tsx:197-305`):
+the replace pre-pass walks every model's supports, rebuilds the knot map and then
+`setSnapshot`s — and the commit rebuilds it again.
+
+**Every support write** (`src/supports/state.ts`, `normaliseSupportState`): the
+canonical `supports` map is rebuilt one entity at a time and each supplied
+collection is folded in, so a one-entity edit is O(plate). Measured on a 20k
+entity plate: **21.6 ms** for a write that reads all eight views back (down from
+31.9 ms after pinning the supplied views instead of re-filtering `supports`, and
+iterating records with `in` instead of allocating `Object.entries` pairs). The
+next step is a surgical `setSupportEntity(key, id, entity)` that touches one id
+instead of rebuilding the map.
+
 ## Known: a model's *first* commit stalls ~250 ms outside JavaScript
 
 Measured with opt-in marks (`src/utils/perfProbe.ts`: set `window.__dfPerf = true`,

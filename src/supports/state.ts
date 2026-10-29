@@ -1296,8 +1296,25 @@ export function reassignAllSupportModelIds(modelId: string): boolean {
  * Install each collection name as a view over `state.supports`. Enumerable, so
  * `{ ...state }` yields a snapshot rather than a live view.
  */
-function installCollectionViews(next: SupportState): SupportState {
+function installCollectionViews(
+    next: SupportState,
+    pinned?: ReadonlyMap<SupportCollectionKey, Record<string, SupportEntityAny>>,
+): SupportState {
     for (const descriptor of SUPPORT_TYPES) {
+        const pinnedView = pinned?.get(descriptor.location.key);
+        if (pinnedView) {
+            // A write that supplied this collection already had to visit every
+            // entry to fold it into `supports`; filtering `supports` again for
+            // the same type would be a second pass over the plate for nothing.
+            Object.defineProperty(next, descriptor.location.key, {
+                configurable: true,
+                enumerable: true,
+                value: pinnedView,
+                writable: true,
+            });
+            continue;
+        }
+
         let cache: { from: Record<string, SupportEntityAny>; view: Record<string, SupportEntityAny> } | null = null;
 
         Object.defineProperty(next, descriptor.location.key, {
@@ -1354,26 +1371,37 @@ function normaliseSupportState(next: SupportState): SupportState {
     }
 
     const supports: Record<string, SupportEntityAny> = {};
-    for (const [id, entity] of Object.entries(next.supports ?? {})) {
-        const typeId = (entity as { typeId?: SupportTypeId }).typeId;
-        if (overrides.some((d) => d.id === typeId)) continue;
+    // `in` over the record, not `Object.entries`: the pair array for the whole
+    // plate is allocated on every write, and this runs on every commit.
+    const overriddenTypeIds = new Set<SupportTypeId>(overrides.map((descriptor) => descriptor.id));
+    const carried = next.supports ?? {};
+    for (const id in carried) {
+        const entity = carried[id];
+        if (overriddenTypeIds.has((entity as { typeId?: SupportTypeId }).typeId as SupportTypeId)) continue;
         supports[id] = entity;
     }
 
+    const pinned = new Map<SupportCollectionKey, Record<string, SupportEntityAny>>();
     for (const descriptor of overrides) {
-        for (const [id, entity] of Object.entries(raw[descriptor.location.key] as Record<string, SupportEntityAny>)) {
+        const view: Record<string, SupportEntityAny> = {};
+        const supplied = raw[descriptor.location.key] as Record<string, SupportEntityAny>;
+        for (const id in supplied) {
+            const entity = supplied[id];
             // Already stamped entities pass through by reference; copying every
             // one on every write is what made a geometry write cost a frame.
-            supports[id] = (entity as { typeId?: SupportTypeId }).typeId === descriptor.id
+            const stamped = (entity as { typeId?: SupportTypeId }).typeId === descriptor.id
                 ? entity
                 : { ...entity, typeId: descriptor.id } as SupportEntityAny;
+            view[id] = stamped;
+            supports[id] = stamped;
         }
+        pinned.set(descriptor.location.key, view);
     }
 
     const rest: Record<string, unknown> = { ...raw };
     for (const descriptor of SUPPORT_TYPES) delete rest[descriptor.location.key];
 
-    return installCollectionViews({ ...rest, supports } as unknown as SupportState);
+    return installCollectionViews({ ...rest, supports } as unknown as SupportState, pinned);
 }
 
 /** The only place `state` is assigned, so the derived views cannot be lost. */
