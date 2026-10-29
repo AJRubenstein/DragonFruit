@@ -3900,6 +3900,14 @@ export function SceneCanvas({
     useActiveModelAttachedSupportProxy,
   ]);
 
+  // The models the scene still holds, for the merged-support cache: an entry
+  // whose model is gone is released instead of waiting for a walk the cache may
+  // never run (it is disabled outside Prepare).
+  const prepareMergedSupportLiveModelIds = React.useMemo(
+    () => new Set(modelsProp.map((model) => model.id)),
+    [modelsProp],
+  );
+
   // The Prepare merged support layer: one walk and one merged geometry per
   // model, shared by every mounted mesh. Enabled only in Prepare, so opening
   // Support never merges anything; the builds drain in idle slices after the
@@ -3910,6 +3918,7 @@ export function SceneCanvas({
     interiorView,
     cavityGeometryByModelId,
     modelWorldInverseById,
+    liveModelIds: prepareMergedSupportLiveModelIds,
     suspended: isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || selectDragPressed || isCameraFocusTransitionActive,
   });
 

@@ -10,6 +10,7 @@ import {
   flushPrepareMergedSupportSlice,
   getPrepareMergedSupportCacheStats,
   getPrepareMergedSupportView,
+  releasePrepareMergedSupportsFor,
   requestPrepareMergedSupports,
   resetPrepareMergedSupportCache,
   setPrepareMergedSupportsSuspended,
@@ -90,6 +91,7 @@ function request(snapshot: SupportState, overrides: {
   resolvePenetration?: ((authoredPenetrationMm: number | undefined) => number) | null;
   includeDetailedPrimitives?: boolean;
   modelWorldInverseById?: Map<string, THREE.Matrix4> | null;
+  liveModelIds?: ReadonlySet<string> | null;
 } = {}): void {
   requestPrepareMergedSupports({
     enabled: overrides.enabled ?? true,
@@ -99,6 +101,7 @@ function request(snapshot: SupportState, overrides: {
     interiorView: false,
     cavityGeometryByModelId: null,
     modelWorldInverseById: overrides.modelWorldInverseById ?? null,
+    liveModelIds: overrides.liveModelIds ?? null,
     resolvePenetration: overrides.resolvePenetration ?? null,
   });
 }
@@ -339,6 +342,46 @@ test('a model whose supports disappear loses its entry and its geometry', () => 
   assert.equal(view().entries.has(MODEL_B), false, 'the stale entry is evicted');
   assert.equal(disposed, 1);
   assert.ok(view().entries.has(MODEL_A));
+});
+
+test('an entry whose model left the scene is released even while the cache is disabled', () => {
+  reset();
+  request(getSnapshot());
+  drain();
+  assert.equal(view().entries.size, 2);
+  const previousB = view().entries.get(MODEL_B)!;
+  let disposed = 0;
+  previousB.geometry.dispose = () => {
+    disposed += 1;
+  };
+
+  // The scene cleared: the Prepare layer is gone, so the cache is disabled and
+  // no walk will ever run — the model's merged geometry must still go.
+  request(getSnapshot(), { enabled: false, liveModelIds: new Set([MODEL_A]) });
+
+  assert.equal(view().entries.has(MODEL_B), false, 'the vanished model\'s entry is released');
+  assert.equal(disposed, 1, 'and its geometry is disposed');
+  assert.ok(view().entries.has(MODEL_A), 'a model the scene still holds keeps its entry');
+});
+
+test('deleting a model releases its merged supports without waiting for a request', () => {
+  reset();
+  request(getSnapshot());
+  drain();
+  assert.equal(view().entries.size, 2);
+  let disposed = 0;
+  const entryA = view().entries.get(MODEL_A)!;
+  entryA.geometry.dispose = () => {
+    disposed += 1;
+  };
+
+  // The delete path calls this directly: the last model can take the canvas
+  // down with it, so no further request is guaranteed.
+  releasePrepareMergedSupportsFor([MODEL_A]);
+
+  assert.equal(view().entries.has(MODEL_A), false, 'the deleted model\'s entry is released');
+  assert.equal(disposed, 1, 'and its geometry is disposed');
+  assert.ok(view().entries.has(MODEL_B), 'another model keeps its entry');
 });
 
 test('a transform commit updates the key without rebuilding merged entries', () => {

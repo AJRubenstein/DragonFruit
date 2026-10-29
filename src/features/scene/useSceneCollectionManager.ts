@@ -33,8 +33,9 @@ import { peekUndo } from '@/history/historyStore';
 import { createTypedHistory } from '@/history/typedHistory';
 import type { ModelTransform } from '@/hooks/useModelTransform';
 import { forgetCenteredPositions } from '@/utils/modelBounds';
+import { releasePrepareMergedSupportsFor } from '@/supports/prepare/mergedSupportCache';
 import { releaseGeometryStorage as releaseGeometryStorageBase } from '@/utils/releaseGeometry';
-import { disposeSpilledSceneSnapshot, hasSpilledSceneSnapshot, pruneSpilledSceneSnapshots, rehydrateSceneSnapshotPair, spillSceneSnapshotPair } from './sceneSnapshotSpill';
+import { disposeSpilledSceneSnapshot, hasSpilledSceneSnapshot, pruneSpilledSceneSnapshots, rehydrateSceneSnapshotPair, spillSceneSnapshotPair, spilledSceneSnapshotBytes } from './sceneSnapshotSpill';
 import type { DragonfruitImportFormat, SupportMode, SupportState } from '@/supports/types';
 import { getBuiltinComplexPluginDefinitions } from '@/features/plugins/builtinComplexPlugins';
 import { getBuiltinComplexPluginFileTypeHandlers } from '@/features/plugins/builtinComplexPluginFileTypeHandlers';
@@ -288,6 +289,10 @@ const SCENE_HISTORY_MAX_SNAPSHOTS = 200;
 // can retain far more memory per snapshot than typical small edits, so the
 // flat count cap alone can leave a lot of stale geometry pinned alive.
 const SCENE_HISTORY_MAX_ESTIMATED_GEOMETRY_BYTES = 300 * 1024 * 1024;
+// A clear spills the scene's whole geometry — hundreds of MB to a few GB — so
+// the scratch store needs its own ceiling: the RAM budget above never sees a
+// spilled snapshot's bytes, and a long session would otherwise fill the disk.
+const SCENE_HISTORY_MAX_SPILLED_BYTES = 4 * 1024 * 1024 * 1024;
 // Modifier edits of the same kind on the same model this close together are one
 // step: the panels' number fields report every keystroke and every wheel notch.
 const MODIFIER_HISTORY_MERGE_WINDOW_MS = 1000;
@@ -588,7 +593,11 @@ function disposeEvictedSnapshot(pair: SceneSnapshotPair): void {
 }
 
 /** Geometry another snapshot, a live model or the clipboard still needs. */
-function retainedSnapshotGeometries(excludeKey: string, liveModels?: readonly LoadedModel[]): Set<THREE.BufferGeometry> {
+function retainedSnapshotGeometries(
+  excludeKey: string,
+  liveModels?: readonly LoadedModel[],
+  includeSceneProvider = true,
+): Set<THREE.BufferGeometry> {
   const retained = new Set<THREE.BufferGeometry>();
   for (const [key, pair] of sceneSnapshotRegistry) {
     if (key === excludeKey) continue;
@@ -601,8 +610,10 @@ function retainedSnapshotGeometries(excludeKey: string, liveModels?: readonly Lo
   for (const model of liveModels ?? []) {
     modelGeometries(model).forEach((geometry) => retained.add(geometry));
   }
-  for (const model of liveModelsProvider?.() ?? []) {
-    modelGeometries(model).forEach((geometry) => retained.add(geometry));
+  if (includeSceneProvider) {
+    for (const model of liveModelsProvider?.() ?? []) {
+      modelGeometries(model).forEach((geometry) => retained.add(geometry));
+    }
   }
   for (const geometry of extraRetainedGeometriesProvider?.() ?? []) retained.add(geometry);
   return retained;
@@ -613,20 +624,45 @@ function retainedSnapshotGeometries(excludeKey: string, liveModels?: readonly Lo
  * will be standing after the action that pushed the pair; pass it explicitly when
  * the ref has not committed yet (a delete), or the deleted meshes still look live
  * and nothing is released.
+ *
+ * Selection uses that list ALONE: React has not committed the delete when the
+ * pair is pushed, so the scene provider still reports the deleted models as
+ * live. The release predicate is a different question — by the time the arrays
+ * are dropped the commit has landed, and an undo may have restored them — so it
+ * asks the live scene again.
  */
 async function spillSceneSnapshotKey(key: string, liveModels?: readonly LoadedModel[]): Promise<boolean> {
   const pair = sceneSnapshotRegistry.get(key);
   if (!pair || hasSpilledSceneSnapshot(key)) return false;
+  const retainedAtSpill = retainedSnapshotGeometries(key, liveModels, liveModels === undefined);
   const spilled = await spillSceneSnapshotPair(
     key,
     pair,
-    (geometry) => !retainedSnapshotGeometries(key, liveModels).has(geometry),
+    (geometry) => !retainedAtSpill.has(geometry),
+    (geometry) => !retainedSnapshotGeometries(key).has(geometry),
   );
   if (spilled && !sceneSnapshotRegistry.has(key)) disposeSpilledSceneSnapshot(key);
+  if (spilled) trimSpilledSnapshots();
   return spilled;
 }
 
 let spillingSnapshots = false;
+
+/**
+ * Evicts the oldest spilled snapshot while the scratch store is over its
+ * ceiling. Its file goes with it; the history entry that pointed at it becomes
+ * unrecoverable, exactly like a RAM eviction.
+ */
+function trimSpilledSnapshots(): void {
+  while (sceneSnapshotOrder.length > 1 && spilledSceneSnapshotBytes() > SCENE_HISTORY_MAX_SPILLED_BYTES) {
+    const key = sceneSnapshotOrder.find((candidate) => hasSpilledSceneSnapshot(candidate));
+    if (!key) return;
+    const index = sceneSnapshotOrder.indexOf(key);
+    if (index >= 0) sceneSnapshotOrder.splice(index, 1);
+    sceneSnapshotRegistry.delete(key);
+    disposeSpilledSceneSnapshot(key);
+  }
+}
 
 /**
  * Keeps the in-RAM history inside its budget by moving the oldest snapshots to
@@ -650,6 +686,7 @@ async function spillSnapshotsOverBudget(): Promise<void> {
   } finally {
     spillingSnapshots = false;
   }
+  trimSpilledSnapshots();
 }
 
 // Counts each distinct BufferGeometry ONCE, because that is what the process
@@ -1747,8 +1784,15 @@ export function useSceneCollectionManager(options?: {
   // Coalesced and idle-scheduled, so a burst of imports or an Auto-Arrange
   // sweeps once. See `scheduleChunkStoreSweep` for why this is a sweep rather
   // than a hook on every model-producing path.
+  //
+  // The sweep must also run when the scene EMPTIES: the store is keyed by model
+  // id, and skipping the empty case retained every deleted model's compressed
+  // mesh (~150-200 MB on a loaded scene) for the rest of the session. The first
+  // mount is skipped so an empty app does not pay the export module's load.
+  const hasHadModelsRef = useRef(false);
   useEffect(() => {
-    if (models.length === 0) return;
+    if (models.length > 0) hasHadModelsRef.current = true;
+    else if (!hasHadModelsRef.current) return;
     scheduleChunkStoreSweep(() => modelsRef.current);
   }, [models]);
   const [modelClipboard, setModelClipboard] = useState<ModelClipboardEntry[]>([]);
@@ -5098,6 +5142,10 @@ export function useSceneCollectionManager(options?: {
         }
       }
     }
+    // Prepare's merged support geometry is per model and outlives the view that
+    // built it; the delete has to hand it back or a cleared plate keeps every
+    // deleted model's merged supports in RAM.
+    releasePrepareMergedSupportsFor(ids);
 
     if (shouldPushHistory && before) {
       const after = captureSceneSnapshot(nextModels, nextActiveModelId, nextSelectedModelIds, {

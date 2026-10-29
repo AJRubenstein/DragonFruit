@@ -221,9 +221,16 @@ Three payload patterns exist:
 A scene snapshot keeps its model objects, transforms and support state in RAM,
 but the geometry arrays can be moved to the **OPFS scratch store**
 (`dragonfruit-undo/`, written by `src/features/scene/sceneSnapshotSpill.ts`).
-Only `BufferGeometry` attributes and indices move; model IDs, transforms, plates,
-printer and support state stay in the pair, so the existing
-`applySceneSnapshot` restore path does not change.
+Only `BufferGeometry` attributes and indices, plus the pair's **support state**
+(JSON), move; model IDs, transforms, plates and printer stay in the pair, so the
+existing `applySceneSnapshot` restore path does not change.
+
+The support state matters as much as the meshes on a supported plate: a delete
+of a 20-model scene carries ~20,000 entities, and the pair holds its own deep
+copy. It is written verbatim (the per-type views *and* the canonical `supports`
+map). Do not reduce it to `supports`: the primitive collections (`roots`,
+`knots`) only exist as properties, and readers expect the views before the state
+reaches the store.
 
 - Snapshots spill when the registry's in-RAM geometry estimate exceeds the
   ~300 MB budget. A model delete spills its entry immediately: the undo pair is
@@ -240,12 +247,22 @@ printer and support state stay in the pair, so the existing
 - `releaseGeometryStorage` drops attributes, index, morph data, BVH and the
   centered-position cache. GPU disposal alone left the arrays alive behind
   stale fibers and render lists. It is only used for geometry nothing can draw
-  any more: the deferred-disposal queue and the merged-support cache keep their
-  arrays (a swapped mesh or a replaced preview entry can still be in a render
-  list for a frame), and eviction schedules the release on an idle callback
-  that re-checks the retained set before touching anything.
-- Scratch files are removed when an entry is evicted, and
-  `pruneSpilledSceneSnapshots` removes orphans on startup.
+  any more: the deferred-disposal queue keeps its arrays (a swapped mesh can
+  still be in a render list for a frame), and eviction schedules the release on
+  an idle callback that re-checks the retained set before touching anything.
+- Prepare's merged support geometry is per model and is released when the model
+  is deleted (the delete path calls `releasePrepareMergedSupportsFor`). The
+  entry is re-pointed at an empty geometry before its buffers go: a stale view,
+  mounted prop or fiber can still hold the entry object, and dropping only the
+  map slot left hundreds of MB alive. A *replaced* entry is different — the
+  previous mesh stays drawn until the replacement publishes, so that path keeps
+  its arrays and only frees the GPU buffers.
+- The mesh chunk store is swept when the scene empties too, not only when models
+  arrive; skipping the empty case retained every deleted model's compressed
+  mesh (~150-200 MB on a loaded scene).
+- Scratch files are removed when an entry is evicted or rehydrated, a 4 GB
+  ceiling evicts the oldest spilled entries, and `pruneSpilledSceneSnapshots`
+  removes orphans on startup.
 
 Spill is best-effort: when OPFS is unavailable, quota is exhausted, or a geometry
 uses an unsupported layout (interleaved/morph attributes), the snapshot stays in

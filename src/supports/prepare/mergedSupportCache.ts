@@ -12,6 +12,7 @@ import { getSnapshot as getSupportSnapshot, subscribe as subscribeSupportState }
 import { collectProxyPrimitives, type ProxyModelGeometry } from '@/supports/SupportProxyMeshLayer';
 import { SUPPORT_COLLECTION_KEYS } from '@/supports/supportTypeRegistry';
 import type { SupportState } from '@/supports/types';
+import { releaseGeometryStorage } from '@/utils/releaseGeometry';
 import { buildMergedSupportGeometry } from './mergedSupportGeometry';
 
 /**
@@ -69,6 +70,13 @@ export type PrepareMergedSupportCacheOptions = {
   cavityGeometryByModelId?: Map<string, THREE.BufferGeometry>;
   modelWorldInverseById?: Map<string, THREE.Matrix4>;
   /**
+   * The models the scene still holds. An entry whose model is gone is released
+   * here, whether or not the cache is enabled: leaving Prepare (or emptying the
+   * scene) disables the cache, and the merged geometry of a deleted model is
+   * hundreds of MB on a supported plate.
+   */
+  liveModelIds?: ReadonlySet<string>;
+  /**
    * Pause the idle walk and merges while the camera or a model drag is live.
    * A slice is one model's merge (~50 ms), which is longer than a frame; running
    * it under a gesture is the hitch this flag exists to remove.
@@ -107,6 +115,13 @@ const EMPTY_VIEW: PrepareMergedSupportCacheView = {
 };
 
 const listeners = new Set<() => void>();
+
+/**
+ * Stands in for a deleted model's merged geometry: entry objects outlive their
+ * map slot (views, mounted props, fibers), so the buffers are let go by
+ * re-pointing the entry at something with no attributes at all.
+ */
+const EMPTY_GEOMETRY = new THREE.BufferGeometry();
 
 let view: PrepareMergedSupportCacheView = EMPTY_VIEW;
 let scheduled: ScheduledHandle | null = null;
@@ -244,6 +259,67 @@ function disposeEntry(entry: PrepareMergedSupportEntry): void {
   entry.geometry.dispose();
 }
 
+/**
+ * Releases the merged geometry of models the scene no longer holds.
+ *
+ * Runs on every request, enabled or not: the cache outlives the Prepare view,
+ * and a scene-wide clear disables it, so waiting for the next walk would keep
+ * every deleted model's merged plate in RAM. On a supported plate that is
+ * hundreds of MB — the biggest thing this module holds.
+ */
+function dropEntriesForGoneModels(liveModelIds: ReadonlySet<string> | null | undefined): void {
+  if (!liveModelIds) return;
+  dropEntriesFor(state.entries.keys().filter((key) => {
+    const entry = state.entries.get(key);
+    return entry !== undefined && entry.modelId !== null && !liveModelIds.has(entry.modelId);
+  }));
+}
+
+/**
+ * Drop the merged entries of models the scene just deleted.
+ *
+ * The delete path calls this directly: when the last model goes the canvas can
+ * unmount in the same commit, so an effect that only runs on the next render
+ * never sees the empty scene — and the merged supports of a deleted model are
+ * the largest thing this module keeps.
+ */
+export function releasePrepareMergedSupportsFor(modelIds: Iterable<string>): void {
+  const ids = new Set(modelIds);
+  if (ids.size === 0) return;
+  dropEntriesFor(state.entries.keys().filter((key) => {
+    const entry = state.entries.get(key);
+    return entry !== undefined && entry.modelId !== null && ids.has(entry.modelId);
+  }));
+}
+
+/**
+ * Release an entry whose model has left the scene.
+ *
+ * Unlike `disposeEntry`, which must keep a replaced entry's arrays alive because
+ * the previous mesh stays drawn until the replacement publishes, nothing draws
+ * a deleted model's merged supports — but the entry OBJECT can still be held by
+ * a view, a mounted child's props or a stale fiber. Pointing the entry at a
+ * shared empty geometry drops the buffers no matter who still holds it.
+ */
+function releaseGoneEntry(entry: PrepareMergedSupportEntry): void {
+  const geometry = entry.geometry;
+  if (geometry === EMPTY_GEOMETRY) return;
+  entry.geometry = EMPTY_GEOMETRY;
+  releaseGeometryStorage(geometry);
+}
+
+function dropEntriesFor(modelKeys: Iterable<string>): void {
+  let dropped = false;
+  for (const modelKey of modelKeys) {
+    const entry = state.entries.get(modelKey);
+    if (!entry) continue;
+    state.entries.delete(modelKey);
+    releaseGoneEntry(entry);
+    dropped = true;
+  }
+  if (dropped) publish();
+}
+
 function buildEntry(modelKey: string): void {
   const model = state.walk?.get(modelKey);
   const previous = state.entries.get(modelKey);
@@ -251,7 +327,7 @@ function buildEntry(modelKey: string): void {
   if (!model) {
     if (previous) {
       state.entries.delete(modelKey);
-      disposeEntry(previous);
+      releaseGoneEntry(previous);
     }
     return;
   }
@@ -372,8 +448,11 @@ export function requestPrepareMergedSupports(request: {
   interiorView: boolean;
   cavityGeometryByModelId: Map<string, THREE.BufferGeometry> | null;
   modelWorldInverseById: Map<string, THREE.Matrix4> | null;
+  /** Optional so tests and callers without a scene can skip the prune. */
+  liveModelIds?: ReadonlySet<string> | null;
   resolvePenetration: ResolvePenetration | null;
 }): void {
+  dropEntriesForGoneModels(request.liveModelIds);
   if (!request.enabled) {
     if (state.enabled) {
       state.enabled = false;
@@ -518,6 +597,7 @@ export function usePrepareMergedSupportCache(
     interiorView = false,
     cavityGeometryByModelId = null,
     modelWorldInverseById = null,
+    liveModelIds = null,
     suspended: suspendedByScene = false,
   } = options;
 
@@ -551,6 +631,7 @@ export function usePrepareMergedSupportCache(
       interiorView,
       cavityGeometryByModelId,
       modelWorldInverseById,
+      liveModelIds,
       resolvePenetration,
     });
   }, [
@@ -559,6 +640,7 @@ export function usePrepareMergedSupportCache(
     enabled,
     includeDetailedPrimitives,
     interiorView,
+    liveModelIds,
     modelWorldInverseById,
     resolvePenetration,
     snapshot,

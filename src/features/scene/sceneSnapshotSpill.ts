@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { accelerateGeometry } from '@/utils/bvh';
 import { releaseGeometryStorage } from '@/utils/releaseGeometry';
 import type { LoadedModel, SceneSnapshotPair } from '@/features/scene/useSceneCollectionManager';
+import type { SupportState } from '@/supports/types';
 
 const SPILL_DIRECTORY = 'dragonfruit-undo';
 const SPILL_VERSION = 1;
@@ -36,16 +37,40 @@ type GeometrySpec = {
 type SpillHeader = {
   version: number;
   geometries: GeometrySpec[];
+  /**
+   * The pair's support states, serialized beside the geometry. They are the
+   * other heavy part of a history entry: a supported plate is tens of thousands
+   * of entities, and the pair holds its own deep copy.
+   */
+  support?: {
+    before: SupportSection | null;
+    after: SupportSection | null;
+  };
+};
+
+type SupportSection = {
+  offset: number;
+  byteLength: number;
 };
 
 export type SpilledSceneSnapshot = {
   fileHandle: FileSystemFileHandle;
   dataOffset: number;
+  /** Bytes this scratch file holds, for the history's disk budget. */
+  byteLength: number;
   geometries: GeometrySpec[];
+  support: SpillHeader['support'];
 };
 
 const spilledSceneSnapshots = new Map<string, SpilledSceneSnapshot>();
 const inFlightSpills = new Set<string>();
+
+/** Total bytes the scratch store holds for snapshots still in history. */
+export function spilledSceneSnapshotBytes(): number {
+  let total = 0;
+  for (const entry of spilledSceneSnapshots.values()) total += entry.byteLength;
+  return total;
+}
 
 function typedArrayName(array: ArrayBufferView): TypedArrayName | null {
   switch (array.constructor) {
@@ -97,10 +122,28 @@ function canSerializeGeometry(geometry: THREE.BufferGeometry): boolean {
   if (geometry.morphAttributes && Object.keys(geometry.morphAttributes).length > 0) return false;
   if (geometry.index && (geometry.index as unknown as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute) return false;
   for (const attribute of Object.values(geometry.attributes)) {
-    if ((attribute as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute) return false;
+    if ((attribute as unknown as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute) return false;
     if (!typedArrayName(attribute.array as ArrayBufferView)) return false;
   }
   return Object.keys(geometry.attributes).length > 0;
+}
+
+/**
+ * A support state as JSON bytes.
+ *
+ * Written verbatim — the per-type views AND the canonical `supports` map — rather
+ * than reduced to `supports`. The primitive collections (`roots`, `knots`) live
+ * only as properties (they are not in `supports`), and a pair's state is read by
+ * code that expects the views before it reaches the store; a reduced payload
+ * restored into any of those readers is a state with missing collections.
+ */
+function serializeSupportState(state: SupportState | undefined): Uint8Array | null {
+  if (!state) return null;
+  try {
+    return new TextEncoder().encode(JSON.stringify(state));
+  } catch {
+    return null;
+  }
 }
 
 async function spillDirectory(): Promise<FileSystemDirectoryHandle | null> {
@@ -147,13 +190,20 @@ export async function pruneSpilledSceneSnapshots(activeKeys: ReadonlySet<string>
 export async function spillSceneSnapshotPair(
   key: string,
   pair: SceneSnapshotPair,
-  canRelease: (geometry: THREE.BufferGeometry) => boolean,
+  /** Whether this geometry may leave RAM at all (nothing else holds it). */
+  canSpill: (geometry: THREE.BufferGeometry) => boolean,
+  /**
+   * Re-checked immediately before the arrays are dropped, and again on the idle
+   * callback that drops them. Defaults to `canSpill`; a caller that knows the
+   * scene has not committed yet passes the live-scene predicate here.
+   */
+  canRelease: (geometry: THREE.BufferGeometry) => boolean = canSpill,
 ): Promise<boolean> {
   if (spilledSceneSnapshots.has(key) || inFlightSpills.has(key)) return false;
 
   const allGeometries = pairGeometries(pair);
   const candidates = allGeometries.filter((geometry) => (
-    canRelease(geometry) && canSerializeGeometry(geometry)
+    canSpill(geometry) && canSerializeGeometry(geometry)
   ));
   if (candidates.length === 0) return false;
 
@@ -216,7 +266,24 @@ export async function spillSceneSnapshotPair(
       }
     }
 
-    const header: SpillHeader = { version: SPILL_VERSION, geometries: specs };
+    // Support states ride in the same file, after the geometry payloads. They
+    // are the pair's other large allocation: a supported plate clones tens of
+    // thousands of entities per history entry.
+    const beforeSupport = serializeSupportState(pair.before.supportState);
+    const afterSupport = serializeSupportState(pair.after.supportState);
+    const support: SpillHeader['support'] = beforeSupport || afterSupport
+      ? { before: null, after: null }
+      : undefined;
+    if (support && beforeSupport) {
+      support.before = { offset, byteLength: beforeSupport.byteLength };
+      offset += beforeSupport.byteLength;
+    }
+    if (support && afterSupport) {
+      support.after = { offset, byteLength: afterSupport.byteLength };
+      offset += afterSupport.byteLength;
+    }
+
+    const header: SpillHeader = { version: SPILL_VERSION, geometries: specs, ...(support ? { support } : {}) };
     const headerBytes = new TextEncoder().encode(JSON.stringify(header));
     const prefix = new Uint8Array(4);
     new DataView(prefix.buffer).setUint32(0, headerBytes.byteLength, true);
@@ -228,20 +295,31 @@ export async function spillSceneSnapshotPair(
     for (const { array, spec } of payloads) {
       await writable.write(new Uint8Array(array.buffer, array.byteOffset, spec.byteLength) as unknown as ArrayBufferView<ArrayBuffer>);
     }
+    if (beforeSupport) await writable.write(beforeSupport as unknown as ArrayBufferView<ArrayBuffer>);
+    if (afterSupport) await writable.write(afterSupport as unknown as ArrayBufferView<ArrayBuffer>);
     await writable.close();
 
+    // Only drop the states that reached the file.
+    if (beforeSupport) pair.before.supportState = undefined;
+    if (afterSupport) pair.after.supportState = undefined;
+
     let releaseCount = 0;
+    let skipped = 0;
     const release = () => {
       for (const geometry of candidates) {
         // Re-checked here, not when the write started: an undo may have put
         // these models back in the scene while the file was being written.
-        if (!canRelease(geometry)) continue;
+        if (!canRelease(geometry)) {
+          skipped += 1;
+          continue;
+        }
         releaseGeometryStorage(geometry);
         releaseCount += 1;
       }
-      if (releaseCount > 0) {
-        console.info(`[UndoSpill] Released ${releaseCount} geometries from scene snapshot "${key}".`);
-      }
+      console.info(
+        `[UndoSpill] Released ${releaseCount} of ${candidates.length} geometries from scene snapshot "${key}"` +
+        (skipped > 0 ? ` (${skipped} still live).` : '.'),
+      );
     };
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
       window.requestIdleCallback(release, { timeout: 500 });
@@ -252,7 +330,9 @@ export async function spillSceneSnapshotPair(
     spilledSceneSnapshots.set(key, {
       fileHandle,
       dataOffset: 4 + headerBytes.byteLength,
+      byteLength: offset,
       geometries: specs,
+      support,
     });
     console.info(
       `[UndoSpill] Spilled ${(offset / 1024 / 1024).toFixed(0)} MB in scene snapshot "${key}" ` +
@@ -310,6 +390,30 @@ export async function rehydrateSceneSnapshotPair(key: string, pair: SceneSnapsho
       if (spec.hadBoundsTree) accelerateGeometry(geometry);
     }
 
+    if (spilled.support) {
+      const decoder = new TextDecoder();
+      const readSupport = async (section: SupportSection | null): Promise<SupportState | undefined> => {
+        if (!section) return undefined;
+        const buffer = await file
+          .slice(spilled.dataOffset + section.offset, spilled.dataOffset + section.offset + section.byteLength)
+          .arrayBuffer();
+        return JSON.parse(decoder.decode(buffer)) as SupportState;
+      };
+      pair.before.supportState = await readSupport(spilled.support.before);
+      pair.after.supportState = await readSupport(spilled.support.after);
+    }
+
+    // The arrays are in RAM again and no history pair points at this file:
+    // leaving it would strand a full copy of the scene on disk until the next
+    // startup prunes it.
+    void (async () => {
+      try {
+        const directory = await spillDirectory();
+        await directory?.removeEntry(`scene-${key}.bin`);
+      } catch {
+        // Already gone.
+      }
+    })();
     spilledSceneSnapshots.delete(key);
     return true;
   } catch (error) {

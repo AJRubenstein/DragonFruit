@@ -2058,7 +2058,10 @@ export function countSupportCollections(
     snapshot: Pick<SupportState, SupportCollectionKey>,
 ): Record<string, number> {
     const counts: Record<string, number> = {};
-    for (const key of SUPPORT_COLLECTION_KEYS) counts[key] = Object.keys(snapshot[key]).length;
+    // A state that never went through the store (a snapshot restored from disk,
+    // a debug read of a pair) may carry only the canonical `supports` map. The
+    // diagnostic must not take the renderer down over a missing view.
+    for (const key of SUPPORT_COLLECTION_KEYS) counts[key] = Object.keys(snapshot[key] ?? {}).length;
     return counts;
 }
 
