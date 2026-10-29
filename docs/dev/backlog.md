@@ -1740,21 +1740,40 @@ gesture: the profile of that window is `(program)` (IPC deserialization) and
 render work, not JS copies. Making that non-blocking means receiving the buffers
 in pieces, which is a change to the command's shape, not to this effect.
 
-## Known: the move commit itself is the support store write
+## Known: a move commit stalls ~250 ms outside JavaScript
 
-With the preview deferred, a move commit blocks ~340 ms with **no IPC in the
-window at all** — the network trace shows only `webview_heartbeat`. The profile
-of that frame puts it in `state.ts`, not the renderer or the proxy layer:
+Measured with opt-in marks (`src/utils/perfProbe.ts`: set `window.__dfPerf = true`,
+then read `performance.getEntriesByType('measure')`) on the 20-model,
+20,683-support scene in a production build, for a one-model drag:
 
-- `transformSupportsForModel` (`ek`), the top self-time, plus its model-resolution
-  passes — it walks every entity of every type to decide what the model owns.
-- the snapshot's per-type views (`eA`/`ex`, the `Object.defineProperty` getters
-  that filter each collection by `typeId`), rebuilt on the write.
+| piece | per commit |
+| --- | ---: |
+| `proxy:collect` (the support proxy walk) | 2.9–4.5 ms, one model |
+| `bounds:models` | 1.0–7.9 ms |
+| `bounds:support` | 0.8–7.7 ms, one model |
+| the store transform (`store:transform`) | never fires |
 
-So a model move is O(plate) in the store even though the store already knows the
-`modelId` it is transforming. The same per-model index the render paths now use
-(`supportModelIndex.ts`) is what this walk needs: resolve the model's entities
-once and transform them, rather than asking every entity whether it belongs.
+And the same commit still leaves a 250 ms gap in `requestAnimationFrame`, with
+p95 at 6.2 ms — one hitch, on a model move only:
+
+| input | worst frame |
+| --- | ---: |
+| click (no move) | 12 ms |
+| drag on empty canvas | 6 ms |
+| drag a model | 250–345 ms |
+
+It is not JavaScript: a V8 profile of the window holds ~4 ms of samples, and a
+Chrome trace's largest task is 64 ms (`ProxyMain::BeginMainFrame`), with no task
+over 80 ms. It is not the viewport either — 700×560, 1100×880 and 1718×1420 all
+produce the same ~250 ms. And the store transform does not run at all: supports
+ride the model frame on this branch, so a translation never rewrites them.
+
+What is left is the frame's presentation: the commit rebuilds
+`buildFlatBatches` for the whole plate (`SupportProxyMeshLayer`) and
+`buildProxyTiles` cuts it again, so every support instance batch is handed new
+arrays and re-rendered. That is where to bisect next — drag with the merged
+support layer hidden, then with the proxy layer hidden, using the same probe —
+rather than optimising the walks further.
 
 ## Known: selecting a model costs one frame on its own
 

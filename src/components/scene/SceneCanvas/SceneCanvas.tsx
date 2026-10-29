@@ -38,6 +38,7 @@ import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types';
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
 import { changedSupportModels, EMPTY_SUPPORT_ENTITIES, EMPTY_SUPPORT_MODELS, getSupportModelIndex, type SupportModelIndex } from '@/supports/supportModelIndex';
+import { perfMark, perfMeasure } from '@/utils/perfProbe';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
 import { collectRaftBaseCirclesByModel, raftFootprintSourceRefs, RAFT_UNASSIGNED_MODEL_KEY, type RaftBaseCirclesByModel } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
 import { collectSupportMarqueeShapes, type SupportMarqueeShape } from './supportMarqueeShapes';
@@ -2043,6 +2044,8 @@ export function SceneCanvas({
   }, [changedModelsSince, isGizmoDragging, isGizmoRetargeting, raftSettingsForBounds, supportBoundsIndex]);
 
   const computeSupportAndRaftWorldBoundsUncached = React.useCallback((modelId: string): THREE.Box3 | null => {
+    const perfStart = perfMark('bounds:support');
+    try {
     const bounds = new THREE.Box3();
     let hasAny = false;
     const BUILD_PLATE_Z = 0;
@@ -2180,6 +2183,9 @@ export function SceneCanvas({
     }
 
     return hasAny ? bounds : null;
+    } finally {
+      perfMeasure('bounds:support', perfStart);
+    }
   }, [raftBaseCirclesByModelKey, raftSettingsForBounds, supportBoundsIndex]);
 
   const computeModelWorldBounds = React.useCallback((
@@ -2278,6 +2284,7 @@ export function SceneCanvas({
   );
 
   const modelWorldBounds = React.useMemo(() => {
+    const perfStart = perfMark('bounds:models');
     const liveGroupFor = (modelId: string) => (
       (isGizmoDragging || isGizmoRetargeting) ? meshRefs.current[modelId] ?? null : null
     );
@@ -2302,6 +2309,7 @@ export function SceneCanvas({
       map.set(model.id, computeModelWorldBounds(model, effectiveTransform, buildVolumeBounds));
     }
     cachedModelWorldBoundsRef.current = map;
+    perfMeasure('bounds:models', perfStart);
     return map;
   }, [activeTransformOverrideModelId, buildVolumeBounds, computeModelWorldBounds, isGizmoDragging, isGizmoRetargeting, liveDragTransformVersion, models, transform]);
 

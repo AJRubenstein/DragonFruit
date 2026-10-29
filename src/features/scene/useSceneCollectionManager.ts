@@ -1347,6 +1347,7 @@ import { computeRaftOuterBoundary } from '@/supports/Rafts/Crenelated/geometry/c
 import type { SupportBaseCircle } from '@/supports/Rafts/Crenelated/RaftTypes';
 import { getImportDefaultsRaftPatch, getSavedImportDefaultsSettings } from '@/features/scene/importDefaultsPreferences';
 import { readNativeFileSize } from '@/utils/pluginNetworkBridge';
+import { perfMark, perfMeasure } from '@/utils/perfProbe';
 import { clonePlainData } from '@/utils/plainDataClone';
 import { DEFAULT_LIFT_DISTANCE_MM } from '@/features/transform/liftDefaults';
 
@@ -3787,6 +3788,7 @@ export function useSceneCollectionManager(options?: {
     let kickstandsChanged = false;
     let updated = false;
     let supportLocalFramePreserved = true;
+    const perfStoreStart = perfMark('store:transform');
     updateMap.forEach((nextTransform, id) => {
       const currentModel = currentModels.find((model) => model.id === id);
       if (!currentModel) return;
@@ -3807,6 +3809,8 @@ export function useSceneCollectionManager(options?: {
       kickstandsChanged = kickstandsChanged || commit.kickstandsChanged;
       updated = true;
     });
+
+    perfMeasure('store:transform', perfStoreStart);
 
     if (!updated) {
       return {
