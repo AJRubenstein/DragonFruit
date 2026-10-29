@@ -230,11 +230,23 @@ export async function spillSceneSnapshotPair(
     }
     await writable.close();
 
-    const released: THREE.BufferGeometry[] = [];
-    for (const geometry of candidates) {
-      if (!canRelease(geometry)) continue;
-      releaseGeometryStorage(geometry);
-      released.push(geometry);
+    let releaseCount = 0;
+    const release = () => {
+      for (const geometry of candidates) {
+        // Re-checked here, not when the write started: an undo may have put
+        // these models back in the scene while the file was being written.
+        if (!canRelease(geometry)) continue;
+        releaseGeometryStorage(geometry);
+        releaseCount += 1;
+      }
+      if (releaseCount > 0) {
+        console.info(`[UndoSpill] Released ${releaseCount} geometries from scene snapshot "${key}".`);
+      }
+    };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(release, { timeout: 500 });
+    } else {
+      setTimeout(release, 50);
     }
 
     spilledSceneSnapshots.set(key, {
@@ -243,8 +255,8 @@ export async function spillSceneSnapshotPair(
       geometries: specs,
     });
     console.info(
-      `[UndoSpill] Spilled ${(offset / 1024 / 1024).toFixed(0)} MB from ${released.length} geometries ` +
-      `in scene snapshot "${key}".`,
+      `[UndoSpill] Spilled ${(offset / 1024 / 1024).toFixed(0)} MB in scene snapshot "${key}" ` +
+      `(${candidates.length} geometries).`,
     );
     return true;
   } catch (error) {
