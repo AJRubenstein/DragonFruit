@@ -1714,32 +1714,54 @@ consumers use it:
 Measured with `supportModelIndex.test.ts` on the change detection; the scene
 numbers below are what the *commit* frame did not improve.
 
-## Known: a model drag's commit frame pays a hollowing preview warm-up
+## Fixed: a model drag's commit frame paid a hollowing preview warm-up
 
-The pointerup of a model drag blocks one frame for ~285–400 ms while p50/p95 stay
-at 6.1 ms. It is not the support walk. A CDP network trace during the release
-shows the frame's IPC: `stage_mesh_binary_set`, `mesh_hollow_preview_capture_staged_source`,
-then the whole read-back family (`…read_positions`, `…read_cavity_positions`,
+The pointerup of a model drag blocked one frame for ~285–400 ms while p50/p95
+stayed at 6.1 ms. A CDP network trace during the release showed the frame's IPC:
+`stage_mesh_binary_set`, `mesh_hollow_preview_capture_staged_source`, then the
+whole read-back family (`…read_positions`, `…read_cavity_positions`,
 `…read_removed_voxel_centers/indices`, `…read_blocked_voxel_centers/indices`).
 
-That is `useHollowingManager`'s warm-up effect: it fires on `scene.activeModel`
-change, a drag selects the model it moves, and `primeHollowPreviewCache` builds
-the preview for a model that has not had one this session. Each drag in the
-measurement hit a different model, so each paid the first-time cost; two drags
-that missed a model were 6.2 ms.
+That is `useHollowingManager`'s warm-up effect. It fires on `scene.activeModel`
+change, a drag selects the model it moves, and `primeHollowPreviewCache` builds a
+preview for a model that has not had one this session. The warm-up is purely
+speculative: the only readers of `hollowPreviewResultCacheRef` are the hollowing
+panel and its materializer, so a model nobody is about to hollow was being
+voxelized during the gesture.
 
-Two things to check next, in this order:
+It now waits for a 1.2 s quiet period and then runs in `requestIdleCallback`,
+cancelled when the selection changes again. Verified by the same trace on the
+rebuilt app: a fresh selection's commit window (first 600 ms) contains no preview
+IPC at all, and `stage_mesh_binary_set` lands afterwards.
 
-1. **Should a model without hollowing warm a preview at all?** The effect falls
-   back to `defaultHollowingState` when `meshModifiers.hollowing` is absent, so a
-   plain move voxelizes a model nobody asked to hollow.
-2. **Does the preview key need the transform?** `buildHollowPreviewRequest` keys
-   on the geometry version and on `rotationQuat`, so a transform that re-bakes
-   geometry re-stages the mesh even when the hollowing-relevant inputs (local
-   shape + rotation) are unchanged.
+`hollowPreviewFromCapturedSource` was already async in the IPC sense — each
+read-back is a separate `await` — so what remains is one long task after the
+gesture: the profile of that window is `(program)` (IPC deserialization) and
+render work, not JS copies. Making that non-blocking means receiving the buffers
+in pieces, which is a change to the command's shape, not to this effect.
 
-The lesson from the two rounds above: the support-side write costs are now per
-model, and `prepare-mode:layer` (845 ms at load) is a separate, still-open cost.
+## Known: the move commit itself is the support store write
+
+With the preview deferred, a move commit blocks ~340 ms with **no IPC in the
+window at all** — the network trace shows only `webview_heartbeat`. The profile
+of that frame puts it in `state.ts`, not the renderer or the proxy layer:
+
+- `transformSupportsForModel` (`ek`), the top self-time, plus its model-resolution
+  passes — it walks every entity of every type to decide what the model owns.
+- the snapshot's per-type views (`eA`/`ex`, the `Object.defineProperty` getters
+  that filter each collection by `typeId`), rebuilt on the write.
+
+So a model move is O(plate) in the store even though the store already knows the
+`modelId` it is transforming. The same per-model index the render paths now use
+(`supportModelIndex.ts`) is what this walk needs: resolve the model's entities
+once and transform them, rather than asking every entity whether it belongs.
+
+## Known: selecting a model costs one frame on its own
+
+Separate from the move: a fresh selection still produced a 654 ms frame in the
+same session, with no preview IPC in the window. That is the selection path —
+the Prepare merged-support build for the newly active model and the camera focus
+glide — not the drag commit. Not measured piece by piece yet.
 
 ## Fixed: every tool switch re-merged the whole plate's supports
 
