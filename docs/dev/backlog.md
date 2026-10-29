@@ -1613,11 +1613,49 @@ That scene and copy count now measures ~146 ms. Still open:
    2 × O(total support entities). A patch-shaped entry — the ids added, and the
    ids removed with their entities — would make it O(N) and delete the copies
    from the confirm path entirely.
-2. `estimateSceneSnapshotRegistryBytes` counts geometry only, so support copies
-   sit outside the ~300 MB eviction budget: 200 entries of a 9,000-entity state
-   are retained with nothing accounting for them.
+2. ~~`estimateSceneSnapshotRegistryBytes` counts geometry only~~ — fixed: the
+   budget now counts each pair's support states (~700 B per entity, measured at
+   ~14 MB per half on the 20-model scene), and a pair spills its states even
+   when its geometry is shared, so the budget offloads them to disk instead of
+   throwing undo entries away.
 3. Undo copies the stored snapshot again (`applySceneSnapshot`), so a restore
    pays a third full copy.
+
+## Measured: a cleared scene flushes, and what is still retained
+
+Clearing a supported scene used to keep its meshes. Measured with
+`Runtime.getHeapUsage` after `HeapProfiler.collectGarbage`, against the
+production build (`next build && next start`, since the dev build's fibers are
+retained by their own tooling), loading the 20-model, 198 MB VOXL scene and
+clearing with Ctrl+A, Delete:
+
+| step | before | after |
+| --- | ---: | ---: |
+| load 1 → clear 1 | 1971 → 321 MB | 1882 → 275 MB |
+| load 2 → clear 2 | 2021 → 491 MB | 1798 → 277 MB |
+| load 3 → clear 3 | 2023 → 508 MB | 1838 → 280 MB |
+
+The four retainers fixed are in
+[History and Undo/Redo](history-and-undo-redo.md#disk-backed-geometry-spill).
+What is left, in the order it pays:
+
+1. **~19 MB of plain objects per load**, retained across clears. usedSize
+   grows by roughly that per load/clear cycle while backingStorageSize stays
+   flat, so it is JS data, not geometry. A snapshot diff of two floors shows
+   plain objects, numbers, strings and object-element arrays; the only retainer
+   paths found end in a `SceneCanvas` render-scope context held through a native
+   handle. Window/document listener counts were checked across a load and return
+   to baseline on clear (CDP DOMDebugger.getEventListeners), so it is not a leaked
+   listener. Next step: bottom-up diff of the retained closure set (the render
+   scope holds `entryDropOffsets`, `prepareMergedSupports`, ...) and a check of
+   whether a pending `requestAnimationFrame`/timer holds one scope per load.
+2. **Undo of a cleared scene re-reads the whole file** (~800 MB on the scene
+   above, geometry + support JSON). It lands in ~15 s on the test machine,
+   which is acceptable for an explicit undo but is the reason a clear writes
+   800 MB of scratch in the first place.
+3. The scratch store keeps one file per spilled entry under a 4 GB ceiling
+   (`SCENE_HISTORY_MAX_SPILLED_BYTES`); a session that clears many large scenes
+   evicts the oldest entries (and their undo) rather than filling the disk.
 
 ## Known: Select-mode hover and selection pay per support
 
