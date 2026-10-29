@@ -6495,7 +6495,13 @@ export function SceneCanvas({
     }
     selectDragCandidateRef.current = { modelId, clientX, clientY };
     setSelectDragPressed(true);
-  }, [isModelPlateLocked, onBlockedByPlateLock]);
+
+    // Prime the cage on the press, not on the first move: the corners are the
+    // feedback that the model is grabbed, so they belong to the hold. The drag
+    // start primes again with the committed transform, which is idempotent.
+    const model = modelById.get(modelId);
+    if (model) scheduleDragCornerCagePrime([modelId], model.transform);
+  }, [isModelPlateLocked, modelById, onBlockedByPlateLock, scheduleDragCornerCagePrime]);
 
   // Support/raft presses in Select mode also grab the model: select its model
   // (so the drag targets it) then start the same XY drag as a model-mesh press.
