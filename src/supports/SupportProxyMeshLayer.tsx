@@ -21,6 +21,7 @@ import { bezierSegmentToBatchedShaft } from './Curves/batchedBezierShaft';
 import type { Segment, SupportState, Vec3 } from './types';
 import { MARQUEE_CANDIDATE_TINT_FACTOR } from '@/utils/marqueeCandidateTint';
 import { SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from './supportTypeRegistry';
+import { changedSupportModels, getSupportModelIndex, type SupportModelIndex } from './supportModelIndex';
 import { buildProxyTiles, type FlatProxyGeometry } from './supportProxyTiles';
 import {
     createCavityTester,
@@ -204,6 +205,7 @@ type SharedProxyCacheEntry = {
   raftThickness: number;
   includeDetailedPrimitives: boolean;
   interiorSupportIdSet: Set<string> | null;
+  index: SupportModelIndex;
   baseProxyByModel: Map<string, ProxyModelGeometry>;
 };
 
@@ -235,6 +237,7 @@ export function collectProxyPrimitives(
         includeDetailedPrimitives: boolean;
         interiorSupportIdSet: Set<string> | null;
     },
+    modelKeyFilter?: string,
 ): Map<string, ProxyModelGeometry> {
     const { includeDetailedPrimitives, interiorSupportIdSet } = options;
 
@@ -353,9 +356,11 @@ export function collectProxyPrimitives(
     if (registered.registration.skipInInteriorView && interiorSupportIdSet) continue;
 
     const entities = state[descriptor.location.key] as unknown as
-      | Record<string, { id: string; typeId?: SupportTypeId }>
+      | Record<string, { id: string; typeId?: SupportTypeId; modelId?: string }>
       | undefined;
     for (const entity of Object.values(entities ?? {})) {
+      // A per-model rebuild skips the other models before allocating anything.
+      if (modelKeyFilter !== undefined && toModelKey(entity.modelId) !== modelKeyFilter) continue;
       if (interiorSupportIdSet && !interiorSupportIdSet.has(interiorSupportKey(entity))) continue;
       registered.build(entity as never, context);
     }
@@ -562,21 +567,51 @@ export function SupportProxyMeshLayer({
   );
 
   const baseProxyByModel = React.useMemo(() => {
-    if (
-      sharedProxyCache
-      && sameCollectionRefs(sharedProxyCache.collectionRefs, supportCollectionRefs)
-      && sharedProxyCache.hasSolidBottom === hasSolidBottom
-      && sharedProxyCache.raftThickness === raftThickness
-      && sharedProxyCache.includeDetailedPrimitives === includeDetailedPrimitives
-      && sharedProxyCache.interiorSupportIdSet === interiorSupportIdSet
-    ) {
-      return sharedProxyCache.baseProxyByModel;
+    const cache = sharedProxyCache;
+    const optionsSame = Boolean(cache)
+      && cache!.hasSolidBottom === hasSolidBottom
+      && cache!.raftThickness === raftThickness
+      && cache!.includeDetailedPrimitives === includeDetailedPrimitives
+      && cache!.interiorSupportIdSet === interiorSupportIdSet;
+    if (optionsSame && sameCollectionRefs(cache!.collectionRefs, supportCollectionRefs)) {
+      return cache!.baseProxyByModel;
     }
 
-    const byModel = collectProxyPrimitives(supportState, {
-      includeDetailedPrimitives,
-      interiorSupportIdSet,
-    });
+    const index = getSupportModelIndex(supportState as unknown as Record<string, unknown>);
+    const options = { includeDetailedPrimitives, interiorSupportIdSet };
+    // A support write replaces only the entities it touched, so every other
+    // model's primitives are still valid: a model move rebuilds one model
+    // instead of all twenty. An options change invalidates all of them.
+    const changedModels = optionsSame ? changedSupportModels(cache!.index, index) : null;
+    const previous = optionsSame ? cache!.baseProxyByModel : null;
+    // A first build, or a change that moved most of the plate, is cheaper as one
+    // walk than as a filtered pass per model: the filter still reads every
+    // entity, so twenty passes read the plate twenty times.
+    if (!previous || !changedModels || changedModels.size * 2 >= index.modelKeys.length) {
+      const byModel = collectProxyPrimitives(supportState, options);
+      sharedProxyCache = {
+        collectionRefs: supportCollectionRefs,
+        hasSolidBottom,
+        raftThickness,
+        includeDetailedPrimitives,
+        interiorSupportIdSet,
+        index,
+        baseProxyByModel: byModel,
+      };
+      return byModel;
+    }
+
+    const byModel = new Map<string, ProxyModelGeometry>();
+
+    for (const modelKey of index.modelKeys) {
+      const reusable = !changedModels.has(modelKey) ? previous.get(modelKey) : undefined;
+      if (reusable) {
+        byModel.set(modelKey, reusable);
+        continue;
+      }
+      const built = collectProxyPrimitives(supportState, options, modelKey).get(modelKey);
+      if (built) byModel.set(modelKey, built);
+    }
 
     sharedProxyCache = {
       collectionRefs: supportCollectionRefs,
@@ -584,6 +619,7 @@ export function SupportProxyMeshLayer({
       raftThickness,
       includeDetailedPrimitives,
       interiorSupportIdSet,
+      index,
       baseProxyByModel: byModel,
     };
 

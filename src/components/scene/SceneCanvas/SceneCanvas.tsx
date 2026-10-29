@@ -37,6 +37,7 @@ import type { ScanResults } from '@/volumeAnalysis/IslandScan/ScanOrchestrator';
 import type { TransformMode, ModelTransform } from '@/hooks/useModelTransform';
 import type { LimitationCode, SupportMode, WarningCode } from '@/supports/types';
 import { contactEndpointsFor, getSupportTypeDescriptor, hostKnotFieldsFor, INLINE_ROOT_TYPES, previewTypesByPriority, SUPPORT_COLLECTION_KEYS, SUPPORT_TYPES, type SupportTypeId } from '@/supports/supportTypeRegistry';
+import { changedSupportModels, EMPTY_SUPPORT_ENTITIES, EMPTY_SUPPORT_MODELS, getSupportModelIndex, type SupportModelIndex } from '@/supports/supportModelIndex';
 import { EMPTY_PLACEMENT_ACTIVE, EMPTY_PLACEMENT_PREVIEWS, type SupportPlacementActive, type SupportPlacementPreviews } from '@/supports/rendering';
 import { collectRaftBaseCirclesByModel, raftFootprintSourceRefs, RAFT_UNASSIGNED_MODEL_KEY, type RaftBaseCirclesByModel } from '@/supports/Rafts/Crenelated/raftFootprintCircles';
 import { collectSupportMarqueeShapes, type SupportMarqueeShape } from './supportMarqueeShapes';
@@ -492,79 +493,6 @@ function sameCollectionRefs(a: readonly unknown[] | null | undefined, b: readonl
     if (a[i] !== b[i]) return false;
   }
   return true;
-}
-
-type SupportEntityRecord = Record<string, unknown>;
-
-/**
- * The support store sliced by model, built once per collection change.
- *
- * The bounds walk below asks "which of this model's supports exist?" for every
- * model, and it used to answer by scanning every collection each time — O(models
- * × entities), which on a 20-model supported plate is ~400k visits plus a
- * `Object.values` allocation per collection per model. Any support write (a
- * model move rewrites its supports) invalidated all of it, so a commit paid the
- * whole walk for a plate that had not changed shape.
- */
-type SupportBoundsIndex = {
-  /** Entities per type collection, per model id. */
-  entitiesByTypeByModel: Map<string, Map<string, SupportEntityRecord[]>>;
-  rootsByModel: Map<string, SupportEntityRecord[]>;
-  /** The knots each model's supports hang from, resolved to knots. */
-  knotsByModel: Map<string, SupportEntityRecord[]>;
-};
-
-const EMPTY_SUPPORT_ENTITIES: SupportEntityRecord[] = [];
-
-function buildSupportBoundsIndex(state: {
-  roots?: Record<string, SupportEntityRecord>;
-  knots?: Record<string, SupportEntityRecord>;
-} & Record<string, unknown>): SupportBoundsIndex {
-  const entitiesByTypeByModel = new Map<string, Map<string, SupportEntityRecord[]>>();
-  const rootsByModel = new Map<string, SupportEntityRecord[]>();
-  const knotIdsByModel = new Map<string, Set<string>>();
-
-  for (const root of Object.values(state.roots ?? {})) {
-    const modelId = root.modelId as string | undefined;
-    if (!modelId) continue;
-    const bucket = rootsByModel.get(modelId);
-    if (bucket) bucket.push(root);
-    else rootsByModel.set(modelId, [root]);
-  }
-
-  for (const descriptor of SUPPORT_TYPES) {
-    const collection = state[descriptor.location.key] as Record<string, SupportEntityRecord> | undefined;
-    if (!collection) continue;
-    const knotFields = hostKnotFieldsFor(descriptor.id);
-    const byModel = new Map<string, SupportEntityRecord[]>();
-    for (const entity of Object.values(collection)) {
-      const modelId = entity.modelId as string | undefined;
-      if (!modelId) continue;
-      const bucket = byModel.get(modelId);
-      if (bucket) bucket.push(entity);
-      else byModel.set(modelId, [entity]);
-      if (knotFields.length === 0) continue;
-      let knotIds = knotIdsByModel.get(modelId);
-      if (!knotIds) { knotIds = new Set<string>(); knotIdsByModel.set(modelId, knotIds); }
-      for (const field of knotFields) {
-        const knotId = entity[field];
-        if (typeof knotId === 'string') knotIds.add(knotId);
-      }
-    }
-    entitiesByTypeByModel.set(descriptor.location.key, byModel);
-  }
-
-  const knotsByModel = new Map<string, SupportEntityRecord[]>();
-  for (const [modelId, knotIds] of knotIdsByModel) {
-    const knots: SupportEntityRecord[] = [];
-    for (const knotId of knotIds) {
-      const knot = state.knots?.[knotId];
-      if (knot) knots.push(knot);
-    }
-    if (knots.length > 0) knotsByModel.set(modelId, knots);
-  }
-
-  return { entitiesByTypeByModel, rootsByModel, knotsByModel };
 }
 
 export function SceneCanvas({
@@ -2051,43 +1979,68 @@ export function SceneCanvas({
    * tasks on a click in a production build. Keyed on the collections, a selection
    * finds every entry already there.
    */
-  const supportRaftBoundsCacheRef = React.useRef<{
-    key: readonly unknown[];
+  /** The index the bounds cache was filled from: the comparison base. */
+  const supportBoundsCacheRef = React.useRef<{
+    settings: unknown;
+    index: SupportModelIndex;
     byModel: Map<string, THREE.Box3 | null>;
   } | null>(null);
+  /**
+   * Model keys the plate's bounds cache is allowed to reuse.
+   *
+   * Compared against the index the cache was filled from, not the latest
+   * transition: two state changes can pass while the cache is skipped (a drag
+   * returns early), and a transition-local set would then miss the model that
+   * moved in the change nobody recomputed.
+   */
+  const supportBoundsChangeRef = React.useRef<{
+    from: SupportModelIndex;
+    to: SupportModelIndex;
+    changed: Set<string>;
+  } | null>(null);
+
+  const changedModelsSince = React.useCallback((from: SupportModelIndex, to: SupportModelIndex): Set<string> => {
+    if (from === to) return EMPTY_SUPPORT_MODELS;
+    const cached = supportBoundsChangeRef.current;
+    if (cached && cached.from === from && cached.to === to) return cached.changed;
+    const changed = changedSupportModels(from, to);
+    supportBoundsChangeRef.current = { from, to, changed };
+    return changed;
+  }, []);
+
+  const supportBoundsIndex = React.useMemo(
+    () => getSupportModelIndex(supportStateForBounds as unknown as Record<string, unknown>),
+    [supportStateForBounds],
+  );
 
   const computeSupportAndRaftWorldBounds = React.useCallback((modelId: string): THREE.Box3 | null => {
     // During active gizmo drags, keep bounds work minimal to preserve interaction FPS.
     if (isGizmoDragging || isGizmoRetargeting) return null;
 
-    const key = [
-      raftSettingsForBounds,
-      raftBaseCirclesByModelKey,
-      supportStateForBounds.knots,
-      ...SUPPORT_COLLECTION_KEYS.map((collectionKey) => supportStateForBounds[collectionKey]),
-    ];
-    let cache = supportRaftBoundsCacheRef.current;
-    if (!cache || cache.key.length !== key.length || !cache.key.every((ref, i) => ref === key[i])) {
-      cache = { key, byModel: new Map() };
-      supportRaftBoundsCacheRef.current = cache;
-    } else if (cache.byModel.has(modelId)) {
-      return cache.byModel.get(modelId) ?? null;
+    const cached = supportBoundsCacheRef.current;
+    // A raft-settings change re-shapes every model's raft. A support write
+    // replaces only the entities of the models it touched, so a move re-walks
+    // the moved model and returns the cached box for every other one — this is
+    // the per-model half of the cost a plate-wide invalidation used to pay.
+    if (cached && cached.settings === raftSettingsForBounds) {
+      const changed = changedModelsSince(cached.index, supportBoundsIndex);
+      if (!changed.has(modelId)) {
+        const previous = cached.byModel.get(modelId);
+        if (previous !== undefined) return previous;
+      }
     }
 
     const computed = computeSupportAndRaftWorldBoundsUncached(modelId);
-    cache.byModel.set(modelId, computed);
+    const reusable = cached && cached.settings === raftSettingsForBounds ? cached : null;
+    const byModel = reusable ? reusable.byModel : new Map<string, THREE.Box3 | null>();
+    byModel.set(modelId, computed);
+    supportBoundsCacheRef.current = {
+      settings: raftSettingsForBounds,
+      index: supportBoundsIndex,
+      byModel,
+    };
     return computed;
-  }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
-
-  const supportBoundsIndexCacheRef = React.useRef<{ refs: readonly unknown[]; index: SupportBoundsIndex } | null>(null);
-  const supportBoundsIndex = React.useMemo(() => {
-    const refs = SUPPORT_COLLECTION_KEYS.map((key) => supportStateForBounds[key]);
-    const cached = supportBoundsIndexCacheRef.current;
-    if (cached && sameCollectionRefs(cached.refs, refs)) return cached.index;
-    const index = buildSupportBoundsIndex(supportStateForBounds as unknown as Record<string, unknown>);
-    supportBoundsIndexCacheRef.current = { refs, index };
-    return index;
-  }, [supportStateForBounds]);
+  }, [changedModelsSince, isGizmoDragging, isGizmoRetargeting, raftSettingsForBounds, supportBoundsIndex]);
 
   const computeSupportAndRaftWorldBoundsUncached = React.useCallback((modelId: string): THREE.Box3 | null => {
     const bounds = new THREE.Box3();

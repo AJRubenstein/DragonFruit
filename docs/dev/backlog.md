@@ -1684,30 +1684,62 @@ camera-focus transitions.
 Measured on the same load: the intro window went from p95 18.2 ms / max 1200 ms
 to p95 12.2 ms, and the curved-shaft stall is gone from the log.
 
-## Known: a model move still re-lays out the support proxy in render
+## Fixed: a support walk asked every model its own question
 
-With the tube build sliced, the pointerup of a model drag still blocks one frame
-for ~290–350 ms (p95 stays 6.1 ms — it is a single hitch, and three drags in one
-session show it only on the ones that actually commit a model: 165.8 fps and a
-6.2 ms worst frame on the misses). Two costs were in that frame:
+The out-of-bounds walk (`computeSupportAndRaftWorldBounds`) answered "which of
+this model's supports exist?" once per model by scanning every collection: O(models
+× entities), ~20 × 20,683 visits per commit, each with an `Object.values`
+allocation per collection per model. It now reads a per-model index
+(`buildSupportModelIndex`) built once per collection change, so a commit is O(n).
 
-- **Fixed, and it was not the bulk.** The out-of-bounds walk
-  (`computeSupportAndRaftWorldBounds`) answered "which of this model's supports
-  exist?" once per model by scanning every collection: O(models × entities),
-  ~20 × 20,683 visits per commit, each with an `Object.values` allocation per
-  collection per model. It now reads a per-model index built once per collection
-  change (`buildSupportBoundsIndex` in `SceneCanvas.tsx`), so a commit is O(n).
-  The release hitch fell from ~351 ms to ~290 ms. Lesson for the next pass:
-  a quadratic walk is worth fixing on its own, but measure before assuming it is
-  the observed stall.
-- **Open.** `SupportProxyMeshLayer` re-collects and re-tiles the plate's
-  supports inside render when the support state changes — `prepare-mode:layer`
-  is the stall detector's activity for it, and the load-time version of the same
-  cost is 845 ms. The fix is the stale-while-rebuild pattern the Prepare merged
-  layer already uses (keep the previous layout drawn, build in idle slices), but
-  the walk itself has to be sliced per type/collection to stop being a 290 ms
-  task in idle. The autosave/persistence path also still touches IPC on the same
-  commit; it should be debounced past the gesture.
+Then the same index answers the better question: **which models did this write
+touch?** The store replaces only the entities it touched and carries every other
+collection and entity through by reference (`transformSupportsForModel`:
+`nextByCollection[key] ?? state[key]`), so a slice comparison is pointer
+comparison, and a commit that moves one model is O(its models). Both render-path
+consumers use it:
+
+- `SceneCanvas` keeps one support-and-raft box per model, valid until that
+  model's entities or the raft settings change, instead of one cache wiped by any
+  collection write. The comparison is against the index the cache was *filled
+  from*, not the latest transition — a drag returns early from the bounds path,
+  so two writes can pass while the cache is skipped.
+- `SupportProxyMeshLayer` re-walks only the models whose entities changed and
+  reuses the previous `ProxyModelGeometry` for the rest. `collectProxyPrimitives`
+  takes a model-key filter and skips other models before allocating. A first
+  build, or a change that moved half the plate, still takes one unfiltered walk:
+  the filter reads every entity, so twenty passes would read the plate twenty
+  times.
+
+Measured with `supportModelIndex.test.ts` on the change detection; the scene
+numbers below are what the *commit* frame did not improve.
+
+## Known: a model drag's commit frame pays a hollowing preview warm-up
+
+The pointerup of a model drag blocks one frame for ~285–400 ms while p50/p95 stay
+at 6.1 ms. It is not the support walk. A CDP network trace during the release
+shows the frame's IPC: `stage_mesh_binary_set`, `mesh_hollow_preview_capture_staged_source`,
+then the whole read-back family (`…read_positions`, `…read_cavity_positions`,
+`…read_removed_voxel_centers/indices`, `…read_blocked_voxel_centers/indices`).
+
+That is `useHollowingManager`'s warm-up effect: it fires on `scene.activeModel`
+change, a drag selects the model it moves, and `primeHollowPreviewCache` builds
+the preview for a model that has not had one this session. Each drag in the
+measurement hit a different model, so each paid the first-time cost; two drags
+that missed a model were 6.2 ms.
+
+Two things to check next, in this order:
+
+1. **Should a model without hollowing warm a preview at all?** The effect falls
+   back to `defaultHollowingState` when `meshModifiers.hollowing` is absent, so a
+   plain move voxelizes a model nobody asked to hollow.
+2. **Does the preview key need the transform?** `buildHollowPreviewRequest` keys
+   on the geometry version and on `rotationQuat`, so a transform that re-bakes
+   geometry re-stages the mesh even when the hollowing-relevant inputs (local
+   shape + rotation) are unchanged.
+
+The lesson from the two rounds above: the support-side write costs are now per
+model, and `prepare-mode:layer` (845 ms at load) is a separate, still-open cost.
 
 ## Fixed: every tool switch re-merged the whole plate's supports
 
