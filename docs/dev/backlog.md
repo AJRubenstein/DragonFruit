@@ -1657,6 +1657,36 @@ What is left, in the order it pays:
    (`SCENE_HISTORY_MAX_SPILLED_BYTES`); a session that clears many large scenes
    evicts the oldest entries (and their undo) rather than filling the disk.
 
+## Fixed: every tool switch re-merged the whole plate's supports
+
+Switching Prepare's Drag ↔ Arrange tools (and switching plates) stuttered the
+camera transition on a supported plate. Measured on the 20-model, 20,683-support
+scene in a **production** build over a 2 s window after the click:
+
+| phase | fps | p95 | worst frame |
+| --- | ---: | ---: | ---: |
+| before → Arrange | 133.7 | 18.2 ms | 127.3 ms |
+| before → Drag | 141.1 | 18.1 ms | 30.4 ms |
+| after → Arrange (warm) | 164.5 | 6.1 ms | 18.1 ms |
+| after → Drag | 165.0 | 6.2 ms | 12.1 ms |
+
+The cause was an identity, not work: `SceneCanvas` was handed
+`cavityGeometryByModelId={new Map(...)}` **inline in JSX**, so every page render
+produced a new Map. The Prepare merged-support cache keys its walk on that map,
+so any re-render — a tool switch, a plate switch, a selection — invalidated the
+walk and re-merged all 20 models. Instrumented with the cache's own counters,
+each toggle cost `walks +1…2, builds +20`.
+
+The map is now memoized on `cavityGeometryVersion`, which the hollowing manager
+bumps on every mutation of the ref, so its identity changes only when a cavity
+does.
+
+`supportBoundsByModelId` (page.tsx) also re-walked the forest on every entry to
+Arrange. It is pure over (support snapshot, raft settings), so its result is
+cached in a WeakMap keyed by the snapshot; consumers already clone the boxes.
+The first Arrange after a support change still pays that walk (~109 ms worst
+frame on the scene above) and later entries are ~18 ms.
+
 ## Known: Select-mode hover and selection pay per support
 
 Outside support mode the supports draw through `SupportProxyMeshLayer`'s four

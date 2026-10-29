@@ -463,6 +463,14 @@ type PendingModifierResetAction = 'hollowing' | 'hole_punch' | 'clear_hollowing'
 
 const EMPTY_SUPPORT_BOUNDS_BY_MODEL_ID = new Map<string, THREE.Box3>();
 
+/**
+ * Support bounds per support snapshot, so entering Arrange does not re-walk the
+ * whole forest every time. The memo below is pure over (support snapshot, raft
+ * settings); a tool switch changes neither, only the gate that asks for the map.
+ * Consumers clone what they read, so sharing the cached boxes is safe.
+ */
+const supportBoundsCache = new WeakMap<object, { raft: object; bounds: Map<string, THREE.Box3> }>();
+
 function countRecordEntries(record: Record<string, unknown>): number {
   let count = 0;
   for (const _key in record) {
@@ -7530,6 +7538,9 @@ export default function Home() {
       return EMPTY_SUPPORT_BOUNDS_BY_MODEL_ID;
     }
 
+    const cached = supportBoundsCache.get(supportStateSnapshot);
+    if (cached && cached.raft === raftSettingsSnapshot) return cached.bounds;
+
     const boundsByModelId = new Map<string, THREE.Box3>();
 
     const ensureBounds = (modelId: string) => {
@@ -7653,6 +7664,7 @@ export default function Home() {
       expand(modelId, knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2));
     }
 
+    supportBoundsCache.set(supportStateSnapshot, { raft: raftSettingsSnapshot, bounds: boundsByModelId });
     return boundsByModelId;
   }, [
     scene.mode,
@@ -8319,6 +8331,25 @@ export default function Home() {
     if (scene.mode === 'printing') return [] as string[];
     return scene.selectedModelIds;
   }, [scene.mode, scene.selectedModelIds]);
+
+  /**
+   * The cavity map the scene reads, rebuilt only when a cavity actually changes.
+   *
+   * The ref cannot be handed to the scene directly: its identity never changes,
+   * so a consumer keyed on "the inputs moved" would never see an update. But a
+   * fresh Map per render is worse — the Prepare merged-support cache keys on this
+   * map, so every unrelated render (a tool switch, a selection) invalidated the
+   * walk and re-merged every model, which is a second of work landing on the
+   * camera transition that triggered it. `cavityGeometryVersion` is bumped on
+   * every mutation of the ref, so it is the correct trigger.
+   */
+  const sceneCanvasCavityGeometryByModelId = React.useMemo(
+    () => new Map(
+      Array.from(cavityGeometryByModelIdRef.current.entries()).map(([id, entry]) => [id, entry.geometry]),
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the ref is stable; the version is its change signal
+    [cavityGeometryVersion],
+  );
 
   React.useEffect(() => {
     if (scene.mode !== 'support') return;
@@ -10936,7 +10967,7 @@ export default function Home() {
               }
               setPlateTrashIntent(intent);
             }}
-            cavityGeometryByModelId={new Map(Array.from(cavityGeometryByModelIdRef.current.entries()).map(([id, entry]) => [id, entry.geometry]))}
+            cavityGeometryByModelId={sceneCanvasCavityGeometryByModelId}
             disableRaycast={transformMgr.isTransforming}
             hideCrossSectionCap={false}
             onCameraChange={handleCameraChange}
