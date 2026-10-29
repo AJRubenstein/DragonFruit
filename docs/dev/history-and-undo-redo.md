@@ -238,8 +238,12 @@ printer and support state stay in the pair, so the existing
   `before`/`after` pair after the scratch file is read. Missing scratch data
   declines the restore rather than applying a half-empty mesh.
 - `releaseGeometryStorage` drops attributes, index, morph data, BVH and the
-  centered-position cache after the write. GPU disposal alone left the arrays
-  alive behind stale fibers and render lists.
+  centered-position cache. GPU disposal alone left the arrays alive behind
+  stale fibers and render lists. It is only used for geometry nothing can draw
+  any more: the deferred-disposal queue and the merged-support cache keep their
+  arrays (a swapped mesh or a replaced preview entry can still be in a render
+  list for a frame), and eviction schedules the release on an idle callback
+  that re-checks the retained set before touching anything.
 - Scratch files are removed when an entry is evicted, and
   `pruneSpilledSceneSnapshots` removes orphans on startup.
 

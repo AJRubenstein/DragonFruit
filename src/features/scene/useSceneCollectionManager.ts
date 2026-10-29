@@ -562,25 +562,28 @@ function releaseGeometryStorage(geometry: THREE.BufferGeometry): void {
  * clipboard still references it. Deleting a registry entry alone leaves the
  * renderer's attribute buffers and the mesh arrays resident for the rest of the
  * session, which is why an emptied scene used to keep its whole RAM footprint.
+ *
+ * The release runs on an idle callback and re-checks the retained set there:
+ * the frame that stopped drawing these geometries must finish first, and an
+ * undo that lands in between puts one of them back in the scene.
  */
 function disposeEvictedSnapshot(pair: SceneSnapshotPair): void {
-  const retained = new Set<THREE.BufferGeometry>();
-  for (const remaining of sceneSnapshotRegistry.values()) {
-    for (const model of remaining.before.models) modelGeometries(model).forEach((geometry) => retained.add(geometry));
-    for (const model of remaining.after.models) modelGeometries(model).forEach((geometry) => retained.add(geometry));
-  }
-  for (const model of liveModelsProvider?.() ?? []) {
-    for (const geometry of modelGeometries(model)) retained.add(geometry);
-  }
-  for (const geometry of extraRetainedGeometriesProvider?.() ?? []) retained.add(geometry);
-
   const candidates = new Set<THREE.BufferGeometry>();
   for (const model of pair.before.models) modelGeometries(model).forEach((geometry) => candidates.add(geometry));
   for (const model of pair.after.models) modelGeometries(model).forEach((geometry) => candidates.add(geometry));
+  if (candidates.size === 0) return;
 
-  for (const geometry of candidates) {
-    if (retained.has(geometry)) continue;
-    releaseGeometryStorage(geometry);
+  const release = () => {
+    const retained = retainedSnapshotGeometries('');
+    for (const geometry of candidates) {
+      if (retained.has(geometry)) continue;
+      releaseGeometryStorage(geometry);
+    }
+  };
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(release, { timeout: 500 });
+  } else {
+    setTimeout(release, 50);
   }
 }
 
