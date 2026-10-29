@@ -4102,6 +4102,16 @@ export function SceneCanvas({
     clientY: number;
   } | null>(null);
   const dragCornerCageRefs = React.useRef<Record<string, THREE.LineSegments | null>>({});
+  /**
+   * The corner buffer per model, created once.
+   *
+   * `<bufferAttribute args={[...]} />` recreates the attribute whenever `args`
+   * changes, and a freshly built `Float32Array` changes identity on every
+   * render — which wiped the positions the cage had just written. That is why
+   * the corners flickered on a press and only settled once a move kept
+   * rewriting them. Each model needs its own buffer: the cage writes into it.
+   */
+  const dragCornerCagePositionsRef = React.useRef(new Map<string, [Float32Array, number]>());
   const dragCornerCagePrimeRafRef = React.useRef<number | null>(null);
   const dragCornerCageUpdateRafRef = React.useRef<number | null>(null);
   const dragCornerCageBaseBoundsRef = React.useRef<Record<string, THREE.Box3>>({});
@@ -7217,7 +7227,13 @@ export function SceneCanvas({
                 : null}
 
               {!thumbnailCaptureActive && dragCornerCageModelIds.length > 0
-                ? dragCornerCageModelIds.map((modelId) => (
+                ? dragCornerCageModelIds.map((modelId) => {
+                  let cageArgs = dragCornerCagePositionsRef.current.get(modelId);
+                  if (!cageArgs) {
+                    cageArgs = [buildEmptyCornerOnlyWireframePositions(), 3];
+                    dragCornerCagePositionsRef.current.set(modelId, cageArgs);
+                  }
+                  return (
                     <lineSegments
                       key={`drag-corner-cage-${modelId}`}
                       ref={(node) => {
@@ -7229,7 +7245,7 @@ export function SceneCanvas({
                       <bufferGeometry>
                         <bufferAttribute
                           attach="attributes-position"
-                          args={[buildEmptyCornerOnlyWireframePositions(), 3]}
+                          args={cageArgs}
                         />
                       </bufferGeometry>
                       <lineBasicMaterial
@@ -7242,7 +7258,8 @@ export function SceneCanvas({
                         depthTest={false}
                       />
                     </lineSegments>
-                  ))
+                  );
+                })
                 : null}
 
               {!thumbnailCaptureActive && activeBuildVolumeSettings?.enabled && buildVolumeBoxGeometry && buildVolumeEdgeGeometry && (
