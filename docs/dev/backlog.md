@@ -1790,9 +1790,21 @@ makes the first commit expensive — but it charges nothing on later commits, an
   and tiles and re-upload every support instance.
 - The walks behind the proxy and the bounds are per-model (earlier commits).
 
-Next: instrument the first-commit path per model — the merged entry's first
-build, the model geometry's first GPU upload, and the proxy's first tile upload —
-rather than the steady-state commit, which is already clean.
+The in-app render profiler (`Ctrl+Shift+P`, and `window.__dfProfiler` from
+`perfProbe`) settles the renderer side: with GPU sync probes requested,
+`gpuTiming` comes back `unavailable` (no `EXT_disjoint_timer_query` in this
+WebView2), and the recorded passes top out at **8 ms of CPU**. Nothing in the
+frame's JavaScript is the stall.
+
+So the cost is one-time GPU work for the model being committed: its support
+instance buffers and merged geometry are allocated and uploaded on that model's
+first commit, and reused afterwards. Verifying that needs one of:
+
+- pre-warming the upload in idle (draw the model's layer once off-screen, or
+  allocate its tiles with a zero-count draw) and confirming the first commit
+  drops to the steady-state cost;
+- or reading GPU memory counters (`gl.info.memory`) across the first and second
+  commit, which only move if the stall is an allocation.
 
 ## Known: selecting a model costs one frame on its own
 

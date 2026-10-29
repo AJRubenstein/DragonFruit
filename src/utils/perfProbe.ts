@@ -24,3 +24,24 @@ export function perfLayerEnabled(name: 'merged' | 'proxy' | 'mergedMesh' | 'shap
   const layers = (window as unknown as { __dfLayers?: Partial<Record<'merged' | 'proxy' | 'mergedMesh' | 'shapes' | 'rafts' | 'overlay', boolean>> }).__dfLayers;
   return layers?.[name] !== false;
 }
+
+/**
+ * Temporary handle on the in-app render profiler, so a CDP session can turn it
+ * on, force GPU sync probes and read the per-pass samples without a debug UI.
+ *
+ * The profiler module is imported on first use, so a session that never asks
+ * pays nothing.
+ */
+export function installPerfProfilerHandle(): void {
+  if (typeof window === 'undefined') return;
+  const target = window as unknown as { __dfProfiler?: unknown };
+  if (target.__dfProfiler) return;
+  const profiler = () => import('@/utils/debug/renderProfiler');
+  target.__dfProfiler = {
+    enable: async () => { (await profiler()).setRenderProfilerEnabled(true); },
+    disable: async () => { (await profiler()).setRenderProfilerEnabled(false); },
+    probe: async (frames = 30) => { (await profiler()).startGpuSyncProbe(frames); },
+    snapshot: async () => (await profiler()).getRenderProfilerSnapshot(),
+    log: async () => (await profiler()).logRenderProfileSummary(),
+  };
+}
