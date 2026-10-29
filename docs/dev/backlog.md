@@ -1291,17 +1291,37 @@ before and after):
   axes as scalars and materialises only the vectors its thickness resolver
   takes. Together that removed the frustum check from the top of the profile
   (179 ms → 59 ms across the three-model profile).
+- **The plan's draft is owned** (`createOwnedDraft`, `supportDraft.ts`): its
+  collections are copied on first write and mutated in place. Every placement
+  and every consolidation link used to spread `{ ...draft, [key]: { ... } }`,
+  which copied a several-hundred-entry collection (and the roots map) per
+  support — about 0.9 ms per copy on the slab fixture. Chunk consolidation also
+  stopped copying a pruned draft per host: the pillar being replaced is passed
+  as `excludeHostIds` and deleted after the link builds.
+- **The fan pool is walked per host, not per sample.**
+  `fanLeafToHost` / `buildConsolidationBranch` resolved the host entity (and the
+  grid-host flag) once per sample — tens of thousands of dictionary reads per
+  attempt. Both now resolve per host, unchanged for the pool's host-ordered
+  samples. `leafPathCrossesSupports` walks the host collections directly instead
+  of allocating a ref object per host per call.
+- `generateGridCandidates` materialises the footprint as `{x,y,z}` objects only
+  when the voxel fallback sampler is actually used; the triangle surface, when
+  available, no longer pays for a 112k-object array per region.
+
+Measured on the 7-model corpus (`npm run bench:auto-supports`, output identical
+to the golden baseline): 4.45 s → 3.37 s total; the 623-support overhang slab
+2.67 s → 1.54 s, its consolidation phase 1.56 s → 0.7 s.
 
 Still open, in the order a profile says they pay:
 
-1. `generateGridCandidates` materialises the whole footprint as `{x,y,z}`
-   objects (`footprintToPoints`) before eroding and walking it — 112k objects
-   for a large region. The mask-native path is a typed-array API.
-2. `fanLeafToHost` / `buildConsolidationBranch` call `getSupportTypeDescriptor`
-   per candidate host sample, and their reach is a linear walk of the whole
-   shaft pool. Registry lookups want hoisting; the pool wants a spatial index.
-3. `isAutoBraceableShaftType` / `lateralStabiliserTypes` rebuild their
-   filter+map+Set on every call, and they are called per sample.
+1. The fan pool is still a linear walk of every sample for every attempt. It
+   wants a per-pass spatial index (XY buckets, radius queries) with tombstones
+   for converted hosts.
+2. `countAttachmentsOnHost` walks every knot in the draft for every host
+   considered, so consolidation pays `hosts × knots`; a parent-shaft index per
+   pass would make it O(1).
+3. `computeForestDiameterProfile` (the forest-resize phase) is now the largest
+   single phase after placement on the slab (~140-200 ms of 1.5 s).
 
 **The responsiveness fix was architectural, not micro-optimisation.** The plan is
 pure with respect to the stores it *writes* (one commit at the end), which is
