@@ -494,6 +494,79 @@ function sameCollectionRefs(a: readonly unknown[] | null | undefined, b: readonl
   return true;
 }
 
+type SupportEntityRecord = Record<string, unknown>;
+
+/**
+ * The support store sliced by model, built once per collection change.
+ *
+ * The bounds walk below asks "which of this model's supports exist?" for every
+ * model, and it used to answer by scanning every collection each time — O(models
+ * × entities), which on a 20-model supported plate is ~400k visits plus a
+ * `Object.values` allocation per collection per model. Any support write (a
+ * model move rewrites its supports) invalidated all of it, so a commit paid the
+ * whole walk for a plate that had not changed shape.
+ */
+type SupportBoundsIndex = {
+  /** Entities per type collection, per model id. */
+  entitiesByTypeByModel: Map<string, Map<string, SupportEntityRecord[]>>;
+  rootsByModel: Map<string, SupportEntityRecord[]>;
+  /** The knots each model's supports hang from, resolved to knots. */
+  knotsByModel: Map<string, SupportEntityRecord[]>;
+};
+
+const EMPTY_SUPPORT_ENTITIES: SupportEntityRecord[] = [];
+
+function buildSupportBoundsIndex(state: {
+  roots?: Record<string, SupportEntityRecord>;
+  knots?: Record<string, SupportEntityRecord>;
+} & Record<string, unknown>): SupportBoundsIndex {
+  const entitiesByTypeByModel = new Map<string, Map<string, SupportEntityRecord[]>>();
+  const rootsByModel = new Map<string, SupportEntityRecord[]>();
+  const knotIdsByModel = new Map<string, Set<string>>();
+
+  for (const root of Object.values(state.roots ?? {})) {
+    const modelId = root.modelId as string | undefined;
+    if (!modelId) continue;
+    const bucket = rootsByModel.get(modelId);
+    if (bucket) bucket.push(root);
+    else rootsByModel.set(modelId, [root]);
+  }
+
+  for (const descriptor of SUPPORT_TYPES) {
+    const collection = state[descriptor.location.key] as Record<string, SupportEntityRecord> | undefined;
+    if (!collection) continue;
+    const knotFields = hostKnotFieldsFor(descriptor.id);
+    const byModel = new Map<string, SupportEntityRecord[]>();
+    for (const entity of Object.values(collection)) {
+      const modelId = entity.modelId as string | undefined;
+      if (!modelId) continue;
+      const bucket = byModel.get(modelId);
+      if (bucket) bucket.push(entity);
+      else byModel.set(modelId, [entity]);
+      if (knotFields.length === 0) continue;
+      let knotIds = knotIdsByModel.get(modelId);
+      if (!knotIds) { knotIds = new Set<string>(); knotIdsByModel.set(modelId, knotIds); }
+      for (const field of knotFields) {
+        const knotId = entity[field];
+        if (typeof knotId === 'string') knotIds.add(knotId);
+      }
+    }
+    entitiesByTypeByModel.set(descriptor.location.key, byModel);
+  }
+
+  const knotsByModel = new Map<string, SupportEntityRecord[]>();
+  for (const [modelId, knotIds] of knotIdsByModel) {
+    const knots: SupportEntityRecord[] = [];
+    for (const knotId of knotIds) {
+      const knot = state.knots?.[knotId];
+      if (knot) knots.push(knot);
+    }
+    if (knots.length > 0) knotsByModel.set(modelId, knots);
+  }
+
+  return { entitiesByTypeByModel, rootsByModel, knotsByModel };
+}
+
 export function SceneCanvas({
   models: modelsProp = [],
   activeModelId: activeModelIdProp,
@@ -2006,8 +2079,17 @@ export function SceneCanvas({
     return computed;
   }, [isGizmoDragging, isGizmoRetargeting, raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
 
-  const computeSupportAndRaftWorldBoundsUncached = React.useCallback((modelId: string): THREE.Box3 | null => {
+  const supportBoundsIndexCacheRef = React.useRef<{ refs: readonly unknown[]; index: SupportBoundsIndex } | null>(null);
+  const supportBoundsIndex = React.useMemo(() => {
+    const refs = SUPPORT_COLLECTION_KEYS.map((key) => supportStateForBounds[key]);
+    const cached = supportBoundsIndexCacheRef.current;
+    if (cached && sameCollectionRefs(cached.refs, refs)) return cached.index;
+    const index = buildSupportBoundsIndex(supportStateForBounds as unknown as Record<string, unknown>);
+    supportBoundsIndexCacheRef.current = { refs, index };
+    return index;
+  }, [supportStateForBounds]);
 
+  const computeSupportAndRaftWorldBoundsUncached = React.useCallback((modelId: string): THREE.Box3 | null => {
     const bounds = new THREE.Box3();
     let hasAny = false;
     const BUILD_PLATE_Z = 0;
@@ -2020,51 +2102,34 @@ export function SceneCanvas({
       hasAny = true;
     };
 
-    const rootsForModel = Object.values(supportStateForBounds.roots).filter((root) => root.modelId === modelId);
+    const rootsForModel = supportBoundsIndex.rootsByModel.get(modelId) ?? EMPTY_SUPPORT_ENTITIES;
     for (const root of rootsForModel) {
-      const rootRadius = Math.max(0.001, root.diameter / 2);
-      const rootBase = root.transform.pos;
+      const rootRadius = Math.max(0.001, (root.diameter as number) / 2);
+      const rootBase = (root.transform as { pos: { x: number; y: number; z: number } }).pos;
       const rootTop = {
-        x: root.transform.pos.x,
-        y: root.transform.pos.y,
-        z: root.transform.pos.z + Math.max(0, root.diskHeight) + Math.max(0, root.coneHeight),
+        x: rootBase.x,
+        y: rootBase.y,
+        z: rootBase.z + Math.max(0, root.diskHeight as number) + Math.max(0, root.coneHeight as number),
       };
       expandByRadius(rootBase, rootRadius);
       expandByRadius(rootTop, rootRadius);
     }
 
     // The knots this model's supports hang from, read through each type's
-    // declared `hostedBy` knot edges.
-    const modelKnotIds = new Set<string>();
-    for (const descriptor of SUPPORT_TYPES) {
-      const knotFields = hostKnotFieldsFor(descriptor.id);
-      if (knotFields.length === 0) continue;
-      const collection = supportStateForBounds[descriptor.location.key] as unknown as
-        Record<string, Record<string, unknown>> | undefined;
-      for (const entity of Object.values(collection ?? {})) {
-        if (entity.modelId !== modelId) continue;
-        for (const field of knotFields) {
-          const knotId = entity[field];
-          if (typeof knotId === 'string') modelKnotIds.add(knotId);
-        }
-      }
-    }
-
-    for (const knotId of modelKnotIds) {
-      const knot = supportStateForBounds.knots[knotId];
-      if (!knot?.pos) continue;
-      expandByRadius(knot.pos, Math.max(0.001, (knot.diameter ?? 1.2) / 2));
+    // declared `hostedBy` knot edges. The index resolves them once per model.
+    for (const knot of supportBoundsIndex.knotsByModel.get(modelId) ?? EMPTY_SUPPORT_ENTITIES) {
+      const knotPos = knot.pos as { x: number; y: number; z: number } | undefined;
+      if (!knotPos) continue;
+      expandByRadius(knotPos, Math.max(0.001, ((knot.diameter as number | undefined) ?? 1.2) / 2));
     }
 
     // Each type's base, for the types that carry one instead of a Roots entry:
     // the frustum IS the root. Nothing else here is type-specific, so the rest
     // of such a type is covered by the segment and contact passes below.
     for (const placement of INLINE_ROOT_TYPES) {
-      const entities = supportStateForBounds[placement.collectionKey] as unknown as
-        | Record<string, Record<string, unknown>>
-        | undefined;
-      for (const entity of Object.values(entities ?? {})) {
-        if (entity.modelId !== modelId) continue;
+      const entities = supportBoundsIndex.entitiesByTypeByModel.get(placement.collectionKey)?.get(modelId)
+        ?? EMPTY_SUPPORT_ENTITIES;
+      for (const entity of entities) {
         const base = entity[placement.posField] as { x: number; y: number; z: number } | undefined;
         const radius = entity[placement.radiusField];
         if (!base) continue;
@@ -2079,15 +2144,12 @@ export function SceneCanvas({
     // two radii; a disk's socket is the joint the segment pass already
     // expanded, so it contributes one.
     for (const descriptor of SUPPORT_TYPES) {
-      const entities = supportStateForBounds[descriptor.location.key] as unknown as
-        | Record<string, Record<string, unknown>>
-        | undefined;
+      const entities = supportBoundsIndex.entitiesByTypeByModel.get(descriptor.location.key)?.get(modelId)
+        ?? EMPTY_SUPPORT_ENTITIES;
       // Read once per type, not once per entity: this allocates.
       const contactEndpoints = contactEndpointsFor(descriptor.id);
 
-      for (const entity of Object.values(entities ?? {})) {
-        if (entity.modelId !== modelId) continue;
-
+      for (const entity of entities) {
         // The two passes are not the same set of types: a leaf declares a
         // contact and no segments, so skipping a type for having no shaft would
         // drop its tip from the bounds entirely.
@@ -2165,7 +2227,7 @@ export function SceneCanvas({
     }
 
     return hasAny ? bounds : null;
-  }, [raftBaseCirclesByModelKey, raftSettingsForBounds, supportStateForBounds]);
+  }, [raftBaseCirclesByModelKey, raftSettingsForBounds, supportBoundsIndex]);
 
   const computeModelWorldBounds = React.useCallback((
     model: LoadedModel,

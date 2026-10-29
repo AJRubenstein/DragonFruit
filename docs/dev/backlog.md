@@ -1687,18 +1687,27 @@ to p95 12.2 ms, and the curved-shaft stall is gone from the log.
 ## Known: a model move still re-lays out the support proxy in render
 
 With the tube build sliced, the pointerup of a model drag still blocks one frame
-for ~350 ms (p95 stays 6.2 ms — it is a single hitch). The stall detector's
-activity for the load-time version of the same cost is `prepare-mode:layer`, and
-the commit profile also shows native IPC traffic (`fetch` plus the webview's
-message sends), so there are two candidates to separate before optimising:
+for ~290–350 ms (p95 stays 6.1 ms — it is a single hitch, and three drags in one
+session show it only on the ones that actually commit a model: 165.8 fps and a
+6.2 ms worst frame on the misses). Two costs were in that frame:
 
-1. `ModelAttachedSupportLayer` → `SupportProxyMeshLayer` re-collects and
-   re-tiles the plate's supports inside render when the support state changes.
-   The fix is the stale-while-rebuild pattern the Prepare merged layer already
-   uses: keep the previous layout drawn, build the next one in idle slices.
-2. The autosave/persistence path touching IPC on the same commit; it should be
-   debounced past the gesture (the persistence effect already runs after the
-   transform effect, but the encode is still on this thread).
+- **Fixed, and it was not the bulk.** The out-of-bounds walk
+  (`computeSupportAndRaftWorldBounds`) answered "which of this model's supports
+  exist?" once per model by scanning every collection: O(models × entities),
+  ~20 × 20,683 visits per commit, each with an `Object.values` allocation per
+  collection per model. It now reads a per-model index built once per collection
+  change (`buildSupportBoundsIndex` in `SceneCanvas.tsx`), so a commit is O(n).
+  The release hitch fell from ~351 ms to ~290 ms. Lesson for the next pass:
+  a quadratic walk is worth fixing on its own, but measure before assuming it is
+  the observed stall.
+- **Open.** `SupportProxyMeshLayer` re-collects and re-tiles the plate's
+  supports inside render when the support state changes — `prepare-mode:layer`
+  is the stall detector's activity for it, and the load-time version of the same
+  cost is 845 ms. The fix is the stale-while-rebuild pattern the Prepare merged
+  layer already uses (keep the previous layout drawn, build in idle slices), but
+  the walk itself has to be sliced per type/collection to stop being a 290 ms
+  task in idle. The autosave/persistence path also still touches IPC on the same
+  commit; it should be debounced past the gesture.
 
 ## Fixed: every tool switch re-merged the whole plate's supports
 
