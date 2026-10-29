@@ -689,6 +689,23 @@ async function spillSnapshotsOverBudget(): Promise<void> {
   trimSpilledSnapshots();
 }
 
+/**
+ * Rough bytes of a snapshot's support state.
+ *
+ * The pair owns a deep copy (`clonePlainData`), and a supported plate is tens of
+ * thousands of entities — measured at ~14 MB for the 20-model VFX scene. Without
+ * this the ~300 MB budget never sees them: 200 entries of a supported plate are
+ * retained with nothing accounting for their cost. Spilling a pair clears its
+ * support states too, so the budget drives them out rather than destroying undo.
+ */
+const SUPPORT_ENTITY_BYTES = 700;
+function estimateSnapshotSupportBytes(snapshot: SceneSnapshot): number {
+  const state = snapshot.supportState;
+  if (!state) return 0;
+  const entities = state.supports ? Object.keys(state.supports).length : 0;
+  return entities * SUPPORT_ENTITY_BYTES;
+}
+
 // Counts each distinct BufferGeometry ONCE, because that is what the process
 // actually holds: cloneLoadedModel is a shallow clone, so every snapshot that
 // didn't change the mesh shares the same geometry object. A move stores two
@@ -699,6 +716,9 @@ async function spillSnapshotsOverBudget(): Promise<void> {
 // threw away undo entries that cost nothing -- their scene snapshots went with
 // them, and undoing those actions was silently declined and discarded. Only
 // geometry a step genuinely creates (a cut, a hollow) adds to the total now.
+//
+// Support states are the exception: each pair owns its own copy, so they count
+// once per half.
 function estimateSceneSnapshotRegistryBytes(): number {
   const counted = new Set<THREE.BufferGeometry>();
   let total = 0;
@@ -712,6 +732,7 @@ function estimateSceneSnapshotRegistryBytes(): number {
   for (const pair of sceneSnapshotRegistry.values()) {
     pair.before.models.forEach(add);
     pair.after.models.forEach(add);
+    total += estimateSnapshotSupportBytes(pair.before) + estimateSnapshotSupportBytes(pair.after);
   }
   return total;
 }

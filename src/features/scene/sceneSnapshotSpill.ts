@@ -205,7 +205,11 @@ export async function spillSceneSnapshotPair(
   const candidates = allGeometries.filter((geometry) => (
     canSpill(geometry) && canSerializeGeometry(geometry)
   ));
-  if (candidates.length === 0) return false;
+  const supportPending = Boolean(pair.before.supportState) || Boolean(pair.after.supportState);
+  // A pair whose geometry is shared with the live scene can still be holding the
+  // support state — a transform commit deep-clones it twice, and that is tens of
+  // MB on a supported plate. It spills on its own.
+  if (candidates.length === 0 && !supportPending) return false;
 
   inFlightSpills.add(key);
   let fileHandle: FileSystemFileHandle | null = null;
