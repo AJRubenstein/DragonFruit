@@ -4096,6 +4096,11 @@ export function SceneCanvas({
     setMultiGizmoAnchorPosition(multiGizmoCenter);
   }, [isMultiGizmoSelection, multiGizmoCenter, setMultiGizmoAnchorPosition]);
 
+  const selectDragCandidateRef = React.useRef<{
+    modelId: string;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
   const dragCornerCageRefs = React.useRef<Record<string, THREE.LineSegments | null>>({});
   const dragCornerCagePrimeRafRef = React.useRef<number | null>(null);
   const dragCornerCageUpdateRafRef = React.useRef<number | null>(null);
@@ -4214,9 +4219,15 @@ export function SceneCanvas({
     // the drag — not just while the model is actively moving — and it follows the
     // model as it moves.
     if (transformMode === 'select') {
-      if (!activeModelId) return [] as string[];
+      // The cage follows the model the pointer is on, not the active model: a
+      // press on another model sets the candidate in the same event, while
+      // `activeModelId` only arrives with the next commit. Reading the active
+      // model here drew the *previous* model's corners for the frames in
+      // between.
+      const targetModelId = selectDragCandidateRef.current?.modelId ?? activeModelId;
+      if (!targetModelId) return [] as string[];
       if (!selectDragPressed && !isGizmoDragging) return [] as string[];
-      return modelById.get(activeModelId)?.visible ? [activeModelId] : ([] as string[]);
+      return modelById.get(targetModelId)?.visible ? [targetModelId] : ([] as string[]);
     }
     if (transformMode !== 'transform') return [] as string[];
     if (!isGizmoDragging || !activeModelId) return [] as string[];
@@ -4232,10 +4243,14 @@ export function SceneCanvas({
   }, [activeModelId, isGizmoDragging, isMultiGizmoSelection, mode, modelById, selectDragPressed, selectedTransformableModelIds, transformMode]);
 
   const updateDragCornerCagesNow = React.useCallback(() => {
+    const activeCageIds = new Set(dragCornerCageModelIds);
+    // A cage whose model is no longer in the set must not keep drawing, however
+    // briefly: a mount that React has not retired yet would still render.
+    for (const [modelId, line] of Object.entries(dragCornerCageRefs.current)) {
+      if (line && !activeCageIds.has(modelId)) line.visible = false;
+    }
+
     if (dragCornerCageModelIds.length === 0) {
-      Object.values(dragCornerCageRefs.current).forEach((line) => {
-        if (line) line.visible = false;
-      });
       return;
     }
 
@@ -6231,11 +6246,6 @@ export function SceneCanvas({
   // actually begins once the pointer crosses a small threshold, by which time
   // the click-to-select state has flushed and the newly selected model is active.
   const SELECT_DRAG_START_DIST_SQ = 25; // ~5px of travel before a press becomes a move
-  const selectDragCandidateRef = React.useRef<{
-    modelId: string;
-    clientX: number;
-    clientY: number;
-  } | null>(null);
   const selectDragActiveRef = React.useRef(false);
   const selectDragPlaneRef = React.useRef<THREE.Plane | null>(null);
   const selectDragLastPointRef = React.useRef<THREE.Vector3 | null>(null);
