@@ -3919,7 +3919,7 @@ export function SceneCanvas({
     cavityGeometryByModelId,
     modelWorldInverseById,
     liveModelIds: prepareMergedSupportLiveModelIds,
-    suspended: isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || selectDragPressed || isCameraFocusTransitionActive,
+    suspended: isOrbitInteracting || isWheelZoomInteracting || spaceMouseNavigationActive || isGizmoDragging || selectDragPressed || isCameraFocusTransitionActive || cameraIntroRunId > cameraIntroCompletedRunId,
   });
 
   // Models whose supports the merged meshes draw, so the world support proxy

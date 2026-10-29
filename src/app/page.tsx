@@ -6752,11 +6752,25 @@ export default function Home() {
         Math.abs(current.rotation.y - modelTransform.rotation.y) > EPSILON ||
         Math.abs(current.rotation.z - modelTransform.rotation.z) > EPSILON;
       const scaleChanged = current.scale.distanceToSquared(modelTransform.scale) > EPSILON;
+      /**
+       * Only a transform that is not a rigid translation changes the supports'
+       * relation to the model: rotation and scale re-resolve contacts against the
+       * surface. A plain drag is a translation, and its undo step is the same
+       * delta — so it needs the two transforms, not a second copy of a
+       * 20,000-entity support store. Two clones per gesture is what made the
+       * pointerup of a drag hitch.
+       *
+       * A Z change counts too, but only on the gesture's first update: that is
+       * the one moment the store still holds the pre-drag state, so a snapshot
+       * taken there is exact. Later updates take the delta path.
+       */
+      const zChanged = Math.abs(current.position.z - modelTransform.position.z) > EPSILON;
+      const needsSupportState = rotChanged || scaleChanged || zChanged;
 
       if (posChanged || rotChanged || scaleChanged) {
         const pending = pendingTransformHistoryRef.current;
         if (!pending || pending.modelId !== scene.activeModelId) {
-          const beforeSupportSnapshot = captureTransformSupportSnapshot();
+          const beforeSupportSnapshot = needsSupportState ? captureTransformSupportSnapshot() : null;
           pendingTransformHistoryRef.current = {
             modelId: scene.activeModelId,
             before: {
@@ -6770,7 +6784,7 @@ export default function Home() {
               scale: current.scale.clone(),
             },
             description: pending?.description,
-            supportBefore: beforeSupportSnapshot.support,
+            supportBefore: beforeSupportSnapshot?.support,
           };
         } else {
           pending.after = {
@@ -6783,10 +6797,9 @@ export default function Home() {
         const isDirectTransformPath = !transformMgr.pendingTransformRef.current;
         scene.updateModelTransform(scene.activeModelId, current);
 
-        const afterSupportSnapshot = captureTransformSupportSnapshot();
         const pendingAfter = pendingTransformHistoryRef.current;
-        if (pendingAfter && pendingAfter.modelId === scene.activeModelId) {
-          pendingAfter.supportAfter = afterSupportSnapshot.support;
+        if (needsSupportState && pendingAfter && pendingAfter.modelId === scene.activeModelId) {
+          pendingAfter.supportAfter = captureTransformSupportSnapshot().support;
         }
 
         if (isDirectTransformPath) {

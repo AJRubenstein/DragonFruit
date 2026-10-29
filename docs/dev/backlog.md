@@ -1657,6 +1657,49 @@ What is left, in the order it pays:
    (`SCENE_HISTORY_MAX_SPILLED_BYTES`); a session that clears many large scenes
    evicts the oldest entries (and their undo) rather than filling the disk.
 
+## Fixed: support batches built their swept tubes inside render
+
+The support proxy's curved shafts are merged into one tube mesh per colour. That
+merge ran in a `useMemo` on the render thread, and a supported plate's batch is
+thousands of swept curves: the stall detector reported
+
+```
+[stall] Main thread blocked for 949 ms — activity: support-mode:curved-shaft-tubes
+```
+
+right after a 20-model scene loaded — i.e. during the camera intro, and again at
+the commit of a model move. Two changes:
+
+- the merge writes preallocated `Float32Array`/`Uint32Array` buffers instead of
+  pushing three floats and one index at a time into plain arrays (output byte-
+  identical; the builder's tests pass unchanged);
+- the per-shaft `TubeGeometry` builds happen in idle slices of 160, and the
+  previous batch stays drawn until the new one is assembled. `tubeGeometryCache`
+  is keyed by shaft, so a move only regenerates the shafts that actually changed.
+
+The merged-support cache is also suspended during the intro
+(`cameraIntroRunId > cameraIntroCompletedRunId`), not just during orbit and
+camera-focus transitions.
+
+Measured on the same load: the intro window went from p95 18.2 ms / max 1200 ms
+to p95 12.2 ms, and the curved-shaft stall is gone from the log.
+
+## Known: a model move still re-lays out the support proxy in render
+
+With the tube build sliced, the pointerup of a model drag still blocks one frame
+for ~350 ms (p95 stays 6.2 ms — it is a single hitch). The stall detector's
+activity for the load-time version of the same cost is `prepare-mode:layer`, and
+the commit profile also shows native IPC traffic (`fetch` plus the webview's
+message sends), so there are two candidates to separate before optimising:
+
+1. `ModelAttachedSupportLayer` → `SupportProxyMeshLayer` re-collects and
+   re-tiles the plate's supports inside render when the support state changes.
+   The fix is the stale-while-rebuild pattern the Prepare merged layer already
+   uses: keep the previous layout drawn, build the next one in idle slices.
+2. The autosave/persistence path touching IPC on the same commit; it should be
+   debounced past the gesture (the persistence effect already runs after the
+   transform effect, but the encode is still on this thread).
+
 ## Fixed: every tool switch re-merged the whole plate's supports
 
 Switching Prepare's Drag ↔ Arrange tools (and switching plates) stuttered the

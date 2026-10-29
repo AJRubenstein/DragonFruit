@@ -4,9 +4,12 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { Vec3 } from '../../types';
 import {
     buildBatchedBezierTubes,
+    hasCachedBezierTube,
     resolveCurvedShaftIndexForFace,
     splitBatchedShafts,
+    warmBezierTube,
 } from '../../Curves/batchedBezierTubeGeometry';
+import type { BatchedBezierTubes } from '../../Curves/batchedBezierTubeGeometry';
 import { buildProxyHoverIndex, createProxyHoverRaycast, type ProxyHoverTarget } from '../../proxyHoverIndex';
 import { supportAnswersPointer } from '@/features/scene/plates/plateInteractivity';
 import { HIDDEN_INSTANCE_MATRIX } from '../hiddenInstanceMatrix';
@@ -94,6 +97,15 @@ const NOOP_RAYCAST: THREE.Object3D['raycast'] = () => {};
 
 /** Grouping key for curved shafts a caller does not tint: not a colour. */
 const NO_TINT_KEY = 'no-tint';
+
+/** How many swept tubes one idle slice may build; ~10 ms of work each. */
+const CURVED_TUBE_SLICE = 160;
+
+/** The browser idle scheduler, which is feature-detected rather than assumed. */
+type IdleSchedulerWindow = {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+};
 
 /** True when this shaft's two ends differ enough to need a cone. */
 export function isTaperedShaft(shaft: InstancedShaft): boolean {
@@ -303,20 +315,74 @@ export function InstancedShaftGroup({
     // colour then rides on the material, the same way an instanced shaft's does,
     // and two shafts that should look alike cannot diverge by which path drew
     // them. The selection tints at most two colours.
-    const curvedTubeGroups = useMemo(() => {
-        noteActivity('support-mode:curved-shaft-tubes');
-        const byColor = new Map<string, InstancedShaft[]>();
-        for (const shaft of curvedShafts) {
-            const color = instanceColor ? instanceColor(shaft).getHexString() : NO_TINT_KEY;
-            const bucket = byColor.get(color);
-            if (bucket) bucket.push(shaft);
-            else byColor.set(color, [shaft]);
+    //
+    // The tube geometries are built in idle slices, not during render: a
+    // supported plate's batch is thousands of swept curves, and building them in
+    // one go blocked the main thread for ~0.9 s — inside the camera intro on a
+    // load, and at the commit of a model move. The previous batch stays drawn
+    // until the new one is assembled (one buffer copy, now typed).
+    const [curvedTubeGroups, setCurvedTubeGroups] = React.useState<
+        Array<{ color: string; shafts: InstancedShaft[]; tubes: BatchedBezierTubes }>
+    >([]);
+
+    useEffect(() => {
+        if (curvedShafts.length === 0) {
+            setCurvedTubeGroups((previous) => (previous.length === 0 ? previous : []));
+            return;
         }
 
-        return [...byColor.entries()].flatMap(([color, group]) => {
-            const tubes = buildBatchedBezierTubes(group, radialSegments);
-            return tubes ? [{ color, shafts: group, tubes }] : [];
-        });
+        let cancelled = false;
+        let cursor = 0;
+        const handles: number[] = [];
+        // Feature-detected, not assumed: the DOM lib types it as always present.
+        const scheduler = window as unknown as IdleSchedulerWindow;
+        const schedule = (run: () => void) => {
+            if (typeof scheduler.requestIdleCallback === 'function') {
+                handles.push(scheduler.requestIdleCallback(run, { timeout: 120 }));
+                return;
+            }
+            handles.push(setTimeout(run, 0) as unknown as number);
+        };
+
+        const step = () => {
+            if (cancelled) return;
+            noteActivity('support-mode:curved-shaft-tubes');
+            let built = 0;
+            while (cursor < curvedShafts.length && built < CURVED_TUBE_SLICE) {
+                const shaft = curvedShafts[cursor];
+                cursor += 1;
+                if (hasCachedBezierTube(shaft)) continue;
+                warmBezierTube(shaft, radialSegments);
+                built += 1;
+            }
+            if (cursor < curvedShafts.length) {
+                schedule(step);
+                return;
+            }
+
+            const byColor = new Map<string, InstancedShaft[]>();
+            for (const shaft of curvedShafts) {
+                const color = instanceColor ? instanceColor(shaft).getHexString() : NO_TINT_KEY;
+                const bucket = byColor.get(color);
+                if (bucket) bucket.push(shaft);
+                else byColor.set(color, [shaft]);
+            }
+            const groups = [...byColor.entries()].flatMap(([color, group]) => {
+                const tubes = buildBatchedBezierTubes(group, radialSegments);
+                return tubes ? [{ color, shafts: group, tubes }] : [];
+            });
+            setCurvedTubeGroups(groups);
+        };
+
+        schedule(step);
+
+        return () => {
+            cancelled = true;
+            for (const handle of handles) {
+                if (typeof scheduler.cancelIdleCallback === 'function') scheduler.cancelIdleCallback(handle);
+                clearTimeout(handle);
+            }
+        };
     }, [curvedShafts, radialSegments, instanceColor]);
 
     useEffect(() => {
