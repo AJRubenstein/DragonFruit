@@ -351,7 +351,17 @@ function buildSectionGeometries(
  * `higherContrastModelEdges`. Building it speculatively (which is what import
  * did) is what made a six-model scene take 18 s of long tasks.
  */
+/**
+ * The model edge overlay is disabled while its build path is reworked. It was
+ * O(triangles) per model (about 1.9 s for a 500k-triangle mesh), and enabling it
+ * turned imports, geometry swaps and duplication into long idle tasks. The
+ * builder stays here for the replacement; every caller funnels through it, so
+ * this flag is the single switch.
+ */
+export const MODEL_EDGE_OVERLAY_ENABLED = false;
+
 export function buildModelEdgeGeometry(geometry: THREE.BufferGeometry): THREE.EdgesGeometry | undefined {
+  if (!MODEL_EDGE_OVERLAY_ENABLED) return undefined;
   const triangleCount = (geometry.getIndex()?.count ?? geometry.getAttribute('position')?.count ?? 0) / 3;
   if (triangleCount >= EDGE_GEOMETRY_MAX_TRIANGLES) return undefined;
 
@@ -701,7 +711,7 @@ export async function processGeometry(bufferGeometry: THREE.BufferGeometry, opti
   const computeEdgeGeometry = options.computeEdgeGeometry
     ?? getSavedWorkspaceCameraSettings().higherContrastModelEdges;
   let edgeGeometry: THREE.EdgesGeometry | undefined;
-  if (computeEdgeGeometry) {
+  if (MODEL_EDGE_OVERLAY_ENABLED && computeEdgeGeometry) {
     console.log(`[${new Date().toISOString()}] [processGeometry] Computing Edge Geometry`);
     const startEdges = performance.now();
     edgeGeometry = buildModelEdgeGeometry(geometry);

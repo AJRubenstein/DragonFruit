@@ -242,6 +242,10 @@
             {
               "label": "Performance Debugging",
               "slug": "dev/performance-debugging"
+            },
+            {
+              "label": "Render Profiler",
+              "slug": "dev/render-profiler"
             }
           ]
         },
@@ -531,6 +535,10 @@
             {
               "label": "Headless Scene Operations",
               "slug": "adr/0045-headless-scene-operations"
+            },
+            {
+              "slug": "adr/0046-support-local-frames",
+              "title": "Support local frames"
             },
             {
               "label": "Organic Cut Surface Redesign",

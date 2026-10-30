@@ -563,15 +563,17 @@ export function generateGridCandidates(
         const bounds = footprintBounds(voxels)!;
         const { minX, minY, maxX, maxY } = bounds;
         const cellSize = Math.max(spacing, 1.0);
-        const voxelPoints = footprintToPoints(voxels);
 
         const surfaceNormal = island.surfaceNormal ?? { x: 0, y: 0, z: -1 };
 
 
         // Triangle-accurate surface resolution when the mesh + region
         // triangles are available; voxel nearest-neighbor is the fallback.
+        // The fallback's point objects are built only when it is actually
+        // used: materialising a 112k-voxel footprint per region cost more
+        // than the placement that reads it.
         const surfaceAt = createTriangleSurfaceAt(island, mesh)
-            ?? createVoxelSurfaceAt(voxelPoints, cellSize, island.baseZ);
+            ?? createVoxelSurfaceAt(footprintToPoints(voxels), cellSize, island.baseZ);
         const minZ = island.baseZ;
         // A steep flat is self-supporting, so its contacts are there to ANCHOR
         // the part, not to hold up material that is still forming. Anchoring
