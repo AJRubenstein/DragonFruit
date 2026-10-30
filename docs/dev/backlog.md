@@ -1740,6 +1740,34 @@ gesture: the profile of that window is `(program)` (IPC deserialization) and
 render work, not JS copies. Making that non-blocking means receiving the buffers
 in pieces, which is a change to the command's shape, not to this effect.
 
+## Known: entering Support mounts the detail renderer, and that is the tab's cost
+
+Measured on the 20-model scene, per `Prepare → Support` click:
+
+| entry | worst frame | long tasks |
+| --- | ---: | ---: |
+| first | 624 ms | 100, 535, 81 ms |
+| second (warm) | 321 ms | 212, 105 ms |
+| with the raft renderers switched off | 327 ms | 219, 104 ms |
+
+So it is not the rafts and not a one-time chunk: it repeats, and the bulk is one
+~180–530 ms task. `ModelAttachedSupportLayer` sets
+`useUltraLazySupports = mode !== 'support'`, and Support mounts the full
+per-primitive renderer for the active model — thousands of `SupportRenderer`
+children built in a single commit, plus program setup.
+
+**The obvious fix does not reach it.** Mounting that subtree ahead of time, in
+Prepare, and revealing it on the switch was tried and does nothing: in Prepare
+the world layer is not mounted at all — `useActiveModelAttachedSupportProxy`
+routes the active model's supports through per-model layers — so the pre-built
+subtree is discarded and the world layer builds its own on entry.
+
+The shape that can work: keep the proxy drawing in Support until the detail
+subtree exists, and build that subtree **progressively** — one support type, or
+one slice of a type, per idle callback — with the proxy excluding what the detail
+has already taken over. That needs the detail renderer to accept a growing
+subset, and the proxy to stay mounted in Support for the duration.
+
 ## Measured: the hollowing tool is smooth except its mode toggle
 
 Same scene and build.

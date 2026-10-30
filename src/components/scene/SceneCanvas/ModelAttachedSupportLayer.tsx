@@ -66,8 +66,6 @@ export type ModelAttachedSupportLayerProps = {
   supportRendererRef?: React.Ref<THREE.Group>;
   supportRenderRefreshNonce?: number;
   supportProxyIncludeDetailedPrimitives?: boolean;
-  /** Model to mount the detail renderer for ahead of time, hidden. */
-  warmDetailModelId?: string | null;
   showOutOfBoundsOverlay?: boolean;
   outOfBoundsMin?: THREE.Vector3 | null;
   outOfBoundsMax?: THREE.Vector3 | null;
@@ -122,7 +120,6 @@ export function ModelAttachedSupportLayer({
   supportRendererRef,
   supportRenderRefreshNonce = 0,
   supportProxyIncludeDetailedPrimitives = true,
-  warmDetailModelId = null,
   showOutOfBoundsOverlay,
   outOfBoundsMin,
   outOfBoundsMax,
@@ -147,19 +144,6 @@ export function ModelAttachedSupportLayer({
    */
   const supportWorldLayer = mode === 'support' && !modelFilterId;
   const detailModelId = mode === 'support' ? (supportWorldLayer ? activeModelId : modelFilterId) : null;
-  /**
-   * The detail renderer mounted ahead of the mode switch, hidden.
-   *
-   * Building it is the whole cost of entering Support (~180 ms of React work
-   * for the active model's primitives), and it is built from the support state
-   * either way — so it can be built while Prepare is idle and simply revealed
-   * when the tab opens. It stays out of the pointer path: three's raycaster
-   * ignores `visible`, so the subtree is bound with hover/selection off until
-   * it is actually shown.
-   */
-  const warmedDetailModelId = !detailModelId && !modelFilterId && mode === 'prepare'
-    ? warmDetailModelId
-    : null;
   const useProxy = useUltraLazySupports;
   const proxyPointerSelectionEnabled = mode === 'prepare' && !navigationLodActive && !disableSelectionAndHover && !passive;
   const proxyIncludeDetailedPrimitives = supportProxyIncludeDetailedPrimitives;
@@ -288,10 +272,9 @@ export function ModelAttachedSupportLayer({
             modelWorldInverseById={modelWorldInverseById}
           />
         ) : null}
-        {(detailModelId || warmedDetailModelId) && (
-          <group visible={Boolean(detailModelId)}>
+        {detailModelId && (
           <SupportRenderer
-            key={`support-detail-${supportRenderRefreshNonce}-${detailModelId ?? warmedDetailModelId}`}
+            key={`support-detail-${supportRenderRefreshNonce}-${detailModelId}`}
             mode={mode}
             navigationLodActive={navigationLodActive}
             hidePlateContactPrimitives={hidePlateContactPrimitives}
@@ -306,10 +289,10 @@ export function ModelAttachedSupportLayer({
             marqueeCandidateModelIds={marqueeCandidateModelIds}
             hoverModelId={hoverModelId}
             modelDropOffsetsById={modelDropOffsetsById}
-            modelFilterId={detailModelId ?? warmedDetailModelId}
+            modelFilterId={detailModelId}
             excludeModelId={excludeModelId}
             excludeModelIds={excludeModelIds}
-            disableSelectionAndHover={disableSelectionAndHover || !detailModelId}
+            disableSelectionAndHover={disableSelectionAndHover}
             pointerSceneryModelIds={pointerSceneryModelIds}
             ghostOpacity={ghostOpacity}
             ghostRenderOrder={ghostRenderOrder}
@@ -319,7 +302,6 @@ export function ModelAttachedSupportLayer({
             cavityGeometryByModelId={cavityGeometryByModelId}
             modelWorldInverseById={modelWorldInverseById}
           />
-          </group>
         )}
       </group>
     </>

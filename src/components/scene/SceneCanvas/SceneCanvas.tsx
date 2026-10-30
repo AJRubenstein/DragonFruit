@@ -2011,54 +2011,6 @@ export function SceneCanvas({
     return changed;
   }, []);
 
-  /**
-   * Which model's detail renderer is built ahead of opening Support.
-   *
-   * Entering Support mounts the full per-primitive renderer for the active
-   * model, and that mount is the tab's ~180 ms. The geometry comes from the same
-   * support state either way, so it is built while Prepare is idle (and only
-   * when nothing is being dragged or orbited) and simply revealed on the switch.
-   */
-  const [supportDetailWarmModelId, setSupportDetailWarmModelId] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    if (mode !== 'prepare' || !activeModelId) {
-      setSupportDetailWarmModelId(null);
-      return;
-    }
-    let idleHandle: number | null = null;
-    let cancelled = false;
-    const busy = isGizmoDragging || selectDragPressed || isOrbitInteracting
-      || spaceMouseNavigationActive || isCameraFocusTransitionActive;
-    if (busy) return;
-    const timer = window.setTimeout(() => {
-      const run = () => {
-        idleHandle = null;
-        if (!cancelled) setSupportDetailWarmModelId(activeModelId);
-      };
-      if (typeof window.requestIdleCallback === 'function') {
-        idleHandle = window.requestIdleCallback(run, { timeout: 2000 });
-      } else {
-        idleHandle = window.setTimeout(run, 0);
-      }
-    }, 700);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      if (idleHandle !== null) {
-        if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleHandle);
-        else window.clearTimeout(idleHandle);
-      }
-    };
-  }, [
-    activeModelId,
-    isCameraFocusTransitionActive,
-    isGizmoDragging,
-    isOrbitInteracting,
-    mode,
-    selectDragPressed,
-    spaceMouseNavigationActive,
-  ]);
-
   const supportBoundsIndex = React.useMemo(
     () => getSupportModelIndex(supportStateForBounds as unknown as Record<string, unknown>),
     [supportStateForBounds],
@@ -7352,7 +7304,6 @@ export function SceneCanvas({
               {!useActiveModelAttachedSupportProxy && (
                 <ModelAttachedSupportLayer
                   plateClearanceTargets={plateClearanceTargets}
-                  warmDetailModelId={supportDetailWarmModelId}
                   mode={mode}
                   excludeModelId={duplicateSourceSupportPreviewModelId}
                   excludeModelIds={supportBaseExcludeModelIds}
