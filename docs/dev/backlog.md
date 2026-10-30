@@ -1761,6 +1761,34 @@ round trip is fine, the buffer read-back is what blocks. A chunked read (yield
 between buffers, as `sceneSnapshotSpill` does) is the smallest change that would
 keep the frame moving.
 
+## Known: placing a support costs O(plate) in the store, not in the router
+
+The router is independent of how many supports exist — `calculateSmartPlacementV3`
+reads the mesh and the settings, never the support store — so hovering does not
+slow down as a plate fills.
+
+Placing does. `addSupportEntity` ends in `setSnapshot` → `normaliseSupportState`,
+which rebuilds the canonical `supports` map (every entity, skipping the touched
+type) and the touched type's view. Measured on a synthetic plate with one placed
+support per run (median of 12):
+
+| existing supports | time to place one |
+| ---: | ---: |
+| 0 | 0.02 ms |
+| 2,000 | 0.99 ms |
+| 20,000 | **17.6 ms** |
+
+Linear, ~0.9 µs per entity. At 20k that is a frame per click; at 50k it would be
+~45 ms, which is the lag this raises. The render side adds one list rebuild for
+the touched collection.
+
+There is no O(1) path while `supports` is a plain object: an immutable update
+copies every key. The fix is a shape change — per-type maps as the source of
+truth with `supports` derived lazily and cached, or a persistent map — which is
+the same "remaining O(plate) rebuild" noted above. Until then, batching a burst
+of placements into one write would help the auto-support commit, not manual
+clicking.
+
 ## Fixed: the first placement hover paid the column-map walk
 
 `calculateSmartPlacementV3` began with `sdf.enableColumnMap(...)`, which *builds*
