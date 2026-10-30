@@ -1740,6 +1740,39 @@ gesture: the profile of that window is `(program)` (IPC deserialization) and
 render work, not JS copies. Making that non-blocking means receiving the buffers
 in pieces, which is a change to the command's shape, not to this effect.
 
+## Measured: mode switches and the Support tab
+
+Second half of the tour, same scene and build, same recording.
+
+| phase | fps | p95 | worst frame | long tasks |
+| --- | ---: | ---: | ---: | ---: |
+| Prepare → Support (first) | 91.3 | 8.1 | 484.6 | 98, 389, 85 ms |
+| Support → Prepare | 130.2 | 8.1 | 37.5 | 0 |
+| Prepare → Support (again) | 113.5 | 8.1 | 280.8 | 178, 92 ms |
+| Prepare → Export (first) | 123.9 | 8.1 | 182.1 | 99, 69 ms |
+| Export → Prepare | 130.7 | 8.1 | 23.2 | 0 |
+| Prepare → Printing | 129.2 | 8.1 | 53.2 | 0 |
+| Support Studio tabs (General/Raft/Grid/Bracing) | 130.5 | 8.0 | 37.7 | 0 |
+| hover across supports | 133.6 | 8.0 | 8.1 | 0 |
+| click a support | 133.3 | 8.1 | 8.1 | 0 |
+| delete a support (Backspace) | 133.1 | 8.1 | 8.2 | 0 |
+| undo the delete | 133.1 | 8.0 | 8.3 | 0 |
+
+So **entering Support is the one recurring chug**: ~180–280 ms every time, not just
+the first, and the profile of a warm entry is three.js program setup
+(`getProgramInfoLog`, `bindVertexArray`, `upload`, `getParameters`) plus `fetch`.
+
+The structural reason is one line: `ModelAttachedSupportLayer` sets
+`useUltraLazySupports = mode !== 'support'`, so Support mode swaps the ultra-lazy
+proxy renderer for the full `SupportRenderer` — a different set of meshes and
+materials that is built synchronously when the mode mounts. Prepare uses the
+proxy; Support uses the full renderer; every switch pays the difference.
+
+Fixing it means one of: building the full renderer's geometry in idle slices
+(the merged layer's pattern), keeping the proxy mounted underneath until the full
+renderer is ready, or teaching one renderer both jobs. All three are larger than
+the fixes above and want a dedicated pass; the numbers here are the target.
+
 ## Measured: the 20-model scene is smooth in steady state, and where the one hitch is
 
 A scripted tour of the 198 MB, 18-visible-model supported scene, in a production
