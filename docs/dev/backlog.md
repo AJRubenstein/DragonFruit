@@ -1891,26 +1891,26 @@ through, on a scene where no model is hollowed.
 A scan of the three heaviest paths found the following still blocking the main
 thread. None of it is speculative; each entry names the loop and its scale.
 
-**Scene open** (`src/features/scene/useSceneCollectionManager.ts:6692`): the whole
+**Scene open** (`parseVoxlBinaryV2` in `useSceneCollectionManager.ts`): the whole
 file is wrapped in `new Uint8Array(await file.arrayBuffer())` — 677 MB on the
 13-model test scene — and every `subarray` in the parser aliases it, so it stays
 resident until the last chunk settles. The desktop path has a ranged read
 (`readSidecarFileBytes`); header + directory + the non-mesh chunks could come
 from it the same way the mesh chunks already do.
 
-**Scene open** (`src/features/scene/voxl/codec-v2.ts:1174-1182`): `SUPP`, `MODL`
+**Scene open** (`parseVoxlBinaryV2` in `codec-v2.ts`): `SUPP`, `MODL`
 and `EXTD` are inflate + `JSON.parse` synchronously, one task. Only
 MESH/HSRC/CAVT/PSRC are in the async bulk path. Moving their `unzlibSync` to the
 existing async inflate removes the blocking decompress; the parse order stays.
 
-**Auto-support generate** (`src/supports/autoSupport/autoPlaceWorkerClient.ts:244`):
+**Auto-support generate** (`autoPlaceWorkerClient.ts`):
 every run posts `baseState: getSnapshot()` — the whole plate's support state,
 structured-cloned in the calling task — plus `mesh`/`cavityMesh` slices that the
-worker already caches by key (`autoPlace.worker.shared.ts:213-218`). Omitting
+worker already caches by key (`autoPlace.worker.shared.ts`). Omitting
 what the worker already holds, and transferring the first copies, removes the
 per-run clone.
 
-**Auto-support generate** (`src/components/controls/AutoSupportPanel.tsx:197-305`):
+**Auto-support generate** (`AutoSupportPanel.tsx`):
 the replace pre-pass walks every model's supports, rebuilds the knot map and then
 `setSnapshot`s — and the commit rebuilds it again.
 
@@ -1919,9 +1919,8 @@ canonical `supports` map is rebuilt one entity at a time and each supplied
 collection is folded in, so a one-entity edit is O(plate). Measured on a 20k
 entity plate: **21.6 ms** for a write that reads all eight views back (down from
 31.9 ms after pinning the supplied views instead of re-filtering `supports`, and
-iterating records with `in` instead of allocating `Object.entries` pairs). The
-next step is a surgical `setSupportEntity(key, id, entity)` that touches one id
-instead of rebuilding the map.
+iterating records with `in` instead of allocating `Object.entries` pairs). (Since
+fixed: the union is derived rather than rebuilt — see the placement entry.)
 
 ## Fixed: Ctrl+A, Delete rebuilt the support store once per model
 
