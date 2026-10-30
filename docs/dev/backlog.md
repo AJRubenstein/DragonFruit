@@ -1761,6 +1761,31 @@ round trip is fine, the buffer read-back is what blocks. A chunked read (yield
 between buffers, as `sceneSnapshotSpill` does) is the smallest change that would
 keep the frame moving.
 
+## Fixed: the first placement hover paid the column-map walk
+
+`calculateSmartPlacementV3` began with `sdf.enableColumnMap(...)`, which *builds*
+the clearance map when one is missing — a walk over every mesh vertex, tens to
+hundreds of milliseconds on a detailed part. The first hover after opening
+Support paid it, which is the "placing isn't instant" the tab shows.
+
+Three changes:
+
+- `SDFCache.tryUseColumnMap(clearance, cell)` activates a map that exists and
+  **never builds one**. The placement path calls it; a missing map is requested
+  from the column-map worker and the next hover finds it. The router already
+  works without the map (it is opt-in), so a hover never blocks on the walk.
+- `prewarmSupportPlacementAsync` now runs in **both editing modes**, 250 ms after
+  the model settles (it was Support-only, 60 ms). Prepare warms the active
+  clearance; Support warms the pinned presets' maps too. By the time the user
+  opens Support the map is normally built.
+- The probe flag moved to `__dfPerfMarks`. The support pathfinding module installs
+  `window.__dfPerf` as its own console API, so testing that name made every
+  `perfProbe` mark — and a `performance.measure` entry per call — run in
+  production builds.
+
+The rule that matters: build the acceleration data once, off the interaction
+path, and never inside the hover.
+
 ## Measured: mode switches and the Support tab
 
 Second half of the tour, same scene and build, same recording.
@@ -1889,7 +1914,8 @@ undo, which on the real scene is the larger cost.
 
 ## Known: a model's *first* commit stalls ~250 ms outside JavaScript
 
-Measured with opt-in marks (`src/utils/perfProbe.ts`: set `window.__dfPerf = true`,
+Measured with opt-in marks (`src/utils/perfProbe.ts`: set `window.__dfPerfMarks = true` —
+not `__dfPerf`, which the support pathfinding module already uses for its own console API,
 then read `performance.getEntriesByType('measure')`) on the 20-model,
 20,683-support scene in a production build.
 

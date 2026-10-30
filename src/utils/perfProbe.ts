@@ -1,9 +1,14 @@
 /**
  * Temporary probe: opt-in timing marks, read with
  * `performance.getEntriesByType('measure')`. Costs a branch per call when off.
+ *
+ * The flag is `__dfPerfMarks`, deliberately not `__dfPerf`: the support
+ * pathfinding module installs `window.__dfPerf` as its own console API, so
+ * testing that name made every mark run in production.
  */
 export function perfEnabled(): boolean {
-  return typeof window !== 'undefined' && Boolean((window as unknown as { __dfPerf?: boolean }).__dfPerf);
+  return typeof window !== 'undefined'
+    && (window as unknown as { __dfPerfMarks?: boolean }).__dfPerfMarks === true;
 }
 
 export function perfMark(label: string): number {

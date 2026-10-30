@@ -792,20 +792,30 @@ export class SDFCache {
      * when the grid would be too large, in which case nothing changes.
      */
     enableColumnMap(clearanceMm: number, cellMm: number): boolean {
-        if (this._columnMap !== null && Math.abs(clearanceMm - this._columnMapClearance) < 1e-9) return true;
-
-        const reused = this._takeCachedColumnMap(clearanceMm);
-        if (reused) {
-            this._columnMap = reused;
-            this._columnMapClearance = clearanceMm;
-            return true;
-        }
+        if (this.tryUseColumnMap(clearanceMm, cellMm)) return true;
 
         const map = ColumnClearanceMap.build(this.mesh, clearanceMm, cellMm);
         if (!map) return false;
         this._columnMap = map;
         this._columnMapClearance = clearanceMm;
         this._rememberColumnMap(clearanceMm, map);
+        return true;
+    }
+
+    /**
+     * Activate a map that is already built for this clearance, and never build.
+     *
+     * The placement path uses this so a hover cannot pay the walk that builds
+     * the map: the map is warmed off the interaction path, and a missing one is
+     * requested from the worker instead of built here.
+     */
+    tryUseColumnMap(clearanceMm: number, cellMm: number): boolean {
+        if (this._columnMap !== null && Math.abs(clearanceMm - this._columnMapClearance) < 1e-9) return true;
+
+        const reused = this._takeCachedColumnMap(clearanceMm);
+        if (!reused) return false;
+        this._columnMap = reused;
+        this._columnMapClearance = clearanceMm;
         return true;
     }
 

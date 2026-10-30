@@ -25,6 +25,7 @@ import {
 export async function prewarmSupportPlacementAsync(
     mesh: THREE.Mesh,
     isCancelled: () => boolean = () => false,
+    options: { allClearances?: boolean } = {},
 ): Promise<void> {
     // A worker realm has no worker of its own; the synchronous path is the one
     // that auto-support placement uses there.
@@ -40,7 +41,12 @@ export async function prewarmSupportPlacementAsync(
     const sdf = getOrCreateSDFCache(mesh);
     sdf.refreshMatrix();
 
-    for (const clearance of supportColumnMapClearances()) {
+    // Prepare warms only the clearance a placement can ask for right now; the
+    // pinned presets' maps are a Support-mode convenience and are warmed there.
+    const clearances = options.allClearances === false
+        ? supportColumnMapClearances().slice(0, 1)
+        : supportColumnMapClearances();
+    for (const clearance of clearances) {
         if (isCancelled()) return;
         if (sdf.hasColumnMap(clearance, COLUMN_MAP_CELL_MM)) continue;
         const map = await requestColumnClearanceMap(mesh, clearance, COLUMN_MAP_CELL_MM);

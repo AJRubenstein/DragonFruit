@@ -40,6 +40,7 @@ import { gridNodeKeyFromXY, gridSnappedXYFromKey } from '../PlacementLogic/Grid/
 import { buildNearestCandidateNodeKeys } from '../PlacementLogic/Grid/nearestCandidateNodeKeys';
 import type { SDFCache } from '../PlacementLogic/Pathfinding/SDFCache';
 import { getOrCreateSDFCache } from '../PlacementLogic/Pathfinding/SDFCachePool';
+import { requestColumnClearanceMap } from '../PlacementLogic/Pathfinding/columnMapWorkerClient';
 import { isContactConeBlocked } from '../PlacementLogic/CollisionAvoidance';
 import { buildDirectionFan, findEscapeJoint, findGridJoint } from './EscapeJointSearch';
 import {
@@ -627,11 +628,19 @@ export function calculateSmartPlacementV3(
      * it was pure overhead on the run's hot path.
      */
     // The router's columns are the bulk of this run's distance-field reads, and
-    // the exact column map answers them from one scalar per XY cell. It is
-    // clearance-specific, so calling it here builds one map per clearance and
-    // reuses it after that; the pinned presets' maps are built ahead of the key
-    // press by `prewarmPinnedPresetColumnMaps` above.
-    sdf.enableColumnMap(clearanceMm, COLUMN_MAP_CELL_MM);
+    // the exact column map answers them from one scalar per XY cell. The map is
+    // warmed off the interaction path (`prewarmSupportPlacementAsync`), so this
+    // only *activates* one — building it here put the whole walk on the hover
+    // that opened Support, which is the placement latency it exists to avoid.
+    // A missing map is requested from the worker and the next hover finds it.
+    perfMark('placement:columnMap');
+    const columnMapReady = sdf.tryUseColumnMap(clearanceMm, COLUMN_MAP_CELL_MM);
+    perfMeasure('placement:columnMap', 'placement:columnMap');
+    if (!columnMapReady && typeof Worker !== 'undefined') {
+        void requestColumnClearanceMap(input.mesh, clearanceMm, COLUMN_MAP_CELL_MM).catch(() => {
+            // Opportunistic: the router runs without the map in the meantime.
+        });
+    }
     prewarmPinnedPresetColumnMaps(sdf);
 
     const segmentBlockedBetween = (from: Vec3, to: Vec3): boolean => (

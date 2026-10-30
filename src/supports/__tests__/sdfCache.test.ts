@@ -210,3 +210,19 @@ test('an installed worker map is used without building on the main thread', () =
         ColumnClearanceMap.build = build;
     }
 });
+
+test('tryUseColumnMap never builds one, enableColumnMap still does', () => {
+    const mesh = makeSphereMesh();
+    const sdf = new SDFCache(mesh, { cellSize: 0.5 });
+
+    // The placement path calls this on a hover: reporting "no map" must not turn
+    // the hover into the whole vertex walk that prewarming exists to avoid.
+    assert.equal(sdf.tryUseColumnMap(1.2, 0.2), false, 'a missing map is not built');
+    assert.equal(sdf.hasColumnMap(1.2, 0.2), false, 'and it is not cached as a side effect');
+
+    assert.equal(sdf.enableColumnMap(1.2, 0.2), true, 'the explicit call still builds');
+    assert.equal(sdf.hasColumnMap(1.2, 0.2), true);
+
+    // Once built, the same clearance is activated rather than rebuilt.
+    assert.equal(sdf.tryUseColumnMap(1.2, 0.2), true);
+});

@@ -505,26 +505,33 @@ function StlMeshComponent({
    * build.
    *
    * The build runs in the column-map worker, but preparing it copies the
-   * model's position array, which is large enough to matter on a plate. It is
-   * therefore limited to Support, where placement can actually ask for it; a
-   * model drag in Prepare must not pay it.
+   * model's position array, which is large enough to matter on a plate. So it
+   * runs in either editing mode, once the model has settled: opening Support
+   * later then finds the map already built, instead of the first hover paying
+   * for it. Prepare warms the active clearance only; Support warms the pinned
+   * presets' maps as well.
    */
   React.useEffect(() => {
-    if (mode !== 'support' || !isActiveModel) return;
+    if ((mode !== 'prepare' && mode !== 'support') || !isActiveModel) return;
     const mesh = internalMeshRef.current;
     if (!mesh) return;
 
     let cancelled = false;
     const warm = () => {
       if (cancelled) return;
-      void prewarmSupportPlacementAsync(mesh, () => cancelled).catch(() => {
+      void prewarmSupportPlacementAsync(
+        mesh,
+        () => cancelled,
+        { allClearances: mode === 'support' },
+      ).catch(() => {
         // The warmup is opportunistic; an unaccelerated mesh must not break
         // the scene. The hover path reports the same problem if it matters.
       });
     };
     // Debounced: a transform drag replaces the timer on every frame, so the
     // worker is asked once the model settles rather than once per pointer move.
-    const handle = window.setTimeout(warm, 60);
+    // Long enough that a gesture's release is settled, never on its frame.
+    const handle = window.setTimeout(warm, 250);
 
     return () => {
       cancelled = true;
