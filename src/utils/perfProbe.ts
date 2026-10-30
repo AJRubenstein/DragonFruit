@@ -11,7 +11,13 @@ export function perfEnabled(): boolean {
     && (window as unknown as { __dfPerfMarks?: boolean }).__dfPerfMarks === true;
 }
 
-export function perfMark(label: string): number {
+/**
+ * The start of a measured span, or 0 when the probe is off.
+ *
+ * The label belongs to `perfMeasure`; a mark only needs the timestamp, so this
+ * takes none and the call sites read `perfMark()` / `perfMeasure('x', start)`.
+ */
+export function perfMark(): number {
   return perfEnabled() ? performance.now() : 0;
 }
 

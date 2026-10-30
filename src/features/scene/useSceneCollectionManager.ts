@@ -3787,7 +3787,7 @@ export function useSceneCollectionManager(options?: {
     let kickstandsChanged = false;
     let updated = false;
     let supportLocalFramePreserved = true;
-    const perfStoreStart = perfMark('store:transform');
+    const perfStoreStart = perfMark();
     updateMap.forEach((nextTransform, id) => {
       const currentModel = currentModels.find((model) => model.id === id);
       if (!currentModel) return;

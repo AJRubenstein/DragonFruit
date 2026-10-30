@@ -568,7 +568,7 @@ export function SupportProxyMeshLayer({
   );
 
   const baseProxyByModel = React.useMemo(() => {
-    const perfStart = perfMark('proxy:collect');
+    const perfStart = perfMark();
     try {
     const cache = sharedProxyCache;
     const optionsSame = Boolean(cache)
@@ -960,7 +960,7 @@ export function SupportProxyMeshLayer({
   // and is exactly the release hitch this memo must not reintroduce.
   const proxyTileSource = hidesExcludedModels ? worldBatches : filteredBatches;
   const proxyTiles = React.useMemo(() => {
-    const perfStart = perfMark('proxy:tiles');
+    const perfStart = perfMark();
     try {
       return proxyTileSource
         ? buildProxyTiles(proxyTileSource.live, proxyTileSource.scenery)

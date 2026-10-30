@@ -1834,7 +1834,7 @@ Second half of the tour, same scene and build, same recording.
 
 So **entering Support is the one recurring chug**: ~180–280 ms every time, not just
 the first, and the profile of a warm entry is three.js program setup
-(`getProgramInfoLog`, `bindVertexArray`, `upload`, `getParameters`) plus `fetch`.
+(program info logs, vertex-array binds, uploads, parameter lookups) plus `fetch`.
 
 The structural reason is one line: `ModelAttachedSupportLayer` sets
 `useUltraLazySupports = mode !== 'support'`, so Support mode swaps the ultra-lazy

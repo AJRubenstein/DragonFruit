@@ -329,7 +329,7 @@ function dropEntriesFor(modelKeys: Iterable<string>): void {
 }
 
 function buildEntry(modelKey: string): void {
-  const perfStart = perfMark('merged:build');
+  const perfStart = perfMark();
   try {
     const model = state.walk?.get(modelKey);
     const previous = state.entries.get(modelKey);
