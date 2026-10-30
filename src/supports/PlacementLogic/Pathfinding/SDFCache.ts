@@ -329,6 +329,20 @@ export class SDFCache {
         this.cache.clear();
     }
 
+    /**
+     * Drop the column maps after the model moves.
+     *
+     * A map is baked in world space from every vertex, so keeping it across a
+     * transform change answers later placements at the old pose. The cell table
+     * was already cleared on drift; the maps have to follow it.
+     */
+    private _clearColumnMaps(): void {
+        this._columnMap = null;
+        this._columnMapClearance = 0;
+        this._columnMapCache.length = 0;
+        this._columnMapCacheBytes = 0;
+    }
+
     private _snapshotMatrix(): void {
         this._lastMatrix.copy(this.mesh.matrixWorld);
         this.inverseMatrix.copy(this.mesh.matrixWorld).invert();
@@ -363,6 +377,7 @@ export class SDFCache {
     refreshMatrix(): boolean {
         if (!this.mesh.matrixWorld.equals(this._lastMatrix)) {
             this._clearCells();
+            this._clearColumnMaps();
             this._snapshotMatrix();
             notifySDFMatrixDrift(this.mesh.uuid);
             return true;
@@ -777,20 +792,30 @@ export class SDFCache {
      * when the grid would be too large, in which case nothing changes.
      */
     enableColumnMap(clearanceMm: number, cellMm: number): boolean {
-        if (this._columnMap !== null && Math.abs(clearanceMm - this._columnMapClearance) < 1e-9) return true;
-
-        const reused = this._takeCachedColumnMap(clearanceMm);
-        if (reused) {
-            this._columnMap = reused;
-            this._columnMapClearance = clearanceMm;
-            return true;
-        }
+        if (this.tryUseColumnMap(clearanceMm, cellMm)) return true;
 
         const map = ColumnClearanceMap.build(this.mesh, clearanceMm, cellMm);
         if (!map) return false;
         this._columnMap = map;
         this._columnMapClearance = clearanceMm;
         this._rememberColumnMap(clearanceMm, map);
+        return true;
+    }
+
+    /**
+     * Activate a map that is already built for this clearance, and never build.
+     *
+     * The placement path uses this so a hover cannot pay the walk that builds
+     * the map: the map is warmed off the interaction path, and a missing one is
+     * requested from the worker instead of built here.
+     */
+    tryUseColumnMap(clearanceMm: number, cellMm: number): boolean {
+        if (this._columnMap !== null && Math.abs(clearanceMm - this._columnMapClearance) < 1e-9) return true;
+
+        const reused = this._takeCachedColumnMap(clearanceMm);
+        if (!reused) return false;
+        this._columnMap = reused;
+        this._columnMapClearance = clearanceMm;
         return true;
     }
 
@@ -806,6 +831,37 @@ export class SDFCache {
         const map = ColumnClearanceMap.build(this.mesh, clearanceMm, cellMm);
         if (!map) return;
         this._rememberColumnMap(clearanceMm, map);
+    }
+
+    /**
+     * Keep a map built elsewhere, e.g. in a worker.
+     *
+     * The map must describe the mesh's current world pose; callers compare the
+     * pose across the build because a response can arrive after the model moved.
+     * It becomes the active map only when there is none, so installing a
+     * background map cannot disturb the clearance a placement is using.
+     */
+    installColumnMap(clearanceMm: number, map: ColumnClearanceMap): void {
+        if (this._columnMap === null) {
+            this._columnMap = map;
+            this._columnMapClearance = clearanceMm;
+        }
+        this._rememberColumnMap(clearanceMm, map);
+    }
+
+    /** Whether a map for this clearance and cell size is already available. */
+    hasColumnMap(clearanceMm: number, cellMm?: number): boolean {
+        const matches = (map: ColumnClearanceMap) => (
+            cellMm === undefined || Math.abs(map.stats.cellMm - cellMm) < 1e-9
+        );
+        if (this._columnMap !== null
+            && Math.abs(clearanceMm - this._columnMapClearance) < 1e-9
+            && matches(this._columnMap)) {
+            return true;
+        }
+        return this._columnMapCache.some((entry) => (
+            Math.abs(entry.clearance - clearanceMm) < 1e-9 && matches(entry.map)
+        ));
     }
 
     /** A map already built for this clearance, moved to the front of the list. */

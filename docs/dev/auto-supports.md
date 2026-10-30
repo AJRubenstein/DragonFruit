@@ -12,6 +12,13 @@ Gated behind the `auto-supports` experiment (see [Experiments Framework](experim
 
 Keep that split. It is what makes the run testable without a store, lets a caller preview or discard a run, and keeps the whole placement — including auto-bracing — a single history entry rather than a stream of mutations.
 
+**The draft is owned.** `createOwnedDraft(before)` gives the run a state whose collections are copied on their first write and mutated in place after that (`supportDraft.ts`). The run is the only holder, so this changes nothing about the plan/commit split — but it is what makes a run affordable: spreading `{ ...draft, [key]: { ...draft[key] } }` per placement copied a collection of several hundred entities for every support, which was most of the run's time. Two rules follow:
+
+- Callers that build a *different* state (`{ ...draft, ... }`, `cloneSupportState`) get an unowned object; the adders there fall back to copying, so they stay immutable.
+- A step that must not see an entity still standing in the draft (chunk consolidation converting a pillar into the link that replaces it) passes `excludeHostIds` to `fanLeafToHost` / `buildConsolidationBranch` and removes the pillar after the build succeeds. Do not prune a copy of the draft instead: that copy is the cost the owned draft exists to avoid.
+
+`before` is never mutated. The draft starts as a shallow copy plus copy-on-write, so `plan.before` remains the pristine state the history entry needs.
+
 ## The pipeline
 
 Six phases inside `computeAutoSupportPlan` (`autoPlace.ts`):
