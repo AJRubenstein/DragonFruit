@@ -1761,33 +1761,33 @@ round trip is fine, the buffer read-back is what blocks. A chunked read (yield
 between buffers, as `sceneSnapshotSpill` does) is the smallest change that would
 keep the frame moving.
 
-## Known: placing a support costs O(plate) in the store, not in the router
+## Fixed: placing a support no longer rebuilds the whole support map
 
-The router is independent of how many supports exist — `calculateSmartPlacementV3`
-reads the mesh and the settings, never the support store — so hovering does not
-slow down as a plate fills.
+The router never reads the support store, so hovering is unaffected by how full
+the plate is. Placing was: `addSupportEntity` ended in `setSnapshot` →
+`normaliseSupportState`, which rebuilt the canonical `supports` map (every
+entity) and re-stamped the touched collection.
 
-Placing does. `addSupportEntity` ends in `setSnapshot` → `normaliseSupportState`,
-which rebuilds the canonical `supports` map (every entity, skipping the touched
-type) and the touched type's view. Measured on a synthetic plate with one placed
-support per run (median of 12):
+`supports` is now **derived**: the eight collections are the truth, the union is
+built on first read and cached per state object, and it is non-enumerable so the
+`{ ...state }` every writer does cannot materialise it. Views the store produced
+are marked in a `WeakSet`, so a write that hands one back (a collection plus one
+entity — the placement path) skips the stamping pass entirely. The id lookups
+(`getSupportTypeOf`, shaft owner, model id) walk the collections instead of the
+union, and the history sizer counts entities per collection.
 
-| existing supports | time to place one |
-| ---: | ---: |
-| 0 | 0.02 ms |
-| 2,000 | 0.99 ms |
-| 20,000 | **17.6 ms** |
+Measured on a synthetic plate, median of 12 placements:
 
-Linear, ~0.9 µs per entity. At 20k that is a frame per click; at 50k it would be
-~45 ms, which is the lag this raises. The render side adds one list rebuild for
-the touched collection.
+| existing supports | before | after |
+| ---: | ---: | ---: |
+| 0 | 0.02 ms | 0.02 ms |
+| 2,000 | 0.99 ms | 0.50 ms |
+| 20,000 | 17.6 ms | **7.2 ms** |
 
-There is no O(1) path while `supports` is a plain object: an immutable update
-copies every key. The fix is a shape change — per-type maps as the source of
-truth with `supports` derived lazily and cached, or a persistent map — which is
-the same "remaining O(plate) rebuild" noted above. Until then, batching a burst
-of placements into one write would help the auto-support commit, not manual
-clicking.
+What is left at 20k is the one unavoidable copy: `{ ...state[key], [id]: entity }`
+copies the touched collection so its identity changes and React re-renders. Going
+below that means collections as `Map`s with a versioned object view — a change to
+every writer and reader, and the next step if a 50k plate ever feels heavy.
 
 ## Fixed: the first placement hover paid the column-map walk
 

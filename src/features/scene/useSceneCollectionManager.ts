@@ -27,7 +27,7 @@ import {
 } from '@/features/scene/plates/plateLayout';
 import { detectObsoleteVoxlVersion, isVoxlBinaryV2, meshChunkStore, parseVoxlBinaryV2, readScenePlates, readSidecarFileBytes, resolveOriginalRefSidecar, VoxlObsoleteVersionError, type VoxlDocumentV1, type VoxlMeshRef, type VoxlMeshRange } from '@/features/scene/voxl';
 import { clearPaintToBase } from '@/components/analysis/MeshPainter';
-import { getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, resetStore, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
+import { countSupportEntities, getSnapshot, loadFromImportFormat, mergeFromImportFormat, reassignAllSupportModelIds, resetStore, setSnapshot as setSupportSnapshot, transformAllSupportsForSingleModel, transformSupportsForModel } from '@/supports/state';
 import { registerDeleteHandler } from '@/features/delete/deleteRegistry';
 import { peekUndo } from '@/history/historyStore';
 import { createTypedHistory } from '@/history/typedHistory';
@@ -719,8 +719,7 @@ const SUPPORT_ENTITY_BYTES = 700;
 function estimateSnapshotSupportBytes(snapshot: SceneSnapshot): number {
   const state = snapshot.supportState;
   if (!state) return 0;
-  const entities = state.supports ? Object.keys(state.supports).length : 0;
-  return entities * SUPPORT_ENTITY_BYTES;
+  return countSupportEntities(state) * SUPPORT_ENTITY_BYTES;
 }
 
 // Counts each distinct BufferGeometry ONCE, because that is what the process
