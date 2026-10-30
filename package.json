@@ -3,8 +3,14 @@
   "version": "0.3.0",
   "buildChannel": "beta",
   "private": true,
+  "browserslist": [
+    "chrome >= 119",
+    "edge >= 119",
+    "firefox >= 121",
+    "safari >= 17.4"
+  ],
   "engines": {
-    "node": ">=22.23.2 <23"
+    "node": ">=24.22.2 <25"
   },
   "scripts": {
     "bench:import-postprocess": "node --import tsx --import ./scripts/test-unit/register.mjs scripts/bench-import-postprocess.ts",
@@ -111,7 +117,7 @@
     "@tailwindcss/postcss": "^4.1.16",
     "@tailwindcss/typography": "^0.5.20",
     "@tauri-apps/cli": "^2.11.0",
-    "@types/node": "^22.20.0",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@types/three": "^0.181.0",
