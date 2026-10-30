@@ -1649,6 +1649,14 @@ export function useHollowingManager({
     }
 
     const persistedHollowing = activeModel.meshModifiers?.hollowing;
+    // Nothing reads this preview until the hollowing panel asks, and a model
+    // with no hollowing has nothing to show there but the defaults — which the
+    // panel computes itself on open. Warming it anyway paid a ~900 ms
+    // stage-capture-readback for every model the selection passed through,
+    // including the one the file opens on.
+    if (!persistedHollowing?.enabled && !persistedHollowing?.bakedIntoGeometry) {
+      return;
+    }
     const warmupState: HollowingPanelState = persistedHollowing?.enabled
       ? {
           mode: persistedHollowing.mode === 'shell_open_face' ? 'cavity' : persistedHollowing.mode,

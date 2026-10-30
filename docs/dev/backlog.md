@@ -1740,6 +1740,45 @@ gesture: the profile of that window is `(program)` (IPC deserialization) and
 render work, not JS copies. Making that non-blocking means receiving the buffers
 in pieces, which is a change to the command's shape, not to this effect.
 
+## Measured: the 20-model scene is smooth in steady state, and where the one hitch is
+
+A scripted tour of the 198 MB, 18-visible-model supported scene, in a production
+build, recording `requestAnimationFrame` intervals and long tasks per phase
+(`PerformanceObserver('longtask')`):
+
+| phase | fps | p95 | worst frame | long tasks |
+| --- | ---: | ---: | ---: | ---: |
+| idle | 165.5 | 6.2 | 6.2 | 0 |
+| orbit drag | 164.3 | 6.2 | 12.1 | 0 |
+| wheel zoom | 163.9 | 6.1 | 18.2 | 0 |
+| hover sweep across the plate | 165.6 | 6.1 | 6.2 | 0 |
+| click select | 158.4 | 6.2 | 24.2 | 0 |
+| drag a model | 165.7 | 6.2 | 6.2 | 0 |
+| undo (`Ctrl+Z`) | 165.8 | 6.1 | 6.2 | 0 |
+| Prepare → Support → Prepare | 165.3 | 6.1 | 6.3 | 0 |
+| Prepare → Export → Prepare | 165.3 | 6.1 | 6.2 | 0 |
+| camera focus | 130.9 | 8.0 | 22.5 | 0 |
+| settings modal open/close | 131.3 | 8.0 | 22.4 | 0 |
+| six drags on six different models | 165–165.8 | 6.1–6.2 | 12.1 | 0 |
+
+The per-model first-commit stall recorded earlier in this file is gone in this
+build: six fresh models dragged in a row, every one at 165 fps with a 6.1 ms p95.
+
+**The one remaining hitch is the load**, once per file: ~800 ms of main thread
+right after the scene appears. Bisected with `window.__dfLayers`: it survives with
+`merged`, `proxy` and `rafts` all off (878 ms), so it is not the support layers,
+and a network trace shows **no** `mesh_hollow_preview_*` calls on load. A profile
+of the window shows no single JS hot spot — `getBufferSubData` (GPU readback),
+`fetch` (native chunk hand-off) and `(program)` carry it. That is the import and
+AO-bake path, which the section below already breaks down (ranged reads, sync
+inflate of SUPP/MODL/EXTD).
+
+**Also fixed here:** the hollowing preview warm-up no longer runs for a model with
+no hollowing (`!enabled && !bakedIntoGeometry`). Nothing reads that cache until
+the panel asks, and the panel computes its own preview on open; the warm-up had
+been paying a stage/capture/read-back for every model selection that passed
+through, on a scene where no model is hollowed.
+
 ## Known: remaining serial work on the open, generate and commit paths
 
 A scan of the three heaviest paths found the following still blocking the main
