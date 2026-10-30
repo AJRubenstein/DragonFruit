@@ -1740,6 +1740,27 @@ gesture: the profile of that window is `(program)` (IPC deserialization) and
 render work, not JS copies. Making that non-blocking means receiving the buffers
 in pieces, which is a change to the command's shape, not to this effect.
 
+## Measured: the hollowing tool is smooth except its mode toggle
+
+Same scene and build.
+
+| phase | fps | p95 | worst frame | long tasks |
+| --- | ---: | ---: | ---: | ---: |
+| leave hollowing (→ Drag tool) | 130.3 | 8.0 | 29.6 | 0 |
+| enter hollowing | 132.4 | 8.1 | 15.1 | 0 |
+| voxel-size ± clicks | 132.6 | 8.0 | 8.1 | 0 |
+| Cavity ↔ Infill mode toggle | 115.2 | 8.1 | 151.3 | 153, 110, 127, 71 ms |
+| hover across the model | 133.6 | 8.1 | 8.2 | 0 |
+| idle in hollowing | 132.3 | 8.1 | 8.2 | 0 |
+
+Entering the tool costs nothing now (the preview guard keeps a non-hollowed model
+from staging), and hovering/stepping values is clean. **Toggling Cavity ↔ Infill
+blocks ~110–150 ms per switch** — that re-runs the native preview and decodes its
+buffers on the main thread. It is the same shape as the preview warm-up: the
+round trip is fine, the buffer read-back is what blocks. A chunked read (yield
+between buffers, as `sceneSnapshotSpill` does) is the smallest change that would
+keep the frame moving.
+
 ## Measured: mode switches and the Support tab
 
 Second half of the tour, same scene and build, same recording.
