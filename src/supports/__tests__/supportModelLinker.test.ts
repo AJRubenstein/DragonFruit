@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { addKnot, addRoot, addSupportEntity, getSnapshot, removeSupportEntitiesForModel, resetStore } from '../state';
+import { addKnot, addRoot, addSupportEntity, getSnapshot, removeSupportEntitiesForModel, removeSupportEntitiesForModels, resetStore } from '../state';
 import { getSupportsForModel } from '../PlacementLogic/SupportModelLinker';
 
 function makeTwig(id: string, modelId: string) {
@@ -103,5 +103,23 @@ describe('SupportModelLinker', () => {
       'the other model branch hung off that shaft, so it goes rather than dangling',
     );
     assert.ok(!after.knots['knot-shared'], 'and the knot it hung from');
+  });
+
+  it('removes several models in one pass, leaving other models alone', () => {
+    resetStore();
+
+    addSupportEntity('twig', makeTwig('twig-a', 'model-a'));
+    addSupportEntity('twig', makeTwig('twig-b', 'model-b'));
+    addSupportEntity('twig', makeTwig('twig-c', 'model-c'));
+
+    const removedCount = removeSupportEntitiesForModels(['model-a', 'model-b']);
+
+    assert.ok(removedCount >= 2, 'both models\' supports counted as removed');
+    const afterState = getSnapshot();
+    assert.ok(!afterState.twigs['twig-a'], 'model-a support removed');
+    assert.ok(!afterState.twigs['twig-b'], 'model-b support removed');
+    assert.ok(!!afterState.twigs['twig-c'], 'model-c support kept');
+    assert.strictEqual(getSupportsForModel(afterState, 'model-a').twigs.length, 0);
+    assert.strictEqual(getSupportsForModel(afterState, 'model-b').twigs.length, 0);
   });
 });

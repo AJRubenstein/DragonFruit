@@ -3,6 +3,7 @@ import { pushSupportHistory } from '@/supports/history/supportHistory';
 import { SUPPORT_EDIT_REPLACE } from './actionTypes';
 import { SUPPORT_COLLECTION_KEYS } from '../supportTypeRegistry';
 import { getSnapshot, type SupportState } from '../state';
+import { clonePlainData } from '@/utils/plainDataClone';
 
 export interface SupportEditHistorySnapshot {
   support: SupportState;
@@ -45,8 +46,10 @@ export function flushSupportEditHistory(): void {
     pushSupportHistory({
       type: SUPPORT_EDIT_REPLACE,
       description: job.description,
-      payload: { before: job.before, after: job.after },
-    });
+      // Copied once here and owned from then on, so the store does not clone
+      // two whole support states again on every push, undo and redo.
+      payload: { before: clonePlainData(job.before), after: clonePlainData(job.after) },
+    }, { payloadOwned: true });
   }
 }
 
@@ -79,7 +82,7 @@ function changedAnything(before: SupportState, after: SupportState): boolean {
 
 /**
  * Records a whole-state support edit, pushed when the main thread next idles:
- * the store clones each payload it keeps, which is tens of milliseconds on a
+ * each payload is cloned once at the flush, which is tens of milliseconds on a
  * large scene. An edit that changed nothing is dropped.
  */
 export function pushSupportEditHistory(

@@ -22,9 +22,13 @@ function notifySubscribers() {
 }
 
 function notifyHistoryOperation(direction: HistoryDirection, action: HistoryAction) {
+  // The action is the stack's own entry and subscribers are read-only: cloning it
+  // here copied every payload once per subscriber, and a support-edit payload is
+  // two whole support states. Mutating it in a subscriber is a contract violation
+  // (`subscribeHistoryOperations` documents that).
   historyOperationSubscribers.forEach((listener) => {
     try {
-      listener({ direction, action: structuredClone(action) });
+      listener({ direction, action });
     } catch (err) {
       console.error('[HistoryStore] operation subscriber error', err);
     }
@@ -52,6 +56,19 @@ function notifyHistoryDebugSubscribers() {
   });
 }
 
+/**
+ * Whether the History Debug panel is open.
+ *
+ * Byte accounting walks every payload in both stacks, and a support-edit payload
+ * is two whole support states. It is only useful to a reader, so it runs only
+ * while that reader exists.
+ */
+let historyDebugDetailsEnabled = false;
+
+export function setHistoryDebugDetailsEnabled(enabled: boolean): void {
+  historyDebugDetailsEnabled = enabled;
+}
+
 function appendHistoryDebugEvent(kind: HistoryDebugEventKind, action?: HistoryAction) {
   historyDebugLog.push({
     id: historyDebugIdCounter++,
@@ -61,7 +78,7 @@ function appendHistoryDebugEvent(kind: HistoryDebugEventKind, action?: HistoryAc
     actionDescription: action?.description,
     undoCount: undoStack.length,
     redoCount: redoStack.length,
-    payloadBytes: action ? estimatePayloadBytes(action.payload) : undefined,
+    payloadBytes: historyDebugDetailsEnabled && action ? estimatePayloadBytes(action.payload) : undefined,
   });
 
   while (historyDebugLog.length > HISTORY_DEBUG_LOG_LIMIT) {
@@ -125,7 +142,7 @@ export function pushHistory(action: HistoryAction) {
   if (!action.origin && originProvider) {
     action = { ...action, origin: originProvider() };
   }
-  undoStack.push(structuredClone(action));
+  undoStack.push(action.payloadOwned ? action : structuredClone(action));
   redoStack.length = 0;
   appendHistoryDebugEvent('push', action);
   notifySubscribers();
@@ -140,7 +157,7 @@ export function undo() {
   }
   const outcome = dispatch(action, 'undo');
   if (outcome === 'applied') {
-    redoStack.push(structuredClone(action));
+    redoStack.push(action.payloadOwned ? action : structuredClone(action));
     notifyHistoryOperation('undo', action);
     appendHistoryDebugEvent('undo', action);
     notifySubscribers();
@@ -171,7 +188,7 @@ export function redo() {
   }
   const outcome = dispatch(action, 'redo');
   if (outcome === 'applied') {
-    undoStack.push(structuredClone(action));
+    undoStack.push(action.payloadOwned ? action : structuredClone(action));
     notifyHistoryOperation('redo', action);
     appendHistoryDebugEvent('redo', action);
     notifySubscribers();
@@ -234,6 +251,10 @@ export function subscribeHistory(listener: HistorySubscriber) {
   return () => subscribers.delete(listener);
 }
 
+/**
+ * Observe undo/redo. The action is the stack's own entry and is **read-only**;
+ * do not mutate its payload.
+ */
 export function subscribeHistoryOperations(listener: (payload: { direction: HistoryDirection; action: HistoryAction }) => void) {
   historyOperationSubscribers.add(listener);
   return () => historyOperationSubscribers.delete(listener);

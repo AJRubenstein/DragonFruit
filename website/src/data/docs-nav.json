@@ -242,6 +242,10 @@
             {
               "label": "Performance Debugging",
               "slug": "dev/performance-debugging"
+            },
+            {
+              "label": "Render Profiler",
+              "slug": "dev/render-profiler"
             }
           ]
         },
@@ -533,6 +537,10 @@
               "slug": "adr/0045-headless-scene-operations"
             },
             {
+              "slug": "adr/0046-support-local-frames",
+              "title": "Support local frames"
+            },
+            {
               "label": "Organic Cut Surface Redesign",
               "slug": "dev/organic-cut-surface-redesign"
             }
@@ -564,6 +572,10 @@
             {
               "label": "Retuning Issue Guts",
               "slug": "dev/issue-guts-tuning"
+            },
+            {
+              "label": "Upload Service",
+              "slug": "dev/upload-service"
             },
             {
               "label": "OS Thumbnails",

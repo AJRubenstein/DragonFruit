@@ -71,7 +71,7 @@ import {
 } from '../PlacementLogic/ConeAxisPolicy';
 import { DEFAULT_GRID_MIN_BRANCH_ANGLE_DEG } from '../Settings/defaults';
 import { cloneSupportState, getSnapshot, setSnapshot } from '../state';
-import { draftAddEntity, draftAddPrimitive, draftCommitSupport } from './supportDraft';
+import { createOwnedDraft, draftAddEntity, draftAddPrimitive, draftCommitSupport, draftRemoveEntity, draftRemovePrimitive } from './supportDraft';
 import type { DetectedIsland } from '../../volumeAnalysis/Islands/types';
 import { buildTrunkData } from '../SupportTypes/Trunk/trunkBuilder';
 import { buildCavityBridge } from '../SupportTypes/Trunk/useTrunkPlacement';
@@ -274,6 +274,25 @@ function hostEntityOf(
 function typeWord(typeId: SupportTypeId): string {
     const singular = getSupportTypeDescriptor(typeId).singular;
     return singular.charAt(0).toUpperCase() + singular.slice(1);
+}
+
+/**
+ * Drop the pillar a chunk-consolidation link replaced, plus its root.
+ *
+ * The link was built against a draft in which the pillar still stood (it is
+ * excluded from the search by id), so the removal happens here, once the build
+ * has succeeded. Deleting from the owned draft keeps the collection's key order
+ * for every other host, which a copy-then-delete shuffle would not.
+ */
+function removeConvertedHost(
+    draft: SupportState,
+    hostTypeId: SupportTypeId,
+    hostId: string,
+    rootId: string | undefined,
+): SupportState {
+    let next = draftRemoveEntity(draft, hostTypeId, hostId);
+    if (rootId) next = draftRemovePrimitive(next, 'roots', rootId);
+    return next;
 }
 
 function makeResult(
@@ -729,8 +748,11 @@ export function buildConsolidationBranch(args: {
     radiusMm: number;
     maxAttachments: number;
     knotId: string;
+    /** Hosts still standing in `pruned` that this link replaces; see
+     *  `leafPathCrossesSupports`. */
+    excludeHostIds?: ReadonlySet<string>;
 }): { draft: SupportState; branchId: string; kind: AttachmentKind } | null {
-    const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId } = args;
+    const { tip, tipNormal, modelId, pool, pruned, mesh, radiusMm, maxAttachments, knotId, excludeHostIds } = args;
 
     // Steepest eligible host sample (≤ the branch-angle rule from vertical —
     // the leaf fan's cap is looser). Steepest, not nearest: the contact cone
@@ -740,9 +762,18 @@ export function buildConsolidationBranch(args: {
     // shaft buys that rise back; the angle cap keeps the link short anyway.
     let best: FanShaftPoint | null = null;
     let bestAngleDeg = Infinity;
+    let currentHostId: string | null = null;
+    let currentHostModelId: string | undefined;
     for (const sp of pool) {
         // Same rule as the leaf fan: only this model's shafts can host.
-        if (hostEntityOf(pruned, sp.hostTypeId, sp.hostId)?.modelId !== modelId) continue;
+        // Resolved once per host: the pool holds samples in host order.
+        if (sp.hostId !== currentHostId) {
+            currentHostId = sp.hostId;
+            currentHostModelId = excludeHostIds?.has(sp.hostId)
+                ? undefined
+                : hostEntityOf(pruned, sp.hostTypeId, sp.hostId)?.modelId;
+        }
+        if (currentHostModelId !== modelId) continue;
         const ddx = sp.pos.x - tip.x;
         const ddy = sp.pos.y - tip.y;
         const ddz = sp.pos.z - tip.z;
@@ -786,7 +817,7 @@ export function buildConsolidationBranch(args: {
         );
         if (!built) return null;
         if (branchDepartureAngleDeg(built.branch, parentKnot.pos) > memberMaxAngleFromVerticalDeg()) return null;
-        if (leafPathCrossesSupports(parentKnot.pos, built.branch.contactCone?.pos ?? tip, 0.25, pruned, best.hostId)) return null;
+        if (leafPathCrossesSupports(parentKnot.pos, built.branch.contactCone?.pos ?? tip, 0.25, pruned, best.hostId, excludeHostIds)) return null;
 
         let d = draftAddPrimitive(pruned, 'knots', parentKnot);
         built.branch.origin = 'overhang';
@@ -1660,6 +1691,11 @@ function segmentDistanceSq(
  * True when the straight leaf path (knot → tip) passes within the leaf
  * radius + shaft radius of ANY other trunk's shaft. The guarantee that fans
  * never puncture neighboring supports.
+ *
+ * `excludedHostIds` is for a host that is about to be REPLACED by the link it
+ * is being tested for (chunk consolidation): it still stands in the draft while
+ * the link is built, so it has to be ignored here or every link would cross
+ * the pillar it is converting.
  */
 export function leafPathCrossesSupports(
     knotPos: { x: number; y: number; z: number },
@@ -1667,16 +1703,26 @@ export function leafPathCrossesSupports(
     leafRadiusMm: number,
     draft: SupportState,
     hostId: string | null,
+    excludedHostIds?: ReadonlySet<string>,
 ): boolean {
-    for (const { hostId: candidateId, entity } of collectHostEntities(draft)) {
-        if (candidateId === hostId) continue;
-        for (const seg of entity.segments) {
-            const start = seg.bottomJoint?.pos;
-            const end = seg.topJoint?.pos;
-            if (!start || !end) continue;
-            const shaftRadius = (seg.diameter ?? 1.0) / 2;
-            const clearance = leafRadiusMm + shaftRadius;
-            if (segmentDistanceSq(knotPos, tipPos, start, end) < clearance * clearance) return true;
+    // Walks the host collections directly: a consolidation attempt runs this
+    // once per candidate host (hundreds of times), and `collectHostEntities`
+    // allocated a ref object per host on every call.
+    for (const descriptor of GRID_HOST_TYPES) {
+        const collection = draft[descriptor.location.key] as unknown as
+            Record<string, { segments: { bottomJoint?: { pos?: { x: number; y: number; z: number } }; topJoint?: { pos?: { x: number; y: number; z: number } }; diameter?: number }[] }> | undefined;
+        if (!collection) continue;
+        for (const candidateId in collection) {
+            if (candidateId === hostId) continue;
+            if (excludedHostIds?.has(candidateId)) continue;
+            for (const seg of collection[candidateId].segments ?? []) {
+                const start = seg.bottomJoint?.pos;
+                const end = seg.topJoint?.pos;
+                if (!start || !end) continue;
+                const shaftRadius = (seg.diameter ?? 1.0) / 2;
+                const clearance = leafRadiusMm + shaftRadius;
+                if (segmentDistanceSq(knotPos, tipPos, start, end) < clearance * clearance) return true;
+            }
         }
     }
     return false;
@@ -2288,6 +2334,9 @@ export function fanLeafToHost(
      *  the SHORTEST legal link, so it never spends more than that geometry
      *  forces. */
     rescueSpanOverrideMm?: number,
+    /** Hosts that still stand in the draft but must not be offered or crossed:
+     *  chunk consolidation converts a pillar into the link it is testing for. */
+    excludeHostIds?: ReadonlySet<string>,
 ): FanLeafResult {
     // Single pass over the shaft pool: the ELIGIBLE sample (grid hosts accept
     // only up close) that is geometrically VALID (not same-Z, within the max
@@ -2316,14 +2365,30 @@ export function fanLeafToHost(
     let nearestHostMm = Infinity;
     let nearestSteepMm = Infinity;
     let steepAngleDeg = Infinity;
+    // The model lookup is a dictionary read per SAMPLE, and a pool holds tens
+    // of thousands of samples from a few hundred hosts. Samples come in host
+    // order, so resolve the model once per host instead of once per sample.
+    let currentHostId: string | null = null;
+    let currentHostModelId: string | undefined;
+    let currentHostIsGrid = false;
 
     for (const sp of shaftPoints) {
-        // A host must belong to the model being supported. The shaft pool is
-        // collected from the whole snapshot, which holds every model's forest
-        // — an unfiltered pool attaches this model's leaf to a neighbouring
-        // model's shaft (and its knot to that model's segment).
-        if (hostEntityOf(draft, sp.hostTypeId, sp.hostId)?.modelId !== modelId) continue;
-        const isGrid = gridHostIds.has(sp.hostId);
+        // Host-level answers are cached per host: the pool holds tens of
+        // thousands of samples from a few hundred hosts, in host order.
+        if (sp.hostId !== currentHostId) {
+            currentHostId = sp.hostId;
+            currentHostIsGrid = gridHostIds.has(sp.hostId);
+            // A host must belong to the model being supported. The shaft pool
+            // is collected from the whole snapshot, which holds every model's
+            // forest — an unfiltered pool attaches this model's leaf to a
+            // neighbouring model's shaft (and its knot to that model's
+            // segment).
+            currentHostModelId = excludeHostIds?.has(sp.hostId)
+                ? undefined
+                : hostEntityOf(draft, sp.hostTypeId, sp.hostId)?.modelId;
+        }
+        if (currentHostModelId !== modelId) continue;
+        const isGrid = currentHostIsGrid;
         const limit = isGrid ? gridHostFanRadiusMm : fanRadiusMm;
         const ddx = sp.pos.x - target.x;
         const ddy = sp.pos.y - target.y;
@@ -2515,6 +2580,7 @@ export function fanLeafToHost(
             0.25,
             draft,
             sp.hostId,
+            excludeHostIds,
         )) {
             lastBlockedReason = 'cross';
             continue;
@@ -2838,7 +2904,10 @@ export function computeAutoSupportPlan(
     reportPhase('Preparing model', 0, 1);
 
     const before = baseState ?? cloneSupportState(getSnapshot());
-    let draft: SupportState = before;
+    // The run is the only holder of the draft, so its writes mutate in place.
+    // `before` stays untouched: the shallow copy plus copy-on-write is what
+    // keeps it intact without copying a collection per placement.
+    let draft: SupportState = createOwnedDraft(before);
 
     // Trunks placed from density-grid cells — fanning hosts only up close.
     const gridHostIds = new Set<string>();
@@ -3328,14 +3397,18 @@ export function computeAutoSupportPlan(
         memberMaxAngleFromVerticalDeg(),
     );
     let consolidated = 0;
+    // Reused per attempt: the pillar being converted is the host that must not
+    // be offered or crossed. Hosts converted earlier are already gone from the
+    // draft, so their samples are skipped by the model lookup.
+    const excludeHostId = new Set<string>();
     for (let pass = 0; pass < 3; pass++) {
         let convertedThisPass = 0;
-        // One pool per pass, maintained as pillars convert. A conversion
-        // deletes the pillar it replaces, and `collectFanShaftPoints` walks
-        // every host segment with its 10 samples — rebuilding that per host
-        // made this loop O(n²) with an allocation per sample. The pool only
-        // ever loses the host being converted, so filter it out instead.
-        let pool = collectFanShaftPoints(draft);
+        // One pool per pass. A conversion deletes the pillar it replaces, and
+        // `collectFanShaftPoints` walks every host segment with its 10 samples
+        // — rebuilding that per host made this loop O(n²) with an allocation
+        // per sample. The pool keeps every sample; a converted host's samples
+        // no longer resolve in the draft, so they are skipped.
+        const pool = collectFanShaftPoints(draft);
         for (const { hostTypeId, hostId, entity } of collectHostEntities(draft)) {
             // Only this model's hosts are ours to convert (and to delete --
             // the conversion replaces the pillar with a leaf of ours).
@@ -3363,33 +3436,29 @@ export function computeAutoSupportPlan(
             const tip = entity.contactCone?.pos;
             if (!tip) continue;
             const tipNormal = entity.contactCone?.normal ?? { x: 0, y: 0, z: -1 };
-            const hostKey = getSupportTypeDescriptor(hostTypeId).location.key;
-            const pruned: SupportState = {
-                ...draft,
-                [hostKey]: { ...(draft[hostKey] as unknown as Record<string, unknown>) },
-                roots: { ...draft.roots },
-            };
-            delete (pruned[hostKey] as unknown as Record<string, unknown>)[hostId];
-            delete pruned.roots[entity.rootId ?? ''];
-            // The maintained pool already excludes every host converted
-            // earlier this pass; this iteration's pillar is the only other
-            // one that must not be offered as its own host.
-            const hostPool = pool.filter((sp) => sp.hostId !== hostId);
-            if (hostPool.length === 0) break;
+            // The pillar this attempt replaces still stands in the draft until
+            // the link that replaces it is built successfully, so it is
+            // excluded from the host search and the crossing test instead of
+            // being removed from a copied state. Copying the collection and the
+            // roots map for every host was the single largest cost here.
+            excludeHostId.clear();
+            excludeHostId.add(hostId);
             const fan = fanLeafToHost(
                 tip,
                 modelId,
-                hostPool,
+                pool,
                 new Set(),
                 `auto-con-${hostId}-p${pass}`,
                 conFanRadiusMm,
                 GRID_HOST_FAN_RADIUS_MM,
                 conFanMaxAngleDeg,
                 autoSettings.maxAttachmentsPerTrunk,
-                pruned,
+                draft,
                 resolvedMesh ?? undefined,
                 'overhang',
                 'nearest',
+                undefined,
+                excludeHostId,
             );
             if (!fan.ok) {
                 // Routed-branch fallback, HEIGHT-GATED: a straight leaf can be
@@ -3406,17 +3475,17 @@ export function computeAutoSupportPlan(
                         tip,
                         tipNormal,
                         modelId,
-                        pool: hostPool,
-                        pruned,
+                        pool,
+                        pruned: draft,
                         mesh: resolvedMesh ?? undefined,
                         radiusMm: conFanRadiusMm,
                         maxAttachments: autoSettings.maxAttachmentsPerTrunk,
                         knotId: `auto-con-branch-${hostId}`,
+                        excludeHostIds: excludeHostId,
                     })
                     : null;
                 if (branchResult) {
-                    draft = branchResult.draft;
-                    pool = hostPool;
+                    draft = removeConvertedHost(branchResult.draft, hostTypeId, hostId, entity.rootId);
                     gridHostIds.delete(hostId);
                     const origin = originKind ?? 'standalone';
                     diagnostics.hostsByKind[origin]--;
@@ -3436,8 +3505,7 @@ export function computeAutoSupportPlan(
                 conRefusals[fan.reason] = (conRefusals[fan.reason] ?? 0) + 1;
                 continue;
             }
-            draft = fan.draft;
-            pool = hostPool;
+            draft = removeConvertedHost(fan.draft, hostTypeId, hostId, entity.rootId);
             gridHostIds.delete(hostId);
             const origin = originKind ?? 'standalone';
             diagnostics.hostsByKind[origin]--;
